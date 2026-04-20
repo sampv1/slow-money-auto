@@ -66,9 +66,9 @@ Vietnamese stock recommendation tracker. Stores AI-generated trading recommendat
 | Step | What | Status |
 |------|------|--------|
 | 3.1 | Next.js project setup — init, Supabase client, deploy to Vercel | DONE |
-| 3.2 | Active positions page — OPEN recs with current price, unrealized P&L, days held | TODO |
-| 3.3 | History page — closed recs with actual P&L, filterable by date/symbol/outcome | TODO |
-| 3.4 | Daily log page — daily recommendations including "stand aside" days | TODO |
+| 3.2 | Active positions page — OPEN recs with current price, unrealized P&L, days held | DONE |
+| 3.3 | History page — closed recs with actual P&L, filterable by date/symbol/outcome | DONE |
+| 3.4 | Daily log page — daily recommendations including "stand aside" days | DONE |
 
 **Deliverable**: Live URL on Vercel to check recommendation status anytime.
 
