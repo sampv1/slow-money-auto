@@ -1,0 +1,47 @@
+{
+  "analysis_date": "2026-04-21",
+  "trading_date": "2026-04-21",
+  "market_context": {
+    "regime": 4,
+    "regime_label": "DOWNTREND",
+    "auction_state": "IMBALANCE",
+    "strategy": "STAND_ASIDE",
+    "vn_index": {
+      "close": 1248.7,
+      "change_pct": -2.1,
+      "session_date": "2026-04-18"
+    },
+    "international": {
+      "sp500_change_pct": -1.5,
+      "dxy": 105.8,
+      "us10y": 4.65,
+      "vix": 28.3,
+      "oil_wti": 72.1,
+      "environment": "ADVERSE"
+    },
+    "confidence": 8
+  },
+  "conclusion": "KB3",
+  "stand_aside_reason": "Regime 4 downtrend, VIX > 25, DXY tang manh, khoi ngoai ban rong 3 phien lien tiep. Khong co setup nao dat tieu chi Sharpe >= 1.5",
+  "recommendations": [],
+  "scenarios": {
+    "bullish": {
+      "probability_pct": 15,
+      "description": "VN-Index hoi phuc ky thuat ve 1260-1270"
+    },
+    "neutral": {
+      "probability_pct": 35,
+      "description": "VN-Index dao dong 1240-1255, cho tin hieu ro hon"
+    },
+    "bearish": {
+      "probability_pct": 50,
+      "description": "VN-Index tiep tuc giam ve vung 1220-1230 do ap luc ban"
+    },
+    "kill_zone_vn_index": 1220
+  },
+  "track_record": {
+    "avg_sharpe": null,
+    "avg_expectancy": null,
+    "num_recommendations": 0
+  }
+}

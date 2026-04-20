@@ -1,0 +1,126 @@
+{
+  "analysis_date": "2026-04-20",
+  "trading_date": "2026-04-20",
+  "market_context": {
+    "regime": 1,
+    "regime_label": "UPTREND_LOW_VOL",
+    "auction_state": "IMBALANCE",
+    "strategy": "BREAKOUT_MOMENTUM",
+    "vn_index": {
+      "close": 1285.3,
+      "change_pct": 1.2,
+      "session_date": "2026-04-17"
+    },
+    "international": {
+      "sp500_change_pct": 0.8,
+      "dxy": 103.5,
+      "us10y": 4.25,
+      "vix": 14.8,
+      "oil_wti": 79.2,
+      "environment": "SUPPORTIVE"
+    },
+    "confidence": 7
+  },
+  "conclusion": "KB1",
+  "stand_aside_reason": null,
+  "recommendations": [
+    {
+      "rank": 1,
+      "symbol": "FPT",
+      "exchange": "HOSE",
+      "company_name": "FPT Corporation",
+      "sector": "Technology",
+      "action": "BUY",
+      "setup": "BREAKOUT_MOMENTUM",
+      "setup_confidence": "HIGH",
+      "entry_price": 148000,
+      "entry_range_low": 147000,
+      "entry_range_high": 149500,
+      "stop_loss": 141000,
+      "tp1": 158000,
+      "tp2": 165000,
+      "trailing_stop_method": "MA10",
+      "stop_loss_pct": -4.7,
+      "tp1_pct": 6.8,
+      "tp2_pct": 11.5,
+      "r_multiple": 2.4,
+      "sharpe": 2.2,
+      "win_rate_est": 55,
+      "expectancy": 0.87,
+      "hit_probability": "HIGH",
+      "rating": "GOOD",
+      "holding_period_sessions": 5,
+      "holding_period_label": "3-5 phien",
+      "position_sizing": {
+        "method": "QUARTER_KELLY",
+        "size_pct": 5.8,
+        "kelly_raw_pct": 23.2,
+        "quarter_kelly_pct": 5.8
+      },
+      "entry_timing": "09:15-10:00",
+      "entry_method": "LIMIT",
+      "last_close": 147500,
+      "last_close_date": "2026-04-17",
+      "reasoning_summary": "FPT breakout khoi vung nen 145-148k voi volume tang 180% TB20, dong thuan regime uptrend + intermarket tech tich cuc"
+    },
+    {
+      "rank": 2,
+      "symbol": "MWG",
+      "exchange": "HOSE",
+      "company_name": "Mobile World Investment Corp",
+      "sector": "Retail",
+      "action": "BUY",
+      "setup": "PULLBACK_SUPPORT",
+      "setup_confidence": "MEDIUM",
+      "entry_price": 62000,
+      "entry_range_low": 61500,
+      "entry_range_high": 62500,
+      "stop_loss": 59000,
+      "tp1": 66500,
+      "tp2": 70000,
+      "trailing_stop_method": "SWING_LOW",
+      "stop_loss_pct": -4.8,
+      "tp1_pct": 7.3,
+      "tp2_pct": 12.9,
+      "r_multiple": 2.5,
+      "sharpe": 1.9,
+      "win_rate_est": 50,
+      "expectancy": 0.75,
+      "hit_probability": "MEDIUM",
+      "rating": "FAIR",
+      "holding_period_sessions": 8,
+      "holding_period_label": "5-10 phien",
+      "position_sizing": {
+        "method": "FIXED_RISK",
+        "size_pct": 4.2,
+        "kelly_raw_pct": null,
+        "quarter_kelly_pct": null
+      },
+      "entry_timing": "13:30-14:15",
+      "entry_method": "LIMIT",
+      "last_close": 62300,
+      "last_close_date": "2026-04-17",
+      "reasoning_summary": "MWG pullback ve MA20 trong uptrend, volume giam dung chuan, nen dao chieu hammer tai ho tro 61.5k"
+    }
+  ],
+  "scenarios": {
+    "bullish": {
+      "probability_pct": 45,
+      "description": "VN-Index vuot 1290, dong tien manh vao nhom tech va ban le"
+    },
+    "neutral": {
+      "probability_pct": 35,
+      "description": "VN-Index dao dong 1270-1290, thanh khoan trung binh"
+    },
+    "bearish": {
+      "probability_pct": 20,
+      "description": "VN-Index mat moc 1270 do ap luc DXY tang va khoi ngoai ban rong"
+    },
+    "kill_zone_vn_index": 1255
+  },
+  "track_record": {
+    "avg_sharpe": 2.05,
+    "avg_expectancy": 0.81,
+    "num_recommendations": 2
+  }
+}

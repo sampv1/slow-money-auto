@@ -1,0 +1,94 @@
+{
+  "analysis_date": "2026-04-22",
+  "trading_date": "2026-04-22",
+  "market_context": {
+    "regime": 2,
+    "regime_label": "UPTREND_HIGH_VOL",
+    "auction_state": "TRANSITIONING",
+    "strategy": "POST_EARNINGS_SELECTIVE",
+    "vn_index": {
+      "close": 1817.17,
+      "change_pct": -0.15,
+      "session_date": "2026-04-19"
+    },
+    "international": {
+      "sp500_change_pct": 1.20,
+      "dxy": 98.0,
+      "us10y": null,
+      "vix": 17.48,
+      "oil_wti": 82.59,
+      "environment": "SUPPORTIVE"
+    },
+    "confidence": 6
+  },
+  "conclusion": "KB2",
+  "stand_aside_reason": null,
+  "recommendations": [
+    {
+      "rank": 1,
+      "symbol": "SSI",
+      "exchange": "HOSE",
+      "company_name": "CTCP Đầu tư Thế Giới Di Động",
+      "sector": "Retail",
+      "action": "BUY",
+      "setup": "POST_EARNINGS",
+      "setup_confidence": "HIGH",
+
+      "entry_price": 87000,
+      "entry_range_low": 86500,
+      "entry_range_high": 87500,
+      "stop_loss": 82500,
+      "tp1": 92000,
+      "tp2": 97000,
+      "trailing_stop_method": "MA10",
+
+      "stop_loss_pct": -5.17,
+      "tp1_pct": 5.75,
+      "tp2_pct": 11.49,
+      "r_multiple": 1.91,
+      "sharpe": 1.66,
+      "win_rate_est": 55,
+      "expectancy": 0.60,
+      "hit_probability": "MEDIUM",
+      "rating": "FAIR",
+
+      "holding_period_sessions": 10,
+      "holding_period_label": "5-15 phiên (1-3 tuần)",
+
+      "position_sizing": {
+        "method": "QUARTER_KELLY",
+        "size_pct": 3.9,
+        "kelly_raw_pct": 31.4,
+        "quarter_kelly_pct": 7.85
+      },
+
+      "entry_timing": "09:15-10:00",
+      "entry_method": "SPLIT",
+
+      "last_close": 86900,
+      "last_close_date": "2026-04-19",
+
+      "reasoning_summary": "MWG tăng trần trắng bên bán phiên 17/04 với dư mua 5,5 triệu cp và khối ngoại mua ròng 195 tỷ. KQKD Q1/2026 ước lãi +80% YoY, cổ tức tiền mặt 20% kỷ lục. Post-Earnings Drift + Breakout Momentum trong bối cảnh dòng tiền luân chuyển từ Vingroup sang nhóm bán lẻ. Size giảm 50% (Quarter Kelly/2) do KB2 thận trọng với rủi ro binary event và Regime transitioning."
+    }
+  ],
+  "scenarios": {
+    "bullish": {
+      "probability_pct": 30,
+      "description": "Mỹ-Iran đạt thỏa thuận 20-22/04, Wall Street ATH tiếp tục, VN-Index vượt 1.825 lên 1.850-1.870"
+    },
+    "neutral": {
+      "probability_pct": 50,
+      "description": "Mỹ-Iran đàm phán tiếp tục không rõ ràng, VN-Index sideway 1.795-1.830"
+    },
+    "bearish": {
+      "probability_pct": 20,
+      "description": "Đàm phán Mỹ-Iran đổ vỡ 22/04, dầu bật >95 USD, VN-Index phá 1.795 về 1.770-1.750"
+    },
+    "kill_zone_vn_index": 1770
+  },
+  "track_record": {
+    "avg_sharpe": 1.66,
+    "avg_expectancy": 0.60,
+    "num_recommendations": 1
+  }
+}
