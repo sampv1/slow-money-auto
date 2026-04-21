@@ -202,9 +202,16 @@ def read_input(args) -> str:
     return "\n".join(lines)
 
 
-def push_to_supabase(data: dict, dry_run: bool = False):
-    """Push parsed data to Supabase."""
+def strip_json_block(text: str) -> str:
+    """Remove ```json ... ``` code blocks from text, leaving the analysis."""
+    return re.sub(r"```json\s*\n[\s\S]*?\n\s*```", "", text).strip()
+
+
+def push_to_supabase(data: dict, dry_run: bool = False, full_response: str | None = None):
+    """Push parsed data to Supabase. Optionally stores the full analysis text."""
     daily_log_row = build_daily_log_row(data)
+    if full_response:
+        daily_log_row["full_response"] = full_response
     rec_rows = [
         build_recommendation_row(rec, "", data["trading_date"])
         for rec in data.get("recommendations", [])

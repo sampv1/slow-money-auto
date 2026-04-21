@@ -126,9 +126,9 @@ def extract_and_validate(response_text: str) -> dict:
     return data
 
 
-def push_results(data: dict, dry_run: bool):
+def push_results(data: dict, dry_run: bool, full_response: str | None = None):
     """Push validated data to Supabase (reuses push_recommendation logic)."""
-    from push_recommendation import push_to_supabase
+    from push_recommendation import push_to_supabase, strip_json_block
 
     print(f"\nResult: {data['trading_date']} | {data['conclusion']} | "
           f"{len(data.get('recommendations', []))} rec(s)")
@@ -138,7 +138,9 @@ def push_results(data: dict, dry_run: bool):
             print(f"  #{rec['rank']} {rec['symbol']} @ {rec['entry_price']} | "
                   f"SL {rec['stop_loss']} | TP1 {rec['tp1']} | R={rec['r_multiple']}")
 
-    push_to_supabase(data, dry_run=dry_run)
+    # Strip JSON block from the response to store only the analysis text
+    analysis_text = strip_json_block(full_response) if full_response else None
+    push_to_supabase(data, dry_run=dry_run, full_response=analysis_text)
 
 
 def save_response(response_text: str, trading_date: str):
@@ -209,8 +211,8 @@ def main():
     # Extract JSON and validate
     data = extract_and_validate(response_text)
 
-    # Push to Supabase
-    push_results(data, dry_run=args.dry_run)
+    # Push to Supabase (include full response for homepage display)
+    push_results(data, dry_run=args.dry_run, full_response=response_text)
 
 
 if __name__ == "__main__":

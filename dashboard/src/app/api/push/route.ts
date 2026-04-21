@@ -211,23 +211,36 @@ function buildRecRow(rec: RecInput, dailyLogId: string, tradingDate: string) {
   };
 }
 
+function stripJsonBlock(text: string): string {
+  // Remove ```json ... ``` code blocks from the response text
+  return text.replace(/```json\s*\n[\s\S]*?\n\s*```/g, "").trim();
+}
+
+function extractJson(text: string): string {
+  // Try to find JSON inside ```json ... ``` code block first
+  const match = text.match(/```json\s*\n([\s\S]*?)\n\s*```/);
+  if (match) return match[1];
+  // Fall back to raw text (might be pure JSON)
+  return text.trim();
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.text();
 
-    // Extract JSON from markdown code block if present
-    let jsonStr = body.trim();
-    const codeBlockMatch = jsonStr.match(/```json\s*\n([\s\S]*?)\n\s*```/);
-    if (codeBlockMatch) {
-      jsonStr = codeBlockMatch[1];
-    }
+    // Extract JSON from the input (which may be full Claude response or just JSON)
+    const jsonStr = extractJson(body);
 
     let data: PushData;
     try {
       data = JSON.parse(jsonStr);
     } catch {
-      return Response.json({ error: "Invalid JSON" }, { status: 400 });
+      return Response.json({ error: "Invalid JSON — could not find valid JSON in the input" }, { status: 400 });
     }
+
+    // Build full_response: if input contains more than just JSON, store the analysis text
+    const hasCodeBlock = /```json\s*\n[\s\S]*?\n\s*```/.test(body);
+    const fullResponse = hasCodeBlock ? stripJsonBlock(body) : null;
 
     // Validate
     const errors = validate(data);
@@ -249,9 +262,14 @@ export async function POST(request: Request) {
     }
 
     // Insert daily log
+    const logRow = buildDailyLogRow(data);
+    if (fullResponse) {
+      (logRow as Record<string, unknown>).full_response = fullResponse;
+    }
+
     const { data: logResult, error: logError } = await supabase
       .from("daily_logs")
-      .insert(buildDailyLogRow(data))
+      .insert(logRow)
       .select("id")
       .single();
 
@@ -283,6 +301,7 @@ export async function POST(request: Request) {
       conclusion: data.conclusion,
       daily_log_id: dailyLogId,
       recommendations_inserted: insertedCount,
+      has_full_response: !!fullResponse,
     });
   } catch (err) {
     return Response.json({ error: `Server error: ${err}` }, { status: 500 });

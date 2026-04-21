@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.104.0",
+    "@tailwindcss/typography": "^0.5.19",
     "next": "16.2.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
     "recharts": "^3.8.1"
   },
   "devDependencies": {

@@ -28,6 +28,7 @@ export interface DailyLog {
   avg_sharpe: number | null;
   avg_expectancy: number | null;
   num_recommendations: number;
+  full_response: string | null;
   created_at: string;
 }
 
