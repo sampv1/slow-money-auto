@@ -12,13 +12,13 @@ See PROJECT_PLAN.md for the full phased roadmap and current progress.
 
 Three components, loosely coupled:
 
-1. **Python scripts** (`scripts/`) — Data pipeline. Parse Claude's JSON output, push to Supabase, fetch stock prices via vnstock, evaluate P&L.
+1. **Python scripts** (`scripts/`) — Data pipeline. Parse Claude's JSON output, push to Supabase, fetch stock prices via vnstock, evaluate P&L. Also includes Claude API integration for automated prompt execution.
 2. **Supabase** — PostgreSQL database with auto-generated REST API. Schema lives in `supabase/001_create_tables.sql`. Three tables: `daily_logs` (one per trading day), `recommendations` (individual stock picks with tracking status), `daily_prices` (OHLCV snapshots).
-3. **Next.js dashboard** (planned, Phase 3) — Read-only frontend on Vercel.
+3. **Next.js dashboard** — Read-only frontend on Vercel with stats, charts, and breakdowns.
 
 ## Python Scripts
 
-All scripts live in `scripts/` and use `scripts/.env` for Supabase credentials (SUPABASE_URL, SUPABASE_ANON_KEY). Python >= 3.10 required.
+All scripts live in `scripts/` and use `scripts/.env` for credentials (SUPABASE_URL, SUPABASE_ANON_KEY, ANTHROPIC_API_KEY). Python >= 3.10 required.
 
 ```bash
 cd scripts
@@ -46,14 +46,29 @@ python3 stock_prices.py --backfill --from 2026-01-01     # all historical symbol
 python3 update_prices.py                                 # full daily run
 python3 update_prices.py --dry-run                       # preview changes
 python3 update_prices.py --skip-fetch                    # evaluate without fetching
+
+# Run trading prompt via Claude API with web search (requires ANTHROPIC_API_KEY in .env):
+python3 run_prompt.py                                    # full run: web search → Claude → push
+python3 run_prompt.py --dry-run                          # validate only, don't push
+python3 run_prompt.py --context "CSS sentiment: 62"      # add extra context
+python3 run_prompt.py --model claude-sonnet-4-6           # use different model
+python3 run_prompt.py --max-searches 20                  # limit web searches (default: 15)
 ```
 
 ## Data Flow
 
-1. User runs the trading prompt (`prompt-trading-vietnam-v4-complete-json.md`) in Claude
+**Manual flow:**
+1. User runs the trading prompt (`prompt-trading-vietnam-v4-complete-json.md`) in Claude (with web search)
 2. Claude outputs full analysis + a `json` code block (Phần K) at the end
 3. User copies JSON → runs `push_recommendation.py` → data lands in Supabase
-4. Daily after market close: run `update_prices.py` → fetches closing prices via vnstock, checks TP/SL conditions, updates recommendation status and P&L
+
+**Automated flow (via API):**
+1. Run `run_prompt.py` → sends the original prompt to Claude API with web search enabled (same quality as claude.ai), extracts JSON, pushes to Supabase
+2. Claude searches for real-time data (VN-Index, stock prices, international markets) via built-in web search tool
+3. Full responses saved to `scripts/outputs/` for reference
+
+**Daily evaluation:**
+- After market close: run `update_prices.py` → fetches closing prices via vnstock, checks TP/SL conditions, updates recommendation status and P&L
 
 ## JSON Schema
 

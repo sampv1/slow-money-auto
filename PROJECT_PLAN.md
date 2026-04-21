@@ -94,9 +94,9 @@ Vietnamese stock recommendation tracker. Stores AI-generated trading recommendat
 
 | Step | What | Status |
 |------|------|--------|
-| 5.1 | Claude API integration — auto-run prompt and push results | TODO |
-| 5.2 | Scheduled price updates — cron or Supabase Edge Function | TODO |
-| 5.3 | Dashboard input form — paste JSON into web UI instead of CLI | TODO |
+| 5.1 | Claude API integration — auto-run prompt and push results | DONE |
+| 5.2 | Scheduled prompt execution — GitHub Actions cron at 8:30 AM GMT+7, Mon–Fri | DONE |
+| 5.3 | Dashboard input form — paste JSON into web UI instead of CLI | DONE |
 | 5.4 | Alerts/notifications — email or Telegram when TP/SL hit | TODO |
 
 ---

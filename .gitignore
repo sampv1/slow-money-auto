@@ -6,6 +6,9 @@ dashboard/.env.local
 __pycache__/
 *.pyc
 
+# Script outputs (Claude API responses)
+scripts/outputs/
+
 # Node / Next.js
 dashboard/node_modules/
 dashboard/.next/

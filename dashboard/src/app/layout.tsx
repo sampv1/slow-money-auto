@@ -23,6 +23,7 @@ const navLinks = [
   { href: "/history", label: "History" },
   { href: "/logs", label: "Daily Logs" },
   { href: "/stats", label: "Stats" },
+  { href: "/input", label: "Input" },
 ];
 
 export default function RootLayout({
