@@ -80,9 +80,9 @@ Vietnamese stock recommendation tracker. Stores AI-generated trading recommendat
 
 | Step | What | Status |
 |------|------|--------|
-| 4.1 | Overview/stats page — win rate, avg R-multiple, avg P&L %, total count | TODO |
-| 4.2 | Equity curve chart — cumulative P&L over time | TODO |
-| 4.3 | Breakdown stats — performance by setup type, regime, sector | TODO |
+| 4.1 | Overview/stats page — win rate, avg R-multiple, avg P&L %, total count | DONE |
+| 4.2 | Equity curve chart — cumulative P&L over time | DONE |
+| 4.3 | Breakdown stats — performance by setup type, regime, sector | DONE |
 
 **Deliverable**: At-a-glance view of whether the AI prompt generates alpha.
 
