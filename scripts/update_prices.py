@@ -63,7 +63,8 @@ def fetch_latest_prices(client, symbols: list[str]):
         if latest:
             start = (datetime.strptime(latest, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
         else:
-            start = (date.today() - timedelta(days=30)).isoformat()
+            # Only need recent days to find the latest trading session
+            start = (date.today() - timedelta(days=5)).isoformat()
 
         if start > end_date:
             continue
@@ -244,8 +245,9 @@ def main():
 
     updates_count = 0
     for rec in recs:
-        # Get price history since recommendation date
-        prices = get_price_history(client, rec["symbol"], rec["trading_date"])
+        # Get only recent prices (last 5 calendar days) — enough to catch latest session
+        recent_since = (date.today() - timedelta(days=5)).isoformat()
+        prices = get_price_history(client, rec["symbol"], recent_since)
         days_held = count_trading_days(client, rec["symbol"], rec["trading_date"])
 
         # Evaluate TP/SL
