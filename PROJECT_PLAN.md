@@ -52,8 +52,8 @@ Vietnamese stock recommendation tracker. Stores AI-generated trading recommendat
 | Step | What | Status |
 |------|------|--------|
 | 2.1 | vnstock integration — fetch daily OHLCV for recommended symbols | DONE |
-| 2.2 | Store prices in daily_prices table | DONE |
-| 2.3 | `update_prices.py` — fetch prices, check TP1/TP2/SL, update status and P&L | DONE |
+| 2.2 | ~~Store prices in daily_prices table~~ — removed, fetches directly from vnstock | DONE |
+| 2.3 | `update_prices.py` — fetch latest price, check TP1/TP2/SL, update status and P&L | DONE |
 
 **Deliverable**: Run one script daily after market close → auto-evaluates all open positions.
 
@@ -108,7 +108,6 @@ Vietnamese stock recommendation tracker. Stores AI-generated trading recommendat
 |-------|---------|
 | `daily_logs` | One row per trading day (regime, market context, conclusion KB1/KB2/KB3) |
 | `recommendations` | Individual stock picks with entry/TP/SL + tracking status lifecycle |
-| `daily_prices` | OHLCV snapshots for tracking open positions |
 
 ### Recommendation Status Lifecycle
 

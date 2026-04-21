@@ -110,20 +110,7 @@ create table recommendations (
   updated_at timestamptz not null default now()
 );
 
--- 3. Daily price snapshots for tracking open positions
-create table daily_prices (
-  id uuid primary key default gen_random_uuid(),
-  symbol text not null,
-  date date not null,
-  open numeric not null,
-  high numeric not null,
-  low numeric not null,
-  close numeric not null,
-  volume bigint not null,
-  created_at timestamptz not null default now(),
-
-  constraint uq_daily_prices_symbol_date unique (symbol, date)
-);
+-- 3. daily_prices table removed — price evaluation fetches directly from vnstock
 
 -- ============================================================
 -- Indexes
@@ -132,7 +119,7 @@ create table daily_prices (
 create index idx_recommendations_status on recommendations(status);
 create index idx_recommendations_symbol on recommendations(symbol);
 create index idx_recommendations_trading_date on recommendations(trading_date);
-create index idx_daily_prices_symbol_date on daily_prices(symbol, date);
+-- daily_prices index removed
 create index idx_daily_logs_trading_date on daily_logs(trading_date);
 
 -- ============================================================
@@ -159,8 +146,6 @@ create trigger trg_recommendations_updated_at
 
 alter table daily_logs enable row level security;
 alter table recommendations enable row level security;
-alter table daily_prices enable row level security;
-
 -- Allow full access via anon key (personal use)
 create policy "Allow all for anon" on daily_logs
   for all using (true) with check (true);
@@ -168,5 +153,4 @@ create policy "Allow all for anon" on daily_logs
 create policy "Allow all for anon" on recommendations
   for all using (true) with check (true);
 
-create policy "Allow all for anon" on daily_prices
-  for all using (true) with check (true);
+-- daily_prices policy removed

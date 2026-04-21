@@ -13,7 +13,7 @@ See PROJECT_PLAN.md for the full phased roadmap and current progress.
 Three components, loosely coupled:
 
 1. **Python scripts** (`scripts/`) — Data pipeline. Parse Claude's JSON output, push to Supabase, fetch stock prices via vnstock, evaluate P&L. Also includes Claude API integration for automated prompt execution.
-2. **Supabase** — PostgreSQL database with auto-generated REST API. Schema lives in `supabase/001_create_tables.sql`. Three tables: `daily_logs` (one per trading day), `recommendations` (individual stock picks with tracking status), `daily_prices` (OHLCV snapshots).
+2. **Supabase** — PostgreSQL database with auto-generated REST API. Schema lives in `supabase/001_create_tables.sql`. Two tables: `daily_logs` (one per trading day), `recommendations` (individual stock picks with tracking status).
 3. **Next.js dashboard** — Read-only frontend on Vercel with stats, charts, and breakdowns.
 
 ## Python Scripts
@@ -37,15 +37,9 @@ python3 list_recommendations.py --logs                   # daily logs table
 python3 list_recommendations.py --logs --date 2026-04-20 # single day detail
 python3 list_recommendations.py --stats                  # performance summary
 
-# Fetch stock prices (for all OPEN symbols, or specific ones):
-python3 stock_prices.py                                  # all open symbols
-python3 stock_prices.py FPT HPG --from 2026-04-01        # specific symbols
-python3 stock_prices.py --backfill --from 2026-01-01     # all historical symbols
-
-# Daily evaluation (fetch prices + check TP/SL + update status):
+# Daily evaluation (fetch latest price + check TP/SL + update status):
 python3 update_prices.py                                 # full daily run
 python3 update_prices.py --dry-run                       # preview changes
-python3 update_prices.py --skip-fetch                    # evaluate without fetching
 
 # Run trading prompt via Claude API with web search (requires ANTHROPIC_API_KEY in .env):
 python3 run_prompt.py                                    # full run: web search → Claude → push
