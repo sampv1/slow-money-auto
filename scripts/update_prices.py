@@ -80,8 +80,15 @@ def fetch_latest_price(symbol: str) -> dict | None:
 
     # Take the last row (most recent trading day)
     row = df.iloc[-1]
+    price_date = str(row["time"])[:10]
+
+    # Only return if the price is from today — skip if stale
+    if price_date != date.today().isoformat():
+        print(f"  {symbol}: latest data is {price_date}, not today — skipping")
+        return None
+
     return {
-        "date": str(row["time"])[:10],
+        "date": price_date,
         "open": float(row["open"]),
         "high": float(row["high"]),
         "low": float(row["low"]),
