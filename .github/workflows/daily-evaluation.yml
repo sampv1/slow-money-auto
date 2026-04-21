@@ -1,0 +1,28 @@
+name: Daily Price Evaluation
+
+on:
+  schedule:
+    # 3:30 PM GMT+7 = 8:30 AM UTC, Monday–Friday (after HOSE closes at 3:00 PM)
+    - cron: "30 8 * * 1-5"
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run price evaluation
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: python update_prices.py
