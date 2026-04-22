@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { getLocaleFromCookie, t } from "@/lib/i18n";
+import { LocaleSwitcher } from "@/components/locale-switcher";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -18,23 +21,26 @@ export const metadata: Metadata = {
   description: "Vietnamese stock recommendation tracker",
 };
 
-const navLinks = [
-  { href: "/", label: "Analysis" },
-  { href: "/active", label: "Active" },
-  { href: "/history", label: "History" },
-  { href: "/logs", label: "Daily Logs" },
-  { href: "/stats", label: "Stats" },
-  { href: "/input", label: "Input" },
-];
-
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const locale = getLocaleFromCookie(cookieStore.get("locale")?.value ?? null);
+
+  const navLinks = [
+    { href: "/", label: t(locale, "navAnalysis") },
+    { href: "/active", label: t(locale, "navActive") },
+    { href: "/history", label: t(locale, "navHistory") },
+    { href: "/logs", label: t(locale, "navLogs") },
+    { href: "/stats", label: t(locale, "navStats") },
+    { href: "/input", label: t(locale, "navInput") },
+  ];
+
   return (
     <html
-      lang="en"
+      lang={locale}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-gray-50 text-gray-900">
@@ -44,17 +50,20 @@ export default function RootLayout({
               <Link href="/" className="font-semibold text-lg">
                 Slow Money
               </Link>
-              <nav className="flex gap-1">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className="px-3 py-1.5 text-sm rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-              </nav>
+              <div className="flex items-center gap-2">
+                <nav className="flex gap-1">
+                  {navLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className="px-3 py-1.5 text-sm rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </nav>
+                <LocaleSwitcher locale={locale} />
+              </div>
             </div>
           </div>
         </header>

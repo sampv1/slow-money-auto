@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { formatPrice, formatPnl, pnlColor, statusBadge } from "@/lib/format";
+import { getLocale, t } from "@/lib/i18n";
 import type { Recommendation } from "@/lib/types";
 import { CLOSED_STATUSES } from "@/lib/types";
 
@@ -10,6 +11,7 @@ export default async function HistoryPage({
 }: {
   searchParams: Promise<{ [key: string]: string | undefined }>;
 }) {
+  const locale = await getLocale();
   const params = await searchParams;
   const symbolFilter = params.symbol?.toUpperCase();
   const statusFilter = params.status;
@@ -59,9 +61,9 @@ export default async function HistoryPage({
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">History</h1>
+        <h1 className="text-xl font-semibold">{t(locale, "history")}</h1>
         <span className="text-sm text-gray-500">
-          {recommendations.length} recommendation{recommendations.length !== 1 ? "s" : ""}
+          {recommendations.length} {recommendations.length !== 1 ? t(locale, "recommendations") : t(locale, "recommendation")}
         </span>
       </div>
 
@@ -70,7 +72,7 @@ export default async function HistoryPage({
         <input
           type="text"
           name="symbol"
-          placeholder="Symbol"
+          placeholder={t(locale, "symbolPlaceholder")}
           defaultValue={symbolFilter ?? ""}
           className="px-3 py-1.5 text-sm border border-gray-300 rounded-md w-24 bg-white"
         />
@@ -79,13 +81,13 @@ export default async function HistoryPage({
           defaultValue={statusFilter ?? ""}
           className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
         >
-          <option value="">All Closed</option>
-          <option value="all">All Statuses</option>
-          <option value="TP2_HIT">TP2 Hit</option>
-          <option value="TP1_HIT">TP1 Hit</option>
-          <option value="STOPPED">Stopped</option>
-          <option value="EXPIRED">Expired</option>
-          <option value="CLOSED_MANUAL">Closed Manual</option>
+          <option value="">{t(locale, "allClosed")}</option>
+          <option value="all">{t(locale, "allStatuses")}</option>
+          <option value="TP2_HIT">{t(locale, "tp2Hit")}</option>
+          <option value="TP1_HIT">{t(locale, "tp1Hit")}</option>
+          <option value="STOPPED">{t(locale, "stopped")}</option>
+          <option value="EXPIRED">{t(locale, "expired")}</option>
+          <option value="CLOSED_MANUAL">{t(locale, "closedManual")}</option>
         </select>
         <input
           type="date"
@@ -103,13 +105,13 @@ export default async function HistoryPage({
           type="submit"
           className="px-4 py-1.5 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700"
         >
-          Filter
+          {t(locale, "filter")}
         </button>
         <a
           href="/history"
           className="px-4 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
         >
-          Reset
+          {t(locale, "reset")}
         </a>
       </form>
 
@@ -117,20 +119,20 @@ export default async function HistoryPage({
       {withPnl.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">Win Rate</div>
+            <div className="text-xs text-gray-500">{t(locale, "winRate")}</div>
             <div className="text-lg font-semibold">{winRate.toFixed(0)}%</div>
             <div className="text-xs text-gray-400">{wins.length}W / {withPnl.length - wins.length}L</div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">Avg P&L</div>
+            <div className="text-xs text-gray-500">{t(locale, "avgPnl")}</div>
             <div className={`text-lg font-semibold ${pnlColor(avgPnl)}`}>{formatPnl(avgPnl)}</div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">Total P&L</div>
+            <div className="text-xs text-gray-500">{t(locale, "totalPnl")}</div>
             <div className={`text-lg font-semibold ${pnlColor(totalPnl)}`}>{formatPnl(totalPnl)}</div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">Closed</div>
+            <div className="text-xs text-gray-500">{t(locale, "closed")}</div>
             <div className="text-lg font-semibold">{withPnl.length}</div>
           </div>
         </div>
@@ -139,30 +141,30 @@ export default async function HistoryPage({
       {/* Table */}
       {recommendations.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-          No closed recommendations found.
+          {t(locale, "noClosedRecs")}
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Symbol</th>
-                <th className="px-4 py-3 font-medium">Setup</th>
-                <th className="px-4 py-3 font-medium text-right">Entry</th>
-                <th className="px-4 py-3 font-medium text-right">Exit</th>
-                <th className="px-4 py-3 font-medium text-right">P&L</th>
-                <th className="px-4 py-3 font-medium text-right">R</th>
-                <th className="px-4 py-3 font-medium text-right">Sharpe</th>
-                <th className="px-4 py-3 font-medium text-right">Days</th>
-                <th className="px-4 py-3 font-medium">Closed</th>
-                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "date")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "symbol")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "setup")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "entry")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "exit")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "pnl")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "rMultiple")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "sharpe")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "days")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "closed")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "status")}</th>
               </tr>
             </thead>
             <tbody>
               {recommendations.map((rec) => {
                 const pnl = rec.actual_pnl_pct ?? rec.unrealized_pnl_pct;
-                const badge = statusBadge(rec.status);
+                const badge = statusBadge(rec.status, locale);
                 return (
                   <tr key={rec.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-500">{rec.trading_date}</td>
@@ -175,8 +177,8 @@ export default async function HistoryPage({
                     </td>
                     <td className="px-4 py-3 text-right">{rec.r_multiple.toFixed(1)}</td>
                     <td className="px-4 py-3 text-right">{rec.sharpe.toFixed(1)}</td>
-                    <td className="px-4 py-3 text-right text-gray-500">{rec.days_held ?? "—"}</td>
-                    <td className="px-4 py-3 text-gray-500">{rec.closed_at ?? "—"}</td>
+                    <td className="px-4 py-3 text-right text-gray-500">{rec.days_held ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-gray-500">{rec.closed_at ?? "\u2014"}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${badge.className}`}>
                         {badge.label}

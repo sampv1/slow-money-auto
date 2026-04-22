@@ -1,10 +1,3 @@
-# PROMPT PHÂN TÍCH & KHUYẾN NGHỊ TRADING — THỊ TRƯỜNG VIỆT NAM (v4-JSON)
-
-> **Bản v4-JSON**: Giống hoàn toàn v4, chỉ bổ sung yêu cầu output JSON ở cuối
-> để tự động đẩy dữ liệu vào hệ thống tracking.
->
-> Yêu cầu: AI có web search. Chạy mỗi đầu ngày.
-
 ---
 
 ```
@@ -816,27 +809,3 @@ PHẦN K — STRUCTURED JSON OUTPUT (BẮT BUỘC)
 ```
 
 ---
-
-### Context tuỳ chọn đầu prompt
-
-```
-CONTEXT HÔM NAY:
-- Ngày: [dd/mm/yyyy, thứ mấy]
-- Phiên gần nhất: [dd/mm/yyyy]  
-- Tổng vốn trading: [X] triệu VND
-- Risk per trade mong muốn: [1.5%] (mặc định)
-- Vị thế đang giữ: [liệt kê hoặc "không có"]
-- Kết quả khuyến nghị hôm trước: [tóm tắt P&L]
-- CSS sentiment hôm nay (nếu đã chạy prompt sentiment): [giá trị]
-- Ưu tiên khung thời gian: [Linh hoạt / T+2-5 / Swing 2-6 tuần / Position 1-3 tháng]
-```
-
-### Workflow đề xuất
-
-1. **Buổi sáng:** Chạy prompt Sentiment v2 (tự search tin)
-2. **Lấy CSS** và danh sách mã có sentiment tốt/xấu
-3. **Chạy prompt Trading v4-JSON** với context bổ sung sentiment
-4. **Đọc kỹ reasoning 12 bước** cho mỗi mã — nếu không logic hoặc thiếu dữ liệu, LOẠI
-5. **Kiểm tra giá trên app CTCK** trước khi đặt lệnh
-6. **Nếu KB3 (đứng ngoài):** chấp nhận, không ép buộc trading
-7. **Copy khối JSON** từ Phần K → chạy `python push_recommendation.py` hoặc paste vào dashboard

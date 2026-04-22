@@ -10,6 +10,8 @@ import {
   Tooltip,
   ReferenceLine,
 } from "recharts";
+import type { Locale } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 export interface EquityPoint {
   date: string;
@@ -18,11 +20,11 @@ export interface EquityPoint {
   pnl: number;
 }
 
-export function EquityCurve({ data }: { data: EquityPoint[] }) {
+export function EquityCurve({ data, locale = "en" }: { data: EquityPoint[]; locale?: Locale }) {
   if (data.length === 0) {
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500 text-sm">
-        No closed recommendations with P&L data yet.
+        {t(locale, "noEquityData")}
       </div>
     );
   }
@@ -33,7 +35,7 @@ export function EquityCurve({ data }: { data: EquityPoint[] }) {
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
-      <h2 className="text-sm font-semibold text-gray-700 mb-3">Equity Curve (Cumulative P&L %)</h2>
+      <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "equityCurve")}</h2>
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
@@ -48,7 +50,7 @@ export function EquityCurve({ data }: { data: EquityPoint[] }) {
               tickFormatter={(v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`}
               domain={[minPnl - padding, maxPnl + padding]}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip locale={locale} />} />
             <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
             <Line
               type="monotone"
@@ -65,7 +67,7 @@ export function EquityCurve({ data }: { data: EquityPoint[] }) {
   );
 }
 
-function CustomTooltip({ active, payload }: { active?: boolean; payload?: { payload: EquityPoint }[] }) {
+function CustomTooltip({ active, payload, locale = "en" }: { active?: boolean; payload?: { payload: EquityPoint }[]; locale?: Locale }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
@@ -73,7 +75,7 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: { payl
       <div className="font-medium text-gray-700">{d.date}</div>
       <div className="text-gray-500">{d.symbol}: {d.pnl >= 0 ? "+" : ""}{d.pnl.toFixed(1)}%</div>
       <div className={`font-semibold ${d.cumPnl >= 0 ? "text-green-600" : "text-red-600"}`}>
-        Cumulative: {d.cumPnl >= 0 ? "+" : ""}{d.cumPnl.toFixed(1)}%
+        {t(locale, "cumulative")}: {d.cumPnl >= 0 ? "+" : ""}{d.cumPnl.toFixed(1)}%
       </div>
     </div>
   );

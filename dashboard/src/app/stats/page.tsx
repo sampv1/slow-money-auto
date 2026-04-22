@@ -1,5 +1,7 @@
 import { supabase } from "@/lib/supabase";
-import { formatPnl, pnlColor } from "@/lib/format";
+import { formatPnl, pnlColor, regimeLabel } from "@/lib/format";
+import { getLocale, t } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n";
 import type { Recommendation, DailyLog } from "@/lib/types";
 import { CLOSED_STATUSES } from "@/lib/types";
 import { EquityCurve } from "@/components/equity-curve";
@@ -8,6 +10,8 @@ import type { EquityPoint } from "@/components/equity-curve";
 export const revalidate = 0;
 
 export default async function StatsPage() {
+  const locale = await getLocale();
+
   const [{ data: recsData }, { data: logsData }] = await Promise.all([
     supabase.from("recommendations").select("*"),
     supabase.from("daily_logs").select("*").order("trading_date", { ascending: true }),
@@ -76,19 +80,13 @@ export default async function StatsPage() {
   const topSymbols = symbolByPnl.slice(0, 10);
   const bottomSymbols = symbolByPnl.slice(-10).reverse();
 
-  // Regime breakdown — join recs to their daily log's regime
+  // Regime breakdown
   const logById = new Map(allLogs.map((l) => [l.id, l]));
-  const regimeLabel: Record<number, string> = {
-    1: "Uptrend + Low Vol",
-    2: "Uptrend + High Vol",
-    3: "Sideway",
-    4: "Downtrend",
-  };
-  const regimeStats = new Map<string, { count: number; wins: number; totalPnl: number; avgR: number; rSum: number }>();
+  const regimeStats = new Map<string, { count: number; wins: number; totalPnl: number; rSum: number }>();
   for (const r of withPnl) {
     const log = logById.get(r.daily_log_id);
-    const label = log ? (regimeLabel[log.regime] ?? log.regime_label) : "Unknown";
-    const existing = regimeStats.get(label) ?? { count: 0, wins: 0, totalPnl: 0, avgR: 0, rSum: 0 };
+    const label = log ? regimeLabel(log.regime, locale) : "Unknown";
+    const existing = regimeStats.get(label) ?? { count: 0, wins: 0, totalPnl: 0, rSum: 0 };
     existing.count++;
     if (r.actual_pnl_pct! > 0) existing.wins++;
     existing.totalPnl += r.actual_pnl_pct!;
@@ -111,7 +109,7 @@ export default async function StatsPage() {
   const sectorRows = [...sectorStats.entries()]
     .sort((a, b) => b[1].count - a[1].count);
 
-  // Equity curve — sort closed recs by closed_at date, accumulate P&L
+  // Equity curve
   const equityData: EquityPoint[] = [];
   const closedWithDate = withPnl
     .filter((r) => r.closed_at !== null)
@@ -129,33 +127,33 @@ export default async function StatsPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-4">Performance Stats</h1>
+      <h1 className="text-xl font-semibold mb-4">{t(locale, "performanceStats")}</h1>
 
       {/* Overview Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Total Recs" value={allRecs.length.toString()} sub={`${active.length} active, ${closed.length} closed`} />
-        <StatCard label="Win Rate" value={`${winRate.toFixed(0)}%`} sub={`${wins.length}W / ${losses.length}L`} color={winRate >= 50 ? "text-green-600" : "text-red-600"} />
-        <StatCard label="Avg P&L" value={formatPnl(avgPnl)} color={pnlColor(avgPnl)} />
-        <StatCard label="Total P&L" value={formatPnl(totalPnl)} color={pnlColor(totalPnl)} />
-        <StatCard label="Avg R-Multiple" value={avgR.toFixed(2)} color={pnlColor(avgR)} />
-        <StatCard label="Profit Factor" value={profitFactor === Infinity ? "∞" : profitFactor.toFixed(2)} color={profitFactor >= 1 ? "text-green-600" : "text-red-600"} />
-        <StatCard label="Avg Win" value={formatPnl(avgWin)} color="text-green-600" />
-        <StatCard label="Avg Loss" value={formatPnl(avgLoss)} color="text-red-600" />
-        <StatCard label="Avg Days Held" value={avgDaysHeld.toFixed(1)} />
-        <StatCard label="Trading Days" value={totalDays.toString()} sub={`KB1: ${kb1Days} / KB2: ${kb2Days} / KB3: ${kb3Days}`} />
-        <StatCard label="Stand Aside Rate" value={totalDays > 0 ? `${((kb3Days / totalDays) * 100).toFixed(0)}%` : "0%"} sub={`${kb3Days} of ${totalDays} days`} />
-        <StatCard label="Recs / Trading Day" value={totalDays > 0 ? (allRecs.length / totalDays).toFixed(1) : "0"} />
+        <StatCard label={t(locale, "totalRecs")} value={allRecs.length.toString()} sub={`${active.length} ${t(locale, "active")}, ${closed.length} ${t(locale, "closedLower")}`} />
+        <StatCard label={t(locale, "winRate")} value={`${winRate.toFixed(0)}%`} sub={`${wins.length}W / ${losses.length}L`} color={winRate >= 50 ? "text-green-600" : "text-red-600"} />
+        <StatCard label={t(locale, "avgPnl")} value={formatPnl(avgPnl)} color={pnlColor(avgPnl)} />
+        <StatCard label={t(locale, "totalPnl")} value={formatPnl(totalPnl)} color={pnlColor(totalPnl)} />
+        <StatCard label={t(locale, "avgRMultiple")} value={avgR.toFixed(2)} color={pnlColor(avgR)} />
+        <StatCard label={t(locale, "profitFactor")} value={profitFactor === Infinity ? "\u221E" : profitFactor.toFixed(2)} color={profitFactor >= 1 ? "text-green-600" : "text-red-600"} />
+        <StatCard label={t(locale, "avgWin")} value={formatPnl(avgWin)} color="text-green-600" />
+        <StatCard label={t(locale, "avgLoss")} value={formatPnl(avgLoss)} color="text-red-600" />
+        <StatCard label={t(locale, "avgDaysHeld")} value={avgDaysHeld.toFixed(1)} />
+        <StatCard label={t(locale, "tradingDays")} value={totalDays.toString()} sub={`KB1: ${kb1Days} / KB2: ${kb2Days} / KB3: ${kb3Days}`} />
+        <StatCard label={t(locale, "standAsideRate")} value={totalDays > 0 ? `${((kb3Days / totalDays) * 100).toFixed(0)}%` : "0%"} sub={`${kb3Days} / ${totalDays} ${t(locale, "tradingDays")}`} />
+        <StatCard label={t(locale, "recsPerTradingDay")} value={totalDays > 0 ? (allRecs.length / totalDays).toFixed(1) : "0"} />
       </div>
 
       {/* Equity Curve */}
       <div className="mb-6">
-        <EquityCurve data={equityData} />
+        <EquityCurve data={equityData} locale={locale} />
       </div>
 
       {/* Status Breakdown */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Status Breakdown</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "statusBreakdown")}</h2>
           <div className="space-y-2">
             {["OPEN", "TP1_HIT", "TP2_HIT", "STOPPED", "EXPIRED", "CLOSED_MANUAL"].map((status) => {
               const count = statusCounts[status] ?? 0;
@@ -178,18 +176,18 @@ export default async function StatsPage() {
 
         {/* Setup Breakdown */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">By Setup Type</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "bySetupType")}</h2>
           {setupRows.length === 0 ? (
-            <p className="text-sm text-gray-500">No closed recommendations yet.</p>
+            <p className="text-sm text-gray-500">{t(locale, "noClosedRecsYet")}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-gray-500 text-xs">
-                    <th className="pb-2 font-medium">Setup</th>
-                    <th className="pb-2 font-medium text-right">Count</th>
-                    <th className="pb-2 font-medium text-right">Win%</th>
-                    <th className="pb-2 font-medium text-right">Total P&L</th>
+                    <th className="pb-2 font-medium">{t(locale, "setup")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "count")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "totalPnl")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -211,17 +209,17 @@ export default async function StatsPage() {
       {/* Symbol Leaderboard */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Top Symbols (by P&L)</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "topSymbols")}</h2>
           {topSymbols.length === 0 ? (
-            <p className="text-sm text-gray-500">No closed recommendations yet.</p>
+            <p className="text-sm text-gray-500">{t(locale, "noClosedRecsYet")}</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-500 text-xs">
-                  <th className="pb-2 font-medium">Symbol</th>
-                  <th className="pb-2 font-medium text-right">Trades</th>
-                  <th className="pb-2 font-medium text-right">Win%</th>
-                  <th className="pb-2 font-medium text-right">Total P&L</th>
+                  <th className="pb-2 font-medium">{t(locale, "symbol")}</th>
+                  <th className="pb-2 font-medium text-right">{t(locale, "trades")}</th>
+                  <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
+                  <th className="pb-2 font-medium text-right">{t(locale, "totalPnl")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -239,17 +237,17 @@ export default async function StatsPage() {
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Worst Symbols (by P&L)</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "worstSymbols")}</h2>
           {bottomSymbols.length === 0 ? (
-            <p className="text-sm text-gray-500">No closed recommendations yet.</p>
+            <p className="text-sm text-gray-500">{t(locale, "noClosedRecsYet")}</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-500 text-xs">
-                  <th className="pb-2 font-medium">Symbol</th>
-                  <th className="pb-2 font-medium text-right">Trades</th>
-                  <th className="pb-2 font-medium text-right">Win%</th>
-                  <th className="pb-2 font-medium text-right">Total P&L</th>
+                  <th className="pb-2 font-medium">{t(locale, "symbol")}</th>
+                  <th className="pb-2 font-medium text-right">{t(locale, "trades")}</th>
+                  <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
+                  <th className="pb-2 font-medium text-right">{t(locale, "totalPnl")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -270,19 +268,19 @@ export default async function StatsPage() {
       {/* Regime & Sector Breakdown */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">By Regime</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "byRegime")}</h2>
           {regimeRows.length === 0 ? (
-            <p className="text-sm text-gray-500">No closed recommendations yet.</p>
+            <p className="text-sm text-gray-500">{t(locale, "noClosedRecsYet")}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-gray-500 text-xs">
-                    <th className="pb-2 font-medium">Regime</th>
-                    <th className="pb-2 font-medium text-right">Count</th>
-                    <th className="pb-2 font-medium text-right">Win%</th>
-                    <th className="pb-2 font-medium text-right">Avg R</th>
-                    <th className="pb-2 font-medium text-right">Total P&L</th>
+                    <th className="pb-2 font-medium">{t(locale, "regime")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "count")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "avgR")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "totalPnl")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -302,18 +300,18 @@ export default async function StatsPage() {
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">By Sector</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "bySector")}</h2>
           {sectorRows.length === 0 ? (
-            <p className="text-sm text-gray-500">No closed recommendations yet.</p>
+            <p className="text-sm text-gray-500">{t(locale, "noClosedRecsYet")}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-gray-500 text-xs">
-                    <th className="pb-2 font-medium">Sector</th>
-                    <th className="pb-2 font-medium text-right">Count</th>
-                    <th className="pb-2 font-medium text-right">Win%</th>
-                    <th className="pb-2 font-medium text-right">Total P&L</th>
+                    <th className="pb-2 font-medium">{t(locale, "bySector")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "count")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "totalPnl")}</th>
                   </tr>
                 </thead>
                 <tbody>

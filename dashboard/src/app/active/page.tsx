@@ -1,10 +1,13 @@
 import { supabase } from "@/lib/supabase";
 import { formatPrice, formatPnl, pnlColor, statusBadge } from "@/lib/format";
+import { getLocale, t } from "@/lib/i18n";
 import type { Recommendation } from "@/lib/types";
 
 export const revalidate = 0;
 
 export default async function ActivePage() {
+  const locale = await getLocale();
+
   const { data: recs, error } = await supabase
     .from("recommendations")
     .select("*")
@@ -21,39 +24,39 @@ export default async function ActivePage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">Active Positions</h1>
+        <h1 className="text-xl font-semibold">{t(locale, "activePositions")}</h1>
         <span className="text-sm text-gray-500">
-          {recommendations.length} position{recommendations.length !== 1 ? "s" : ""}
+          {recommendations.length} {recommendations.length !== 1 ? t(locale, "positions") : t(locale, "position")}
         </span>
       </div>
 
       {recommendations.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-          No active positions. All recommendations are closed or no data yet.
+          {t(locale, "noActivePositions")}
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Symbol</th>
-                <th className="px-4 py-3 font-medium">Setup</th>
-                <th className="px-4 py-3 font-medium text-right">Entry</th>
-                <th className="px-4 py-3 font-medium text-right">SL</th>
-                <th className="px-4 py-3 font-medium text-right">TP1</th>
-                <th className="px-4 py-3 font-medium text-right">TP2</th>
-                <th className="px-4 py-3 font-medium text-right">Current</th>
-                <th className="px-4 py-3 font-medium text-right">P&L</th>
-                <th className="px-4 py-3 font-medium text-right">R</th>
-                <th className="px-4 py-3 font-medium text-right">Sharpe</th>
-                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "date")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "symbol")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "setup")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "entry")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "sl")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "tp1")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "tp2")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "current")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "pnl")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "rMultiple")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "sharpe")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "status")}</th>
               </tr>
             </thead>
             <tbody>
               {recommendations.map((rec) => {
                 const pnl = rec.unrealized_pnl_pct;
-                const badge = statusBadge(rec.status);
+                const badge = statusBadge(rec.status, locale);
                 return (
                   <tr key={rec.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-500">{rec.trading_date}</td>

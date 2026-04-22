@@ -1,18 +1,14 @@
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { formatPnl, pnlColor, conclusionBadge } from "@/lib/format";
+import { formatPnl, pnlColor, conclusionBadge, regimeLabel } from "@/lib/format";
+import { getLocale, t } from "@/lib/i18n";
 import type { DailyLog } from "@/lib/types";
 
 export const revalidate = 0;
 
-const regimeLabel: Record<number, string> = {
-  1: "Uptrend + Low Vol",
-  2: "Uptrend + High Vol",
-  3: "Sideway",
-  4: "Downtrend",
-};
-
 export default async function LogsPage() {
+  const locale = await getLocale();
+
   const { data: logs, error } = await supabase
     .from("daily_logs")
     .select("*")
@@ -32,28 +28,28 @@ export default async function LogsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">Daily Logs</h1>
-        <span className="text-sm text-gray-500">{total} trading day{total !== 1 ? "s" : ""}</span>
+        <h1 className="text-xl font-semibold">{t(locale, "dailyLogs")}</h1>
+        <span className="text-sm text-gray-500">{total} {total !== 1 ? t(locale, "tradingDays") : t(locale, "tradingDay")}</span>
       </div>
 
       {/* Summary */}
       {total > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">Trading Days</div>
+            <div className="text-xs text-gray-500">{t(locale, "tradingDays")}</div>
             <div className="text-lg font-semibold">{total}</div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">Stand Aside</div>
+            <div className="text-xs text-gray-500">{t(locale, "standAside")}</div>
             <div className="text-lg font-semibold">{kb3Days}</div>
-            <div className="text-xs text-gray-400">{total > 0 ? ((kb3Days / total) * 100).toFixed(0) : 0}% of days</div>
+            <div className="text-xs text-gray-400">{total > 0 ? ((kb3Days / total) * 100).toFixed(0) : 0}% {t(locale, "ofDays")}</div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">Total Recs</div>
+            <div className="text-xs text-gray-500">{t(locale, "totalRecs")}</div>
             <div className="text-lg font-semibold">{totalRecs}</div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">Avg Recs/Day</div>
+            <div className="text-xs text-gray-500">{t(locale, "avgRecsPerDay")}</div>
             <div className="text-lg font-semibold">{total > 0 ? (totalRecs / total).toFixed(1) : "0"}</div>
           </div>
         </div>
@@ -62,22 +58,22 @@ export default async function LogsPage() {
       {/* Table */}
       {dailyLogs.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-          No daily logs yet.
+          {t(locale, "noLogs")}
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Conclusion</th>
-                <th className="px-4 py-3 font-medium">Regime</th>
-                <th className="px-4 py-3 font-medium">Auction</th>
-                <th className="px-4 py-3 font-medium text-right">VN-Index</th>
-                <th className="px-4 py-3 font-medium text-right">Change</th>
-                <th className="px-4 py-3 font-medium text-right">VIX</th>
-                <th className="px-4 py-3 font-medium text-right">Recs</th>
-                <th className="px-4 py-3 font-medium text-right">Conf.</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "date")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "conclusion")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "regime")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "auction")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "vnIndex")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "change")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "vix")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "recs")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "conf")}</th>
               </tr>
             </thead>
             <tbody>
@@ -96,20 +92,20 @@ export default async function LogsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-600">
-                      <span className="text-xs">{regimeLabel[log.regime] ?? log.regime_label}</span>
+                      <span className="text-xs">{regimeLabel(log.regime, locale)}</span>
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{log.auction_state}</td>
                     <td className="px-4 py-3 text-right font-mono">
-                      {log.vn_index_close?.toLocaleString("en-US", { maximumFractionDigits: 1 }) ?? "—"}
+                      {log.vn_index_close?.toLocaleString("en-US", { maximumFractionDigits: 1 }) ?? "\u2014"}
                     </td>
                     <td className={`px-4 py-3 text-right font-mono ${pnlColor(log.vn_index_change_pct)}`}>
                       {formatPnl(log.vn_index_change_pct)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-gray-600">
-                      {log.vix?.toFixed(1) ?? "—"}
+                      {log.vix?.toFixed(1) ?? "\u2014"}
                     </td>
                     <td className="px-4 py-3 text-right">{log.num_recommendations}</td>
-                    <td className="px-4 py-3 text-right text-gray-500">{log.confidence ?? "—"}/10</td>
+                    <td className="px-4 py-3 text-right text-gray-500">{log.confidence ?? "\u2014"}/10</td>
                   </tr>
                 );
               })}

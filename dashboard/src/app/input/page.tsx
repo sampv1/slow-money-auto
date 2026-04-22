@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import type { Locale } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 type PushResult = {
   success: true;
@@ -13,10 +15,20 @@ type PushResult = {
   details?: string[];
 };
 
+function getLocaleCookie(): Locale {
+  const match = document.cookie.match(/locale=(en|vi)/);
+  return (match?.[1] as Locale) ?? "en";
+}
+
 export default function InputPage() {
   const [json, setJson] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [result, setResult] = useState<PushResult | null>(null);
+  const [locale, setLocale] = useState<Locale>("en");
+
+  useEffect(() => {
+    setLocale(getLocaleCookie());
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -69,15 +81,15 @@ export default function InputPage() {
       setStatus("idle");
       alert(info.join("\n"));
     } catch {
-      alert("Invalid JSON — check for syntax errors");
+      alert("Invalid JSON");
     }
   }
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-4">Push Recommendation</h1>
+      <h1 className="text-xl font-semibold mb-4">{t(locale, "pushRecommendation")}</h1>
       <p className="text-sm text-gray-500 mb-4">
-        Paste Claude&apos;s JSON output (Ph&#7847;n K) below. Supports raw JSON or markdown code blocks.
+        {t(locale, "inputDescription")}
       </p>
 
       <form onSubmit={handleSubmit}>
@@ -95,14 +107,14 @@ export default function InputPage() {
             onClick={handleValidate}
             className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
           >
-            Validate
+            {t(locale, "validate")}
           </button>
           <button
             type="submit"
             disabled={status === "submitting" || !json.trim()}
             className="px-4 py-2 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {status === "submitting" ? "Pushing..." : "Push to Supabase"}
+            {status === "submitting" ? t(locale, "pushing") : t(locale, "pushToSupabase")}
           </button>
         </div>
       </form>
@@ -110,12 +122,12 @@ export default function InputPage() {
       {/* Result */}
       {result && status === "success" && "success" in result && result.success && (
         <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4 text-sm">
-          <div className="font-medium text-green-700">Pushed successfully</div>
+          <div className="font-medium text-green-700">{t(locale, "pushedSuccessfully")}</div>
           <div className="text-green-600 mt-1">
-            {result.trading_date} | {result.conclusion} | {result.recommendations_inserted} recommendation(s)
+            {result.trading_date} | {result.conclusion} | {result.recommendations_inserted} {t(locale, "recommendations")}
           </div>
           <a href="/logs" className="text-blue-600 hover:underline text-xs mt-2 inline-block">
-            View in Daily Logs &rarr;
+            {t(locale, "viewInDailyLogs")} &rarr;
           </a>
         </div>
       )}

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
+import type { Locale } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 interface LogEntry {
   trading_date: string;
@@ -17,13 +19,13 @@ const conclusionStyle: Record<string, string> = {
   KB3: "bg-red-100 text-red-700",
 };
 
-export function ResponseViewer({ logs }: { logs: LogEntry[] }) {
+export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Locale }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   if (logs.length === 0) {
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-        No daily analysis yet. Push data via the Input page or run the prompt script.
+        {t(locale, "noAnalysisYet")}
       </div>
     );
   }
@@ -34,7 +36,7 @@ export function ResponseViewer({ logs }: { logs: LogEntry[] }) {
     <div>
       {/* Day selector */}
       <div className="flex items-center gap-3 mb-4">
-        <h1 className="text-xl font-semibold">Daily Analysis</h1>
+        <h1 className="text-xl font-semibold">{t(locale, "dailyAnalysis")}</h1>
         <select
           value={selectedIndex}
           onChange={(e) => setSelectedIndex(Number(e.target.value))}
@@ -42,7 +44,7 @@ export function ResponseViewer({ logs }: { logs: LogEntry[] }) {
         >
           {logs.map((log, i) => (
             <option key={log.trading_date} value={i}>
-              {log.trading_date} — {log.conclusion} ({log.num_recommendations} recs)
+              {log.trading_date} — {log.conclusion} ({log.num_recommendations} {t(locale, "recs")})
             </option>
           ))}
         </select>
@@ -51,7 +53,7 @@ export function ResponseViewer({ logs }: { logs: LogEntry[] }) {
             onClick={() => setSelectedIndex(Math.min(selectedIndex + 1, logs.length - 1))}
             disabled={selectedIndex >= logs.length - 1}
             className="px-2 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
-            title="Previous day"
+            title={t(locale, "previousDay")}
           >
             &larr;
           </button>
@@ -59,7 +61,7 @@ export function ResponseViewer({ logs }: { logs: LogEntry[] }) {
             onClick={() => setSelectedIndex(Math.max(selectedIndex - 1, 0))}
             disabled={selectedIndex <= 0}
             className="px-2 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
-            title="Next day"
+            title={t(locale, "nextDay")}
           >
             &rarr;
           </button>
@@ -71,9 +73,9 @@ export function ResponseViewer({ logs }: { logs: LogEntry[] }) {
         <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${conclusionStyle[current.conclusion] ?? "bg-gray-100 text-gray-600"}`}>
           {current.conclusion}
         </span>
-        <span className="text-gray-500">{current.num_recommendations} recommendation{current.num_recommendations !== 1 ? "s" : ""}</span>
+        <span className="text-gray-500">{current.num_recommendations} {t(locale, current.num_recommendations !== 1 ? "recommendations" : "recommendation")}</span>
         {current.confidence !== null && (
-          <span className="text-gray-500">Confidence: {current.confidence}/10</span>
+          <span className="text-gray-500">{t(locale, "confidence")}: {current.confidence}/10</span>
         )}
       </div>
 
@@ -84,7 +86,7 @@ export function ResponseViewer({ logs }: { logs: LogEntry[] }) {
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
-          No full analysis text stored for this day. Push the complete Claude response (not just JSON) to see the analysis here.
+          {t(locale, "noFullResponse")}
         </div>
       )}
     </div>
