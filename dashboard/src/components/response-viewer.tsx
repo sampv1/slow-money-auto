@@ -83,7 +83,9 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
       {/* Response content */}
       {current.full_response ? (
         <div className="bg-white rounded-lg border border-gray-200 p-6 prose prose-sm max-w-none prose-headings:text-gray-800 prose-p:text-gray-700 prose-strong:text-gray-800 prose-li:text-gray-700 prose-table:text-sm prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-1.5 prose-thead:border-b prose-thead:border-gray-300 prose-tr:border-b prose-tr:border-gray-100 prose-hr:border-gray-200">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{current.full_response}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {current.full_response.replace(/#+\s*📋?\s*PH(?:ẦN|AN)\s*10\s*[—–-]\s*(?:STRUCTURED\s+)?JSON\s+OUTPUT[^\n]*/gi, "")}
+          </ReactMarkdown>
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">

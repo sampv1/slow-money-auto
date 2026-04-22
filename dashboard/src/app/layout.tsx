@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getLocaleFromCookie, t } from "@/lib/i18n";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { AuthButton } from "@/components/auth-button";
+import { NavLinks } from "@/components/nav-links";
 import { getUserRole } from "@/lib/supabase-server";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import "./globals.css";
@@ -58,19 +59,9 @@ export default async function RootLayout({
                 Slow Money
               </Link>
               <div className="flex items-center gap-2">
-                <nav className="flex gap-1">
-                  {navLinks.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      className="px-3 py-1.5 text-sm rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
-                </nav>
-                <LocaleSwitcher locale={locale} />
+                <NavLinks links={navLinks} />
                 <AuthButton email={user?.email ?? null} locale={locale} />
+                <LocaleSwitcher locale={locale} />
               </div>
             </div>
           </div>
