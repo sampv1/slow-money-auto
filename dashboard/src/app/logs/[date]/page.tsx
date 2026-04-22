@@ -72,6 +72,18 @@ export default async function LogDetailPage({
             <div className="text-xs text-gray-500">{t(locale, "confidence")}</div>
             <div className="font-medium">{log.confidence ?? "\u2014"}/10</div>
           </div>
+          {log.macro_score !== null && (
+            <div>
+              <div className="text-xs text-gray-500">{t(locale, "macroScore")}</div>
+              <div className="font-medium">{log.macro_score}/5</div>
+            </div>
+          )}
+          {log.css !== null && (
+            <div>
+              <div className="text-xs text-gray-500">{t(locale, "cssSentiment")}</div>
+              <div className="font-medium">{log.css}</div>
+            </div>
+          )}
           <div>
             <div className="text-xs text-gray-500">{t(locale, "vnIndex")}</div>
             <div className="font-medium">
@@ -118,6 +130,26 @@ export default async function LogDetailPage({
             {log.international_environment}
           </div>
         )}
+        {(log.top_sectors || log.avoid_sectors) && (
+          <div className="mt-3 flex flex-wrap gap-4 text-sm">
+            {log.top_sectors && log.top_sectors.length > 0 && (
+              <div>
+                <span className="text-xs text-gray-500">{t(locale, "topSectors")}: </span>
+                {log.top_sectors.map((s: string, i: number) => (
+                  <span key={i} className="inline-block px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full mr-1">{s}</span>
+                ))}
+              </div>
+            )}
+            {log.avoid_sectors && log.avoid_sectors.length > 0 && (
+              <div>
+                <span className="text-xs text-gray-500">{t(locale, "avoidSectors")}: </span>
+                {log.avoid_sectors.map((s: string, i: number) => (
+                  <span key={i} className="inline-block px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full mr-1">{s}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Scenarios */}
@@ -159,6 +191,43 @@ export default async function LogDetailPage({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Funnel Summary (v5) */}
+      {(log.funnel_candidates_story !== null || log.funnel_candidates_risk !== null || log.funnel_candidates_technical !== null) && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "funnelSummary")}</h2>
+          <div className="flex gap-6 text-sm">
+            {log.funnel_candidates_story !== null && (
+              <div>
+                <div className="text-xs text-gray-500">{t(locale, "funnelStory")}</div>
+                <div className="font-medium text-lg">{log.funnel_candidates_story}</div>
+              </div>
+            )}
+            {log.funnel_candidates_risk !== null && (
+              <div>
+                <div className="text-xs text-gray-500">{t(locale, "funnelRisk")}</div>
+                <div className="font-medium text-lg">{log.funnel_candidates_risk}</div>
+              </div>
+            )}
+            {log.funnel_candidates_technical !== null && (
+              <div>
+                <div className="text-xs text-gray-500">{t(locale, "funnelTechnical")}</div>
+                <div className="font-medium text-lg">{log.funnel_candidates_technical}</div>
+              </div>
+            )}
+          </div>
+          {log.funnel_near_miss && log.funnel_near_miss.length > 0 && (
+            <div className="mt-3 border-t border-gray-100 pt-2">
+              <div className="text-xs text-gray-500 mb-1">{t(locale, "nearMiss")}</div>
+              {log.funnel_near_miss.map((nm: { symbol: string; reason: string }, i: number) => (
+                <div key={i} className="text-xs text-gray-600">
+                  <span className="font-medium">{nm.symbol}</span> — {nm.reason}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -273,6 +342,29 @@ export default async function LogDetailPage({
                   <span className="font-medium">{rec.sharpe.toFixed(1)}</span>
                 </div>
               </div>
+              {rec.story_summary && (
+                <div className="mt-2 text-xs border-t border-gray-100 pt-2">
+                  <span className="text-gray-500">{t(locale, "story")}: </span>
+                  <span className="text-gray-700">{rec.story_summary}</span>
+                  {rec.story_type_label && rec.story_type_label !== "KHONG_CO" && (
+                    <span className="ml-2 inline-block px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">{rec.story_type_label.replace(/_/g, " ")}</span>
+                  )}
+                  {rec.story_priced_in_level && (
+                    <span className={`ml-1 inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
+                      rec.story_priced_in_level <= "B" ? "bg-green-100 text-green-700" :
+                      rec.story_priced_in_level === "C" ? "bg-yellow-100 text-yellow-700" :
+                      "bg-red-100 text-red-700"
+                    }`}>
+                      {t(locale, "pricedIn")}: {rec.story_priced_in_level}{rec.story_priced_in_pct !== null ? ` (${rec.story_priced_in_pct}%)` : ""}
+                    </span>
+                  )}
+                </div>
+              )}
+              {rec.story_remaining_trigger && (
+                <div className="text-xs text-gray-500 mt-1">
+                  <span className="font-medium">{t(locale, "remainingTrigger")}:</span> {rec.story_remaining_trigger}
+                </div>
+              )}
               {rec.reasoning_summary && (
                 <div className="mt-2 text-xs text-gray-600 border-t border-gray-100 pt-2">
                   {rec.reasoning_summary}

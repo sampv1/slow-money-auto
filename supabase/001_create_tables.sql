@@ -34,6 +34,17 @@ create table daily_logs (
   avg_sharpe numeric,
   avg_expectancy numeric,
   num_recommendations integer not null default 0,
+
+  -- v5 fields (nullable for backward compat with v4)
+  macro_score integer,
+  css numeric,
+  top_sectors jsonb,
+  avoid_sectors jsonb,
+  funnel_candidates_story integer,
+  funnel_candidates_risk integer,
+  funnel_candidates_technical integer,
+  funnel_near_miss jsonb,
+
   created_at timestamptz not null default now(),
 
   constraint uq_daily_logs_trading_date unique (trading_date)
@@ -95,6 +106,15 @@ create table recommendations (
 
   -- Reasoning
   reasoning_summary text,
+
+  -- v5 story fields (nullable for backward compat with v4)
+  story_type integer,
+  story_type_label text,
+  story_summary text,
+  story_first_news_date date,
+  story_priced_in_level text check (story_priced_in_level in ('A', 'B', 'C', 'D', 'E')),
+  story_priced_in_pct numeric,
+  story_remaining_trigger text,
 
   -- === Tracking fields (updated by update_prices.py) ===
   status text not null default 'OPEN' check (status in ('OPEN', 'TP1_HIT', 'TP2_HIT', 'STOPPED', 'EXPIRED', 'CLOSED_MANUAL')),

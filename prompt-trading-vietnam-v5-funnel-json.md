@@ -649,7 +649,7 @@ KIỂM TRA CUỐI:
 • Tiếng Việt, mọi số liệu có ngày + nguồn.
 • Thứ tự: 1 (Vĩ mô) → 2 (Sentiment) → 3 (Ngành) → 4 (Câu chuyện)
   → 5 (Lọc rủi ro) → 6 (Technical/xếp hạng) → 7 (Output)
-  → 8 (Kịch bản) → 9 (Xác thực).
+  → 8 (Kịch bản) → 9 (Xác thực) → 10 (JSON).
 • Phần 1 điểm ≤ 0 hoặc Regime 4 → dừng ở Phần 7.2 với KB3.
 • Mỗi mã trong Final List PHẢI có: câu chuyện + mức priced in +
   setup kỹ thuật + entry/stop/target + Sharpe.
@@ -665,6 +665,160 @@ KIỂM TRA CUỐI:
 5. Nếu câu chuyện bị phủ nhận chính thức → thoát ngay, không tiếc.
 6. AI có thể sai, đặc biệt khi đánh giá "priced in" (dựa trên nhiều
    yếu tố định tính). Bạn tự chịu trách nhiệm quyết định.
+
+═══════════════════════════════════════════════════════════════════
+PHẦN 10 — STRUCTURED JSON OUTPUT (BẮT BUỘC)
+═══════════════════════════════════════════════════════════════════
+
+🔑 SAU KHI HOÀN THÀNH PHẦN 1 → 9, BẮT BUỘC xuất thêm khối JSON
+   bên dưới để hệ thống tracking tự động nhập dữ liệu.
+
+📋 QUY TẮC JSON:
+1. Bọc trong ```json ... ``` code block
+2. PHẢI là JSON hợp lệ (valid JSON), không có comment
+3. Tất cả số liệu phải KHỚP CHÍNH XÁC với phân tích ở trên
+4. Nếu KB3 (ĐỨNG NGOÀI): recommendations = [] (mảng rỗng)
+5. Giá tính bằng VND, % tính dạng số thực (5.5 = 5.5%)
+6. Ngày định dạng YYYY-MM-DD
+
+```json
+{
+  "analysis_date": "YYYY-MM-DD",
+  "trading_date": "YYYY-MM-DD",
+  "market_context": {
+    "regime": 1,
+    "regime_label": "UPTREND_LOW_VOL | UPTREND_HIGH_VOL | SIDEWAY | DOWNTREND",
+    "auction_state": "BALANCE | IMBALANCE | TRANSITIONING",
+    "strategy": "BREAKOUT_MOMENTUM | MEAN_REVERSION | PULLBACK | STAND_ASIDE",
+    "macro_score": 3,
+    "css": 0.8,
+    "vn_index": {
+      "close": 1280.5,
+      "change_pct": 0.75,
+      "session_date": "YYYY-MM-DD"
+    },
+    "international": {
+      "sp500_change_pct": 0.5,
+      "dxy": 104.2,
+      "us10y": 4.35,
+      "vix": 15.2,
+      "oil_wti": 78.5,
+      "environment": "SUPPORTIVE | NEUTRAL | ADVERSE"
+    },
+    "top_sectors": ["Ngân hàng", "BĐS KCN", "Thép"],
+    "avoid_sectors": ["Dệt may"],
+    "confidence": 7
+  },
+  "conclusion": "KB1 | KB2 | KB3",
+  "stand_aside_reason": null,
+  "funnel_summary": {
+    "candidates_after_story": 12,
+    "candidates_after_risk_filter": 8,
+    "candidates_after_technical": 5,
+    "near_miss": [
+      {
+        "symbol": "ABC",
+        "reason": "Câu chuyện tốt nhưng priced in mức D"
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "rank": 1,
+      "symbol": "FPT",
+      "exchange": "HOSE",
+      "company_name": "FPT Corporation",
+      "sector": "Technology",
+      "action": "BUY",
+
+      "story": {
+        "type": 7,
+        "type_label": "KQKD_DOT_BIEN | MA_THOAI_VON | CHUYEN_SAN | TAI_CO_CAU | DU_AN_LON | CHINH_SACH | CO_TUC_DAC_BIET | KQKD_DOT_BIEN | HOT_MXH | TIN_DON | KHONG_CO",
+        "summary": "Tóm tắt 1-2 câu về câu chuyện riêng của mã",
+        "first_news_date": "YYYY-MM-DD",
+        "priced_in_level": "A | B | C | D | E",
+        "priced_in_pct": 25,
+        "remaining_trigger": "Mô tả trigger chưa xảy ra"
+      },
+
+      "setup": "BREAKOUT_MOMENTUM | PULLBACK_SUPPORT | MEAN_REVERSION | BASE_BREAKOUT",
+      "setup_confidence": "HIGH | MEDIUM | LOW",
+
+      "entry_price": 125000,
+      "entry_range_low": 124000,
+      "entry_range_high": 126000,
+      "stop_loss": 119000,
+      "tp1": 133000,
+      "tp2": 140000,
+      "trailing_stop_method": "MA5 | MA10 | SWING_LOW | CHANDELIER",
+
+      "stop_loss_pct": -4.8,
+      "tp1_pct": 6.4,
+      "tp2_pct": 12.0,
+      "r_multiple": 2.5,
+      "sharpe": 2.1,
+      "win_rate_est": 55,
+      "expectancy": 0.85,
+      "hit_probability": "HIGH | MEDIUM | LOW",
+      "rating": "EXCELLENT | GOOD | FAIR",
+
+      "holding_period_sessions": 5,
+      "holding_period_label": "2-5 phiên",
+
+      "position_sizing": {
+        "method": "FIXED_RISK | QUARTER_KELLY | VOLATILITY_BASED",
+        "size_pct": 5.2,
+        "kelly_raw_pct": 20.8,
+        "quarter_kelly_pct": 5.2
+      },
+
+      "entry_timing": "09:15-10:00 | 13:30-14:15 | ATC",
+      "entry_method": "ATO | LIMIT | SPLIT | SCALE_IN",
+
+      "last_close": 124500,
+      "last_close_date": "YYYY-MM-DD",
+
+      "reasoning_summary": "Tóm tắt 1-2 câu: câu chuyện + priced in level + setup"
+    }
+  ],
+  "scenarios": {
+    "bullish": {
+      "probability_pct": 40,
+      "description": "Mô tả ngắn kịch bản tích cực"
+    },
+    "neutral": {
+      "probability_pct": 40,
+      "description": "Mô tả ngắn kịch bản trung tính"
+    },
+    "bearish": {
+      "probability_pct": 20,
+      "description": "Mô tả ngắn kịch bản tiêu cực"
+    },
+    "kill_zone_vn_index": 1250
+  },
+  "track_record": {
+    "avg_sharpe": 2.1,
+    "avg_expectancy": 0.85,
+    "num_recommendations": 3
+  }
+}
+```
+
+📌 LƯU Ý QUAN TRỌNG:
+• Ví dụ JSON ở trên chỉ minh hoạ cấu trúc. PHẢI thay bằng dữ liệu
+  thực từ phân tích.
+• Nếu có nhiều mã khuyến nghị, thêm object vào mảng recommendations.
+• Nếu KB3, JSON vẫn BẮT BUỘC nhưng recommendations = [] và
+  stand_aside_reason phải ghi lý do.
+• Trường story.type dùng số 1-9 tương ứng Loại 1-9 ở Phần 4.1.
+  Nếu mã không có câu chuyện riêng, dùng type_label = "KHONG_CO".
+• Trường story.priced_in_level dùng "A" đến "E" tương ứng 5 mức
+  đánh giá ở Phần 4.3. Chỉ mã mức A/B/C mới được vào final list.
+• Trường funnel_summary ghi số mã qua từng bước lọc của funnel.
+• Trường reasoning_summary nên bao gồm cả câu chuyện và mức priced in.
+• JSON schema tương thích ngược với v4 — hệ thống tracking tự nhận
+  diện các trường mới (story, funnel_summary, macro_score, css,
+  top_sectors, avoid_sectors).
 ```
 
 ---

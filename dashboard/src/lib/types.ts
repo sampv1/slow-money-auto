@@ -28,6 +28,15 @@ export interface DailyLog {
   avg_sharpe: number | null;
   avg_expectancy: number | null;
   num_recommendations: number;
+  // v5 fields
+  macro_score: number | null;
+  css: number | null;
+  top_sectors: string[] | null;
+  avoid_sectors: string[] | null;
+  funnel_candidates_story: number | null;
+  funnel_candidates_risk: number | null;
+  funnel_candidates_technical: number | null;
+  funnel_near_miss: { symbol: string; reason: string }[] | null;
   full_response: string | null;
   created_at: string;
 }
@@ -71,6 +80,14 @@ export interface Recommendation {
   entry_timing: string | null;
   entry_method: string | null;
   reasoning_summary: string | null;
+  // v5 story fields
+  story_type: number | null;
+  story_type_label: string | null;
+  story_summary: string | null;
+  story_first_news_date: string | null;
+  story_priced_in_level: string | null;
+  story_priced_in_pct: number | null;
+  story_remaining_trigger: string | null;
   status: "OPEN" | "TP1_HIT" | "TP2_HIT" | "STOPPED" | "EXPIRED" | "CLOSED_MANUAL";
   current_price: number | null;
   current_price_date: string | null;

@@ -6,6 +6,10 @@ interface MarketContext {
   auction_state?: string;
   strategy?: string;
   confidence?: number;
+  macro_score?: number;
+  css?: number;
+  top_sectors?: string[];
+  avoid_sectors?: string[];
   vn_index?: {
     close?: number;
     change_pct?: number;
@@ -59,6 +63,15 @@ interface RecInput {
   entry_timing?: string;
   entry_method?: string;
   reasoning_summary?: string;
+  story?: {
+    type?: number;
+    type_label?: string;
+    summary?: string;
+    first_news_date?: string;
+    priced_in_level?: string;
+    priced_in_pct?: number;
+    remaining_trigger?: string;
+  };
 }
 
 interface PushData {
@@ -67,6 +80,12 @@ interface PushData {
   market_context: MarketContext;
   conclusion: "KB1" | "KB2" | "KB3";
   stand_aside_reason?: string;
+  funnel_summary?: {
+    candidates_after_story?: number;
+    candidates_after_risk_filter?: number;
+    candidates_after_technical?: number;
+    near_miss?: { symbol: string; reason: string }[];
+  };
   recommendations: RecInput[];
   scenarios?: {
     bullish?: { probability_pct?: number; description?: string };
@@ -134,6 +153,7 @@ function buildDailyLogRow(data: PushData) {
   const intl = ctx.international ?? {};
   const scenarios = data.scenarios ?? {};
   const track = data.track_record ?? {};
+  const funnel = data.funnel_summary ?? {};
 
   return {
     analysis_date: data.analysis_date,
@@ -164,11 +184,21 @@ function buildDailyLogRow(data: PushData) {
     avg_sharpe: track.avg_sharpe ?? null,
     avg_expectancy: track.avg_expectancy ?? null,
     num_recommendations: (data.recommendations ?? []).length,
+    // v5 fields
+    macro_score: ctx.macro_score ?? null,
+    css: ctx.css ?? null,
+    top_sectors: ctx.top_sectors ?? null,
+    avoid_sectors: ctx.avoid_sectors ?? null,
+    funnel_candidates_story: funnel.candidates_after_story ?? null,
+    funnel_candidates_risk: funnel.candidates_after_risk_filter ?? null,
+    funnel_candidates_technical: funnel.candidates_after_technical ?? null,
+    funnel_near_miss: funnel.near_miss ?? null,
   };
 }
 
 function buildRecRow(rec: RecInput, dailyLogId: string, tradingDate: string) {
   const sizing = rec.position_sizing ?? {};
+  const story = rec.story ?? {};
   return {
     daily_log_id: dailyLogId,
     trading_date: tradingDate,
@@ -207,6 +237,14 @@ function buildRecRow(rec: RecInput, dailyLogId: string, tradingDate: string) {
     entry_timing: rec.entry_timing ?? null,
     entry_method: rec.entry_method ?? null,
     reasoning_summary: rec.reasoning_summary ?? null,
+    // v5 story fields
+    story_type: story.type ?? null,
+    story_type_label: story.type_label ?? null,
+    story_summary: story.summary ?? null,
+    story_first_news_date: story.first_news_date ?? null,
+    story_priced_in_level: story.priced_in_level ?? null,
+    story_priced_in_pct: story.priced_in_pct ?? null,
+    story_remaining_trigger: story.remaining_trigger ?? null,
     status: "OPEN",
   };
 }

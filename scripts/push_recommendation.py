@@ -104,7 +104,9 @@ def build_daily_log_row(data: dict) -> dict:
     scenarios = data.get("scenarios", {})
     track = data.get("track_record", {})
 
-    return {
+    funnel = data.get("funnel_summary", {})
+
+    row = {
         "analysis_date": data["analysis_date"],
         "trading_date": data["trading_date"],
         "conclusion": data["conclusion"],
@@ -133,12 +135,24 @@ def build_daily_log_row(data: dict) -> dict:
         "avg_sharpe": track.get("avg_sharpe"),
         "avg_expectancy": track.get("avg_expectancy"),
         "num_recommendations": len(data.get("recommendations", [])),
+        # v5 fields
+        "macro_score": ctx.get("macro_score"),
+        "css": ctx.get("css"),
+        "top_sectors": json.dumps(ctx["top_sectors"]) if ctx.get("top_sectors") else None,
+        "avoid_sectors": json.dumps(ctx["avoid_sectors"]) if ctx.get("avoid_sectors") else None,
+        "funnel_candidates_story": funnel.get("candidates_after_story"),
+        "funnel_candidates_risk": funnel.get("candidates_after_risk_filter"),
+        "funnel_candidates_technical": funnel.get("candidates_after_technical"),
+        "funnel_near_miss": json.dumps(funnel["near_miss"]) if funnel.get("near_miss") else None,
     }
+
+    return row
 
 
 def build_recommendation_row(rec: dict, daily_log_id: str, trading_date: str) -> dict:
     """Build a recommendations insert row from a single recommendation object."""
     sizing = rec.get("position_sizing", {})
+    story = rec.get("story", {})
 
     return {
         "daily_log_id": daily_log_id,
@@ -178,6 +192,14 @@ def build_recommendation_row(rec: dict, daily_log_id: str, trading_date: str) ->
         "entry_timing": rec.get("entry_timing"),
         "entry_method": rec.get("entry_method"),
         "reasoning_summary": rec.get("reasoning_summary"),
+        # v5 story fields
+        "story_type": story.get("type"),
+        "story_type_label": story.get("type_label"),
+        "story_summary": story.get("summary"),
+        "story_first_news_date": story.get("first_news_date"),
+        "story_priced_in_level": story.get("priced_in_level"),
+        "story_priced_in_pct": story.get("priced_in_pct"),
+        "story_remaining_trigger": story.get("remaining_trigger"),
         "status": "OPEN",
     }
 

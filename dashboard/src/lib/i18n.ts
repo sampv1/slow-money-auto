@@ -141,6 +141,23 @@ export const translations = {
     pushedSuccessfully: "Pushed successfully",
     viewInDailyLogs: "View in Daily Logs",
 
+    // v5 fields
+    macroScore: "Macro Score",
+    cssSentiment: "CSS Sentiment",
+    topSectors: "Top Sectors",
+    avoidSectors: "Avoid Sectors",
+    funnelSummary: "Funnel Summary",
+    funnelStory: "After Story",
+    funnelRisk: "After Risk Filter",
+    funnelTechnical: "After Technical",
+    nearMiss: "Near Miss",
+    story: "Story",
+    storyType: "Story Type",
+    pricedIn: "Priced In",
+    pricedInLevel: "Priced In Level",
+    remainingTrigger: "Remaining Trigger",
+    firstNewsDate: "First News Date",
+
     // Regime labels
     regime1: "Uptrend + Low Vol",
     regime2: "Uptrend + High Vol",
@@ -294,6 +311,23 @@ export const translations = {
     pushing: "Dang day...",
     pushedSuccessfully: "Day thanh cong",
     viewInDailyLogs: "Xem trong Nhat ky",
+
+    // v5 fields
+    macroScore: "Diem vi mo",
+    cssSentiment: "CSS Sentiment",
+    topSectors: "Nganh tiem nang",
+    avoidSectors: "Nganh nen tranh",
+    funnelSummary: "Tom tat pheu loc",
+    funnelStory: "Sau cau chuyen",
+    funnelRisk: "Sau loc rui ro",
+    funnelTechnical: "Sau ky thuat",
+    nearMiss: "Suyt vao danh sach",
+    story: "Cau chuyen",
+    storyType: "Loai cau chuyen",
+    pricedIn: "Da phan anh",
+    pricedInLevel: "Muc phan anh",
+    remainingTrigger: "Trigger con lai",
+    firstNewsDate: "Ngay tin dau",
 
     // Regime labels
     regime1: "Tang + Bien dong thap",
