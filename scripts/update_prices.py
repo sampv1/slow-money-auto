@@ -97,12 +97,14 @@ def fetch_latest_price(symbol: str) -> dict | None:
         print(f"  {symbol}: latest data is {price_date}, not today — skipping")
         return None
 
+    # vnstock returns prices in thousands VND (e.g. 28.05 = 28,050 VND).
+    # Our DB stores prices in raw VND, so multiply by 1000.
     return {
         "date": price_date,
-        "open": float(row["open"]),
-        "high": float(row["high"]),
-        "low": float(row["low"]),
-        "close": float(row["close"]),
+        "open": float(row["open"]) * 1000,
+        "high": float(row["high"]) * 1000,
+        "low": float(row["low"]) * 1000,
+        "close": float(row["close"]) * 1000,
         "volume": int(row["volume"]),
     }
 
