@@ -180,7 +180,7 @@ export const translations = {
     // Layout / Nav
     appName: "Slow Money",
     navAnalysis: "Phân tích",
-    navActive: "Dang mo",
+    navActive: "Đang nắm giữ",
     navHistory: "Lịch sử",
     navLogs: "Nhật ký",
     navStats: "Thống kê",
