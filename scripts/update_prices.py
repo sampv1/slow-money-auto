@@ -23,7 +23,7 @@ import argparse
 import os
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -41,6 +41,15 @@ CLOSED_STATUSES = {"TP2_HIT", "STOPPED", "EXPIRED", "CLOSED_MANUAL"}
 # vnstock KBS source: free, no API key needed
 VNSTOCK_SOURCE = "KBS"
 REQUEST_DELAY = 3.5  # seconds between requests to stay under rate limit
+
+# Vietnam timezone (UTC+7) — GitHub Actions runs in UTC, so date.today() would
+# return UTC date which may differ from Vietnam date. Always use this instead.
+VN_TZ = timezone(timedelta(hours=7))
+
+
+def today_vn() -> date:
+    """Return today's date in Vietnam timezone (GMT+7)."""
+    return datetime.now(VN_TZ).date()
 
 
 def get_supabase_client():
@@ -60,8 +69,9 @@ def fetch_latest_price(symbol: str) -> dict | None:
     from vnstock import Vnstock
 
     # Fetch last 5 calendar days to ensure we get the latest trading session
-    start = (date.today() - timedelta(days=5)).isoformat()
-    end = date.today().isoformat()
+    today = today_vn()
+    start = (today - timedelta(days=5)).isoformat()
+    end = today.isoformat()
 
     try:
         stock = Vnstock().stock(symbol=symbol, source=VNSTOCK_SOURCE)
@@ -83,7 +93,7 @@ def fetch_latest_price(symbol: str) -> dict | None:
     price_date = str(row["time"])[:10]
 
     # Only return if the price is from today — skip if stale
-    if price_date != date.today().isoformat():
+    if price_date != today.isoformat():
         print(f"  {symbol}: latest data is {price_date}, not today — skipping")
         return None
 
@@ -100,7 +110,7 @@ def fetch_latest_price(symbol: str) -> dict | None:
 def count_business_days(since_date: str) -> int:
     """Count weekdays (Mon-Fri) between since_date and today, excluding since_date."""
     start = date.fromisoformat(since_date)
-    end = date.today()
+    end = today_vn()
     count = 0
     current = start + timedelta(days=1)
     while current <= end:
@@ -194,7 +204,7 @@ def check_expiry(rec: dict, days_held: int) -> dict | None:
     if days_held > expiry_threshold and rec["status"] in ACTIVE_STATUSES:
         return {
             "status": "EXPIRED",
-            "closed_at": date.today().isoformat(),
+            "closed_at": today_vn().isoformat(),
         }
     return None
 
