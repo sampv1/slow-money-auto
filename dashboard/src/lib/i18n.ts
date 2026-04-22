@@ -158,6 +158,10 @@ export const translations = {
     remainingTrigger: "Remaining Trigger",
     firstNewsDate: "First News Date",
 
+    // Auth
+    login: "Login",
+    logout: "Logout",
+
     // Regime labels
     regime1: "Uptrend + Low Vol",
     regime2: "Uptrend + High Vol",
@@ -328,6 +332,10 @@ export const translations = {
     pricedInLevel: "Muc phan anh",
     remainingTrigger: "Trigger con lai",
     firstNewsDate: "Ngay tin dau",
+
+    // Auth
+    login: "Dang nhap",
+    logout: "Dang xuat",
 
     // Regime labels
     regime1: "Tang + Bien dong thap",

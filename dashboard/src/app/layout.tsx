@@ -4,6 +4,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { getLocaleFromCookie, t } from "@/lib/i18n";
 import { LocaleSwitcher } from "@/components/locale-switcher";
+import { AuthButton } from "@/components/auth-button";
+import { getUserRole } from "@/lib/supabase-server";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -29,13 +32,17 @@ export default async function RootLayout({
   const cookieStore = await cookies();
   const locale = getLocaleFromCookie(cookieStore.get("locale")?.value ?? null);
 
+  const role = await getUserRole();
+  const supabase = await createSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+
   const navLinks = [
     { href: "/", label: t(locale, "navAnalysis") },
     { href: "/active", label: t(locale, "navActive") },
     { href: "/history", label: t(locale, "navHistory") },
     { href: "/logs", label: t(locale, "navLogs") },
     { href: "/stats", label: t(locale, "navStats") },
-    { href: "/input", label: t(locale, "navInput") },
+    ...(role === "admin" ? [{ href: "/input", label: t(locale, "navInput") }] : []),
   ];
 
   return (
@@ -63,6 +70,7 @@ export default async function RootLayout({
                   ))}
                 </nav>
                 <LocaleSwitcher locale={locale} />
+                <AuthButton email={user?.email ?? null} locale={locale} />
               </div>
             </div>
           </div>

@@ -1,13 +1,3 @@
-# PROMPT PHÂN TÍCH & KHUYẾN NGHỊ TRADING — THỊ TRƯỜNG VIỆT NAM (v5)
-
-> **Thay đổi chính so với v4:**
-> - Cấu trúc TOP-DOWN FUNNEL: Vĩ mô → Sentiment → Ngành → Mã có câu chuyện → Lọc rủi ro → Điểm vào
-> - Trọng tâm: lọc từ ~1600 mã xuống 5 mã tốt nhất (nếu có)
-> - Fundamental chỉ dùng để LOẠI mã rủi ro, không dùng để CHỌN
-> - Technical chỉ dùng để CHỌN ĐIỂM VÀO sau khi đã có final list
-> - Mới: Phát hiện mã có **CÂU CHUYỆN RIÊNG** + đánh giá mức độ phản ánh vào giá
-> - Reasoning tập trung vào WHY chọn final list, không reasoning từng mã
-> - Loại bỏ các phần lặp lại mỗi ngày (Intraday Seasonality, Nhật ký, Reasoning 12 bước)
 
 ---
 
@@ -822,17 +812,3 @@ PHẦN 10 — STRUCTURED JSON OUTPUT (BẮT BUỘC)
 ```
 
 ---
-
-## Bảng so sánh v4 vs v5
-
-| Khía cạnh | v4 | v5 |
-|-----------|------|------|
-| Cấu trúc | Song song (regime, tech, fundamental cùng lúc) | **Top-down funnel** (vĩ mô → ngành → mã → rủi ro → entry) |
-| Vai trò fundamental | Tiêu chí chọn mã (≥3/5) | **CHỈ để loại** mã rủi ro |
-| Vai trò technical | Bộ lọc setup + chọn entry | **CHỈ để chọn entry** sau khi có final list |
-| Câu chuyện riêng | Không có | **Phần 4 riêng** — đặc trưng cho VN |
-| Đánh giá priced in | Không có | **5 mức A-E** theo 5 chiều |
-| Reasoning | 12 bước/mã | **Reasoning tổng thể** WHY chọn 5 mã này |
-| Intraday Seasonality | Có | **Đã loại bỏ** (lặp lại mỗi ngày) |
-| Nhật ký/Track record | Có | **Đã loại bỏ** (lặp lại mỗi ngày) |
-| Độ dài output | Rất dài | **Ngắn gọn** hơn, tập trung |

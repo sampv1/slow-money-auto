@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { getUserRole } from "@/lib/supabase-server";
 
 interface MarketContext {
   regime: number;
@@ -264,6 +265,12 @@ function extractJson(text: string): string {
 
 export async function POST(request: Request) {
   try {
+    // Admin-only: check auth
+    const role = await getUserRole();
+    if (role !== "admin") {
+      return Response.json({ error: "Unauthorized — admin access required" }, { status: 403 });
+    }
+
     const body = await request.text();
 
     // Extract JSON from the input (which may be full Claude response or just JSON)
