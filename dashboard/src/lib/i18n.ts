@@ -161,6 +161,7 @@ export const translations = {
     // Auth
     login: "Login",
     logout: "Logout",
+    contact: "Contact",
 
     // Regime labels
     regime1: "Uptrend + Low Vol",
@@ -336,6 +337,7 @@ export const translations = {
     // Auth
     login: "Đăng nhập",
     logout: "Đăng xuất",
+    contact: "Liên hệ",
 
     // Regime labels
     regime1: "Tăng + Biến động thấp",
