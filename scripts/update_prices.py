@@ -61,7 +61,11 @@ def get_supabase_client():
     from supabase import create_client
 
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        print("Error: SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env")
+        print("Error: SUPABASE_URL and SUPABASE_ANON_KEY are not set.")
+        print(f"  SUPABASE_URL is {'set' if SUPABASE_URL else 'EMPTY/MISSING'}")
+        print(f"  SUPABASE_ANON_KEY is {'set' if SUPABASE_ANON_KEY else 'EMPTY/MISSING'}")
+        print("  Set them via env vars (CI) or scripts/.env (local).")
+        print("  In GitHub Actions, check Settings > Secrets and variables > Actions.")
         sys.exit(1)
     return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 

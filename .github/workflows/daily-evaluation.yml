@@ -26,6 +26,23 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
+      - name: Verify secrets are set
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "::error::SUPABASE_URL secret is not set in repo settings."
+            echo "Go to Settings > Secrets and variables > Actions and add SUPABASE_URL."
+            exit 1
+          fi
+          if [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::SUPABASE_ANON_KEY secret is not set in repo settings."
+            echo "Go to Settings > Secrets and variables > Actions and add SUPABASE_ANON_KEY."
+            exit 1
+          fi
+          echo "Secrets OK: SUPABASE_URL length=${#SUPABASE_URL}, SUPABASE_ANON_KEY length=${#SUPABASE_ANON_KEY}"
+
       - name: Run price evaluation
         working-directory: scripts
         env:
