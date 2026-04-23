@@ -76,4 +76,5 @@ The prompt outputs a JSON object with: `analysis_date`, `trading_date`, `market_
 - `daily_logs.trading_date` has a unique constraint — one analysis per day
 - Stock data source: vnstock library, KBS source (free tier, 20 req/min guest, 60 req/min registered). Scripts use 3.5s delay between requests.
 - P&L calculation: when both TP1 and TP2 exist, assumes 50% position exits at TP1 and 50% at TP2. Blended P&L = average of both gains. After TP1 hit, stop loss moves to entry (breakeven).
+- Vietnam T+2.5 settlement: SL/TP checks only apply from T+3 onward (3 business days after recommendation). Before that, current price is updated but no exit is triggered.
 - Expiry: recommendations auto-expire after 1.5x their holding_period_sessions

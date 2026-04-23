@@ -38,6 +38,11 @@ ACTIVE_STATUSES = {"OPEN", "TP1_HIT"}
 # Statuses considered "closed"
 CLOSED_STATUSES = {"TP2_HIT", "STOPPED", "EXPIRED", "CLOSED_MANUAL"}
 
+# Vietnam T+2.5 settlement: can only sell from afternoon of T+2.
+# Since we use daily OHLCV (not intraday), the day's low on T+2 might occur
+# in the morning when selling is not possible. So we only check SL/TP from T+3.
+MIN_DAYS_BEFORE_EXIT = 3
+
 # vnstock KBS source: free, no API key needed
 VNSTOCK_SOURCE = "KBS"
 REQUEST_DELAY = 3.5  # seconds between requests to stay under rate limit
@@ -122,10 +127,11 @@ def count_business_days(since_date: str) -> int:
     return count
 
 
-def evaluate_recommendation(rec: dict, price: dict) -> dict | None:
+def evaluate_recommendation(rec: dict, price: dict, days_held: int) -> dict | None:
     """Evaluate a recommendation against today's price.
 
     Returns a dict of fields to update, or None if no change needed.
+    SL/TP checks are skipped if days_held < MIN_DAYS_BEFORE_EXIT (T+2.5 rule).
     """
     if not price:
         return None
@@ -143,7 +149,11 @@ def evaluate_recommendation(rec: dict, price: dict) -> dict | None:
 
     updates = {}
 
-    if status == "OPEN":
+    # Vietnam T+2.5: can only sell from T+3 onward (using daily OHLCV).
+    # Before that, only update current price — no SL/TP evaluation.
+    can_exit = days_held >= MIN_DAYS_BEFORE_EXIT
+
+    if can_exit and status == "OPEN":
         # Check stop loss first (conservative: assume worst case hit first)
         if day_low <= stop_loss:
             updates["status"] = "STOPPED"
@@ -160,7 +170,7 @@ def evaluate_recommendation(rec: dict, price: dict) -> dict | None:
                 updates["actual_pnl_pct"] = round((tp1 - entry) / entry * 100, 2)
                 updates["closed_at"] = day_date
 
-    elif status == "TP1_HIT":
+    elif can_exit and status == "TP1_HIT":
         # After TP1 hit, stop loss moves to entry (breakeven for remaining 50%)
         if day_low <= entry:
             # Stopped at breakeven on remaining 50%
@@ -183,7 +193,7 @@ def evaluate_recommendation(rec: dict, price: dict) -> dict | None:
             updates["actual_pnl_pct"] = round(blended_pnl, 2)
             updates["closed_at"] = day_date
 
-    # Always update current price
+    # Always update current price (even before T+2.5)
     updates["current_price"] = day_close
     updates["current_price_date"] = day_date
 
@@ -254,8 +264,8 @@ def main():
         price = prices_by_symbol.get(rec["symbol"])
         days_held = count_business_days(rec["trading_date"])
 
-        # Evaluate TP/SL
-        updates = evaluate_recommendation(rec, price)
+        # Evaluate TP/SL (respects T+2.5 settlement)
+        updates = evaluate_recommendation(rec, price, days_held)
 
         # Check expiry (only if not already closed by TP/SL)
         if updates and updates.get("status", rec["status"]) in ACTIVE_STATUSES:
@@ -281,6 +291,8 @@ def main():
         pnl_str = f"{pnl:+.1f}%" if pnl is not None else "—"
         current_str = f"{current:,.0f}" if current else "—"
         change_str = f"{rec['status']} -> {new_status}" if changed else ""
+        if days_held < MIN_DAYS_BEFORE_EXIT and rec["status"] in ACTIVE_STATUSES:
+            change_str += f" (T+{days_held}, settlement pending)"
 
         print(
             f"{rec['symbol']:<7} "
