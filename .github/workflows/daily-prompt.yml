@@ -2,8 +2,12 @@ name: Daily Trading Prompt
 
 on:
   schedule:
-    # 8:30 AM GMT+7 = 1:30 AM UTC, Monday–Friday
-    - cron: "30 1 * * 1-5"
+    # Target: 8:30 AM GMT+7 (before market opens at 9:00 AM).
+    # Scheduled 30 min earlier at 0:07 UTC (7:07 AM GMT+7) because GitHub
+    # Actions free-tier cron is often delayed by 15-30+ minutes, especially
+    # at common minute marks like :00/:15/:30/:45. Using :07 reduces queue
+    # contention. Monday–Friday only.
+    - cron: "7 0 * * 1-5"
   workflow_dispatch: # Allow manual trigger from GitHub UI
 
 jobs:
