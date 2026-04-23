@@ -670,6 +670,13 @@ PHẦN 10 — STRUCTURED JSON OUTPUT (BẮT BUỘC)
 4. Nếu KB3 (ĐỨNG NGOÀI): recommendations = [] (mảng rỗng)
 5. Giá tính bằng VND, % tính dạng số thực (5.5 = 5.5%)
 6. Ngày định dạng YYYY-MM-DD
+7. 🚫 KHÔNG ĐƯỢC dùng null cho các trường bắt buộc trong recommendations:
+   symbol, exchange, action, setup, setup_confidence, rating,
+   entry_price, stop_loss, tp1, stop_loss_pct, tp1_pct,
+   r_multiple, sharpe, win_rate_est, expectancy, hit_probability,
+   last_close, last_close_date.
+   Nếu không tính được giá trị → LOẠI mã đó khỏi recommendations,
+   KHÔNG đưa vào với giá trị null.
 
 ```json
 {
