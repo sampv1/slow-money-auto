@@ -70,14 +70,29 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
       </div>
 
       {/* Header bar */}
-      <div className="flex items-center gap-3 mb-4 text-sm">
-        <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${conclusionStyle[current.conclusion] ?? "bg-gray-100 text-gray-600"}`}>
-          {current.conclusion}
-        </span>
-        <span className="text-gray-500">{current.num_recommendations} {t(locale, current.num_recommendations !== 1 ? "recommendations" : "recommendation")}</span>
-        {current.confidence !== null && (
-          <span className="text-gray-500">{t(locale, "confidence")}: {current.confidence}/10</span>
-        )}
+      <div className="flex items-center justify-between gap-3 mb-4 text-sm flex-wrap">
+        <div className="flex items-center gap-3">
+          <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${conclusionStyle[current.conclusion] ?? "bg-gray-100 text-gray-600"}`}>
+            {current.conclusion}
+          </span>
+          <span className="text-gray-500">{current.num_recommendations} {t(locale, current.num_recommendations !== 1 ? "recommendations" : "recommendation")}</span>
+          {current.confidence !== null && (
+            <span className="text-gray-500">{t(locale, "confidence")}: {current.confidence}/10</span>
+          )}
+        </div>
+
+        {/* Powered by badge — emphasizes top-tier reasoning model */}
+        <div className="group relative inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-50 via-orange-50 to-rose-50 border border-amber-200/60 shadow-sm hover:shadow-md transition-all">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-gradient-to-br from-amber-500 to-orange-600"></span>
+          </span>
+          <span className="text-xs font-semibold bg-gradient-to-r from-amber-700 via-orange-700 to-rose-700 bg-clip-text text-transparent">
+            {t(locale, "poweredBy")}
+          </span>
+          <span className="text-xs text-gray-400 hidden sm:inline">·</span>
+          <span className="text-xs text-gray-500 hidden sm:inline">{t(locale, "frontierModel")}</span>
+        </div>
       </div>
 
       {/* Response content */}
