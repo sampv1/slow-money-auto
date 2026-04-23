@@ -48,7 +48,8 @@ export default async function ActivePage() {
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "tp2")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "current")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "pnl")}</th>
-                <th className="px-4 py-3 font-medium text-right">{t(locale, "rMultiple")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "holding")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "winRateEst")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "sharpe")}</th>
                 <th className="px-4 py-3 font-medium">{t(locale, "status")}</th>
               </tr>
@@ -70,7 +71,10 @@ export default async function ActivePage() {
                     <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor(pnl)}`}>
                       {formatPnl(pnl)}
                     </td>
-                    <td className="px-4 py-3 text-right">{rec.r_multiple.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">
+                      {rec.holding_period_label ?? (rec.holding_period_sessions ? `${rec.holding_period_sessions} ${t(locale, "sessions")}` : "—")}
+                    </td>
+                    <td className="px-4 py-3 text-right">{rec.win_rate_est}%</td>
                     <td className="px-4 py-3 text-right">{rec.sharpe.toFixed(1)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${badge.className}`}>
