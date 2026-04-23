@@ -9,7 +9,8 @@ on:
     # contested on GitHub Actions free tier) to reduce queue delay.
     # Monday–Friday only. Note: if the script runs before vnstock has
     # today's data, symbols without today's price are simply skipped.
-    - cron: "7 8 * * 1-5"
+    # - cron: "7 8 * * 1-5"
+    - cron: "12 6 * * 1-5"
   workflow_dispatch: # Allow manual trigger from GitHub UI
 
 jobs:
