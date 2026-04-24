@@ -217,7 +217,7 @@ export const translations = {
     tp2: "TP2",
     current: "Hiện tại",
     pnl: "L/L",
-    maxDd: "Max DD",
+    maxDd: "Mức lỗ tối đa",
     rMultiple: "R",
     sharpe: "Sharpe",
     status: "Trạng thái",
