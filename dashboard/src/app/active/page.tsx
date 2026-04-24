@@ -61,7 +61,7 @@ export default async function ActivePage() {
                 const badge = statusBadge(rec.status, locale);
                 return (
                   <tr key={rec.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-500">{rec.trading_date}</td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{rec.trading_date}</td>
                     <td className="px-4 py-3 font-medium">{rec.symbol}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{rec.setup.replace(/_/g, " ")}</td>
                     <td className="px-4 py-3 text-right font-mono">{formatPrice(rec.entry_price)}</td>
