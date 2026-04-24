@@ -92,6 +92,7 @@ export interface Recommendation {
   current_price: number | null;
   current_price_date: string | null;
   unrealized_pnl_pct: number | null;
+  max_drawdown_pct: number | null;
   actual_exit_price: number | null;
   actual_pnl_pct: number | null;
   closed_at: string | null;

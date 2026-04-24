@@ -154,6 +154,7 @@ export default async function HistoryPage({
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "entry")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "exit")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "pnl")}</th>
+                <th className="px-4 py-3 font-medium text-right">{t(locale, "maxDd")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "rMultiple")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "sharpe")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "days")}</th>
@@ -174,6 +175,9 @@ export default async function HistoryPage({
                     <td className="px-4 py-3 text-right font-mono">{formatPrice(rec.actual_exit_price)}</td>
                     <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor(pnl)}`}>
                       {formatPnl(pnl)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-red-600">
+                      {rec.max_drawdown_pct !== null ? `${rec.max_drawdown_pct.toFixed(1)}%` : ""}
                     </td>
                     <td className="px-4 py-3 text-right">{rec.r_multiple.toFixed(1)}</td>
                     <td className="px-4 py-3 text-right">{rec.sharpe.toFixed(1)}</td>

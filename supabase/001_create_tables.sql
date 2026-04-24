@@ -121,6 +121,7 @@ create table recommendations (
   current_price numeric,
   current_price_date date,
   unrealized_pnl_pct numeric,
+  max_drawdown_pct numeric,
   actual_exit_price numeric,
   actual_pnl_pct numeric,
   closed_at date,

@@ -201,6 +201,14 @@ def evaluate_recommendation(rec: dict, price: dict, days_held: int) -> dict | No
     updates["current_price"] = day_close
     updates["current_price_date"] = day_date
 
+    # Track max drawdown from entry — only when day_low < entry.
+    # Always negative; null/missing means price never went below entry.
+    today_drawdown_pct = round((day_low - entry) / entry * 100, 2)
+    if today_drawdown_pct < 0:
+        prev_dd = rec.get("max_drawdown_pct")
+        if prev_dd is None or today_drawdown_pct < float(prev_dd):
+            updates["max_drawdown_pct"] = today_drawdown_pct
+
     new_status = updates.get("status", status)
     if new_status in ACTIVE_STATUSES:
         updates["unrealized_pnl_pct"] = round((day_close - entry) / entry * 100, 2)
