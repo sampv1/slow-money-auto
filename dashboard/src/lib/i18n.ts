@@ -19,7 +19,7 @@ export const translations = {
     noFullResponse: "No full analysis text stored for this day. Push the complete Claude response (not just JSON) to see the analysis here.",
     previousDay: "Previous day",
     nextDay: "Next day",
-    poweredBy: "Powered by Claude Opus 4.7",
+    poweredBy: "Analysis written by Claude Opus 4.7",
     frontierModel: "World's most advanced reasoning AI",
 
     // Active page
@@ -197,7 +197,7 @@ export const translations = {
     noFullResponse: "Chưa lưu nội dung phân tích cho ngày này. Hãy đẩy phản hồi đầy đủ từ Claude (không chỉ JSON) để xem phân tích ở đây.",
     previousDay: "Ngày trước",
     nextDay: "Ngày sau",
-    poweredBy: "Vận hành bởi Claude Opus 4.7",
+    poweredBy: "Phân tích được viết bởi Claude Opus 4.7",
     frontierModel: "AI suy luận tiên tiến nhất thế giới",
 
     // Active page
