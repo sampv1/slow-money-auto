@@ -16,7 +16,7 @@ Usage:
   # Add extra context (e.g. sentiment score):
   python3 run_prompt.py --context "CSS sentiment hôm nay: 62"
 
-  # Use a different model:
+  # Use a different model (default is claude-opus-4-7):
   python3 run_prompt.py --model claude-sonnet-4-6
 
   # Limit web searches (default: 15):
@@ -29,7 +29,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -41,9 +41,17 @@ SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
 PROMPT_FILE = Path(__file__).parent.parent / "prompt-trading-vietnam-v4-complete-json.md"
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "claude-opus-4-7"
 MAX_TOKENS = 16000
 DEFAULT_MAX_SEARCHES = 15
+
+# Vietnam timezone (UTC+7) — GitHub Actions runs in UTC.
+VN_TZ = timezone(timedelta(hours=7))
+
+
+def today_vn() -> date:
+    """Return today's date in Vietnam timezone (GMT+7)."""
+    return datetime.now(VN_TZ).date()
 
 # Web search tool version — 20260209 supports dynamic filtering (better accuracy)
 WEB_SEARCH_TOOL_VERSION = "web_search_20260209"
@@ -191,6 +199,21 @@ def main():
     prompt_text = prompt_path.read_text(encoding="utf-8")
     print(f"Loaded prompt: {prompt_path.name} ({len(prompt_text):,} chars)")
 
+    # Inject today's date (Vietnam timezone) so Claude doesn't fall back
+    # to its training-cutoff date. Vietnamese weekday names included to
+    # avoid any locale ambiguity.
+    today = today_vn()
+    weekday_vn = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm",
+                  "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"][today.weekday()]
+    date_header = (
+        f"⚠️ HÔM NAY LÀ {weekday_vn}, NGÀY {today.strftime('%d/%m/%Y')} "
+        f"(ISO: {today.isoformat()}, múi giờ Việt Nam UTC+7).\n"
+        f"BẮT BUỘC dùng đúng ngày này cho analysis_date và trading_date trong JSON output. "
+        f"KHÔNG được dùng ngày khác kể cả nếu dữ liệu training của bạn cho thấy ngày khác.\n"
+    )
+    prompt_text = date_header + "\n" + prompt_text
+    print(f"Injected today's date: {today.isoformat()} ({weekday_vn})")
+
     # Append extra context if provided
     if args.context:
         prompt_text += f"\n\n--- CONTEXT BỔ SUNG ---\n{args.context}\n"
@@ -203,9 +226,9 @@ def main():
         try:
             from push_recommendation import extract_json_from_text
             data_peek = extract_json_from_text(response_text)
-            td = data_peek.get("trading_date", date.today().strftime("%Y-%m-%d"))
+            td = data_peek.get("trading_date", today_vn().strftime("%Y-%m-%d"))
         except Exception:
-            td = date.today().strftime("%Y-%m-%d")
+            td = today_vn().strftime("%Y-%m-%d")
         save_response(response_text, td)
 
     # Extract JSON and validate

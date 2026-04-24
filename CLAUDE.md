@@ -45,7 +45,7 @@ python3 update_prices.py --dry-run                       # preview changes
 python3 run_prompt.py                                    # full run: web search → Claude → push
 python3 run_prompt.py --dry-run                          # validate only, don't push
 python3 run_prompt.py --context "CSS sentiment: 62"      # add extra context
-python3 run_prompt.py --model claude-sonnet-4-6           # use different model
+python3 run_prompt.py --model claude-sonnet-4-6           # use different model (default: claude-opus-4-7)
 python3 run_prompt.py --max-searches 20                  # limit web searches (default: 15)
 ```
 
