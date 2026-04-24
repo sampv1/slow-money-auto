@@ -8,7 +8,7 @@ on:
     # at common minute marks like :00/:15/:30/:45. Using :07 reduces queue
     # contention. Monday–Friday only.
     # - cron: "7 0 * * 1-5"
-    - cron: "7 21 * * 1-5"
+    - cron: "37 23 * * 1-5"
   workflow_dispatch: # Allow manual trigger from GitHub UI
 
 jobs:
