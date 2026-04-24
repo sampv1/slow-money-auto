@@ -166,6 +166,20 @@ export const translations = {
     logout: "Logout",
     contact: "Contact",
 
+    // Feedback
+    navFeedbacks: "Feedbacks",
+    feedbackTitle: "Leave your idea or send a message to the Slow Money team",
+    feedbackPlaceholder: "Share your thoughts, suggestions, or report an issue...",
+    feedbackContactLabel: "Your email or mobile phone",
+    feedbackContactPlaceholder: "e.g. you@example.com or 0901234567",
+    optional: "optional",
+    send: "Send",
+    sending: "Sending...",
+    feedbackSuccess: "Thanks! Your message has been sent.",
+    feedbackSingular: "feedback",
+    feedbackPlural: "feedbacks",
+    noFeedbacks: "No feedbacks yet.",
+
     // Regime labels
     regime1: "Uptrend + Low Vol",
     regime2: "Uptrend + High Vol",
@@ -344,6 +358,20 @@ export const translations = {
     login: "Đăng nhập",
     logout: "Đăng xuất",
     contact: "Liên hệ",
+
+    // Feedback
+    navFeedbacks: "Phản hồi",
+    feedbackTitle: "Để lại ý kiến hoặc gửi tin nhắn cho đội ngũ Slow Money",
+    feedbackPlaceholder: "Chia sẻ ý kiến, đề xuất hoặc báo lỗi của bạn...",
+    feedbackContactLabel: "Email hoặc số điện thoại của bạn",
+    feedbackContactPlaceholder: "VD: ban@example.com hoặc 0901234567",
+    optional: "không bắt buộc",
+    send: "Gửi",
+    sending: "Đang gửi...",
+    feedbackSuccess: "Cảm ơn bạn! Tin nhắn đã được gửi.",
+    feedbackSingular: "phản hồi",
+    feedbackPlural: "phản hồi",
+    noFeedbacks: "Chưa có phản hồi nào.",
 
     // Regime labels
     regime1: "Tăng + Biến động thấp",
