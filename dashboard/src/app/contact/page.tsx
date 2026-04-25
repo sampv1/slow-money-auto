@@ -23,15 +23,6 @@ export default async function ContactPage() {
                             samphamviet@gmail.com
                         </a>
                     </div>
-                    <div>
-                        <span className="text-sm font-medium text-gray-500">Tel:</span>
-                        <a
-                            href="tel:+84968171987"
-                            className="ml-2 text-sm text-blue-600 hover:text-blue-500"
-                        >
-                            0968.171.987
-                        </a>
-                    </div>
                 </div>
             </div>
 
