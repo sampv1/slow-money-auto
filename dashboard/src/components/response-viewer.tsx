@@ -35,13 +35,13 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
 
   return (
     <div>
-      {/* Day selector */}
-      <div className="flex items-center gap-3 mb-4">
-        <h1 className="text-xl font-semibold">{t(locale, "dailyAnalysis")}</h1>
+      {/* Day selector — wraps to multiple lines on mobile */}
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
+        <h1 className="text-lg sm:text-xl font-semibold">{t(locale, "dailyAnalysis")}</h1>
         <select
           value={selectedIndex}
           onChange={(e) => setSelectedIndex(Number(e.target.value))}
-          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
+          className="flex-1 min-w-0 sm:flex-none px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
         >
           {logs.map((log, i) => (
             <option key={log.trading_date} value={i}>
@@ -69,9 +69,9 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
         </div>
       </div>
 
-      {/* Header bar */}
-      <div className="flex items-center justify-between gap-3 mb-4 text-sm flex-wrap">
-        <div className="flex items-center gap-3">
+      {/* Header bar — stacks on mobile */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 text-sm">
+        <div className="flex items-center flex-wrap gap-2 sm:gap-3">
           <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${conclusionStyle[current.conclusion] ?? "bg-gray-100 text-gray-600"}`}>
             {current.conclusion}
           </span>
@@ -82,7 +82,7 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
         </div>
 
         {/* Powered by badge — emphasizes top-tier reasoning model */}
-        <div className="group relative inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-50 via-orange-50 to-rose-50 border border-amber-200/60 shadow-sm hover:shadow-md transition-all">
+        <div className="group relative inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-50 via-orange-50 to-rose-50 border border-amber-200/60 shadow-sm hover:shadow-md transition-all self-start">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-gradient-to-br from-amber-500 to-orange-600"></span>
@@ -97,8 +97,19 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
 
       {/* Response content */}
       {current.full_response ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-6 prose prose-sm max-w-none prose-headings:text-gray-800 prose-p:text-gray-700 prose-strong:text-gray-800 prose-li:text-gray-700 prose-table:text-sm prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-1.5 prose-thead:border-b prose-thead:border-gray-300 prose-tr:border-b prose-tr:border-gray-100 prose-hr:border-gray-200">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 prose prose-sm max-w-none break-words prose-headings:text-gray-800 prose-headings:break-words prose-p:text-gray-700 prose-strong:text-gray-800 prose-li:text-gray-700 prose-table:text-sm prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-1.5 prose-thead:border-b prose-thead:border-gray-300 prose-tr:border-b prose-tr:border-gray-100 prose-hr:border-gray-200 prose-pre:overflow-x-auto prose-pre:max-w-full prose-code:break-words">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              // Wrap every table in a horizontally scrollable container so
+              // wide tables don't blow out the page width on mobile.
+              table: ({ children, ...props }) => (
+                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                  <table {...props}>{children}</table>
+                </div>
+              ),
+            }}
+          >
             {current.full_response.replace(/#+\s*📋?\s*PH(?:ẦN|AN)\s*10\s*[—–-]\s*(?:STRUCTURED\s+)?JSON\s+OUTPUT[^\n]*/gi, "")}
           </ReactMarkdown>
         </div>
