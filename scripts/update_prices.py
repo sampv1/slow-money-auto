@@ -201,13 +201,24 @@ def evaluate_recommendation(rec: dict, price: dict, days_held: int) -> dict | No
     updates["current_price"] = day_close
     updates["current_price_date"] = day_date
 
-    # Track max drawdown from entry — only when day_low < entry.
-    # Always negative; null/missing means price never went below entry.
-    today_drawdown_pct = round((day_low - entry) / entry * 100, 2)
-    if today_drawdown_pct < 0:
-        prev_dd = rec.get("max_drawdown_pct")
-        if prev_dd is None or today_drawdown_pct < float(prev_dd):
-            updates["max_drawdown_pct"] = today_drawdown_pct
+    # Track max drawdown from entry.
+    # If the position closed today (SL/TP/expiry triggered), drawdown is
+    # bounded by actual_pnl_pct — we exited at SL/TP price, not at the
+    # post-exit intraday low. Otherwise, use day_low.
+    is_closing_today = "actual_pnl_pct" in updates
+    if is_closing_today:
+        actual_pnl = updates["actual_pnl_pct"]
+        # Losing exits (SL): drawdown = exit % (e.g., -5% SL), regardless of
+        # any deeper intraday low after the SL was hit. For winning exits,
+        # leave prior max_drawdown_pct unchanged.
+        if actual_pnl < 0:
+            updates["max_drawdown_pct"] = actual_pnl
+    else:
+        today_drawdown_pct = round((day_low - entry) / entry * 100, 2)
+        if today_drawdown_pct < 0:
+            prev_dd = rec.get("max_drawdown_pct")
+            if prev_dd is None or today_drawdown_pct < float(prev_dd):
+                updates["max_drawdown_pct"] = today_drawdown_pct
 
     new_status = updates.get("status", status)
     if new_status in ACTIVE_STATUSES:
