@@ -65,9 +65,24 @@ export default async function ActivePage() {
                     <td className="px-4 py-3 font-medium">{rec.symbol}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{rec.setup.replace(/_/g, " ")}</td>
                     <td className="px-4 py-3 text-right font-mono">{formatPrice(rec.entry_price)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-red-500">{formatPrice(rec.stop_loss)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-green-600">{formatPrice(rec.tp1)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-green-600">{formatPrice(rec.tp2)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-red-500 whitespace-nowrap">
+                      {formatPrice(rec.stop_loss)}
+                      {rec.stop_loss_pct !== null && (
+                        <span className="ml-1 text-xs">({rec.stop_loss_pct > 0 ? "+" : ""}{rec.stop_loss_pct.toFixed(1)}%)</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-green-600 whitespace-nowrap">
+                      {formatPrice(rec.tp1)}
+                      {rec.tp1_pct !== null && (
+                        <span className="ml-1 text-xs">({rec.tp1_pct > 0 ? "+" : ""}{rec.tp1_pct.toFixed(1)}%)</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-green-600 whitespace-nowrap">
+                      {formatPrice(rec.tp2)}
+                      {rec.tp2_pct !== null && (
+                        <span className="ml-1 text-xs">({rec.tp2_pct > 0 ? "+" : ""}{rec.tp2_pct.toFixed(1)}%)</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right font-mono">{formatPrice(rec.current_price)}</td>
                     <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor(pnl)}`}>
                       {formatPnl(pnl)}

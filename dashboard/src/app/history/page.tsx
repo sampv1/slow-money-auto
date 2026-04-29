@@ -56,7 +56,6 @@ export default async function HistoryPage({
   const wins = withPnl.filter((r) => r.actual_pnl_pct! > 0);
   const winRate = withPnl.length > 0 ? (wins.length / withPnl.length) * 100 : 0;
   const avgPnl = withPnl.length > 0 ? withPnl.reduce((s, r) => s + r.actual_pnl_pct!, 0) / withPnl.length : 0;
-  const totalPnl = withPnl.reduce((s, r) => s + r.actual_pnl_pct!, 0);
 
   return (
     <div>
@@ -117,7 +116,7 @@ export default async function HistoryPage({
 
       {/* Summary stats */}
       {withPnl.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="bg-white rounded-lg border border-gray-200 p-3">
             <div className="text-xs text-gray-500">{t(locale, "winRate")}</div>
             <div className="text-lg font-semibold">{winRate.toFixed(0)}%</div>
@@ -126,10 +125,6 @@ export default async function HistoryPage({
           <div className="bg-white rounded-lg border border-gray-200 p-3">
             <div className="text-xs text-gray-500">{t(locale, "avgPnl")}</div>
             <div className={`text-lg font-semibold ${pnlColor(avgPnl)}`}>{formatPnl(avgPnl)}</div>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t(locale, "totalPnl")}</div>
-            <div className={`text-lg font-semibold ${pnlColor(totalPnl)}`}>{formatPnl(totalPnl)}</div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-3">
             <div className="text-xs text-gray-500">{t(locale, "closed")}</div>

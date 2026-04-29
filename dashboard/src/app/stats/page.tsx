@@ -30,7 +30,6 @@ export default async function StatsPage() {
   // Core metrics
   const winRate = withPnl.length > 0 ? (wins.length / withPnl.length) * 100 : 0;
   const avgPnl = withPnl.length > 0 ? withPnl.reduce((s, r) => s + r.actual_pnl_pct!, 0) / withPnl.length : 0;
-  const totalPnl = withPnl.reduce((s, r) => s + r.actual_pnl_pct!, 0);
   const avgR = withPnl.length > 0 ? withPnl.reduce((s, r) => s + r.r_multiple, 0) / withPnl.length : 0;
   const avgWin = wins.length > 0 ? wins.reduce((s, r) => s + r.actual_pnl_pct!, 0) / wins.length : 0;
   const avgLoss = losses.length > 0 ? losses.reduce((s, r) => s + r.actual_pnl_pct!, 0) / losses.length : 0;
@@ -75,8 +74,10 @@ export default async function StatsPage() {
     existing.totalPnl += r.actual_pnl_pct!;
     symbolStats.set(r.symbol, existing);
   }
+  // Sort by avg P&L (totalPnl / count) so Top/Worst rankings reflect
+  // per-trade quality rather than rewarding symbols just for trade volume.
   const symbolByPnl = [...symbolStats.entries()]
-    .sort((a, b) => b[1].totalPnl - a[1].totalPnl);
+    .sort((a, b) => (b[1].totalPnl / b[1].count) - (a[1].totalPnl / a[1].count));
   const topSymbols = symbolByPnl.slice(0, 10);
   const bottomSymbols = symbolByPnl.slice(-10).reverse();
 
@@ -134,7 +135,6 @@ export default async function StatsPage() {
         <StatCard label={t(locale, "totalRecs")} value={allRecs.length.toString()} sub={`${active.length} ${t(locale, "active")}, ${closed.length} ${t(locale, "closedLower")}`} />
         <StatCard label={t(locale, "winRate")} value={`${winRate.toFixed(0)}%`} sub={`${wins.length}W / ${losses.length}L`} color={winRate >= 50 ? "text-green-600" : "text-red-600"} />
         <StatCard label={t(locale, "avgPnl")} value={formatPnl(avgPnl)} color={pnlColor(avgPnl)} />
-        <StatCard label={t(locale, "totalPnl")} value={formatPnl(totalPnl)} color={pnlColor(totalPnl)} />
         <StatCard label={t(locale, "avgRMultiple")} value={avgR.toFixed(2)} color={pnlColor(avgR)} />
         <StatCard label={t(locale, "profitFactor")} value={profitFactor === Infinity ? "\u221E" : profitFactor.toFixed(2)} color={profitFactor >= 1 ? "text-green-600" : "text-red-600"} />
         <StatCard label={t(locale, "avgWin")} value={formatPnl(avgWin)} color="text-green-600" />
@@ -187,18 +187,21 @@ export default async function StatsPage() {
                     <th className="pb-2 font-medium">{t(locale, "setup")}</th>
                     <th className="pb-2 font-medium text-right">{t(locale, "count")}</th>
                     <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "totalPnl")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "avgPnl")}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {setupRows.map(([setup, stats]) => (
+                  {setupRows.map(([setup, stats]) => {
+                    const setupAvgPnl = stats.totalPnl / stats.count;
+                    return (
                     <tr key={setup} className="border-t border-gray-100">
                       <td className="py-1.5 text-gray-700">{setup}</td>
                       <td className="py-1.5 text-right">{stats.count}</td>
                       <td className="py-1.5 text-right">{((stats.wins / stats.count) * 100).toFixed(0)}%</td>
-                      <td className={`py-1.5 text-right font-mono ${pnlColor(stats.totalPnl)}`}>{formatPnl(stats.totalPnl)}</td>
+                      <td className={`py-1.5 text-right font-mono ${pnlColor(setupAvgPnl)}`}>{formatPnl(setupAvgPnl)}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -219,18 +222,21 @@ export default async function StatsPage() {
                   <th className="pb-2 font-medium">{t(locale, "symbol")}</th>
                   <th className="pb-2 font-medium text-right">{t(locale, "trades")}</th>
                   <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
-                  <th className="pb-2 font-medium text-right">{t(locale, "totalPnl")}</th>
+                  <th className="pb-2 font-medium text-right">{t(locale, "avgPnl")}</th>
                 </tr>
               </thead>
               <tbody>
-                {topSymbols.map(([symbol, stats]) => (
+                {topSymbols.map(([symbol, stats]) => {
+                  const symbolAvgPnl = stats.totalPnl / stats.count;
+                  return (
                   <tr key={symbol} className="border-t border-gray-100">
                     <td className="py-1.5 font-medium">{symbol}</td>
                     <td className="py-1.5 text-right">{stats.count}</td>
                     <td className="py-1.5 text-right">{((stats.wins / stats.count) * 100).toFixed(0)}%</td>
-                    <td className={`py-1.5 text-right font-mono ${pnlColor(stats.totalPnl)}`}>{formatPnl(stats.totalPnl)}</td>
+                    <td className={`py-1.5 text-right font-mono ${pnlColor(symbolAvgPnl)}`}>{formatPnl(symbolAvgPnl)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -247,18 +253,21 @@ export default async function StatsPage() {
                   <th className="pb-2 font-medium">{t(locale, "symbol")}</th>
                   <th className="pb-2 font-medium text-right">{t(locale, "trades")}</th>
                   <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
-                  <th className="pb-2 font-medium text-right">{t(locale, "totalPnl")}</th>
+                  <th className="pb-2 font-medium text-right">{t(locale, "avgPnl")}</th>
                 </tr>
               </thead>
               <tbody>
-                {bottomSymbols.map(([symbol, stats]) => (
+                {bottomSymbols.map(([symbol, stats]) => {
+                  const symbolAvgPnl = stats.totalPnl / stats.count;
+                  return (
                   <tr key={symbol} className="border-t border-gray-100">
                     <td className="py-1.5 font-medium">{symbol}</td>
                     <td className="py-1.5 text-right">{stats.count}</td>
                     <td className="py-1.5 text-right">{((stats.wins / stats.count) * 100).toFixed(0)}%</td>
-                    <td className={`py-1.5 text-right font-mono ${pnlColor(stats.totalPnl)}`}>{formatPnl(stats.totalPnl)}</td>
+                    <td className={`py-1.5 text-right font-mono ${pnlColor(symbolAvgPnl)}`}>{formatPnl(symbolAvgPnl)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -280,19 +289,22 @@ export default async function StatsPage() {
                     <th className="pb-2 font-medium text-right">{t(locale, "count")}</th>
                     <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
                     <th className="pb-2 font-medium text-right">{t(locale, "avgR")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "totalPnl")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "avgPnl")}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {regimeRows.map(([regime, stats]) => (
+                  {regimeRows.map(([regime, stats]) => {
+                    const regimeAvgPnl = stats.totalPnl / stats.count;
+                    return (
                     <tr key={regime} className="border-t border-gray-100">
                       <td className="py-1.5 text-gray-700">{regime}</td>
                       <td className="py-1.5 text-right">{stats.count}</td>
                       <td className="py-1.5 text-right">{((stats.wins / stats.count) * 100).toFixed(0)}%</td>
                       <td className={`py-1.5 text-right ${pnlColor(stats.rSum / stats.count)}`}>{(stats.rSum / stats.count).toFixed(2)}</td>
-                      <td className={`py-1.5 text-right font-mono ${pnlColor(stats.totalPnl)}`}>{formatPnl(stats.totalPnl)}</td>
+                      <td className={`py-1.5 text-right font-mono ${pnlColor(regimeAvgPnl)}`}>{formatPnl(regimeAvgPnl)}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -311,18 +323,21 @@ export default async function StatsPage() {
                     <th className="pb-2 font-medium">{t(locale, "bySector")}</th>
                     <th className="pb-2 font-medium text-right">{t(locale, "count")}</th>
                     <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "totalPnl")}</th>
+                    <th className="pb-2 font-medium text-right">{t(locale, "avgPnl")}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sectorRows.map(([sector, stats]) => (
+                  {sectorRows.map(([sector, stats]) => {
+                    const sectorAvgPnl = stats.totalPnl / stats.count;
+                    return (
                     <tr key={sector} className="border-t border-gray-100">
                       <td className="py-1.5 text-gray-700">{sector}</td>
                       <td className="py-1.5 text-right">{stats.count}</td>
                       <td className="py-1.5 text-right">{((stats.wins / stats.count) * 100).toFixed(0)}%</td>
-                      <td className={`py-1.5 text-right font-mono ${pnlColor(stats.totalPnl)}`}>{formatPnl(stats.totalPnl)}</td>
+                      <td className={`py-1.5 text-right font-mono ${pnlColor(sectorAvgPnl)}`}>{formatPnl(sectorAvgPnl)}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
