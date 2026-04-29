@@ -17,14 +17,14 @@ type PushResult = {
 
 function getLocaleCookie(): Locale {
   const match = document.cookie.match(/locale=(en|vi)/);
-  return (match?.[1] as Locale) ?? "en";
+  return (match?.[1] as Locale) ?? "vi";
 }
 
 export default function InputForm() {
   const [json, setJson] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [result, setResult] = useState<PushResult | null>(null);
-  const [locale, setLocale] = useState<Locale>("en");
+  const [locale, setLocale] = useState<Locale>("vi");
 
   useEffect(() => {
     setLocale(getLocaleCookie());

@@ -395,7 +395,7 @@ export function t(locale: Locale, key: TranslationKey): string {
   return translations[locale][key];
 }
 
-export const DEFAULT_LOCALE: Locale = "en";
+export const DEFAULT_LOCALE: Locale = "vi";
 
 export function getLocaleFromCookie(cookieValue: string | null): Locale {
   if (cookieValue === "en" || cookieValue === "vi") return cookieValue;
