@@ -110,7 +110,7 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
               ),
             }}
           >
-            {current.full_response.replace(/#+\s*📋?\s*PH(?:ẦN|AN)\s*10\s*[—–-]\s*(?:STRUCTURED\s+)?JSON\s+OUTPUT[^\n]*/gi, "")}
+            {current.full_response.replace(/#+[^\n]*?PH(?:ẦN|AN)\s*10[^\n]*JSON[^\n]*OUTPUT[^\n]*/gi, "")}
           </ReactMarkdown>
         </div>
       ) : (
