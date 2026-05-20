@@ -1,0 +1,48 @@
+name: TA Daily Update
+
+on:
+  schedule:
+    # VN market closes at 15:00 GMT+7 (08:00 UTC). We run at 09:30 UTC
+    # (16:30 ICT) to give vnstock ~90 min to publish today's closing bar.
+    # Weekdays only. Off-minute (:30) reduces GitHub Actions free-tier
+    # queue delay vs. round-hour cron jobs.
+    - cron: "30 9 * * 1-5"
+  workflow_dispatch: # allow manual trigger from GitHub UI
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment: supabase
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Verify secrets are set
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "::error::SUPABASE_URL secret is not set in repo settings."
+            exit 1
+          fi
+          if [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::SUPABASE_ANON_KEY secret is not set in repo settings."
+            exit 1
+          fi
+          echo "Secrets OK."
+
+      - name: Run TA daily update
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: python update_ta_daily.py
