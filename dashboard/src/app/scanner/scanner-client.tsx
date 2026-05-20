@@ -73,7 +73,8 @@ export function ScannerClient({
           if (spec) matched.push(spec);
         }
       }
-      if (matched.length === 0) continue;
+      // Strict AND: every selected indicator must have fired for this symbol.
+      if (matched.length < selected.size) continue;
       const close = closeBySymbol.get(symbol);
       rows.push({
         symbol,
@@ -82,10 +83,7 @@ export function ScannerClient({
         volume: close?.volume ?? null,
       });
     }
-    rows.sort((a, b) => {
-      if (b.matched.length !== a.matched.length) return b.matched.length - a.matched.length;
-      return a.symbol.localeCompare(b.symbol);
-    });
+    rows.sort((a, b) => a.symbol.localeCompare(b.symbol));
     return rows;
   }, [selected, signalsBySymbol, closeBySymbol]);
 
