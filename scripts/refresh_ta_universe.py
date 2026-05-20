@@ -3,17 +3,20 @@
 refresh_ta_universe.py — Populate or refresh the ta_universe table.
 
 Sources:
-  - vnstock: pulls the VN100 group via vnstock.Listing
-  - default: built-in curated HOSE list (VN30 + popular mid-caps)
-  - file:    one symbol per line in a text file
+  - all-exchanges: every listed stock from HOSE + HNX + UPCOM (~1,887 symbols).
+                   This is the default. Run --apply-filter after backfilling
+                   OHLCV to drop illiquid pennies.
+  - vnstock:       VN100 only (~100 large-cap HOSE stocks).
+  - default:       built-in curated HOSE list (VN30 + popular mid-caps).
+  - file:          one symbol per line in a text file.
 
 Usage:
-  # Populate from vnstock VN100 (falls back to default list if vnstock fails):
+  # Populate from all exchanges (default, with VN100 fallback if it fails):
   python3 refresh_ta_universe.py
 
   # Force a specific source:
-  python3 refresh_ta_universe.py --source default
   python3 refresh_ta_universe.py --source vnstock
+  python3 refresh_ta_universe.py --source default
   python3 refresh_ta_universe.py --source file --file my_symbols.txt
 
   # After backfilling OHLCV, apply the liquidity filter (deactivate illiquid):
@@ -34,9 +37,11 @@ from ta.common import get_supabase_client
 from ta.universe import (
     DEFAULT_HOSE_SYMBOLS,
     apply_liquidity_filter,
+    fetch_all_listed_stocks,
     fetch_vn100_from_vnstock,
     get_active_symbols,
     upsert_symbols,
+    upsert_symbols_with_exchanges,
 )
 
 
@@ -56,15 +61,15 @@ def main():
     parser = argparse.ArgumentParser(description="Refresh the TA scanner universe")
     parser.add_argument(
         "--source",
-        choices=("vnstock", "default", "file"),
-        default="vnstock",
-        help="Where to pull the symbol list from (default: vnstock with fallback to 'default')",
+        choices=("all-exchanges", "vnstock", "default", "file"),
+        default="all-exchanges",
+        help="Where to pull the symbol list from (default: all-exchanges)",
     )
     parser.add_argument("--file", help="Path to a newline-delimited symbol file (for --source file)")
-    parser.add_argument("--exchange", default="HOSE", help="Exchange to tag inserted symbols with (default: HOSE)")
+    parser.add_argument("--exchange", default="HOSE", help="Exchange to tag inserted symbols with for single-exchange sources (default: HOSE)")
     parser.add_argument("--apply-filter", action="store_true", help="Deactivate symbols failing the liquidity filter")
-    parser.add_argument("--min-avg-volume", type=int, default=100_000, help="Liquidity filter: min avg 20d volume (default 100k)")
-    parser.add_argument("--min-close", type=int, default=5_000, help="Liquidity filter: min latest close in VND (default 5000)")
+    parser.add_argument("--min-avg-volume", type=int, default=300_000, help="Liquidity filter: min avg 20d volume (default 300k)")
+    parser.add_argument("--min-close", type=int, default=10_000, help="Liquidity filter: min latest close in VND (default 10000)")
     parser.add_argument("--list", action="store_true", help="Just list the active universe and exit")
     args = parser.parse_args()
 
@@ -88,36 +93,66 @@ def main():
         return
 
     # Otherwise: refresh the symbol list
-    symbols: list[str] = []
     if args.source == "file":
         if not args.file:
             print("Error: --source file requires --file <path>")
             sys.exit(1)
         symbols = load_symbols_from_file(args.file)
         print(f"Loaded {len(symbols)} symbols from {args.file}")
+        if not symbols:
+            print("No symbols to upsert. Aborting.")
+            sys.exit(1)
+        written = upsert_symbols(client, symbols, exchange=args.exchange)
+        print(f"Upserted {written} symbols into ta_universe (exchange={args.exchange}, is_active=true).")
+        return
 
-    elif args.source == "default":
+    if args.source == "default":
         symbols = list(DEFAULT_HOSE_SYMBOLS)
         print(f"Using built-in default list ({len(symbols)} symbols)")
+        written = upsert_symbols(client, symbols, exchange=args.exchange)
+        print(f"Upserted {written} symbols into ta_universe (exchange={args.exchange}, is_active=true).")
+        return
 
-    else:  # vnstock
+    if args.source == "vnstock":
         print("Fetching VN100 from vnstock...")
         fetched = fetch_vn100_from_vnstock()
         if fetched:
-            symbols = fetched
-            print(f"Fetched {len(symbols)} symbols from vnstock")
-        else:
-            print("vnstock fetch failed — falling back to built-in default list")
-            symbols = list(DEFAULT_HOSE_SYMBOLS)
-            print(f"Using {len(symbols)} default symbols")
+            print(f"Fetched {len(fetched)} symbols from vnstock VN100")
+            written = upsert_symbols(client, fetched, exchange=args.exchange)
+            print(f"Upserted {written} symbols into ta_universe (exchange={args.exchange}, is_active=true).")
+            return
+        print("vnstock VN100 fetch failed — falling back to built-in default list")
+        symbols = list(DEFAULT_HOSE_SYMBOLS)
+        written = upsert_symbols(client, symbols, exchange=args.exchange)
+        print(f"Upserted {written} default symbols (exchange={args.exchange}, is_active=true).")
+        return
 
-    if not symbols:
-        print("No symbols to upsert. Aborting.")
-        sys.exit(1)
+    # all-exchanges (default)
+    print("Fetching all listed stocks from HOSE + HNX + UPCOM...")
+    items = fetch_all_listed_stocks()
+    if items:
+        by_ex: dict[str, int] = {}
+        for _sym, ex in items:
+            by_ex[ex] = by_ex.get(ex, 0) + 1
+        breakdown = "  ".join(f"{k}={v}" for k, v in sorted(by_ex.items()))
+        print(f"Fetched {len(items)} stocks ({breakdown})")
+        written = upsert_symbols_with_exchanges(client, items)
+        print(f"Upserted {written} stocks into ta_universe (is_active=true).")
+        print("Next: backfill 30 days of OHLCV, then run --apply-filter to drop pennies.")
+        return
 
+    print("all-exchanges fetch failed — falling back to vnstock VN100")
+    fetched = fetch_vn100_from_vnstock()
+    if fetched:
+        print(f"Fetched {len(fetched)} symbols from vnstock VN100 fallback")
+        written = upsert_symbols(client, fetched, exchange=args.exchange)
+        print(f"Upserted {written} symbols into ta_universe (exchange={args.exchange}, is_active=true).")
+        return
+
+    print("vnstock VN100 also failed — falling back to built-in default list")
+    symbols = list(DEFAULT_HOSE_SYMBOLS)
     written = upsert_symbols(client, symbols, exchange=args.exchange)
-    print(f"Upserted {written} symbols into ta_universe (exchange={args.exchange}, is_active=true).")
-    print("Run with --apply-filter after backfilling OHLCV to deactivate illiquid names.")
+    print(f"Upserted {written} default symbols (exchange={args.exchange}, is_active=true).")
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ A TA-based stock screener layered on top of the existing Slow Money pipeline. Ni
 
 | Decision | Choice |
 |---|---|
-| Universe | VN100 + liquidity filter (avg 20d volume > 100k shares, close > 5k VND) → expect ~150–180 tickers |
+| Universe | All HOSE + HNX + UPCOM (stock-type only) — 1,535 raw symbols. Strict filter: avg 20d vol ≥ 300k shares, close ≥ 10k VND. Expect ~350-500 active. |
 | Compute model | Nightly pre-compute → store flags in DB |
 | Combine logic | AND filter + ranking by # signals fired |
 | Backfill | 90 days |
@@ -321,7 +321,8 @@ jobs:
 | 1c — Tier 2 candlesticks | **DONE** — 10 patterns added (Hammer, Shooting Star, 2× Engulfing, Morning/Evening Star, 3 White Soldiers / 3 Black Crows, Piercing Line, Dark Cloud Cover). 542,252 total signal rows, 19,768 triggers across 24 indicators. |
 | 1d — Tier 3 divergence | **DONE** — 4 divergence signals (RSI / MACD × bull / bear). 542,861 total signal rows, 20,377 triggers across all 28 indicators. Swing detection uses ±5d window + 30d lookback. |
 | 1e — Cron + backfill | **DONE** — `update_ta_daily.py` orchestrator + `.github/workflows/ta-daily.yml` (09:30 UTC weekdays). End-to-end local run: 6.4 min OHLCV fetch + 60s signals = ~7.5 min total. Needs `SUPABASE_URL` and `SUPABASE_ANON_KEY` in GitHub Actions environment `supabase`. |
-| 1f — Scanner page | **DONE** — `/scanner` route with bilingual multi-select (28 indicators across 6 categories) + ranked results table. AND + scoring logic, ▲/▼ direction markers, bullish/bearish color coding. Build clean, dev server tested. |
+| 1f — Scanner page | **DONE** — `/scanner` route with bilingual multi-select (28 indicators across 6 categories) + ranked results table. Strict AND filter, ▲/▼ direction markers, bullish/bearish color coding. Build clean, dev server tested. |
+| Universe expansion | **IN PROGRESS** — `--source all-exchanges` added; ta_universe seeded with 1,535 stocks (HOSE 402, HNX 301, UPCOM 832). Backfill + filter pending (run sequence below). Cron timeout bumped to 60 min. |
 | 1g — Drill-down page | NOT STARTED |
 
 ### Phase 1a deliverables (code in repo)

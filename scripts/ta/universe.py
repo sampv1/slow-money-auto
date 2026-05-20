@@ -1,10 +1,12 @@
 """Manage the TA scanner universe — which symbols are scanned each day.
 
 The universe is stored in the ta_universe table. This module provides:
-- fetching candidate lists (VN100 via vnstock, or a built-in default)
+- fetching candidate lists (all HOSE+HNX+UPCOM, VN100 only, or a built-in default)
 - applying a liquidity filter using cached OHLCV data
 - reading the active universe back from the DB
 """
+
+TARGET_EXCHANGES = {"HOSE", "HNX", "UPCOM"}
 
 # Curated fallback list of major HOSE tickers (VN30 + popular mid-caps).
 # Used when vnstock's listing API is unavailable. Edit ta_universe directly
@@ -24,6 +26,30 @@ DEFAULT_HOSE_SYMBOLS = [
     "BWE", "CRE", "DBC", "DHC", "DPG", "FRT", "HBC", "HHV", "ITA", "KSB",
     "PAN", "QNS", "TCH", "VTP",
 ]
+
+
+def fetch_all_listed_stocks() -> list[tuple[str, str]] | None:
+    """Fetch every listed stock from HOSE + HNX + UPCOM via vnstock.
+
+    Returns a list of (symbol, exchange) tuples, or None on failure.
+    Filters to type='stock' (excludes bonds, ETFs, warrants, special funds).
+    """
+    try:
+        from vnstock import Listing
+
+        df = Listing().symbols_by_exchange()
+    except Exception as e:
+        print(f"  vnstock symbols_by_exchange failed: {e}")
+        return None
+
+    if df is None or (hasattr(df, "empty") and df.empty):
+        return None
+
+    df = df[df["exchange"].isin(TARGET_EXCHANGES)]
+    if "type" in df.columns:
+        df = df[df["type"] == "stock"]
+
+    return [(str(r.symbol).upper(), str(r.exchange)) for r in df.itertuples()]
 
 
 def fetch_vn100_from_vnstock() -> list[str] | None:
@@ -57,6 +83,9 @@ def fetch_vn100_from_vnstock() -> list[str] | None:
 def upsert_symbols(client, symbols: list[str], exchange: str = "HOSE") -> int:
     """Upsert a list of symbols into ta_universe with is_active=true.
 
+    All symbols are tagged with the same `exchange`. For multi-exchange
+    rosters, use `upsert_symbols_with_exchanges` instead.
+
     Returns the number of rows upserted.
     """
     if not symbols:
@@ -66,6 +95,26 @@ def upsert_symbols(client, symbols: list[str], exchange: str = "HOSE") -> int:
         for s in symbols
     ]
     client.table("ta_universe").upsert(rows, on_conflict="symbol").execute()
+    return len(rows)
+
+
+def upsert_symbols_with_exchanges(client, items: list[tuple[str, str]]) -> int:
+    """Upsert (symbol, exchange) tuples into ta_universe with is_active=true.
+
+    Used when seeding from `fetch_all_listed_stocks()` where each symbol has
+    its own exchange. Chunks the upsert to avoid 1k+-row payloads.
+
+    Returns the number of rows upserted.
+    """
+    if not items:
+        return 0
+    rows = [
+        {"symbol": sym.upper(), "exchange": exch, "is_active": True}
+        for sym, exch in items
+    ]
+    chunk = 500
+    for i in range(0, len(rows), chunk):
+        client.table("ta_universe").upsert(rows[i:i + chunk], on_conflict="symbol").execute()
     return len(rows)
 
 
@@ -83,8 +132,8 @@ def get_active_symbols(client) -> list[str]:
 
 def apply_liquidity_filter(
     client,
-    min_avg_volume: int = 100_000,
-    min_close_vnd: int = 5_000,
+    min_avg_volume: int = 300_000,
+    min_close_vnd: int = 10_000,
     lookback_days: int = 20,
 ) -> tuple[int, int]:
     """Deactivate universe entries that fail the liquidity filter.
