@@ -39,13 +39,13 @@ export default async function RootLayout({
 
   const navLinks = [
     { href: "/", label: t(locale, "navAnalysis") },
-    { href: "/active", label: t(locale, "navActive") },
-    { href: "/history", label: t(locale, "navHistory") },
-    { href: "/logs", label: t(locale, "navLogs") },
-    { href: "/stats", label: t(locale, "navStats") },
     { href: "/scanner", label: t(locale, "navScanner") },
     ...(role === "admin"
       ? [
+          { href: "/active", label: t(locale, "navActive") },
+          { href: "/history", label: t(locale, "navHistory") },
+          { href: "/logs", label: t(locale, "navLogs") },
+          { href: "/stats", label: t(locale, "navStats") },
           { href: "/input", label: t(locale, "navInput") },
           { href: "/feedbacks", label: t(locale, "navFeedbacks") },
         ]

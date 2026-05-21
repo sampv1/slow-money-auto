@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { formatPrice, formatPnl, pnlColor, statusBadge, conclusionBadge, regimeLabel } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
+import { getUserRole } from "@/lib/supabase-server";
 import type { DailyLog, Recommendation } from "@/lib/types";
 
 export const revalidate = 0;
@@ -11,6 +13,10 @@ export default async function LogDetailPage({
 }: {
   params: Promise<{ date: string }>;
 }) {
+  const role = await getUserRole();
+  if (role !== "admin") {
+    redirect("/login");
+  }
   const locale = await getLocale();
   const { date } = await params;
 
