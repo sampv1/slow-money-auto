@@ -16,7 +16,7 @@ from typing import Callable
 
 import pandas as pd
 
-from .indicators import breakouts, candlesticks, divergence, momentum, sr, trend, volume
+from .indicators import breakouts, candlesticks, divergence, momentum, sr, trend, trendlines, volume
 
 
 @dataclass(frozen=True)
@@ -145,6 +145,20 @@ INDICATOR_SPECS: list[IndicatorSpec] = [
     IndicatorSpec("near_resistance", "support_resistance", "bearish",
                   "Near resistance", "Gần kháng cự",
                   sr.compute_near_resistance),
+
+    # --- Trendlines (Phase 2b) ---
+    IndicatorSpec("at_uptrend_support", "trendline", "bullish",
+                  "At uptrend support", "Chạm đường xu hướng tăng",
+                  trendlines.compute_at_uptrend_support),
+    IndicatorSpec("at_downtrend_resistance", "trendline", "bearish",
+                  "At downtrend resistance", "Chạm đường xu hướng giảm",
+                  trendlines.compute_at_downtrend_resistance),
+    IndicatorSpec("uptrend_break", "trendline", "bearish",
+                  "Uptrend line break", "Phá vỡ đường xu hướng tăng",
+                  trendlines.compute_uptrend_break),
+    IndicatorSpec("downtrend_break", "trendline", "bullish",
+                  "Downtrend line break", "Phá vỡ đường xu hướng giảm",
+                  trendlines.compute_downtrend_break),
 ]
 
 

@@ -219,17 +219,28 @@ export type SRLevel = {
   touches: number;
 };
 
+export type Trendline = {
+  trend_type: "uptrend" | "downtrend";
+  start_date: string;
+  start_price: number;
+  end_date: string;
+  end_price: number;
+  touches: number;
+};
+
 export function ChartClient({
   candles,
   selected,
   chartSignals,
   srLevels = [],
+  trendlines = [],
   locale,
 }: {
   candles: Candle[];
   selected: string[];
   chartSignals: { date: string; indicator: string }[];
   srLevels?: SRLevel[];
+  trendlines?: Trendline[];
   locale: Locale;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -320,6 +331,24 @@ export function ChartClient({
         axisLabelVisible: true,
         title: `${isSupport ? "S" : "R"} ${lvl.touches}t`,
       });
+    }
+
+    // Trendlines on price pane (only when trendline indicators selected).
+    // Each line is drawn as a 2-point LineSeries from start_date to end_date.
+    for (const tl of trendlines) {
+      const isUp = tl.trend_type === "uptrend";
+      const tlSeries = chart.addSeries(LineSeries, {
+        color: isUp ? UP_COLOR : DOWN_COLOR,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        title: `${isUp ? "↗" : "↘"} ${tl.touches}t`,
+      });
+      tlSeries.setData([
+        { time: tl.start_date as Time, value: tl.start_price },
+        { time: tl.end_date as Time, value: tl.end_price },
+      ]);
     }
 
     if (features.showRollingHigh) {
@@ -527,7 +556,7 @@ export function ChartClient({
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, features, panes, chartSignals, srLevels]);
+  }, [candles, features, panes, chartSignals, srLevels, trendlines]);
 
   return (
     <div className="space-y-2">

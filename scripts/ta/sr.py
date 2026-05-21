@@ -188,23 +188,46 @@ def upsert_levels(client, symbol: str, levels: Iterable[dict]) -> int:
     set. Cheaper than a true upsert because levels can drift across runs
     (their `price` is the PK, so an old level wouldn't get re-keyed).
     Returns the number of rows written.
+
+    Note: two clusters from different pivot streams (highs vs lows) can land
+    on the same rounded price and level_type — we merge them rather than
+    letting the unique constraint reject the batch.
     """
     client.table("ta_sr_levels").delete().eq("symbol", symbol).execute()
-    rows = []
+
+    def _to_iso(d):
+        return d.isoformat() if hasattr(d, "isoformat") else str(d)
+
+    merged: dict[tuple[float, str], dict] = {}
     for lvl in levels:
-        rows.append(
-            {
+        price = round(float(lvl["price"]), 2)
+        level_type = lvl["level_type"]
+        first_iso = _to_iso(lvl["first_touch_date"])
+        last_iso = _to_iso(lvl["last_touch_date"])
+        key = (price, level_type)
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = {
                 "symbol": symbol,
-                "price": round(float(lvl["price"]), 2),
-                "level_type": lvl["level_type"],
+                "price": price,
+                "level_type": level_type,
                 "touches": int(lvl["touches"]),
-                "strength": round(float(lvl["strength"]), 4),
-                "first_touch_date": lvl["first_touch_date"].isoformat()
-                    if hasattr(lvl["first_touch_date"], "isoformat") else str(lvl["first_touch_date"]),
-                "last_touch_date": lvl["last_touch_date"].isoformat()
-                    if hasattr(lvl["last_touch_date"], "isoformat") else str(lvl["last_touch_date"]),
+                "strength": float(lvl["strength"]),
+                "first_touch_date": first_iso,
+                "last_touch_date": last_iso,
             }
-        )
+        else:
+            existing["touches"] += int(lvl["touches"])
+            existing["strength"] += float(lvl["strength"])
+            if first_iso < existing["first_touch_date"]:
+                existing["first_touch_date"] = first_iso
+            if last_iso > existing["last_touch_date"]:
+                existing["last_touch_date"] = last_iso
+
+    rows = list(merged.values())
+    for row in rows:
+        row["strength"] = round(row["strength"], 4)
+
     if rows:
         client.table("ta_sr_levels").insert(rows).execute()
     return len(rows)

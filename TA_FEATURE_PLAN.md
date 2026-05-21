@@ -326,8 +326,8 @@ jobs:
 | 1g+ — Selected-indicator drill-down | **DONE** — Drill-down chart now reflects the indicators chosen on the scanner. Multi-pane layout: price + volume (always); RSI(14) subplot (+ 30/70 dashed lines) appears when any rsi_* indicator is selected; MACD(12,26,9) subplot (line + signal + colored histogram) appears when any macd_* indicator is selected. Markers placed on the pane closest to their source data. JS indicator math mirrors the Python helpers; lightweight-charts pane indices computed dynamically. |
 | Universe expansion | **IN PROGRESS** — `--source all-exchanges` added; ta_universe seeded with 1,535 stocks (HOSE 402, HNX 301, UPCOM 832). Backfill + filter pending (run sequence below). Cron timeout bumped to 60 min. |
 | Admin-only menus | **DONE** — Active, History, Daily Logs, Stats moved into the admin-only nav block (alongside Input + Feedbacks). Each page also has a server-side `if (role !== "admin") redirect("/login")` guard so direct URL access is blocked. RLS on the underlying tables remains anon-readable — see Risks section. |
-| 2a — Support/Resistance | **IN PROGRESS** — Pivots + ATR clustering, ≥3 touches required. 6 new signals (near/bounce/break × support/resistance). Volume-gated breaks. New `ta_sr_levels` table for current active levels per symbol. Chart will draw horizontal dashed lines on price pane when an S/R indicator is selected. See Section 14 below for the build plan. |
-| 2b — Trendlines | **DEFERRED until 2a ships** — Will revisit after eyeballing real S/R output. Plan: multi-touch candidate scoring, ≥3 touches, volume-gated breaks. |
+| 2a — Support/Resistance | **DONE** — Pivots + ATR clustering, ≥3 touches required. 6 new signals (near/bounce/break × support/resistance). Volume-gated breaks. `ta_sr_levels` table snapshots current active levels per symbol. Chart draws horizontal dashed lines on price pane when an S/R indicator is selected. Verified on 5 sample symbols. |
+| 2b — Trendlines | **DONE** — Multi-touch candidate scoring across last 90 bars, ≥3 touches required. 4 new signals (at_uptrend_support / at_downtrend_resistance, uptrend_break / downtrend_break). Volume-gated breaks. Active-line filter drops trendlines that today's close has already broken through (±0.3 ATR). `ta_trendlines` table snapshots active uptrend + downtrend lines per symbol. Chart draws diagonal dashed lines (2-point LineSeries from start → today). See Section 15 below. |
 
 ### Phase 1a deliverables (code in repo)
 
@@ -422,3 +422,77 @@ create table ta_sr_levels (
 3. If sane, run for all 100 (current universe) — tune threshold if needed
 4. After all-exchanges backfill: run for all 1,535
 5. Decide on Phase 2b (trendlines) after seeing real output
+
+---
+
+## 15. Phase 2b — Trendlines
+
+Adds 4 signals based on diagonal support / resistance lines fit through swing pivots.
+
+### Settled parameters
+- Lookback window: **90 bars** (swings older than this don't contribute)
+- Minimum bar span between the two anchor swings: **10 bars**
+- Touch threshold: **≥3 touches** (anchors count as 2)
+- Touch tolerance: 0.3 × ATR(14)
+- Slope similarity threshold (dedup): 10%
+- Top **3 lines** kept per side (uptrend / downtrend) per symbol
+- Active-line filter: drop lines that today's close has already broken through (±0.3 ATR past today's projected line price)
+- Break confirmation: volume > 1.5× MA20(volume)
+
+### 4 new signals
+| Bullish | Bearish | Triggers when |
+|---|---|---|
+| `at_uptrend_support` | `at_downtrend_resistance` | Low (resp. high) touched the line within 0.3 ATR + candle closes in the reversal direction |
+| `downtrend_break` | `uptrend_break` | Close crossed the line in the opposite direction + volume confirmation |
+
+### Data model
+New table `ta_trendlines` storing the *current* active trendlines per symbol — overwritten nightly. Stored as the two end-points (start_date/start_price, end_date/end_price) plus the per-bar slope and touch count.
+
+```sql
+create table ta_trendlines (
+  id bigserial primary key,
+  symbol text not null,
+  trend_type text not null check (trend_type in ('uptrend', 'downtrend')),
+  start_date date not null,
+  start_price numeric not null,
+  end_date date not null,
+  end_price numeric not null,
+  slope numeric not null,
+  touches int not null,
+  updated_at timestamptz not null default now()
+);
+```
+
+`end_date` and `end_price` are projected to today's bar so the line spans the full visible chart range when rendered.
+
+### Implementation files
+- `supabase/010_create_ta_trendlines.sql` — new migration
+- `scripts/ta/trendlines.py` — multi-touch detection + active filter (~170 lines, reuses swing/ATR helpers from `ta/sr.py`)
+- `scripts/ta/indicators/trendlines.py` — 4 signal computations (read trendlines via kwarg)
+- `scripts/ta/registry.py` — 4 new specs under category `trendline`
+- `scripts/compute_ta_signals.py` — detect + persist trendlines before signal compute; orchestrator's `_compute_kwargs_for` now also passes `trendlines` to signatures that declare it
+- `scripts/update_ta_daily.py` — same wiring for the daily cron
+- `dashboard/src/lib/ta-indicators.ts` — mirror the 4 new specs + new `trendline` category
+- `dashboard/src/lib/i18n.ts` — `taCategoryTrendline` string (en + vi)
+- `dashboard/src/app/scanner/[symbol]/page.tsx` — fetch active trendlines for the symbol when any trendline indicator is selected
+- `dashboard/src/app/scanner/[symbol]/chart-client.tsx` — draw each trendline as a 2-point dashed `LineSeries` (uptrend green ↗, downtrend red ↘, labeled with touch count)
+
+### Sample output (eyeball-verified)
+| Symbol | Detected (after active filter) | Notable |
+|---|---|---|
+| FPT | 1 uptrend (Mar 23 → today, +133/bar, 3 touches) | clean |
+| HPG | 0 lines (the candidate was broken — filtered) | active filter working |
+| VCB | 3 uptrends (5 touches each, slight slope variations) | 3 broken downtrends correctly filtered |
+| VNM | 3 downtrends; `at_downtrend_resistance` fired with proximity 0.007 ATR | high touch resistance |
+| MWG | 2 downtrends, slope -118 / -147 per bar | symmetric range |
+
+### Notes / caveats
+- Trendlines are inherently subjective — different algorithms produce different lines. Documented in Section 11 (Risks).
+- We keep up to 3 lines per side (uptrend/downtrend) per symbol. Lines with similar slope (within 10%) are deduplicated to the longest-span variant.
+- Backfill of break signals across history is approximate: today's snapshot of lines is checked against historical bars. Acceptable for screener semantics.
+- Storage cost: ~500 symbols × ~3 lines avg = ~1,500 rows total. Trivial.
+
+### Compute cost
+- Candidate generation: O(N²) per side per symbol, where N = swings in the last 90 bars (~15). ~225 candidates per side.
+- Touch check: O(N) per candidate.
+- Total: ~7k ops per symbol per side, ~7M ops per nightly run across 1k+ symbols. <1 min Python time.

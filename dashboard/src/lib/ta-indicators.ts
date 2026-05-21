@@ -16,7 +16,8 @@ export type IndicatorCategory =
   | "breakout"
   | "candlestick"
   | "divergence"
-  | "support_resistance";
+  | "support_resistance"
+  | "trendline";
 
 export type IndicatorDirection = "bullish" | "bearish" | "neutral";
 
@@ -110,6 +111,16 @@ export const INDICATORS: IndicatorSpec[] = [
     label_en: "Near support", label_vi: "Gần hỗ trợ" },
   { key: "near_resistance", category: "support_resistance", direction: "bearish",
     label_en: "Near resistance", label_vi: "Gần kháng cự" },
+
+  // Trendlines (Phase 2b)
+  { key: "at_uptrend_support", category: "trendline", direction: "bullish",
+    label_en: "At uptrend support", label_vi: "Chạm đường xu hướng tăng" },
+  { key: "at_downtrend_resistance", category: "trendline", direction: "bearish",
+    label_en: "At downtrend resistance", label_vi: "Chạm đường xu hướng giảm" },
+  { key: "uptrend_break", category: "trendline", direction: "bearish",
+    label_en: "Uptrend line break", label_vi: "Phá vỡ đường xu hướng tăng" },
+  { key: "downtrend_break", category: "trendline", direction: "bullish",
+    label_en: "Downtrend line break", label_vi: "Phá vỡ đường xu hướng giảm" },
 ];
 
 export const INDICATORS_BY_KEY: Record<string, IndicatorSpec> = Object.fromEntries(
@@ -128,6 +139,7 @@ export const CATEGORIES: IndicatorCategory[] = [
   "candlestick",
   "divergence",
   "support_resistance",
+  "trendline",
 ];
 
 export function indicatorsByCategory(): Record<IndicatorCategory, IndicatorSpec[]> {

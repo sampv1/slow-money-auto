@@ -105,6 +105,27 @@ export default async function SymbolDrillDown({
     srLevels = (srRaw ?? []) as typeof srLevels;
   }
 
+  // Trendlines (only fetched when a trendline indicator is in the selection).
+  const TL_KEYS = new Set([
+    "at_uptrend_support", "at_downtrend_resistance",
+    "uptrend_break", "downtrend_break",
+  ]);
+  let trendlines: {
+    trend_type: "uptrend" | "downtrend";
+    start_date: string;
+    start_price: number;
+    end_date: string;
+    end_price: number;
+    touches: number;
+  }[] = [];
+  if (selected.some((k) => TL_KEYS.has(k))) {
+    const { data: tlRaw } = await supabase
+      .from("ta_trendlines")
+      .select("trend_type,start_date,start_price,end_date,end_price,touches")
+      .eq("symbol", symbol);
+    trendlines = (tlRaw ?? []) as typeof trendlines;
+  }
+
   const latest = candles[candles.length - 1];
   const prev = candles.length > 1 ? candles[candles.length - 2] : null;
   const dayChangePct = prev && prev.close ? ((latest.close - prev.close) / prev.close) * 100 : null;
@@ -133,7 +154,7 @@ export default async function SymbolDrillDown({
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-2">
-        <ChartClient candles={candles} selected={selected} chartSignals={chartSignals} srLevels={srLevels} locale={locale} />
+        <ChartClient candles={candles} selected={selected} chartSignals={chartSignals} srLevels={srLevels} trendlines={trendlines} locale={locale} />
       </div>
 
       <section className="mt-6">

@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ta.common import REQUEST_DELAY, get_supabase_client, today_vn
 from ta.ohlcv import backfill_symbols
 from ta.sr import detect_levels, upsert_levels
+from ta.trendlines import detect_trendlines, upsert_trendlines
 from ta.universe import get_active_symbols
 
 # Re-use the orchestrator's helpers so we don't duplicate logic
@@ -96,13 +97,15 @@ def main():
                 print(f"  [{i}/{len(symbols)}] {symbol} — no OHLCV, skipping")
                 continue
 
-            # Phase 2a: refresh the symbol's S/R level snapshot, then use the
-            # same in-memory list for the level-aware indicators.
+            # Phase 2a/2b: refresh S/R levels + trendlines snapshots, then
+            # reuse the in-memory lists for the level/line-aware indicators.
             levels = detect_levels(ohlcv)
+            lines = detect_trendlines(ohlcv)
             if not args.dry_run:
                 upsert_levels(client, symbol, levels)
+                upsert_trendlines(client, symbol, lines)
 
-            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels)
+            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines)
             rows = filter_dates(rows, since=None, latest_only=True, ohlcv=ohlcv)
             n_triggered = sum(1 for r in rows if r["triggered"])
             triggered_total += n_triggered

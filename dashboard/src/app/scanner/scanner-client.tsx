@@ -15,7 +15,7 @@ import {
 } from "@/lib/ta-indicators";
 import type { LatestClose, TriggeredSignal } from "./page";
 
-const CATEGORY_LABEL_KEY: Record<IndicatorCategory, "taCategoryMomentum" | "taCategoryTrend" | "taCategoryVolume" | "taCategoryBreakout" | "taCategoryCandlestick" | "taCategoryDivergence" | "taCategorySR"> = {
+const CATEGORY_LABEL_KEY: Record<IndicatorCategory, "taCategoryMomentum" | "taCategoryTrend" | "taCategoryVolume" | "taCategoryBreakout" | "taCategoryCandlestick" | "taCategoryDivergence" | "taCategorySR" | "taCategoryTrendline"> = {
   momentum: "taCategoryMomentum",
   trend: "taCategoryTrend",
   volume: "taCategoryVolume",
@@ -23,6 +23,7 @@ const CATEGORY_LABEL_KEY: Record<IndicatorCategory, "taCategoryMomentum" | "taCa
   candlestick: "taCategoryCandlestick",
   divergence: "taCategoryDivergence",
   support_resistance: "taCategorySR",
+  trendline: "taCategoryTrendline",
 };
 
 type ResultRow = {
