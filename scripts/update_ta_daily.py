@@ -101,9 +101,12 @@ def main():
             # reuse the in-memory lists for the level/line-aware indicators.
             levels = detect_levels(ohlcv)
             lines = detect_trendlines(ohlcv)
+            avg_vol_20d = int(ohlcv["volume"].tail(20).mean()) if len(ohlcv) >= 20 else None
             if not args.dry_run:
                 upsert_levels(client, symbol, levels)
                 upsert_trendlines(client, symbol, lines)
+                if avg_vol_20d is not None:
+                    client.table("ta_universe").update({"avg_volume_20d": avg_vol_20d}).eq("symbol", symbol).execute()
 
             rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines)
             rows = filter_dates(rows, since=None, latest_only=True, ohlcv=ohlcv)

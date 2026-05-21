@@ -16,6 +16,11 @@ export type LatestClose = {
   volume: number;
 };
 
+export type UniverseLiquidity = {
+  symbol: string;
+  avg_volume_20d: number | null;
+};
+
 export default async function ScannerPage() {
   const locale = await getLocale();
 
@@ -61,14 +66,23 @@ export default async function ScannerPage() {
     .select("symbol,close,volume")
     .eq("date", latestDate);
 
+  // Universe liquidity (rolling 20-session avg volume) — used by the user-set
+  // "min liquidity" filter on the client.
+  const { data: universeRaw } = await supabase
+    .from("ta_universe")
+    .select("symbol,avg_volume_20d")
+    .eq("is_active", true);
+
   const signals = (signalsRaw ?? []) as TriggeredSignal[];
   const closes = (ohlcvRaw ?? []) as LatestClose[];
+  const universe = (universeRaw ?? []) as UniverseLiquidity[];
 
   return (
     <ScannerClient
       latestDate={latestDate}
       signals={signals}
       closes={closes}
+      universe={universe}
       locale={locale}
     />
   );

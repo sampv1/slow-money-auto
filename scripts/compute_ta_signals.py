@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pandas as pd
 
 from ta.common import get_supabase_client, today_vn
-from ta.registry import INDICATOR_SPECS, all_keys, get_spec
+from ta.registry import INDICATOR_SPECS, all_keys
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
 from ta.universe import get_active_symbols
@@ -291,9 +291,12 @@ def main():
             # snapshots, then pass them to the level/line-aware indicators.
             levels = detect_levels(ohlcv)
             lines = detect_trendlines(ohlcv)
+            avg_vol_20d = int(ohlcv["volume"].tail(20).mean()) if len(ohlcv) >= 20 else None
             if not args.dry_run:
                 upsert_levels(client, symbol, levels)
                 upsert_trendlines(client, symbol, lines)
+                if avg_vol_20d is not None:
+                    client.table("ta_universe").update({"avg_volume_20d": avg_vol_20d}).eq("symbol", symbol).execute()
 
             rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines)
             rows = filter_dates(rows, since_date, latest_only, ohlcv)

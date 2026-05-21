@@ -13,7 +13,9 @@ import {
   indicatorLabel,
   indicatorsByCategory,
 } from "@/lib/ta-indicators";
-import type { LatestClose, TriggeredSignal } from "./page";
+import type { LatestClose, TriggeredSignal, UniverseLiquidity } from "./page";
+
+const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 
 const CATEGORY_LABEL_KEY: Record<IndicatorCategory, "taCategoryMomentum" | "taCategoryTrend" | "taCategoryVolume" | "taCategoryBreakout" | "taCategoryCandlestick" | "taCategoryDivergence" | "taCategorySR" | "taCategoryTrendline"> = {
   momentum: "taCategoryMomentum",
@@ -31,20 +33,24 @@ type ResultRow = {
   matched: IndicatorSpec[];
   close: number | null;
   volume: number | null;
+  avgVolume20d: number | null;
 };
 
 export function ScannerClient({
   latestDate,
   signals,
   closes,
+  universe,
   locale,
 }: {
   latestDate: string;
   signals: TriggeredSignal[];
   closes: LatestClose[];
+  universe: UniverseLiquidity[];
   locale: Locale;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
 
   // Pre-bucket signals by symbol (memoized — never changes after server fetch)
   const signalsBySymbol = useMemo(() => {
@@ -62,6 +68,12 @@ export function ScannerClient({
     return m;
   }, [closes]);
 
+  const avgVolBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const u of universe) m.set(u.symbol, u.avg_volume_20d);
+    return m;
+  }, [universe]);
+
   const grouped = useMemo(() => indicatorsByCategory(), []);
 
   // Compute ranked results: stocks with at least one matching selected indicator
@@ -78,17 +90,25 @@ export function ScannerClient({
       }
       // Strict AND: every selected indicator must have fired for this symbol.
       if (matched.length < selected.size) continue;
+      // Liquidity filter: drop symbols whose 20-session avg volume is below
+      // the user threshold (or NULL = unknown).
+      const avgVol = avgVolBySymbol.get(symbol);
+      if (minAvgVolume > 0) {
+        if (avgVol === null || avgVol === undefined) continue;
+        if (avgVol < minAvgVolume) continue;
+      }
       const close = closeBySymbol.get(symbol);
       rows.push({
         symbol,
         matched,
         close: close?.close ?? null,
         volume: close?.volume ?? null,
+        avgVolume20d: avgVol ?? null,
       });
     }
     rows.sort((a, b) => a.symbol.localeCompare(b.symbol));
     return rows;
-  }, [selected, signalsBySymbol, closeBySymbol]);
+  }, [selected, signalsBySymbol, closeBySymbol, avgVolBySymbol, minAvgVolume]);
 
   function toggle(key: string) {
     setSelected((prev) => {
@@ -121,6 +141,34 @@ export function ScannerClient({
         <p className="text-sm text-gray-500">
           {t(locale, "taLastUpdated")} <span className="font-mono">{latestDate}</span>
         </p>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
+        <label htmlFor="min-avg-vol" className="text-sm text-gray-700">
+          {t(locale, "taMinAvgVolume")}
+        </label>
+        <input
+          id="min-avg-vol"
+          type="number"
+          min={0}
+          step={50000}
+          value={Number.isFinite(minAvgVolume) ? minAvgVolume : 0}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            setMinAvgVolume(Number.isFinite(n) && n >= 0 ? n : 0);
+          }}
+          className="w-32 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+        />
+        <span className="text-xs text-gray-500">{t(locale, "taMinAvgVolumeHint")}</span>
+        {minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D && (
+          <button
+            type="button"
+            onClick={() => setMinAvgVolume(DEFAULT_MIN_AVG_VOLUME_20D)}
+            className="text-xs text-gray-500 hover:text-gray-900 ml-auto"
+          >
+            {t(locale, "reset")}
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[380px_1fr] gap-4">
