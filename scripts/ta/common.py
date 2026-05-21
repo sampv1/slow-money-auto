@@ -18,7 +18,10 @@ SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 # proprietary vnstock_chart library; KBS triggers a charting-library import
 # error in 4.0.x. If VCI rate-limits, try TCBS as a fallback.
 VNSTOCK_SOURCE = "VCI"
-REQUEST_DELAY = 3.5  # seconds between vnstock calls
+# Seconds between vnstock requests. 2.5s ≈ 24 req/min — safely below VCI's
+# observed ceiling (~30/min) while keeping the daily cron under ~30 min for
+# the post-filter universe of ~600 symbols.
+REQUEST_DELAY = 2.5
 
 VN_TZ = timezone(timedelta(hours=7))
 
