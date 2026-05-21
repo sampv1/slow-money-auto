@@ -237,7 +237,7 @@ export const translations = {
     navLogs: "Nhật ký",
     navStats: "Thống kê",
     navInput: "Nhập liệu",
-    navScanner: "TA Scanner",
+    navScanner: "Lọc kỹ thuật",
 
     // TA Scanner page
     taScanner: "Phân tích kỹ thuật",

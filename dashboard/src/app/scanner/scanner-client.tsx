@@ -121,7 +121,7 @@ export function ScannerClient({
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-[380px_1fr] gap-4">
         {/* Indicator multi-select panel */}
         <aside className="bg-white rounded-lg border border-gray-200 p-4 self-start">
           <div className="flex items-center justify-between mb-3">
@@ -140,6 +140,42 @@ export function ScannerClient({
             {CATEGORIES.map((cat) => {
               const specs = grouped[cat];
               if (!specs.length) return null;
+
+              // Split the category into bullish (left) vs bearish (right).
+              // For all-neutral categories (e.g. Volume), split evenly so the
+              // 2-column layout still pairs naturally.
+              const bullish = specs.filter((s) => s.direction === "bullish");
+              const bearish = specs.filter((s) => s.direction === "bearish");
+              const neutral = specs.filter((s) => s.direction === "neutral");
+              let leftItems: IndicatorSpec[];
+              let rightItems: IndicatorSpec[];
+              if (bullish.length === 0 && bearish.length === 0 && neutral.length > 0) {
+                const mid = Math.ceil(neutral.length / 2);
+                leftItems = neutral.slice(0, mid);
+                rightItems = neutral.slice(mid);
+              } else {
+                const midNeutral = Math.ceil(neutral.length / 2);
+                leftItems = [...bullish, ...neutral.slice(0, midNeutral)];
+                rightItems = [...bearish, ...neutral.slice(midNeutral)];
+              }
+
+              const renderItem = (spec: IndicatorSpec) => (
+                <li key={spec.key}>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(spec.key)}
+                      onChange={() => toggle(spec.key)}
+                      className="rounded border-gray-300"
+                    />
+                    <span className={directionColor(spec.direction)}>
+                      {spec.direction === "bullish" ? "▲" : spec.direction === "bearish" ? "▼" : "●"}
+                    </span>
+                    <span className="text-gray-700">{indicatorLabel(spec, locale)}</span>
+                  </label>
+                </li>
+              );
+
               return (
                 <div key={cat}>
                   <div className="flex items-center justify-between mb-1">
@@ -154,24 +190,10 @@ export function ScannerClient({
                       +{t(locale, "taSelectAll")}
                     </button>
                   </div>
-                  <ul className="space-y-1">
-                    {specs.map((spec) => (
-                      <li key={spec.key}>
-                        <label className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
-                          <input
-                            type="checkbox"
-                            checked={selected.has(spec.key)}
-                            onChange={() => toggle(spec.key)}
-                            className="rounded border-gray-300"
-                          />
-                          <span className={directionColor(spec.direction)}>
-                            {spec.direction === "bullish" ? "▲" : spec.direction === "bearish" ? "▼" : "●"}
-                          </span>
-                          <span className="text-gray-700">{indicatorLabel(spec, locale)}</span>
-                        </label>
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="grid grid-cols-2 gap-x-3">
+                    <ul className="space-y-1">{leftItems.map(renderItem)}</ul>
+                    <ul className="space-y-1">{rightItems.map(renderItem)}</ul>
+                  </div>
                 </div>
               );
             })}
