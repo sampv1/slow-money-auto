@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
 import {
@@ -210,7 +211,14 @@ export function ScannerClient({
                 <tbody>
                   {results.map((row) => (
                     <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium">{row.symbol}</td>
+                      <td className="px-4 py-3 font-medium">
+                        <Link
+                          href={`/scanner/${row.symbol}`}
+                          className="text-blue-600 hover:underline"
+                        >
+                          {row.symbol}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3 text-gray-700 font-mono whitespace-nowrap">
                         {row.matched.length} / {selected.size}
                       </td>

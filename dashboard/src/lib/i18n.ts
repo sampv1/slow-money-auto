@@ -36,6 +36,15 @@ export const translations = {
     taSymbolsMatched: "stocks matched",
     taSymbolMatched: "stock matched",
 
+    // TA Scanner drill-down page
+    taBackToScanner: "Back to scanner",
+    taChart: "Chart",
+    taPriceChart: "Price chart with MA20 / MA50 overlay and daily volume.",
+    taRecentSignals: "Recent signals (30 days)",
+    taNoRecentSignals: "No signals fired in the last 30 days.",
+    taSymbolNotFound: "Symbol not found or no price history yet.",
+    taChartLoading: "Loading chart...",
+
     // Analysis page
     dailyAnalysis: "Daily Analysis",
     recs: "recs",
@@ -253,6 +262,15 @@ export const translations = {
     taNoData: "Chưa có tín hiệu TA. Hãy chạy scripts/update_ta_daily.py.",
     taSymbolsMatched: "mã phù hợp",
     taSymbolMatched: "mã phù hợp",
+
+    // TA Scanner drill-down page
+    taBackToScanner: "Quay lại bộ lọc",
+    taChart: "Biểu đồ",
+    taPriceChart: "Biểu đồ giá có MA20 / MA50 và khối lượng theo phiên.",
+    taRecentSignals: "Tín hiệu gần đây (30 ngày)",
+    taNoRecentSignals: "Không có tín hiệu nào trong 30 ngày qua.",
+    taSymbolNotFound: "Không tìm thấy mã hoặc chưa có dữ liệu giá.",
+    taChartLoading: "Đang tải biểu đồ...",
 
     // Analysis page
     dailyAnalysis: "Phân tích hàng ngày",
