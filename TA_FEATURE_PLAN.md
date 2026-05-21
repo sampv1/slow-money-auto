@@ -323,8 +323,11 @@ jobs:
 | 1e — Cron + backfill | **DONE** — `update_ta_daily.py` orchestrator + `.github/workflows/ta-daily.yml` (09:30 UTC weekdays). End-to-end local run: 6.4 min OHLCV fetch + 60s signals = ~7.5 min total. Needs `SUPABASE_URL` and `SUPABASE_ANON_KEY` in GitHub Actions environment `supabase`. |
 | 1f — Scanner page | **DONE** — `/scanner` route with bilingual multi-select (28 indicators across 6 categories) + ranked results table. Strict AND filter, ▲/▼ direction markers, bullish/bearish color coding. Build clean, dev server tested. |
 | 1g — Drill-down | **DONE** — `/scanner/[symbol]` route with lightweight-charts 5.x candlestick chart, MA20 + MA50 overlays, volume histogram (color-coded by candle direction), and last-30-days triggered-signals table. Scanner rows now link to the drill-down. Build clean, dev server tested with `/scanner/FPT`. |
+| 1g+ — Selected-indicator drill-down | **DONE** — Drill-down chart now reflects the indicators chosen on the scanner. Multi-pane layout: price + volume (always); RSI(14) subplot (+ 30/70 dashed lines) appears when any rsi_* indicator is selected; MACD(12,26,9) subplot (line + signal + colored histogram) appears when any macd_* indicator is selected. Markers placed on the pane closest to their source data. JS indicator math mirrors the Python helpers; lightweight-charts pane indices computed dynamically. |
 | Universe expansion | **IN PROGRESS** — `--source all-exchanges` added; ta_universe seeded with 1,535 stocks (HOSE 402, HNX 301, UPCOM 832). Backfill + filter pending (run sequence below). Cron timeout bumped to 60 min. |
-| 1g — Drill-down page | NOT STARTED |
+| Admin-only menus | **DONE** — Active, History, Daily Logs, Stats moved into the admin-only nav block (alongside Input + Feedbacks). Each page also has a server-side `if (role !== "admin") redirect("/login")` guard so direct URL access is blocked. RLS on the underlying tables remains anon-readable — see Risks section. |
+| 2a — Support/Resistance | **IN PROGRESS** — Pivots + ATR clustering, ≥3 touches required. 6 new signals (near/bounce/break × support/resistance). Volume-gated breaks. New `ta_sr_levels` table for current active levels per symbol. Chart will draw horizontal dashed lines on price pane when an S/R indicator is selected. See Section 14 below for the build plan. |
+| 2b — Trendlines | **DEFERRED until 2a ships** — Will revisit after eyeballing real S/R output. Plan: multi-touch candidate scoring, ≥3 touches, volume-gated breaks. |
 
 ### Phase 1a deliverables (code in repo)
 
@@ -358,3 +361,64 @@ python3 backfill_ta_ohlcv.py --days 90
 # 5. (Optional) Apply liquidity filter to deactivate illiquid names
 python3 refresh_ta_universe.py --apply-filter
 ```
+
+---
+
+## 14. Phase 2a — Support / Resistance
+
+Adds 6 signals built on horizontal price zones detected from swing-point clustering.
+
+### Settled parameters
+- Pivot window: ±5 bars (same as the divergence module)
+- Tolerance: 0.5 × ATR(14) — adapts to per-stock volatility
+- Touch threshold: **≥3 touches** required for an active level
+- Recency decay: 0.95^days_ago (recent touches matter more)
+- Top **5 levels** kept per side (support / resistance) per symbol
+- Break confirmation: volume > 1.5× MA20(volume)
+
+### 6 new signals
+| Bullish | Bearish | Triggers when |
+|---|---|---|
+| `bounces_off_support` | `rejects_at_resistance` | Low touched level (within 0.3 ATR) + close in reversal direction |
+| `breaks_resistance` | `breaks_support` | Close crossed level + volume confirmation |
+| `near_support` | `near_resistance` | Close within 0.5 ATR of level (proximity warning) |
+
+### Data model
+New table `ta_sr_levels` storing the *current* active levels per symbol — overwritten nightly. Estimated row count: ~5k (500 symbols × ~10 levels). No history retained.
+
+```sql
+create table ta_sr_levels (
+  symbol text not null,
+  price numeric not null,
+  level_type text not null check (level_type in ('support', 'resistance')),
+  touches int not null,
+  strength numeric not null,
+  first_touch_date date not null,
+  last_touch_date date not null,
+  updated_at timestamptz not null default now(),
+  primary key (symbol, price, level_type)
+);
+```
+
+### Implementation files
+- `supabase/009_create_ta_sr_tables.sql` — new migration
+- `scripts/ta/sr.py` — pivots + ATR clustering + scoring (~150 lines)
+- `scripts/ta/indicators/sr.py` — 6 signal computations (DB-aware: reads ta_sr_levels)
+- `scripts/ta/registry.py` — register 6 new specs under new `support_resistance` category
+- `scripts/compute_ta_signals.py` — call S/R computation before signal compute
+- `dashboard/src/lib/ta-indicators.ts` — mirror the 6 new specs
+- `dashboard/src/lib/i18n.ts` — `taCategorySR` string (en + vi)
+- `dashboard/src/app/scanner/[symbol]/page.tsx` — fetch active levels for the symbol
+- `dashboard/src/app/scanner/[symbol]/chart-client.tsx` — render levels as horizontal `createPriceLine` markers (green dashed support / red dashed resistance, label with touch count)
+
+### Compute cost
+- Swing detection: O(n) per symbol — already done for divergence, can be reused
+- Clustering: O(n²) per symbol — ~30s total for 500 symbols
+- Daily cron adds: ~30-60s. Well within the 60-min timeout.
+
+### Verification plan
+1. Compute S/R for 5 known stocks (FPT, HPG, VCB, VNM, MWG)
+2. Eyeball-compare the levels against TradingView's manually-drawn ones
+3. If sane, run for all 100 (current universe) — tune threshold if needed
+4. After all-exchanges backfill: run for all 1,535
+5. Decide on Phase 2b (trendlines) after seeing real output

@@ -90,6 +90,21 @@ export default async function SymbolDrillDown({
     chartSignals = (chartSignalsRaw ?? []) as { date: string; indicator: string }[];
   }
 
+  // S/R levels (only fetched when an S/R indicator is in the selection).
+  const SR_KEYS = new Set([
+    "bounces_off_support", "rejects_at_resistance",
+    "breaks_resistance", "breaks_support",
+    "near_support", "near_resistance",
+  ]);
+  let srLevels: { price: number; level_type: "support" | "resistance"; touches: number }[] = [];
+  if (selected.some((k) => SR_KEYS.has(k))) {
+    const { data: srRaw } = await supabase
+      .from("ta_sr_levels")
+      .select("price,level_type,touches")
+      .eq("symbol", symbol);
+    srLevels = (srRaw ?? []) as typeof srLevels;
+  }
+
   const latest = candles[candles.length - 1];
   const prev = candles.length > 1 ? candles[candles.length - 2] : null;
   const dayChangePct = prev && prev.close ? ((latest.close - prev.close) / prev.close) * 100 : null;
@@ -118,7 +133,7 @@ export default async function SymbolDrillDown({
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-2">
-        <ChartClient candles={candles} selected={selected} chartSignals={chartSignals} locale={locale} />
+        <ChartClient candles={candles} selected={selected} chartSignals={chartSignals} srLevels={srLevels} locale={locale} />
       </div>
 
       <section className="mt-6">

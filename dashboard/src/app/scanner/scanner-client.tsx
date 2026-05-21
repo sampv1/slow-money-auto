@@ -15,13 +15,14 @@ import {
 } from "@/lib/ta-indicators";
 import type { LatestClose, TriggeredSignal } from "./page";
 
-const CATEGORY_LABEL_KEY: Record<IndicatorCategory, "taCategoryMomentum" | "taCategoryTrend" | "taCategoryVolume" | "taCategoryBreakout" | "taCategoryCandlestick" | "taCategoryDivergence"> = {
+const CATEGORY_LABEL_KEY: Record<IndicatorCategory, "taCategoryMomentum" | "taCategoryTrend" | "taCategoryVolume" | "taCategoryBreakout" | "taCategoryCandlestick" | "taCategoryDivergence" | "taCategorySR"> = {
   momentum: "taCategoryMomentum",
   trend: "taCategoryTrend",
   volume: "taCategoryVolume",
   breakout: "taCategoryBreakout",
   candlestick: "taCategoryCandlestick",
   divergence: "taCategoryDivergence",
+  support_resistance: "taCategorySR",
 };
 
 type ResultRow = {

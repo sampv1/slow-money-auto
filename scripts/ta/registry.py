@@ -16,7 +16,7 @@ from typing import Callable
 
 import pandas as pd
 
-from .indicators import breakouts, candlesticks, divergence, momentum, trend, volume
+from .indicators import breakouts, candlesticks, divergence, momentum, sr, trend, volume
 
 
 @dataclass(frozen=True)
@@ -125,6 +125,26 @@ INDICATOR_SPECS: list[IndicatorSpec] = [
     IndicatorSpec("macd_bearish_divergence", "divergence", "bearish",
                   "MACD bearish divergence", "Phân kỳ giảm MACD",
                   divergence.compute_macd_bearish_divergence),
+
+    # --- Support / Resistance (Phase 2a) ---
+    IndicatorSpec("bounces_off_support", "support_resistance", "bullish",
+                  "Bounces off support", "Bật khỏi hỗ trợ",
+                  sr.compute_bounces_off_support),
+    IndicatorSpec("rejects_at_resistance", "support_resistance", "bearish",
+                  "Rejects at resistance", "Bị kháng cự đẩy lùi",
+                  sr.compute_rejects_at_resistance),
+    IndicatorSpec("breaks_resistance", "support_resistance", "bullish",
+                  "Breaks resistance", "Phá vỡ kháng cự",
+                  sr.compute_breaks_resistance),
+    IndicatorSpec("breaks_support", "support_resistance", "bearish",
+                  "Breaks support", "Thủng hỗ trợ",
+                  sr.compute_breaks_support),
+    IndicatorSpec("near_support", "support_resistance", "bullish",
+                  "Near support", "Gần hỗ trợ",
+                  sr.compute_near_support),
+    IndicatorSpec("near_resistance", "support_resistance", "bearish",
+                  "Near resistance", "Gần kháng cự",
+                  sr.compute_near_resistance),
 ]
 
 

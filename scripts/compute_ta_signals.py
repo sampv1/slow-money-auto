@@ -26,6 +26,7 @@ Usage:
 """
 
 import argparse
+import inspect
 import math
 import sys
 import time
@@ -38,9 +39,23 @@ import pandas as pd
 
 from ta.common import get_supabase_client, today_vn
 from ta.registry import INDICATOR_SPECS, all_keys, get_spec
+from ta.sr import detect_levels, upsert_levels
 from ta.universe import get_active_symbols
 
 UPSERT_CHUNK_SIZE = 500
+
+
+def _compute_kwargs_for(fn, *, levels) -> dict:
+    """Build the kwargs an indicator wants. Avoids touching the 28 existing
+    indicators whose compute(df) signature doesn't take extra args."""
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return {}
+    extra = {}
+    if "levels" in params:
+        extra["levels"] = levels
+    return extra
 
 
 def load_ohlcv(client, symbol: str) -> pd.DataFrame:
@@ -65,8 +80,11 @@ def load_ohlcv(client, symbol: str) -> pd.DataFrame:
     return df
 
 
-def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame) -> list[dict]:
+def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame, *, levels=None) -> list[dict]:
     """Run every indicator on this symbol's OHLCV and return signal rows.
+
+    `levels` is the symbol's active S/R levels (list of dicts from ta.sr.detect_levels);
+    only indicators that declare a `levels` parameter receive it.
 
     Returns rows shaped for ta_signals: {date, symbol, indicator, triggered, value, metadata}.
     Dates where an indicator returns NaN value (insufficient history) are skipped.
@@ -77,7 +95,8 @@ def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame) -> list[dict]:
     rows: list[dict] = []
     for spec in INDICATOR_SPECS:
         try:
-            result = spec.compute(ohlcv)
+            kwargs = _compute_kwargs_for(spec.compute, levels=levels)
+            result = spec.compute(ohlcv, **kwargs)
         except Exception as e:
             print(f"    {symbol} / {spec.key} failed: {e}")
             continue
@@ -164,14 +183,25 @@ def inspect_symbol_date(client, symbol: str, target_date: str):
         print(f"  No OHLCV for {symbol}")
         return
 
+    levels = detect_levels(ohlcv)
     print(f"  {len(ohlcv)} bars, range {ohlcv.index.min()} → {ohlcv.index.max()}")
+    if levels:
+        sup = [lvl for lvl in levels if lvl["level_type"] == "support"]
+        res = [lvl for lvl in levels if lvl["level_type"] == "resistance"]
+        print(f"  S/R levels: {len(sup)} support, {len(res)} resistance")
+        for lvl in sup + res:
+            print(f"    {lvl['level_type']:11s} @ {lvl['price']:>10,.0f}  touches={lvl['touches']}  strength={lvl['strength']:.2f}")
+    else:
+        print(f"  No S/R levels detected")
+
     print(f"\nSignals at {target_date}:")
     print(f"  {'Key':<28} {'Triggered':<10} {'Value':>14}")
     print("  " + "─" * 56)
 
     for spec in INDICATOR_SPECS:
         try:
-            result = spec.compute(ohlcv)
+            kwargs = _compute_kwargs_for(spec.compute, levels=levels)
+            result = spec.compute(ohlcv, **kwargs)
         except Exception as e:
             print(f"  {spec.key:<28} ERROR: {e}")
             continue
@@ -244,7 +274,13 @@ def main():
                 print(f"[{i}/{len(symbols)}] {symbol} — no OHLCV, skipping")
                 continue
 
-            rows = compute_signals_for_symbol(symbol, ohlcv)
+            # Phase 2a: detect S/R levels per symbol, persist (replaces snapshot),
+            # then pass them to the level-aware indicators.
+            levels = detect_levels(ohlcv)
+            if not args.dry_run:
+                upsert_levels(client, symbol, levels)
+
+            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels)
             rows = filter_dates(rows, since_date, latest_only, ohlcv)
             n_triggered = sum(1 for r in rows if r["triggered"])
 
@@ -253,7 +289,7 @@ def main():
 
             total_signals += len(rows)
             processed += 1
-            print(f"[{i}/{len(symbols)}] {symbol}: {len(rows)} rows ({n_triggered} triggered)")
+            print(f"[{i}/{len(symbols)}] {symbol}: {len(rows)} rows ({n_triggered} triggered, {len(levels)} S/R levels)")
 
         elapsed = time.time() - start
         action = "would write" if args.dry_run else "wrote"

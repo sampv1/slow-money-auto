@@ -213,15 +213,23 @@ function paneForIndicator(key: string, panes: { volume: number; rsi: number; mac
 
 // ---------- Component ----------
 
+export type SRLevel = {
+  price: number;
+  level_type: "support" | "resistance";
+  touches: number;
+};
+
 export function ChartClient({
   candles,
   selected,
   chartSignals,
+  srLevels = [],
   locale,
 }: {
   candles: Candle[];
   selected: string[];
   chartSignals: { date: string; indicator: string }[];
+  srLevels?: SRLevel[];
   locale: Locale;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -299,6 +307,19 @@ export function ChartClient({
         title: `MA${period}`,
       });
       line.setData(linePointsFrom(sma(closes, period)));
+    }
+
+    // S/R horizontal lines on price pane (only when S/R indicators selected).
+    for (const lvl of srLevels) {
+      const isSupport = lvl.level_type === "support";
+      candleSeries.createPriceLine({
+        price: lvl.price,
+        color: isSupport ? UP_COLOR : DOWN_COLOR,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `${isSupport ? "S" : "R"} ${lvl.touches}t`,
+      });
     }
 
     if (features.showRollingHigh) {
@@ -506,7 +527,7 @@ export function ChartClient({
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, features, panes, chartSignals]);
+  }, [candles, features, panes, chartSignals, srLevels]);
 
   return (
     <div className="space-y-2">

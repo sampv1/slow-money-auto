@@ -15,7 +15,8 @@ export type IndicatorCategory =
   | "volume"
   | "breakout"
   | "candlestick"
-  | "divergence";
+  | "divergence"
+  | "support_resistance";
 
 export type IndicatorDirection = "bullish" | "bearish" | "neutral";
 
@@ -95,6 +96,20 @@ export const INDICATORS: IndicatorSpec[] = [
     label_en: "MACD bullish divergence", label_vi: "Phân kỳ tăng MACD" },
   { key: "macd_bearish_divergence", category: "divergence", direction: "bearish",
     label_en: "MACD bearish divergence", label_vi: "Phân kỳ giảm MACD" },
+
+  // Support / Resistance (Phase 2a)
+  { key: "bounces_off_support", category: "support_resistance", direction: "bullish",
+    label_en: "Bounces off support", label_vi: "Bật khỏi hỗ trợ" },
+  { key: "rejects_at_resistance", category: "support_resistance", direction: "bearish",
+    label_en: "Rejects at resistance", label_vi: "Bị kháng cự đẩy lùi" },
+  { key: "breaks_resistance", category: "support_resistance", direction: "bullish",
+    label_en: "Breaks resistance", label_vi: "Phá vỡ kháng cự" },
+  { key: "breaks_support", category: "support_resistance", direction: "bearish",
+    label_en: "Breaks support", label_vi: "Thủng hỗ trợ" },
+  { key: "near_support", category: "support_resistance", direction: "bullish",
+    label_en: "Near support", label_vi: "Gần hỗ trợ" },
+  { key: "near_resistance", category: "support_resistance", direction: "bearish",
+    label_en: "Near resistance", label_vi: "Gần kháng cự" },
 ];
 
 export const INDICATORS_BY_KEY: Record<string, IndicatorSpec> = Object.fromEntries(
@@ -112,6 +127,7 @@ export const CATEGORIES: IndicatorCategory[] = [
   "breakout",
   "candlestick",
   "divergence",
+  "support_resistance",
 ];
 
 export function indicatorsByCategory(): Record<IndicatorCategory, IndicatorSpec[]> {
