@@ -39,7 +39,7 @@ export const translations = {
     // TA Scanner drill-down page
     taBackToScanner: "Back to scanner",
     taChart: "Chart",
-    taPriceChart: "Price chart with MA20 / MA50 overlay and daily volume.",
+    taPriceChart: "Daily candlestick chart, overlays and markers reflect the indicators you selected on the scanner.",
     taRecentSignals: "Recent signals (30 days)",
     taNoRecentSignals: "No signals fired in the last 30 days.",
     taSymbolNotFound: "Symbol not found or no price history yet.",
@@ -266,7 +266,7 @@ export const translations = {
     // TA Scanner drill-down page
     taBackToScanner: "Quay lại bộ lọc",
     taChart: "Biểu đồ",
-    taPriceChart: "Biểu đồ giá có MA20 / MA50 và khối lượng theo phiên.",
+    taPriceChart: "Biểu đồ nến hàng ngày — overlay và đánh dấu phản ánh các chỉ báo đã chọn ở bộ lọc.",
     taRecentSignals: "Tín hiệu gần đây (30 ngày)",
     taNoRecentSignals: "Không có tín hiệu nào trong 30 ngày qua.",
     taSymbolNotFound: "Không tìm thấy mã hoặc chưa có dữ liệu giá.",

@@ -213,7 +213,7 @@ export function ScannerClient({
                     <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium">
                         <Link
-                          href={`/scanner/${row.symbol}`}
+                          href={`/scanner/${row.symbol}?ind=${encodeURIComponent([...selected].join(","))}`}
                           className="text-blue-600 hover:underline"
                         >
                           {row.symbol}

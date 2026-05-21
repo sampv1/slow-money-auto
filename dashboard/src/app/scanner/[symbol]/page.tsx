@@ -18,12 +18,19 @@ export type Candle = {
 
 export default async function SymbolDrillDown({
   params,
+  searchParams,
 }: {
   params: Promise<{ symbol: string }>;
+  searchParams: Promise<{ ind?: string }>;
 }) {
   const { symbol: raw } = await params;
+  const { ind } = await searchParams;
   const symbol = raw.toUpperCase();
   const locale = await getLocale();
+  const selected = (ind ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   // Fetch full OHLCV history (~264 rows = trivial; ASC for the chart).
   const { data: ohlcvRaw, error: ohlcvErr } = await supabase
@@ -67,6 +74,22 @@ export default async function SymbolDrillDown({
 
   const signals = (signalsRaw ?? []) as { date: string; indicator: string; value: number | null }[];
 
+  // Chart markers: triggered signals for *selected* indicators across the
+  // entire visible chart range, sorted ASC (lightweight-charts requirement).
+  let chartSignals: { date: string; indicator: string }[] = [];
+  if (selected.length > 0 && candles.length > 0) {
+    const earliestDate = candles[0].date;
+    const { data: chartSignalsRaw } = await supabase
+      .from("ta_signals")
+      .select("date,indicator")
+      .eq("symbol", symbol)
+      .in("indicator", selected)
+      .eq("triggered", true)
+      .gte("date", earliestDate)
+      .order("date", { ascending: true });
+    chartSignals = (chartSignalsRaw ?? []) as { date: string; indicator: string }[];
+  }
+
   const latest = candles[candles.length - 1];
   const prev = candles.length > 1 ? candles[candles.length - 2] : null;
   const dayChangePct = prev && prev.close ? ((latest.close - prev.close) / prev.close) * 100 : null;
@@ -95,7 +118,7 @@ export default async function SymbolDrillDown({
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-2">
-        <ChartClient candles={candles} />
+        <ChartClient candles={candles} selected={selected} chartSignals={chartSignals} locale={locale} />
       </div>
 
       <section className="mt-6">
