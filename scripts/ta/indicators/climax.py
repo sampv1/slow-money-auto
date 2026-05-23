@@ -13,6 +13,7 @@ Buying climax (bearish reversal) — exhaustion top of an uptrend:
   - Close in the lower half of the bar (selling pressure capped the rally)
 """
 
+import numpy as np
 import pandas as pd
 
 from .helpers import sma
@@ -32,7 +33,7 @@ def _climax(df: pd.DataFrame, selling: bool) -> pd.DataFrame:
     big_volume = df["volume"] > CLIMAX_VOLUME_MULTIPLIER * avg_vol
 
     # Position of close within the bar (0 = at low, 1 = at high).
-    close_position = ((df["close"] - df["low"]) / bar_range.replace(0, pd.NA)).astype(float)
+    close_position = ((df["close"] - df["low"]) / bar_range.replace(0, np.nan)).astype(float)
 
     if selling:
         direction = df["close"] < df["open"]

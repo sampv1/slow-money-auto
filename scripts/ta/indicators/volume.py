@@ -8,6 +8,7 @@ Phase 3 additions:
   - wide_range_bar: today's range > 1.5 × ATR(14) — used by climax indicators
 """
 
+import numpy as np
 import pandas as pd
 
 from .helpers import sma
@@ -74,7 +75,7 @@ def compute_pocket_pivot(df: pd.DataFrame) -> pd.DataFrame:
     down_volume = df["volume"].where(is_down, 0)
     max_down_in_10 = down_volume.shift(1).rolling(POCKET_PIVOT_LOOKBACK, min_periods=POCKET_PIVOT_LOOKBACK).max()
     triggered = is_up & (df["volume"] > max_down_in_10) & (max_down_in_10 > 0)
-    value = df["volume"] / max_down_in_10.replace(0, pd.NA)
+    value = df["volume"] / max_down_in_10.replace(0, np.nan)
     return pd.DataFrame(
         {"triggered": triggered.fillna(False), "value": value.astype(float)},
         index=df.index,
