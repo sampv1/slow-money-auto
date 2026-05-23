@@ -16,7 +16,7 @@ from typing import Callable
 
 import pandas as pd
 
-from .indicators import breakouts, candlesticks, divergence, momentum, sr, trend, trendlines, volume
+from .indicators import breakouts, candlesticks, climax, divergence, momentum, sr, trend, trendlines, volume
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,36 @@ INDICATOR_SPECS: list[IndicatorSpec] = [
     IndicatorSpec("price_breaks_above_ma50", "trend", "bullish",
                   "Price breaks above MA50", "Giá vượt MA50",
                   trend.compute_price_breaks_above_ma50),
+    IndicatorSpec("above_ma50", "trend", "bullish",
+                  "Price above MA50", "Giá trên MA50",
+                  trend.compute_above_ma50),
+    IndicatorSpec("below_ma50", "trend", "bearish",
+                  "Price below MA50", "Giá dưới MA50",
+                  trend.compute_below_ma50),
+    IndicatorSpec("above_ma150", "trend", "bullish",
+                  "Price above MA150", "Giá trên MA150",
+                  trend.compute_above_ma150),
+    IndicatorSpec("below_ma150", "trend", "bearish",
+                  "Price below MA150", "Giá dưới MA150",
+                  trend.compute_below_ma150),
+    IndicatorSpec("above_ma200", "trend", "bullish",
+                  "Price above MA200", "Giá trên MA200",
+                  trend.compute_above_ma200),
+    IndicatorSpec("below_ma200", "trend", "bearish",
+                  "Price below MA200", "Giá dưới MA200",
+                  trend.compute_below_ma200),
+    IndicatorSpec("ma_stage_2_alignment", "trend", "bullish",
+                  "Stage 2 alignment (MA50>MA150>MA200)", "Xếp lớp Stage 2 (MA50>MA150>MA200)",
+                  trend.compute_ma_stage_2_alignment),
+    IndicatorSpec("ma_stage_4_alignment", "trend", "bearish",
+                  "Stage 4 alignment (MA50<MA150<MA200)", "Xếp lớp Stage 4 (MA50<MA150<MA200)",
+                  trend.compute_ma_stage_4_alignment),
+    IndicatorSpec("ma200_uptrend", "trend", "bullish",
+                  "MA200 trending up", "MA200 đang đi lên",
+                  trend.compute_ma200_uptrend),
+    IndicatorSpec("ma200_downtrend", "trend", "bearish",
+                  "MA200 trending down", "MA200 đang đi xuống",
+                  trend.compute_ma200_downtrend),
     IndicatorSpec("price_breaks_below_ma50", "trend", "bearish",
                   "Price breaks below MA50", "Giá thủng MA50",
                   trend.compute_price_breaks_below_ma50),
@@ -71,6 +101,15 @@ INDICATOR_SPECS: list[IndicatorSpec] = [
     IndicatorSpec("volume_dryup", "volume", "neutral",
                   "Volume dry-up (<0.5× MA20)", "Khối lượng cạn (<0.5× MA20)",
                   volume.compute_volume_dryup),
+    IndicatorSpec("volume_50_above_avg", "volume", "neutral",
+                  "Volume +50% above MA20", "Khối lượng +50% so với MA20",
+                  volume.compute_volume_50_above_avg),
+    IndicatorSpec("pocket_pivot", "volume", "bullish",
+                  "Pocket Pivot (O'Neil)", "Pocket Pivot (O'Neil)",
+                  volume.compute_pocket_pivot),
+    IndicatorSpec("wide_range_bar", "volume", "neutral",
+                  "Wide range bar (>1.5×ATR)", "Nến biên độ rộng (>1.5×ATR)",
+                  volume.compute_wide_range_bar),
 
     # --- Breakouts ---
     IndicatorSpec("breaks_20d_high", "breakout", "bullish",
@@ -79,6 +118,18 @@ INDICATOR_SPECS: list[IndicatorSpec] = [
     IndicatorSpec("breaks_20d_low", "breakout", "bearish",
                   "Breaks 20-day low", "Thủng đáy 20 ngày",
                   breakouts.compute_breaks_20d_low),
+    IndicatorSpec("breaks_52w_high", "breakout", "bullish",
+                  "Breaks 52-week high", "Vượt đỉnh 52 tuần",
+                  breakouts.compute_breaks_52w_high),
+    IndicatorSpec("breaks_52w_low", "breakout", "bearish",
+                  "Breaks 52-week low", "Thủng đáy 52 tuần",
+                  breakouts.compute_breaks_52w_low),
+    IndicatorSpec("near_52w_high", "breakout", "bullish",
+                  "Near 52-week high (≤25%)", "Gần đỉnh 52 tuần (≤25%)",
+                  breakouts.compute_near_52w_high),
+    IndicatorSpec("well_above_52w_low", "breakout", "bullish",
+                  "≥30% above 52-week low", "≥30% trên đáy 52 tuần",
+                  breakouts.compute_well_above_52w_low),
 
     # --- Candlestick patterns (Tier 2) ---
     IndicatorSpec("hammer", "candlestick", "bullish",
@@ -111,6 +162,12 @@ INDICATOR_SPECS: list[IndicatorSpec] = [
     IndicatorSpec("dark_cloud_cover", "candlestick", "bearish",
                   "Dark Cloud Cover", "Mây đen che phủ",
                   candlesticks.compute_dark_cloud_cover),
+    IndicatorSpec("selling_climax", "candlestick", "bullish",
+                  "Selling Climax (Wyckoff)", "Selling Climax (Wyckoff)",
+                  climax.compute_selling_climax),
+    IndicatorSpec("buying_climax", "candlestick", "bearish",
+                  "Buying Climax (Wyckoff)", "Buying Climax (Wyckoff)",
+                  climax.compute_buying_climax),
 
     # --- Divergence (Tier 3) ---
     IndicatorSpec("rsi_bullish_divergence", "divergence", "bullish",

@@ -328,6 +328,8 @@ jobs:
 | Admin-only menus | **DONE** — Active, History, Daily Logs, Stats moved into the admin-only nav block (alongside Input + Feedbacks). Each page also has a server-side `if (role !== "admin") redirect("/login")` guard so direct URL access is blocked. RLS on the underlying tables remains anon-readable — see Risks section. |
 | 2a — Support/Resistance | **DONE** — Pivots + ATR clustering, ≥3 touches required. 6 new signals (near/bounce/break × support/resistance). Volume-gated breaks. `ta_sr_levels` table snapshots current active levels per symbol. Chart draws horizontal dashed lines on price pane when an S/R indicator is selected. Verified on 5 sample symbols. |
 | 2b — Trendlines | **DONE** — Multi-touch candidate scoring across last 90 bars, ≥3 touches required. 4 new signals (at_uptrend_support / at_downtrend_resistance, uptrend_break / downtrend_break). Volume-gated breaks. Active-line filter drops trendlines that today's close has already broken through (±0.3 ATR). `ta_trendlines` table snapshots active uptrend + downtrend lines per symbol. Chart draws diagonal dashed lines (2-point LineSeries from start → today). See Section 15 below. |
+| 3a — Style-specific indicators | **DONE** — 19 new indicators added so the canonical Minervini Trend Template, full O'Neil CAN SLIM, Pocket Pivot, and Wyckoff climax setups can actually be expressed. **Total indicators: 38 → 57.** See Section 16 below. |
+| 3b — Richer style presets | **DONE** — Preset library expanded from 5 → 10. Added Minervini Trend Template (strict), CAN SLIM full-technical, Pocket Pivot, Wyckoff Selling Climax, Wyckoff Buying Climax. Existing lite variants retained for everyday scanning. |
 
 ### Phase 1a deliverables (code in repo)
 
@@ -496,3 +498,113 @@ create table ta_trendlines (
 - Candidate generation: O(N²) per side per symbol, where N = swings in the last 90 bars (~15). ~225 candidates per side.
 - Touch check: O(N) per candidate.
 - Total: ~7k ops per symbol per side, ~7M ops per nightly run across 1k+ symbols. <1 min Python time.
+
+---
+
+## 16. Phase 3 — Style-Specific Indicators
+
+After shipping the first 5 trading-style presets (Minervini, O'Neil, Wyckoff) it became clear our 38 indicators couldn't faithfully express the canonical criteria for any of the three styles. Phase 3 adds **19 indicators** (38 → 57) and **5 new presets** (5 → 10) to close the gap.
+
+### Gap analysis vs. canonical criteria
+
+**Minervini Trend Template — 7 of 8 criteria can now be expressed** (RS rating is out-of-scope, requires VN-Index benchmark):
+
+| # | Criterion | Implemented |
+|---|---|---|
+| 1 | Price > MA50 | ✓ `above_ma50` |
+| 2 | Price > MA150 | ✓ `above_ma150` |
+| 3 | Price > MA200 | ✓ `above_ma200` |
+| 4 | MA50 > MA150 | ✓ part of `ma_stage_2_alignment` |
+| 5 | MA150 > MA200 | ✓ part of `ma_stage_2_alignment` |
+| 6 | MA200 rising ≥ 1 month | ✓ `ma200_uptrend` (21 bars) |
+| 7 | Within 25% of 52-week high | ✓ `near_52w_high` |
+| 8 | RS Rating ≥ 70 | ❌ out of scope |
+
+**O'Neil CAN SLIM technical half:**
+- ✓ Pivot point breakout on volume — `breaks_52w_high` + `volume_50_above_avg`
+- ✓ Pocket Pivot — new `pocket_pivot` indicator
+- ✓ Above MA50 (state) — `above_ma50`
+- ✓ 52-week high context — `near_52w_high` + `breaks_52w_high`
+- ❌ Cup-with-handle, flat base, 3-week tight (multi-week pattern recognition, deferred)
+- ❌ Market direction filter (needs VN-Index ingestion)
+
+**Wyckoff:**
+- ✓ Selling Climax — new `selling_climax` (wide range + 2× vol + close in upper half)
+- ✓ Buying Climax — new `buying_climax` (mirror)
+- ✓ Existing Spring, SOS, Upthrust coverage from Phase 2a is unchanged
+
+### 19 new indicators
+
+**Trend (10 — in `scripts/ta/indicators/trend.py`):**
+- `above_ma50` / `below_ma50` — state, not crossing event
+- `above_ma150` / `below_ma150` — adds MA150 to the toolkit
+- `above_ma200` / `below_ma200`
+- `ma_stage_2_alignment` (bullish) / `ma_stage_4_alignment` (bearish) — full MA50/150/200 order check
+- `ma200_uptrend` / `ma200_downtrend` — MA200 today vs. MA200 21 bars ago
+
+**Breakout (4 — in `scripts/ta/indicators/breakouts.py`):**
+- `breaks_52w_high` / `breaks_52w_low` — extends the 20-bar logic to 252 bars
+- `near_52w_high` — close ≥ 75% of 52-week high (within 25% range)
+- `well_above_52w_low` — close ≥ 130% of 52-week low (30%+ above)
+
+**Volume (3 — in `scripts/ta/indicators/volume.py`):**
+- `volume_50_above_avg` — looser 1.5× MA20 threshold, matches O'Neil's 40-50% rule
+- `pocket_pivot` — today's up-day volume > max down-day volume in last 10 days
+- `wide_range_bar` — (high − low) > 1.5 × ATR(14), direction-agnostic
+
+**Candlestick / Climax (2 — in `scripts/ta/indicators/climax.py`):**
+- `selling_climax` — bullish reversal: down bar + wide range + 2× vol + close in upper half
+- `buying_climax` — bearish reversal: mirror with close in lower half
+
+### Preset library: 5 → 10
+
+| New preset | Indicators | Direction |
+|---|---|---|
+| **Minervini Trend Template (strict)** | above_ma50 + above_ma150 + above_ma200 + ma_stage_2_alignment + ma200_uptrend + near_52w_high + well_above_52w_low | bullish |
+| **CAN SLIM Breakout (full technical)** | breaks_52w_high + volume_50_above_avg + above_ma50 + near_52w_high | bullish |
+| **Pocket Pivot (O'Neil)** | pocket_pivot + above_ma50 | bullish |
+| **Wyckoff Selling Climax** | selling_climax + rsi_oversold | bullish |
+| **Wyckoff Buying Climax** | buying_climax + rsi_overbought | bearish |
+
+The existing 5 "lite" presets (Minervini VCP Breakout lite, CAN SLIM lite, Wyckoff Spring, Wyckoff SOS, Wyckoff Upthrust) are unchanged — they're still useful as daily-scannable variants when the strict Templates fire on zero stocks.
+
+### Spot-check on FPT (2026-05-21)
+
+Verifies the indicators behave correctly:
+- `above_ma50` ✓ — barely above (+1,240 VND)
+- `below_ma150` ✓ / `below_ma200` ✓ — well below both
+- `ma_stage_4_alignment` ✓ — MA50 < MA150 < MA200 (downtrend template)
+- `ma200_downtrend` ✓
+- `near_52w_high` ✗ — close is 31.5% below 52-week high
+- `well_above_52w_low` ✗ — only 9.3% above 52-week low
+
+Net effect: a Minervini Trend Template scan today would correctly **exclude FPT**, which is in a longer-term downtrend despite recent stabilization above MA50. Exactly the kind of filtering Minervini's rules are designed for.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `scripts/ta/indicators/trend.py` | +10 indicators (state-based MA, alignment, MA200 slope) |
+| `scripts/ta/indicators/breakouts.py` | +4 indicators (52-week range + position) |
+| `scripts/ta/indicators/volume.py` | +3 indicators (volume_50_above_avg, pocket_pivot, wide_range_bar) |
+| `scripts/ta/indicators/climax.py` | **NEW** — selling_climax + buying_climax (~70 lines) |
+| `scripts/ta/registry.py` | +19 IndicatorSpec entries |
+| `dashboard/src/lib/ta-indicators.ts` | +19 catalog entries with bilingual labels |
+| `dashboard/src/lib/ta-presets.ts` | +5 new presets, existing 5 kept |
+
+No DB / cron / orchestrator changes. The new indicators flow through the existing `compute_ta_signals.py` loop because they don't require any new context (no `levels`/`trendlines` kwarg).
+
+### What's intentionally still NOT in this plan
+
+- **RS Rating** — needs VN-Index OHLCV ingestion + per-stock RS computation. Defer.
+- **VCP detection** — multi-week pattern recognition. Defer.
+- **Cup-with-handle / flat base / 3-week tight** — multi-week chart patterns. Defer.
+- **Market direction filter** — needs VN-Index trend indicator. Defer.
+- **Wyckoff multi-week phase analysis** — trading-range detection + sequence recognition. Defer.
+
+### Verification path
+
+1. Apply the new indicators to all symbols: `python3 scripts/compute_ta_signals.py --all-dates` (Once everything's running, expect to see ~57 indicators per symbol per day in `ta_signals`.)
+2. Load the dashboard → `/scanner` → check Trading Style Presets section now shows 10 entries.
+3. Click each new preset, verify the correct indicators get ticked and the results table re-filters.
+4. Minervini Trend Template (strict) is expected to fire on very few stocks (maybe 0-3 across the 600-symbol active universe) on any given day. That's by design — these are genuine Stage 2 leaders.
