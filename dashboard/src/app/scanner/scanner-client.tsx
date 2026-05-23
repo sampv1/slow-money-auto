@@ -293,9 +293,9 @@ export function ScannerClient({
                 type="button"
                 onClick={() => setStylePresetsExpanded((v) => !v)}
                 aria-expanded={stylePresetsExpanded}
-                className="w-full flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400 mb-1 hover:text-blue-600 hover:underline cursor-pointer"
+                className="w-full flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400 mb-1 cursor-pointer"
               >
-                <span className="flex-shrink-0">{stylePresetsExpanded ? "▾" : "▸"}</span>
+                <span className="flex-shrink-0 font-mono w-3 text-center">{stylePresetsExpanded ? "−" : "+"}</span>
                 <span>{t(locale, "taStylePresets")}</span>
               </button>
               {stylePresetsExpanded && (
@@ -305,13 +305,13 @@ export function ScannerClient({
                       <button
                         type="button"
                         onClick={() => applyPreset(preset)}
-                        className="w-full flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50"
+                        className="group w-full flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50 cursor-pointer"
                         title={presetDescription(preset, locale)}
                       >
                         <span className={directionColor(preset.direction)}>
                           {preset.direction === "bullish" ? "▲" : "▼"}
                         </span>
-                        <span className="text-blue-600 truncate flex-1 text-left">
+                        <span className="text-blue-600 truncate flex-1 text-left group-hover:underline">
                           {presetName(preset, locale)}
                         </span>
                         <span className="text-xs text-gray-500 flex-shrink-0">
@@ -330,9 +330,9 @@ export function ScannerClient({
                 type="button"
                 onClick={() => setMyCombosExpanded((v) => !v)}
                 aria-expanded={myCombosExpanded}
-                className="w-full flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400 mb-1 hover:text-blue-600 hover:underline cursor-pointer"
+                className="w-full flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400 mb-1 cursor-pointer"
               >
-                <span className="flex-shrink-0">{myCombosExpanded ? "▾" : "▸"}</span>
+                <span className="flex-shrink-0 font-mono w-3 text-center">{myCombosExpanded ? "−" : "+"}</span>
                 <span>{t(locale, "taMyCombos")}</span>
               </button>
               {myCombosExpanded && (
@@ -349,10 +349,10 @@ export function ScannerClient({
                       <button
                         type="button"
                         onClick={() => loadCombo(combo)}
-                        className="flex items-center gap-2 text-left flex-1 min-w-0"
+                        className="group flex items-center gap-2 text-left flex-1 min-w-0 cursor-pointer"
                         title={`${combo.indicators.length} ${t(locale, "taIndicatorsLower")} • min vol ${combo.minAvgVolume.toLocaleString()}`}
                       >
-                        <span className="text-blue-600 truncate">{combo.name}</span>
+                        <span className="text-blue-600 truncate group-hover:underline">{combo.name}</span>
                         <span className="text-xs text-gray-500 flex-shrink-0">
                           ({combo.indicators.length})
                         </span>
