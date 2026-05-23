@@ -22,6 +22,7 @@ const DOWN_COLOR = "#dc2626";
 const MA_COLOR: Record<number, string> = {
   20: "#2563eb",  // blue
   50: "#ea580c",  // orange
+  150: "#0d9488", // teal
   200: "#9333ea", // purple
 };
 
@@ -150,6 +151,8 @@ type Features = {
   showVolumeMA: boolean;
   showRollingHigh: boolean;
   showRollingLow: boolean;
+  show52wHigh: boolean;
+  show52wLow: boolean;
   showRSI: boolean;
   showMACD: boolean;
 };
@@ -159,25 +162,68 @@ function featuresFor(selected: string[]): Features {
   let showVolumeMA = false;
   let showRollingHigh = false;
   let showRollingLow = false;
+  let show52wHigh = false;
+  let show52wLow = false;
   let showRSI = false;
   let showMACD = false;
 
   for (const key of selected) {
+    // MA20+MA50 cross indicators
     if (key === "ma20_50_golden_cross" || key === "ma20_50_death_cross") {
       maPeriods.add(20);
       maPeriods.add(50);
-    } else if (key === "ma50_200_golden_cross" || key === "ma50_200_death_cross") {
+    }
+    // MA50+MA200 cross indicators
+    else if (key === "ma50_200_golden_cross" || key === "ma50_200_death_cross") {
       maPeriods.add(50);
       maPeriods.add(200);
-    } else if (key === "price_breaks_above_ma50" || key === "price_breaks_below_ma50") {
+    }
+    // MA50 reference (price-cross + state-based)
+    else if (
+      key === "price_breaks_above_ma50" || key === "price_breaks_below_ma50"
+      || key === "above_ma50" || key === "below_ma50"
+    ) {
       maPeriods.add(50);
-    } else if (key === "volume_spike" || key === "volume_dryup") {
+    }
+    // MA150 reference (state-based, Minervini)
+    else if (key === "above_ma150" || key === "below_ma150") {
+      maPeriods.add(150);
+    }
+    // MA200 reference (state + slope)
+    else if (
+      key === "above_ma200" || key === "below_ma200"
+      || key === "ma200_uptrend" || key === "ma200_downtrend"
+    ) {
+      maPeriods.add(200);
+    }
+    // Stage 2 / Stage 4 alignment — needs all three MAs to read visually
+    else if (key === "ma_stage_2_alignment" || key === "ma_stage_4_alignment") {
+      maPeriods.add(50);
+      maPeriods.add(150);
+      maPeriods.add(200);
+    }
+    // Volume MA20 context — shown for any volume-vs-average indicator
+    else if (
+      key === "volume_spike" || key === "volume_dryup"
+      || key === "volume_50_above_avg" || key === "pocket_pivot"
+    ) {
       showVolumeMA = true;
-    } else if (key === "breaks_20d_high") {
+    }
+    // 20-day breakout reference lines
+    else if (key === "breaks_20d_high") {
       showRollingHigh = true;
-    } else if (key === "breaks_20d_low") {
+    }
+    else if (key === "breaks_20d_low") {
       showRollingLow = true;
-    } else if (key.startsWith("rsi_")) {
+    }
+    // 52-week range reference lines (O'Neil, Minervini)
+    else if (key === "breaks_52w_high" || key === "near_52w_high") {
+      show52wHigh = true;
+    }
+    else if (key === "breaks_52w_low" || key === "well_above_52w_low") {
+      show52wLow = true;
+    }
+    else if (key.startsWith("rsi_")) {
       // covers rsi_oversold, rsi_overbought, rsi_*_divergence
       showRSI = true;
     } else if (key.startsWith("macd_")) {
@@ -191,6 +237,8 @@ function featuresFor(selected: string[]): Features {
     showVolumeMA,
     showRollingHigh,
     showRollingLow,
+    show52wHigh,
+    show52wLow,
     showRSI,
     showMACD,
   };
@@ -204,8 +252,18 @@ function paneIndices(features: Features): { volume: number; rsi: number; macd: n
   return { volume: 1, rsi, macd };
 }
 
+// Volume-pane indicators — those whose marker reads against the volume bar,
+// not the price candle. wide_range_bar stays on price because it's a bar-range
+// signal, not a volume one.
+const VOLUME_PANE_KEYS = new Set([
+  "volume_spike",
+  "volume_dryup",
+  "volume_50_above_avg",
+  "pocket_pivot",
+]);
+
 function paneForIndicator(key: string, panes: { volume: number; rsi: number; macd: number }): number {
-  if (key === "volume_spike" || key === "volume_dryup") return panes.volume;
+  if (VOLUME_PANE_KEYS.has(key)) return panes.volume;
   if (key.startsWith("rsi_") && panes.rsi !== -1) return panes.rsi;
   if (key.startsWith("macd_") && panes.macd !== -1) return panes.macd;
   return 0;
@@ -376,6 +434,36 @@ export function ChartClient({
         priceLineVisible: false,
         lastValueVisible: false,
         title: "20d low",
+      });
+      line.setData(linePointsFrom(shifted));
+    }
+
+    // 52-week range (252 trading days) — shifted 1 bar so today compares
+    // against yesterday's window, matching the Python indicator semantics.
+    if (features.show52wHigh) {
+      const rh = rollingMax(highs, 252);
+      const shifted = candles.map((_, i) => (i > 0 ? rh[i - 1] : null));
+      const line = chart.addSeries(LineSeries, {
+        color: UP_COLOR,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        title: "52w high",
+      });
+      line.setData(linePointsFrom(shifted));
+    }
+
+    if (features.show52wLow) {
+      const rl = rollingMin(lows, 252);
+      const shifted = candles.map((_, i) => (i > 0 ? rl[i - 1] : null));
+      const line = chart.addSeries(LineSeries, {
+        color: DOWN_COLOR,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        title: "52w low",
       });
       line.setData(linePointsFrom(shifted));
     }
