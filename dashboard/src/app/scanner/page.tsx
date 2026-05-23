@@ -4,6 +4,27 @@ import { ScannerClient } from "./scanner-client";
 
 export const revalidate = 0;
 
+// PostgREST silently caps rows per request (default 1000). For the scanner
+// we routinely have >1000 triggered signals on a single date, so any query
+// that might exceed that ceiling must be paged via .range().
+const PAGE_SIZE = 1000;
+
+async function fetchAllPaged<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<{ data: T[]; error: { message: string } | null }> {
+  const all: T[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await build(offset, offset + PAGE_SIZE - 1);
+    if (error) return { data: all, error };
+    const rows = (data ?? []) as T[];
+    all.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return { data: all, error: null };
+}
+
 export type TriggeredSignal = {
   symbol: string;
   indicator: string;
@@ -49,33 +70,50 @@ export default async function ScannerPage() {
 
   const latestDate = latestRow.date as string;
 
-  // Fetch all triggered signals for the latest date in one query.
-  const { data: signalsRaw, error: signalsErr } = await supabase
-    .from("ta_signals")
-    .select("symbol,indicator,value")
-    .eq("date", latestDate)
-    .eq("triggered", true);
+  // Fetch all triggered signals for the latest date — paged because there
+  // are routinely >1000 triggered rows and PostgREST silently truncates.
+  const { data: signalsRaw, error: signalsErr } = await fetchAllPaged<TriggeredSignal>(
+    (from, to) =>
+      supabase
+        .from("ta_signals")
+        .select("symbol,indicator,value")
+        .eq("date", latestDate)
+        .eq("triggered", true)
+        .order("symbol", { ascending: true })
+        .order("indicator", { ascending: true })
+        .range(from, to),
+  );
 
   if (signalsErr) {
     return <p className="text-red-600">Error loading signals: {signalsErr.message}</p>;
   }
 
   // Closing prices for ranking display.
-  const { data: ohlcvRaw } = await supabase
-    .from("ta_ohlcv")
-    .select("symbol,close,volume")
-    .eq("date", latestDate);
+  const { data: ohlcvRaw } = await fetchAllPaged<LatestClose>(
+    (from, to) =>
+      supabase
+        .from("ta_ohlcv")
+        .select("symbol,close,volume")
+        .eq("date", latestDate)
+        .order("symbol", { ascending: true })
+        .range(from, to),
+  );
 
   // Universe liquidity (rolling 20-session avg volume) — used by the user-set
   // "min liquidity" filter on the client.
-  const { data: universeRaw } = await supabase
-    .from("ta_universe")
-    .select("symbol,avg_volume_20d")
-    .eq("is_active", true);
+  const { data: universeRaw } = await fetchAllPaged<UniverseLiquidity>(
+    (from, to) =>
+      supabase
+        .from("ta_universe")
+        .select("symbol,avg_volume_20d")
+        .eq("is_active", true)
+        .order("symbol", { ascending: true })
+        .range(from, to),
+  );
 
-  const signals = (signalsRaw ?? []) as TriggeredSignal[];
-  const closes = (ohlcvRaw ?? []) as LatestClose[];
-  const universe = (universeRaw ?? []) as UniverseLiquidity[];
+  const signals = signalsRaw;
+  const closes = ohlcvRaw;
+  const universe = universeRaw;
 
   return (
     <ScannerClient
