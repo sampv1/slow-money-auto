@@ -102,6 +102,8 @@ export function ScannerClient({
   const [combosHydrated, setCombosHydrated] = useState(false);
   const [showSaveForm, setShowSaveForm] = useState(false);
   const [newComboName, setNewComboName] = useState("");
+  const [stylePresetsExpanded, setStylePresetsExpanded] = useState(true);
+  const [myCombosExpanded, setMyCombosExpanded] = useState(true);
 
   useEffect(() => {
     setSavedCombos(loadCombosFromStorage());
@@ -287,38 +289,54 @@ export function ScannerClient({
 
             {/* Built-in style presets (non-deletable) */}
             <div className="mb-3">
-              <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
-                {t(locale, "taStylePresets")}
-              </div>
-              <ul className="space-y-0.5">
-                {STYLE_PRESETS.map((preset) => (
-                  <li key={preset.id}>
-                    <button
-                      type="button"
-                      onClick={() => applyPreset(preset)}
-                      className="w-full flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50"
-                      title={presetDescription(preset, locale)}
-                    >
-                      <span className={directionColor(preset.direction)}>
-                        {preset.direction === "bullish" ? "▲" : "▼"}
-                      </span>
-                      <span className="text-blue-600 truncate flex-1 text-left">
-                        {presetName(preset, locale)}
-                      </span>
-                      <span className="text-xs text-gray-500 flex-shrink-0">
-                        ({preset.indicators.length})
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <button
+                type="button"
+                onClick={() => setStylePresetsExpanded((v) => !v)}
+                aria-expanded={stylePresetsExpanded}
+                className="w-full flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400 mb-1 hover:text-blue-600 hover:underline cursor-pointer"
+              >
+                <span className="flex-shrink-0">{stylePresetsExpanded ? "▾" : "▸"}</span>
+                <span>{t(locale, "taStylePresets")}</span>
+              </button>
+              {stylePresetsExpanded && (
+                <ul className="space-y-0.5">
+                  {STYLE_PRESETS.map((preset) => (
+                    <li key={preset.id}>
+                      <button
+                        type="button"
+                        onClick={() => applyPreset(preset)}
+                        className="w-full flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50"
+                        title={presetDescription(preset, locale)}
+                      >
+                        <span className={directionColor(preset.direction)}>
+                          {preset.direction === "bullish" ? "▲" : "▼"}
+                        </span>
+                        <span className="text-blue-600 truncate flex-1 text-left">
+                          {presetName(preset, locale)}
+                        </span>
+                        <span className="text-xs text-gray-500 flex-shrink-0">
+                          ({preset.indicators.length})
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             {/* User's own combos */}
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
-                {t(locale, "taMyCombos")}
-              </div>
+              <button
+                type="button"
+                onClick={() => setMyCombosExpanded((v) => !v)}
+                aria-expanded={myCombosExpanded}
+                className="w-full flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400 mb-1 hover:text-blue-600 hover:underline cursor-pointer"
+              >
+                <span className="flex-shrink-0">{myCombosExpanded ? "▾" : "▸"}</span>
+                <span>{t(locale, "taMyCombos")}</span>
+              </button>
+              {myCombosExpanded && (
+              <>
               {savedCombos.length === 0 ? (
                 <p className="text-xs text-gray-400 italic mb-2">{t(locale, "taNoSavedCombos")}</p>
               ) : (
@@ -400,6 +418,8 @@ export function ScannerClient({
                 + {t(locale, "taSaveCurrent")} ({selected.size})
               </button>
             )}
+              </>
+              )}
             </div>
           </div>
 
