@@ -487,8 +487,9 @@ export function ScannerClient({
           </div>
         </aside>
 
-        {/* Results panel */}
-        <section>
+        {/* Results panel — sticky so it stays in view while the user
+            scrolls the indicator menu on the left. */}
+        <section className="md:sticky md:top-4 md:self-start md:max-h-[calc(100vh-2rem)] md:overflow-y-auto">
           <div className="flex items-baseline justify-between mb-2">
             <h2 className="font-medium">{t(locale, "taResults")}</h2>
             {selected.size > 0 && (
