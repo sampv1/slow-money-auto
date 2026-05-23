@@ -214,14 +214,6 @@ export function ScannerClient({
     setSelected(new Set());
   }
 
-  function selectAllInCategory(cat: IndicatorCategory) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      for (const spec of grouped[cat]) next.add(spec.key);
-      return next;
-    });
-  }
-
   return (
     <div>
       <div className="flex items-baseline justify-between mb-4">
@@ -465,17 +457,10 @@ export function ScannerClient({
 
               return (
                 <div key={cat}>
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="mb-1">
                     <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                       {t(locale, CATEGORY_LABEL_KEY[cat])}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => selectAllInCategory(cat)}
-                      className="text-xs text-gray-400 hover:text-gray-700"
-                    >
-                      +{t(locale, "taSelectAll")}
-                    </button>
                   </div>
                   <div className="grid grid-cols-2 gap-x-3">
                     <ul className="space-y-1">{leftItems.map(renderItem)}</ul>
