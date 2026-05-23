@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
@@ -16,6 +16,45 @@ import {
 import type { LatestClose, TriggeredSignal, UniverseLiquidity } from "./page";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
+
+// localStorage key + shape for user-saved indicator combos.
+const COMBOS_STORAGE_KEY = "ta-scanner-combos-v1";
+
+type SavedCombo = {
+  id: string;
+  name: string;
+  indicators: string[];
+  minAvgVolume: number;
+  createdAt: string;
+};
+
+function loadCombosFromStorage(): SavedCombo[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(COMBOS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (c): c is SavedCombo =>
+        c && typeof c.id === "string" && typeof c.name === "string"
+        && Array.isArray(c.indicators)
+        && typeof c.minAvgVolume === "number"
+        && typeof c.createdAt === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveCombosToStorage(combos: SavedCombo[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(COMBOS_STORAGE_KEY, JSON.stringify(combos));
+  } catch {
+    // quota exceeded / disabled — swallow silently
+  }
+}
 
 const CATEGORY_LABEL_KEY: Record<IndicatorCategory, "taCategoryMomentum" | "taCategoryTrend" | "taCategoryVolume" | "taCategoryBreakout" | "taCategoryCandlestick" | "taCategoryDivergence" | "taCategorySR" | "taCategoryTrendline"> = {
   momentum: "taCategoryMomentum",
@@ -51,6 +90,45 @@ export function ScannerClient({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
+
+  // Saved combos: hydrated from localStorage on mount, kept in sync after that.
+  const [savedCombos, setSavedCombos] = useState<SavedCombo[]>([]);
+  const [combosHydrated, setCombosHydrated] = useState(false);
+  const [showSaveForm, setShowSaveForm] = useState(false);
+  const [newComboName, setNewComboName] = useState("");
+
+  useEffect(() => {
+    setSavedCombos(loadCombosFromStorage());
+    setCombosHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (combosHydrated) saveCombosToStorage(savedCombos);
+  }, [savedCombos, combosHydrated]);
+
+  function commitSaveCombo() {
+    const name = newComboName.trim();
+    if (!name || selected.size === 0) return;
+    const combo: SavedCombo = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      indicators: [...selected],
+      minAvgVolume,
+      createdAt: new Date().toISOString(),
+    };
+    setSavedCombos((prev) => [combo, ...prev]);
+    setNewComboName("");
+    setShowSaveForm(false);
+  }
+
+  function loadCombo(combo: SavedCombo) {
+    setSelected(new Set(combo.indicators));
+    setMinAvgVolume(combo.minAvgVolume);
+  }
+
+  function deleteCombo(id: string) {
+    setSavedCombos((prev) => prev.filter((c) => c.id !== id));
+  }
 
   // Pre-bucket signals by symbol (memoized — never changes after server fetch)
   const signalsBySymbol = useMemo(() => {
@@ -186,6 +264,98 @@ export function ScannerClient({
               </button>
             )}
           </div>
+
+          {/* Saved combos — persisted in localStorage per device */}
+          <div className="mb-4 pb-4 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                {t(locale, "taSavedCombos")}
+              </span>
+            </div>
+
+            {savedCombos.length === 0 ? (
+              <p className="text-xs text-gray-400 italic mb-2">{t(locale, "taNoSavedCombos")}</p>
+            ) : (
+              <ul className="space-y-1 mb-2">
+                {savedCombos.map((combo) => (
+                  <li
+                    key={combo.id}
+                    className="flex items-center justify-between gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => loadCombo(combo)}
+                      className="text-left flex-1 min-w-0 truncate text-blue-600 hover:underline"
+                      title={`${combo.indicators.length} ${t(locale, "taIndicatorsLower")} • min vol ${combo.minAvgVolume.toLocaleString()}`}
+                    >
+                      {combo.name}{" "}
+                      <span className="text-xs text-gray-500">
+                        ({combo.indicators.length})
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteCombo(combo.id)}
+                      className="text-xs text-gray-400 hover:text-red-600"
+                      aria-label={t(locale, "taDeleteCombo")}
+                      title={t(locale, "taDeleteCombo")}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {showSaveForm ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  value={newComboName}
+                  onChange={(e) => setNewComboName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitSaveCombo();
+                    if (e.key === "Escape") {
+                      setShowSaveForm(false);
+                      setNewComboName("");
+                    }
+                  }}
+                  placeholder={t(locale, "taComboNamePlaceholder")}
+                  autoFocus
+                  className="flex-1 min-w-0 rounded border border-gray-300 px-2 py-1 text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={commitSaveCombo}
+                  disabled={!newComboName.trim() || selected.size === 0}
+                  className="text-xs px-2 py-1 rounded bg-blue-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  {t(locale, "save")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSaveForm(false);
+                    setNewComboName("");
+                  }}
+                  className="text-xs px-2 py-1 text-gray-500 hover:text-gray-900"
+                >
+                  {t(locale, "cancel")}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowSaveForm(true)}
+                disabled={selected.size === 0}
+                className="text-xs text-blue-600 hover:underline disabled:text-gray-300 disabled:no-underline disabled:cursor-not-allowed"
+                title={selected.size === 0 ? t(locale, "taSaveComboHintEmpty") : undefined}
+              >
+                + {t(locale, "taSaveCurrent")} ({selected.size})
+              </button>
+            )}
+          </div>
+
           <div className="space-y-4">
             {CATEGORIES.map((cat) => {
               const specs = grouped[cat];
