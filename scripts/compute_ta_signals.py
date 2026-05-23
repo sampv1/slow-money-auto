@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
 
-from ta.common import get_supabase_client, today_vn
+from ta.common import get_supabase_client, safe_execute, today_vn
 from ta.registry import INDICATOR_SPECS, all_keys
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
@@ -143,13 +143,21 @@ def filter_dates(rows: list[dict], since: date | None, latest_only: bool, ohlcv:
 
 
 def upsert_signals(client, rows: list[dict]) -> int:
-    """Upsert signal rows in chunks. Returns total rows written."""
+    """Upsert signal rows in chunks. Returns total rows written.
+
+    Each chunk uses `safe_execute` so transient HTTP/2 stream exhaustion
+    (common after thousands of upserts on one connection) survives a retry
+    instead of crashing the whole job.
+    """
     if not rows:
         return 0
     total = 0
     for i in range(0, len(rows), UPSERT_CHUNK_SIZE):
         chunk = rows[i : i + UPSERT_CHUNK_SIZE]
-        client.table("ta_signals").upsert(chunk, on_conflict="date,symbol,indicator").execute()
+        safe_execute(
+            client.table("ta_signals").upsert(chunk, on_conflict="date,symbol,indicator"),
+            label=f"upsert ta_signals chunk[{i // UPSERT_CHUNK_SIZE}]",
+        )
         total += len(chunk)
     return total
 
@@ -280,8 +288,16 @@ def main():
     processed = 0
     start = time.time()
 
+    # Refresh the Supabase client every CLIENT_REFRESH_EVERY symbols so the
+    # underlying HTTP/2 connection doesn't run out of stream IDs (~20k limit).
+    CLIENT_REFRESH_EVERY = 150
+
     try:
         for i, symbol in enumerate(symbols, 1):
+            if i > 1 and (i - 1) % CLIENT_REFRESH_EVERY == 0:
+                client = get_supabase_client()
+                print(f"[{i}/{len(symbols)}] (refreshed Supabase client)")
+
             ohlcv = load_ohlcv(client, symbol)
             if ohlcv.empty:
                 print(f"[{i}/{len(symbols)}] {symbol} — no OHLCV, skipping")

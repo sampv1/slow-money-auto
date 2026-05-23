@@ -90,8 +90,16 @@ def main():
     processed = 0
     t0 = time.time()
 
+    # Refresh the Supabase client every CLIENT_REFRESH_EVERY symbols so the
+    # underlying HTTP/2 connection doesn't run out of stream IDs (~20k limit).
+    CLIENT_REFRESH_EVERY = 150
+
     try:
         for i, symbol in enumerate(symbols, 1):
+            if i > 1 and (i - 1) % CLIENT_REFRESH_EVERY == 0:
+                client = get_supabase_client()
+                print(f"  [{i}/{len(symbols)}] (refreshed Supabase client)")
+
             ohlcv = load_ohlcv(client, symbol)
             if ohlcv.empty:
                 print(f"  [{i}/{len(symbols)}] {symbol} — no OHLCV, skipping")

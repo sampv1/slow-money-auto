@@ -19,6 +19,8 @@ from typing import Iterable
 
 import pandas as pd
 
+from .common import safe_execute
+
 SWING_WINDOW = 5
 ATR_PERIOD = 14
 CLUSTER_TOLERANCE = 0.5          # multiple of ATR
@@ -193,7 +195,10 @@ def upsert_levels(client, symbol: str, levels: Iterable[dict]) -> int:
     on the same rounded price and level_type — we merge them rather than
     letting the unique constraint reject the batch.
     """
-    client.table("ta_sr_levels").delete().eq("symbol", symbol).execute()
+    safe_execute(
+        client.table("ta_sr_levels").delete().eq("symbol", symbol),
+        label=f"delete ta_sr_levels for {symbol}",
+    )
 
     def _to_iso(d):
         return d.isoformat() if hasattr(d, "isoformat") else str(d)
@@ -229,7 +234,10 @@ def upsert_levels(client, symbol: str, levels: Iterable[dict]) -> int:
         row["strength"] = round(row["strength"], 4)
 
     if rows:
-        client.table("ta_sr_levels").insert(rows).execute()
+        safe_execute(
+            client.table("ta_sr_levels").insert(rows),
+            label=f"insert ta_sr_levels for {symbol}",
+        )
     return len(rows)
 
 

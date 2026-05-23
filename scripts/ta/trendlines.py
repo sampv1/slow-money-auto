@@ -24,6 +24,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from .common import safe_execute
 from .sr import _swing_highs, _swing_lows, _atr  # reuse swing + ATR helpers
 
 LOOKBACK_BARS = 90
@@ -183,7 +184,10 @@ def detect_trendlines(ohlcv: pd.DataFrame) -> list[dict]:
 
 def upsert_trendlines(client, symbol: str, lines: Iterable[dict]) -> int:
     """Replace the symbol's trendlines in ta_trendlines."""
-    client.table("ta_trendlines").delete().eq("symbol", symbol).execute()
+    safe_execute(
+        client.table("ta_trendlines").delete().eq("symbol", symbol),
+        label=f"delete ta_trendlines for {symbol}",
+    )
 
     def _to_iso(d):
         return d.isoformat() if hasattr(d, "isoformat") else str(d)
@@ -201,7 +205,10 @@ def upsert_trendlines(client, symbol: str, lines: Iterable[dict]) -> int:
             "touches": int(ln["touches"]),
         })
     if rows:
-        client.table("ta_trendlines").insert(rows).execute()
+        safe_execute(
+            client.table("ta_trendlines").insert(rows),
+            label=f"insert ta_trendlines for {symbol}",
+        )
     return len(rows)
 
 
