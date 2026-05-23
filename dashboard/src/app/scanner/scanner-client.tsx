@@ -276,81 +276,82 @@ export function ScannerClient({
             )}
           </div>
 
-          {/* Trading-style presets — static, baked into the bundle */}
+          {/* Combos — fixed style presets + user's localStorage combos.
+              Each row is one line; description shows on hover. */}
           <div className="mb-4 pb-4 border-b border-gray-100">
-            <div className="flex items-center justify-between mb-2">
+            <div className="mb-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                {t(locale, "taStylePresets")}
+                {t(locale, "taCombos")}
               </span>
             </div>
-            <ul className="space-y-1">
-              {STYLE_PRESETS.map((preset) => (
-                <li key={preset.id}>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset(preset)}
-                    className="w-full text-left rounded px-2 py-1.5 hover:bg-gray-50 border border-transparent hover:border-gray-200"
-                    title={presetDescription(preset, locale)}
-                  >
-                    <div className="flex items-center gap-2 text-sm">
+
+            {/* Built-in style presets (non-deletable) */}
+            <div className="mb-3">
+              <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+                {t(locale, "taStylePresets")}
+              </div>
+              <ul className="space-y-0.5">
+                {STYLE_PRESETS.map((preset) => (
+                  <li key={preset.id}>
+                    <button
+                      type="button"
+                      onClick={() => applyPreset(preset)}
+                      className="w-full flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50"
+                      title={presetDescription(preset, locale)}
+                    >
                       <span className={directionColor(preset.direction)}>
                         {preset.direction === "bullish" ? "▲" : "▼"}
                       </span>
-                      <span className="text-blue-600 font-medium truncate">
+                      <span className="text-blue-600 truncate flex-1 text-left">
                         {presetName(preset, locale)}
                       </span>
-                      <span className="text-xs text-gray-500">({preset.indicators.length})</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5 leading-snug line-clamp-2">
-                      {presetDescription(preset, locale)}
-                    </p>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Saved combos — persisted in localStorage per device */}
-          <div className="mb-4 pb-4 border-b border-gray-100">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                {t(locale, "taSavedCombos")}
-              </span>
-            </div>
-
-            {savedCombos.length === 0 ? (
-              <p className="text-xs text-gray-400 italic mb-2">{t(locale, "taNoSavedCombos")}</p>
-            ) : (
-              <ul className="space-y-1 mb-2">
-                {savedCombos.map((combo) => (
-                  <li
-                    key={combo.id}
-                    className="flex items-center justify-between gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => loadCombo(combo)}
-                      className="text-left flex-1 min-w-0 truncate text-blue-600 hover:underline"
-                      title={`${combo.indicators.length} ${t(locale, "taIndicatorsLower")} • min vol ${combo.minAvgVolume.toLocaleString()}`}
-                    >
-                      {combo.name}{" "}
-                      <span className="text-xs text-gray-500">
-                        ({combo.indicators.length})
+                      <span className="text-xs text-gray-500 flex-shrink-0">
+                        ({preset.indicators.length})
                       </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteCombo(combo.id)}
-                      className="text-xs text-gray-400 hover:text-red-600"
-                      aria-label={t(locale, "taDeleteCombo")}
-                      title={t(locale, "taDeleteCombo")}
-                    >
-                      ×
                     </button>
                   </li>
                 ))}
               </ul>
-            )}
+            </div>
+
+            {/* User's own combos */}
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+                {t(locale, "taMyCombos")}
+              </div>
+              {savedCombos.length === 0 ? (
+                <p className="text-xs text-gray-400 italic mb-2">{t(locale, "taNoSavedCombos")}</p>
+              ) : (
+                <ul className="space-y-0.5 mb-2">
+                  {savedCombos.map((combo) => (
+                    <li
+                      key={combo.id}
+                      className="flex items-center justify-between gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => loadCombo(combo)}
+                        className="flex items-center gap-2 text-left flex-1 min-w-0"
+                        title={`${combo.indicators.length} ${t(locale, "taIndicatorsLower")} • min vol ${combo.minAvgVolume.toLocaleString()}`}
+                      >
+                        <span className="text-blue-600 truncate">{combo.name}</span>
+                        <span className="text-xs text-gray-500 flex-shrink-0">
+                          ({combo.indicators.length})
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteCombo(combo.id)}
+                        className="text-xs text-gray-400 hover:text-red-600 flex-shrink-0"
+                        aria-label={t(locale, "taDeleteCombo")}
+                        title={t(locale, "taDeleteCombo")}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
             {showSaveForm ? (
               <div className="flex items-center gap-1">
@@ -399,6 +400,7 @@ export function ScannerClient({
                 + {t(locale, "taSaveCurrent")} ({selected.size})
               </button>
             )}
+            </div>
           </div>
 
           <div className="space-y-4">
