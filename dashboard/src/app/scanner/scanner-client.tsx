@@ -13,6 +13,12 @@ import {
   indicatorLabel,
   indicatorsByCategory,
 } from "@/lib/ta-indicators";
+import {
+  STYLE_PRESETS,
+  type StylePreset,
+  presetDescription,
+  presetName,
+} from "@/lib/ta-presets";
 import type { LatestClose, TriggeredSignal, UniverseLiquidity } from "./page";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
@@ -124,6 +130,11 @@ export function ScannerClient({
   function loadCombo(combo: SavedCombo) {
     setSelected(new Set(combo.indicators));
     setMinAvgVolume(combo.minAvgVolume);
+  }
+
+  function applyPreset(preset: StylePreset) {
+    setSelected(new Set(preset.indicators));
+    setMinAvgVolume(preset.minAvgVolume);
   }
 
   function deleteCombo(id: string) {
@@ -263,6 +274,40 @@ export function ScannerClient({
                 {t(locale, "taClearAll")} ({selected.size})
               </button>
             )}
+          </div>
+
+          {/* Trading-style presets — static, baked into the bundle */}
+          <div className="mb-4 pb-4 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                {t(locale, "taStylePresets")}
+              </span>
+            </div>
+            <ul className="space-y-1">
+              {STYLE_PRESETS.map((preset) => (
+                <li key={preset.id}>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset(preset)}
+                    className="w-full text-left rounded px-2 py-1.5 hover:bg-gray-50 border border-transparent hover:border-gray-200"
+                    title={presetDescription(preset, locale)}
+                  >
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className={directionColor(preset.direction)}>
+                        {preset.direction === "bullish" ? "▲" : "▼"}
+                      </span>
+                      <span className="text-blue-600 font-medium truncate">
+                        {presetName(preset, locale)}
+                      </span>
+                      <span className="text-xs text-gray-500">({preset.indicators.length})</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5 leading-snug line-clamp-2">
+                      {presetDescription(preset, locale)}
+                    </p>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
 
           {/* Saved combos — persisted in localStorage per device */}
