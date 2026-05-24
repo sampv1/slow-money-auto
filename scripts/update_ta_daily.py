@@ -23,6 +23,7 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -35,6 +36,18 @@ from ta.ohlcv import backfill_symbols
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
 from ta.universe import get_active_symbols
+
+
+def write_job_summary(text: str) -> None:
+    """Append markdown text to the GitHub Actions Job Summary if running in CI."""
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_path:
+        return
+    try:
+        with open(summary_path, "a", encoding="utf-8") as f:
+            f.write(text)
+    except Exception as e:
+        print(f"  (could not write job summary: {e})")
 
 # Re-use the orchestrator's helpers so we don't duplicate logic
 from compute_ta_signals import (  # noqa: E402
@@ -49,7 +62,7 @@ from compute_ta_signals import (  # noqa: E402
 
 def main():
     parser = argparse.ArgumentParser(description="Daily incremental TA update (OHLCV + signals)")
-    parser.add_argument("--ohlcv-days", type=int, default=5, help="OHLCV lookback days (default 5)")
+    parser.add_argument("--ohlcv-days", type=int, default=10, help="OHLCV lookback days (default 10 — provides self-healing if a previous day failed)")
     parser.add_argument("--delay", type=float, default=REQUEST_DELAY, help=f"vnstock request delay (default {REQUEST_DELAY}s)")
     parser.add_argument("--dry-run", action="store_true", help="Compute and report, don't write to DB")
     args = parser.parse_args()
@@ -68,6 +81,11 @@ def main():
 
     # Step 1: incremental OHLCV
     print(f"--- Step 1: incremental OHLCV fetch ---")
+    ohlcv_ok = 0
+    ohlcv_total = 0
+    failed_first_pass: list[str] = []
+    final_failed: list[str] = []
+    recovered_count = 0
     if args.dry_run:
         print(f"(dry-run) would fetch {args.ohlcv_days} days for {len(symbols)} symbols")
     else:
@@ -75,10 +93,31 @@ def main():
         results = backfill_symbols(client, symbols, days=args.ohlcv_days, delay=args.delay)
         ohlcv_total = sum(results.values())
         ohlcv_ok = sum(1 for n in results.values() if n > 0)
-        print(f"OHLCV: {ohlcv_ok}/{len(symbols)} symbols ok, {ohlcv_total:,} rows in {time.time()-t0:.1f}s")
-        if ohlcv_ok < len(symbols):
-            failed = [s for s, n in results.items() if n == 0]
-            print(f"Failed symbols: {', '.join(failed)}")
+        first_pass_elapsed = time.time() - t0
+        print(f"OHLCV pass 1: {ohlcv_ok}/{len(symbols)} symbols ok, {ohlcv_total:,} rows in {first_pass_elapsed:.1f}s")
+
+        failed_first_pass = [s for s, n in results.items() if n == 0]
+        if failed_first_pass:
+            # Reconciliation pass — re-fetch failed symbols with a longer per-
+            # request delay so vnstock's rate-limit window has time to recover
+            # from whatever caused the first-pass failures.
+            recon_delay = max(args.delay * 2.0, 8.0)
+            print(f"\n--- Step 1b: reconciliation for {len(failed_first_pass)} failed symbols (delay {recon_delay:.1f}s) ---")
+            t1 = time.time()
+            recon_results = backfill_symbols(client, failed_first_pass, days=args.ohlcv_days, delay=recon_delay)
+            for s, n in recon_results.items():
+                if n > 0:
+                    results[s] = n
+                    recovered_count += 1
+            ohlcv_total = sum(results.values())
+            ohlcv_ok = sum(1 for n in results.values() if n > 0)
+            print(f"Reconciliation: recovered {recovered_count}/{len(failed_first_pass)} in {time.time()-t1:.1f}s")
+
+        final_failed = [s for s, n in results.items() if n == 0]
+        if final_failed:
+            print(f"Still failed after reconciliation ({len(final_failed)}): {', '.join(final_failed)}")
+        else:
+            print(f"All {len(symbols)} symbols ok after pass 1 + reconciliation.")
 
     # Step 2: compute signals (latest date only) and log to ta_runs
     print(f"\n--- Step 2: compute signals (latest date) ---")
@@ -142,6 +181,26 @@ def main():
 
         if not args.dry_run:
             finish_run(client, run_id, "success", processed, total_signals)
+
+        # GitHub Actions Job Summary — visible on the run page without opening logs.
+        summary_lines = [
+            "## TA Daily Update Summary",
+            "",
+            f"- **Trading date**: {today_str}",
+            f"- **Universe size**: {len(symbols)}",
+            f"- **OHLCV pass 1**: {len(symbols) - len(failed_first_pass)}/{len(symbols)} ok",
+        ]
+        if failed_first_pass:
+            summary_lines.append(f"- **Reconciliation recovered**: {recovered_count}/{len(failed_first_pass)}")
+        summary_lines.append(f"- **OHLCV final**: {ohlcv_ok}/{len(symbols)} ok ({ohlcv_total:,} rows)")
+        summary_lines.append(f"- **Signals written**: {total_signals:,} ({triggered_total} triggered)")
+        if final_failed:
+            shown = ", ".join(final_failed[:25])
+            more = f" (+{len(final_failed) - 25} more)" if len(final_failed) > 25 else ""
+            summary_lines.append(f"- **Still failed**: {shown}{more}")
+        summary_lines.append("")
+        write_job_summary("\n".join(summary_lines))
+
         print(f"\n=== TA daily update done ===")
 
     except Exception as e:

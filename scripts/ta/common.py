@@ -18,10 +18,11 @@ SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 # proprietary vnstock_chart library; KBS triggers a charting-library import
 # error in 4.0.x. If VCI rate-limits, try TCBS as a fallback.
 VNSTOCK_SOURCE = "VCI"
-# Seconds between vnstock requests. 2.5s ≈ 24 req/min — safely below VCI's
-# observed ceiling (~30/min) while keeping the daily cron under ~30 min for
-# the post-filter universe of ~600 symbols.
-REQUEST_DELAY = 2.5
+# Seconds between vnstock requests. 4.0s ≈ 15 req/min — comfortably below
+# VCI's observed ceiling (~30/min) with plenty of headroom against
+# rate-limit-driven failures. The midnight cron prioritizes reliability over
+# wall time; pair this with the retry schedule in ta/ohlcv.py.
+REQUEST_DELAY = 4.0
 
 VN_TZ = timezone(timedelta(hours=7))
 
