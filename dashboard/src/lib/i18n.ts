@@ -4,7 +4,7 @@ export const translations = {
   en: {
     // Layout / Nav
     appName: "Slow Money",
-    navAnalysis: "Analysis",
+    navAnalysis: "Market analysis",
     navActive: "Active",
     navHistory: "History",
     navLogs: "Daily Logs",
@@ -256,7 +256,7 @@ export const translations = {
   vi: {
     // Layout / Nav
     appName: "Slow Money",
-    navAnalysis: "Phân tích",
+    navAnalysis: "Phân tích thị trường",
     navActive: "Đang nắm giữ",
     navHistory: "Lịch sử",
     navLogs: "Nhật ký",
