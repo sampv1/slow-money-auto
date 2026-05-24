@@ -143,6 +143,13 @@ export function ScannerClient({
     setSavedCombos((prev) => prev.filter((c) => c.id !== id));
   }
 
+  function isComboActive(indicators: string[], minVol: number): boolean {
+    if (selected.size === 0 || selected.size !== indicators.length) return false;
+    if (minAvgVolume !== minVol) return false;
+    for (const ind of indicators) if (!selected.has(ind)) return false;
+    return true;
+  }
+
   // Pre-bucket signals by symbol (memoized — never changes after server fetch)
   const signalsBySymbol = useMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -292,18 +299,21 @@ export function ScannerClient({
               </button>
               {stylePresetsExpanded && (
                 <ul className="space-y-0.5">
-                  {STYLE_PRESETS.map((preset) => (
+                  {STYLE_PRESETS.map((preset) => {
+                    const active = isComboActive(preset.indicators, preset.minAvgVolume);
+                    return (
                     <li key={preset.id}>
                       <button
                         type="button"
                         onClick={() => applyPreset(preset)}
-                        className="group w-full flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50 cursor-pointer"
+                        aria-pressed={active}
+                        className={`group w-full flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50 cursor-pointer ${active ? "bg-blue-50" : ""}`}
                         title={presetDescription(preset, locale)}
                       >
                         <span className={directionColor(preset.direction)}>
                           {preset.direction === "bullish" ? "▲" : "▼"}
                         </span>
-                        <span className="text-blue-600 truncate flex-1 text-left group-hover:underline">
+                        <span className={`text-blue-600 truncate flex-1 text-left group-hover:underline ${active ? "font-bold" : ""}`}>
                           {presetName(preset, locale)}
                         </span>
                         <span className="text-xs text-gray-500 flex-shrink-0">
@@ -311,7 +321,8 @@ export function ScannerClient({
                         </span>
                       </button>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -333,18 +344,21 @@ export function ScannerClient({
                 <p className="text-xs text-gray-400 italic mb-2">{t(locale, "taNoSavedCombos")}</p>
               ) : (
                 <ul className="space-y-0.5 mb-2">
-                  {savedCombos.map((combo) => (
+                  {savedCombos.map((combo) => {
+                    const active = isComboActive(combo.indicators, combo.minAvgVolume);
+                    return (
                     <li
                       key={combo.id}
-                      className="flex items-center justify-between gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50"
+                      className={`flex items-center justify-between gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50 ${active ? "bg-blue-50" : ""}`}
                     >
                       <button
                         type="button"
                         onClick={() => loadCombo(combo)}
+                        aria-pressed={active}
                         className="group flex items-center gap-2 text-left flex-1 min-w-0 cursor-pointer"
                         title={`${combo.indicators.length} ${t(locale, "taIndicatorsLower")} • min vol ${combo.minAvgVolume.toLocaleString()}`}
                       >
-                        <span className="text-blue-600 truncate group-hover:underline">{combo.name}</span>
+                        <span className={`text-blue-600 truncate group-hover:underline ${active ? "font-bold" : ""}`}>{combo.name}</span>
                         <span className="text-xs text-gray-500 flex-shrink-0">
                           ({combo.indicators.length})
                         </span>
@@ -359,7 +373,8 @@ export function ScannerClient({
                         ×
                       </button>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
 
