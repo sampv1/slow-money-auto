@@ -13,7 +13,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import type { Candle } from "./page";
-import { INDICATORS_BY_KEY, indicatorLabel } from "@/lib/ta-indicators";
+import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, indicatorLabel } from "@/lib/ta-indicators";
 import type { Locale } from "@/lib/i18n";
 
 const UP_COLOR = "#16a34a";
@@ -260,18 +260,6 @@ const VOLUME_PANE_KEYS = new Set([
   "volume_dryup",
   "volume_50_above_avg",
   "pocket_pivot",
-]);
-
-// State-based MA position indicators — they trigger on every bar the condition
-// holds (often months in a row), which would flood the chart with redundant
-// markers/chips. The MA line itself still renders as context.
-const CHART_HIDDEN_KEYS = new Set([
-  "above_ma50",
-  "below_ma50",
-  "above_ma150",
-  "below_ma150",
-  "above_ma200",
-  "below_ma200",
 ]);
 
 function paneForIndicator(key: string, panes: { volume: number; rsi: number; macd: number }): number {

@@ -193,3 +193,16 @@ export function directionColor(direction: IndicatorDirection): string {
   if (direction === "bearish") return "text-red-600";
   return "text-gray-500";
 }
+
+// State-based "price above/below MA" indicators. They fire on every bar the
+// condition holds (often months in a row), so showing them as chart markers,
+// chips, or auto-selecting them on the drill-down is noise. The MA line they
+// pull in still renders as background context.
+export const CHART_HIDDEN_KEYS = new Set([
+  "above_ma50",
+  "below_ma50",
+  "above_ma150",
+  "below_ma150",
+  "above_ma200",
+  "below_ma200",
+]);

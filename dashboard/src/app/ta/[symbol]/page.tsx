@@ -2,7 +2,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { getLocale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
-import { INDICATORS_BY_KEY, directionColor, indicatorLabel } from "@/lib/ta-indicators";
+import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, directionColor, indicatorLabel } from "@/lib/ta-indicators";
 import { ChartClient } from "./chart-client";
 
 export const revalidate = 0;
@@ -53,7 +53,7 @@ export default async function SymbolDrillDown({
         .eq("date", latestSignalRow.date);
       selected = (latestIndsRaw ?? [])
         .map((r) => (r as { indicator: string }).indicator)
-        .filter((k) => k in INDICATORS_BY_KEY);
+        .filter((k) => k in INDICATORS_BY_KEY && !CHART_HIDDEN_KEYS.has(k));
     }
   }
 
