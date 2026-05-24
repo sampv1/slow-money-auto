@@ -10,7 +10,18 @@ export const translations = {
     navLogs: "Daily Logs",
     navStats: "Stats",
     navInput: "Input",
+    navTA: "TA",
     navScanner: "TA Scanner",
+
+    // TA page (single-symbol drill-down entry)
+    taSearchSubtitle: "Enter a stock symbol to view its technical-analysis chart.",
+    taSymbolLabel: "Symbol",
+    taSymbolPlaceholder: "e.g. FPT",
+    taSearchButton: "View",
+    taSymbolNoSuggestion: "No matching symbol in the active universe.",
+    taSearchHint: "Tip: use ↑/↓ to pick a suggestion, Enter to open.",
+    taLatestIndicatorsSubtitle: "Daily candlestick chart with the most recently triggered indicators highlighted.",
+    taBackToTA: "Back to TA",
 
     // TA Scanner page
     taScanner: "TA Scanner",
@@ -52,7 +63,6 @@ export const translations = {
     taSymbolMatched: "stock matched",
 
     // TA Scanner drill-down page
-    taBackToScanner: "Back to scanner",
     taChart: "Chart",
     taPriceChart: "Daily candlestick chart, overlays and markers reflect the indicators you selected on the scanner.",
     taRecentSignals: "Recent signals (30 days)",
@@ -252,7 +262,18 @@ export const translations = {
     navLogs: "Nhật ký",
     navStats: "Thống kê",
     navInput: "Nhập liệu",
+    navTA: "Phân tích kỹ thuật",
     navScanner: "Lọc kỹ thuật",
+
+    // TA page (single-symbol drill-down entry)
+    taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ phân tích kỹ thuật.",
+    taSymbolLabel: "Mã cổ phiếu",
+    taSymbolPlaceholder: "VD: FPT",
+    taSearchButton: "Xem",
+    taSymbolNoSuggestion: "Không có mã nào khớp trong danh mục.",
+    taSearchHint: "Mẹo: dùng ↑/↓ để chọn gợi ý, Enter để mở.",
+    taLatestIndicatorsSubtitle: "Biểu đồ nến hàng ngày — đánh dấu các chỉ báo vừa kích hoạt gần nhất.",
+    taBackToTA: "Quay lại Phân tích kỹ thuật",
 
     // TA Scanner page
     taScanner: "Phân tích kỹ thuật",
@@ -294,7 +315,6 @@ export const translations = {
     taSymbolMatched: "mã phù hợp",
 
     // TA Scanner drill-down page
-    taBackToScanner: "Quay lại bộ lọc",
     taChart: "Biểu đồ",
     taPriceChart: "Biểu đồ nến hàng ngày — overlay và đánh dấu phản ánh các chỉ báo đã chọn ở bộ lọc.",
     taRecentSignals: "Tín hiệu gần đây (30 ngày)",

@@ -27,10 +27,35 @@ export default async function SymbolDrillDown({
   const { ind } = await searchParams;
   const symbol = raw.toUpperCase();
   const locale = await getLocale();
-  const selected = (ind ?? "")
+  const explicitSelection = ind !== undefined;
+  let selected = (ind ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+
+  // When no ?ind= is supplied, default to whatever indicators most recently
+  // fired for this symbol — gives the visitor an immediately useful chart.
+  if (!explicitSelection) {
+    const { data: latestSignalRow } = await supabase
+      .from("ta_signals")
+      .select("date")
+      .eq("symbol", symbol)
+      .eq("triggered", true)
+      .order("date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestSignalRow?.date) {
+      const { data: latestIndsRaw } = await supabase
+        .from("ta_signals")
+        .select("indicator")
+        .eq("symbol", symbol)
+        .eq("triggered", true)
+        .eq("date", latestSignalRow.date);
+      selected = (latestIndsRaw ?? [])
+        .map((r) => (r as { indicator: string }).indicator)
+        .filter((k) => k in INDICATORS_BY_KEY);
+    }
+  }
 
   // Fetch full OHLCV history (~264 rows = trivial; ASC for the chart).
   const { data: ohlcvRaw, error: ohlcvErr } = await supabase
@@ -48,8 +73,8 @@ export default async function SymbolDrillDown({
   if (candles.length === 0) {
     return (
       <div>
-        <Link href="/scanner" className="text-sm text-gray-500 hover:text-gray-900">
-          ← {t(locale, "taBackToScanner")}
+        <Link href="/ta" className="text-sm text-gray-500 hover:text-gray-900">
+          ← {t(locale, "taBackToTA")}
         </Link>
         <h1 className="text-xl font-semibold mt-2 mb-4">{symbol}</h1>
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
@@ -133,14 +158,16 @@ export default async function SymbolDrillDown({
 
   return (
     <div>
-      <Link href="/scanner" className="text-sm text-gray-500 hover:text-gray-900">
-        ← {t(locale, "taBackToScanner")}
+      <Link href="/ta" className="text-sm text-gray-500 hover:text-gray-900">
+        ← {t(locale, "taBackToTA")}
       </Link>
 
       <div className="flex items-baseline justify-between mt-2 mb-4">
         <div>
           <h1 className="text-2xl font-semibold">{symbol}</h1>
-          <p className="text-sm text-gray-500">{t(locale, "taPriceChart")}</p>
+          <p className="text-sm text-gray-500">
+            {explicitSelection ? t(locale, "taPriceChart") : t(locale, "taLatestIndicatorsSubtitle")}
+          </p>
         </div>
         <div className="text-right">
           <div className="text-xl font-mono">{formatPrice(latest.close)}</div>
