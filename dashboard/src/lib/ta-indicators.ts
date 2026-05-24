@@ -17,7 +17,9 @@ export type IndicatorCategory =
   | "candlestick"
   | "divergence"
   | "support_resistance"
-  | "trendline";
+  | "trendline"
+  | "relative_strength"
+  | "volatility";
 
 export type IndicatorDirection = "bullish" | "bearish" | "neutral";
 
@@ -160,6 +162,30 @@ export const INDICATORS: IndicatorSpec[] = [
     label_en: "Uptrend line break", label_vi: "Phá vỡ đường xu hướng tăng" },
   { key: "downtrend_break", category: "trendline", direction: "bullish",
     label_en: "Downtrend line break", label_vi: "Phá vỡ đường xu hướng giảm" },
+
+  // Relative Strength vs VN-Index (Phase 4)
+  { key: "rs_vs_vnindex_strong", category: "relative_strength", direction: "bullish",
+    label_en: "Outperforms VN-Index 12w (≥+5pp)", label_vi: "Mạnh hơn VN-Index 12 tuần (≥+5pp)" },
+  { key: "rs_vs_vnindex_weak", category: "relative_strength", direction: "bearish",
+    label_en: "Underperforms VN-Index 12w (≤−5pp)", label_vi: "Yếu hơn VN-Index 12 tuần (≤−5pp)" },
+  { key: "rs_new_high", category: "relative_strength", direction: "bullish",
+    label_en: "RS line at 60-bar high", label_vi: "Đường RS đạt đỉnh 60 phiên" },
+
+  // Trend strength (Phase 4)
+  { key: "adx_strong_trend", category: "trend", direction: "neutral",
+    label_en: "ADX(14) > 25 (strong trend)", label_vi: "ADX(14) > 25 (xu hướng mạnh)" },
+
+  // Volatility contraction (Phase 4)
+  { key: "volatility_contraction", category: "volatility", direction: "bullish",
+    label_en: "Volatility contraction (VCP)", label_vi: "Biến động co lại (VCP)" },
+  { key: "bb_squeeze", category: "volatility", direction: "neutral",
+    label_en: "Bollinger Band squeeze", label_vi: "Bollinger Band siết chặt" },
+
+  // Wyckoff Spring / Upthrust (Phase 4)
+  { key: "wyckoff_spring", category: "support_resistance", direction: "bullish",
+    label_en: "Wyckoff Spring (false support break)", label_vi: "Wyckoff Spring (phá hỗ trợ giả)" },
+  { key: "wyckoff_upthrust", category: "support_resistance", direction: "bearish",
+    label_en: "Wyckoff Upthrust (false resistance break)", label_vi: "Wyckoff Upthrust (phá kháng cự giả)" },
 ];
 
 export const INDICATORS_BY_KEY: Record<string, IndicatorSpec> = Object.fromEntries(
@@ -179,6 +205,8 @@ export const CATEGORIES: IndicatorCategory[] = [
   "divergence",
   "support_resistance",
   "trendline",
+  "relative_strength",
+  "volatility",
 ];
 
 export function indicatorsByCategory(): Record<IndicatorCategory, IndicatorSpec[]> {
@@ -194,10 +222,9 @@ export function directionColor(direction: IndicatorDirection): string {
   return "text-gray-500";
 }
 
-// State-based "price above/below MA" indicators. They fire on every bar the
-// condition holds (often months in a row), so showing them as chart markers,
-// chips, or auto-selecting them on the drill-down is noise. The MA line they
-// pull in still renders as background context.
+// State-based indicators — they fire on every bar the condition holds (often
+// months in a row), so showing them as chart markers, chips, or auto-selecting
+// them on the drill-down is noise. The underlying MA / metric still renders.
 export const CHART_HIDDEN_KEYS = new Set([
   "above_ma50",
   "below_ma50",
@@ -205,4 +232,7 @@ export const CHART_HIDDEN_KEYS = new Set([
   "below_ma150",
   "above_ma200",
   "below_ma200",
+  "adx_strong_trend",
+  "rs_vs_vnindex_strong",
+  "rs_vs_vnindex_weak",
 ]);

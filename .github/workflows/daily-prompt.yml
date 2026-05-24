@@ -1,43 +1,43 @@
-name: Daily Trading Prompt
+# name: Daily Trading Prompt
 
-on:
-  schedule:
-    # Target: 8:30 AM GMT+7 (before market opens at 9:00 AM).
-    # Scheduled 30 min earlier at 0:07 UTC (7:07 AM GMT+7) because GitHub
-    # Actions free-tier cron is often delayed by 15-30+ minutes, especially
-    # at common minute marks like :00/:15/:30/:45. Using :07 reduces queue
-    # contention. Monday–Friday only.
-    # - cron: "7 0 * * 1-5"
-    - cron: "37 23 * * 0-4"
-  workflow_dispatch: # Allow manual trigger from GitHub UI
+# on:
+#   schedule:
+#     # Target: 8:30 AM GMT+7 (before market opens at 9:00 AM).
+#     # Scheduled 30 min earlier at 0:07 UTC (7:07 AM GMT+7) because GitHub
+#     # Actions free-tier cron is often delayed by 15-30+ minutes, especially
+#     # at common minute marks like :00/:15/:30/:45. Using :07 reduces queue
+#     # contention. Monday–Friday only.
+#     # - cron: "7 0 * * 1-5"
+#     - cron: "37 23 * * 0-4"
+#   workflow_dispatch: # Allow manual trigger from GitHub UI
 
-jobs:
-  run-prompt:
-    runs-on: ubuntu-latest
-    environment: supabase
-    steps:
-      - uses: actions/checkout@v4
+# jobs:
+#   run-prompt:
+#     runs-on: ubuntu-latest
+#     environment: supabase
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+#       - name: Set up Python 3.12
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.12"
 
-      - name: Install dependencies
-        run: pip install -r scripts/requirements.txt
+#       - name: Install dependencies
+#         run: pip install -r scripts/requirements.txt
 
-      - name: Run trading prompt
-        working-directory: scripts
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: python run_prompt.py
+#       - name: Run trading prompt
+#         working-directory: scripts
+#         env:
+#           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+#           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+#           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+#         run: python run_prompt.py
 
-      - name: Upload response artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: response-${{ github.run_id }}
-          path: scripts/outputs/
-          retention-days: 30
+#       - name: Upload response artifact
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: response-${{ github.run_id }}
+#           path: scripts/outputs/
+#           retention-days: 30

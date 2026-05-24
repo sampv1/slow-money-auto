@@ -16,7 +16,21 @@ from typing import Callable
 
 import pandas as pd
 
-from .indicators import breakouts, candlesticks, climax, divergence, momentum, sr, trend, trendlines, volume
+from .indicators import (
+    breakouts,
+    candlesticks,
+    climax,
+    divergence,
+    momentum,
+    relative_strength,
+    sr,
+    strength,
+    trend,
+    trendlines,
+    volatility,
+    volume,
+    wyckoff,
+)
 
 
 @dataclass(frozen=True)
@@ -216,6 +230,46 @@ INDICATOR_SPECS: list[IndicatorSpec] = [
     IndicatorSpec("downtrend_break", "trendline", "bullish",
                   "Downtrend line break", "Phá vỡ đường xu hướng giảm",
                   trendlines.compute_downtrend_break),
+
+    # --- Relative Strength vs VN-Index (Phase 4) ---
+    IndicatorSpec("rs_vs_vnindex_strong", "relative_strength", "bullish",
+                  "Outperforms VN-Index 12w (≥+5pp)",
+                  "Mạnh hơn VN-Index 12 tuần (≥+5pp)",
+                  relative_strength.compute_rs_vs_vnindex_strong),
+    IndicatorSpec("rs_vs_vnindex_weak", "relative_strength", "bearish",
+                  "Underperforms VN-Index 12w (≤−5pp)",
+                  "Yếu hơn VN-Index 12 tuần (≤−5pp)",
+                  relative_strength.compute_rs_vs_vnindex_weak),
+    IndicatorSpec("rs_new_high", "relative_strength", "bullish",
+                  "RS line at 60-bar high",
+                  "Đường RS đạt đỉnh 60 phiên",
+                  relative_strength.compute_rs_new_high),
+
+    # --- Trend strength (Phase 4) ---
+    IndicatorSpec("adx_strong_trend", "trend", "neutral",
+                  "ADX(14) > 25 (strong trend)",
+                  "ADX(14) > 25 (xu hướng mạnh)",
+                  strength.compute_adx_strong_trend),
+
+    # --- Volatility contraction (Phase 4) ---
+    IndicatorSpec("volatility_contraction", "volatility", "bullish",
+                  "Volatility contraction (VCP)",
+                  "Biến động co lại (VCP)",
+                  volatility.compute_volatility_contraction),
+    IndicatorSpec("bb_squeeze", "volatility", "neutral",
+                  "Bollinger Band squeeze",
+                  "Bollinger Band siết chặt",
+                  volatility.compute_bb_squeeze),
+
+    # --- Wyckoff Spring / Upthrust (Phase 4) ---
+    IndicatorSpec("wyckoff_spring", "support_resistance", "bullish",
+                  "Wyckoff Spring (false support break)",
+                  "Wyckoff Spring (phá hỗ trợ giả)",
+                  wyckoff.compute_wyckoff_spring),
+    IndicatorSpec("wyckoff_upthrust", "support_resistance", "bearish",
+                  "Wyckoff Upthrust (false resistance break)",
+                  "Wyckoff Upthrust (phá kháng cự giả)",
+                  wyckoff.compute_wyckoff_upthrust),
 ]
 
 

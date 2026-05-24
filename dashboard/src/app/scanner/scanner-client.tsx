@@ -62,7 +62,7 @@ function saveCombosToStorage(combos: SavedCombo[]) {
   }
 }
 
-const CATEGORY_LABEL_KEY: Record<IndicatorCategory, "taCategoryMomentum" | "taCategoryTrend" | "taCategoryVolume" | "taCategoryBreakout" | "taCategoryCandlestick" | "taCategoryDivergence" | "taCategorySR" | "taCategoryTrendline"> = {
+const CATEGORY_LABEL_KEY: Record<IndicatorCategory, "taCategoryMomentum" | "taCategoryTrend" | "taCategoryVolume" | "taCategoryBreakout" | "taCategoryCandlestick" | "taCategoryDivergence" | "taCategorySR" | "taCategoryTrendline" | "taCategoryRelativeStrength" | "taCategoryVolatility"> = {
   momentum: "taCategoryMomentum",
   trend: "taCategoryTrend",
   volume: "taCategoryVolume",
@@ -71,6 +71,8 @@ const CATEGORY_LABEL_KEY: Record<IndicatorCategory, "taCategoryMomentum" | "taCa
   divergence: "taCategoryDivergence",
   support_resistance: "taCategorySR",
   trendline: "taCategoryTrendline",
+  relative_strength: "taCategoryRelativeStrength",
+  volatility: "taCategoryVolatility",
 };
 
 type ResultRow = {

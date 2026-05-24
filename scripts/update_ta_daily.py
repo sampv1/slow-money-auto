@@ -29,6 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from ta.benchmark import fetch_vnindex_closes
 from ta.common import REQUEST_DELAY, get_supabase_client, today_vn
 from ta.ohlcv import backfill_symbols
 from ta.sr import detect_levels, upsert_levels
@@ -85,6 +86,13 @@ def main():
     if not args.dry_run:
         run_id = start_run(client, today_str)
 
+    # VN-Index benchmark for relative-strength indicators. One-off fetch per
+    # run; passed into each symbol's compute pass. If the fetch fails, RS
+    # indicators silently return False but the rest of the pipeline continues.
+    benchmark = fetch_vnindex_closes()
+    if benchmark is None:
+        print("Warning: VN-Index benchmark unavailable — RS indicators will be skipped.")
+
     total_signals = 0
     triggered_total = 0
     processed = 0
@@ -116,7 +124,7 @@ def main():
                 if avg_vol_20d is not None:
                     client.table("ta_universe").update({"avg_volume_20d": avg_vol_20d}).eq("symbol", symbol).execute()
 
-            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines)
+            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines, benchmark=benchmark)
             rows = filter_dates(rows, since=None, latest_only=True, ohlcv=ohlcv)
             n_triggered = sum(1 for r in rows if r["triggered"])
             triggered_total += n_triggered

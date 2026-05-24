@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
 
+from ta.benchmark import fetch_vnindex_closes
 from ta.common import get_supabase_client, safe_execute, today_vn
 from ta.registry import INDICATOR_SPECS, all_keys
 from ta.sr import detect_levels, upsert_levels
@@ -46,7 +47,7 @@ from ta.universe import get_active_symbols
 UPSERT_CHUNK_SIZE = 500
 
 
-def _compute_kwargs_for(fn, *, levels, trendlines) -> dict:
+def _compute_kwargs_for(fn, *, levels, trendlines, benchmark) -> dict:
     """Build the kwargs an indicator wants. Avoids touching the indicators
     whose compute(df) signature doesn't take extra args."""
     try:
@@ -58,6 +59,8 @@ def _compute_kwargs_for(fn, *, levels, trendlines) -> dict:
         extra["levels"] = levels
     if "trendlines" in params:
         extra["trendlines"] = trendlines
+    if "benchmark" in params:
+        extra["benchmark"] = benchmark
     return extra
 
 
@@ -83,12 +86,13 @@ def load_ohlcv(client, symbol: str) -> pd.DataFrame:
     return df
 
 
-def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame, *, levels=None, trendlines=None) -> list[dict]:
+def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame, *, levels=None, trendlines=None, benchmark=None) -> list[dict]:
     """Run every indicator on this symbol's OHLCV and return signal rows.
 
     `levels` is the symbol's active S/R levels (from ta.sr.detect_levels).
     `trendlines` is the symbol's active trendlines (from ta.trendlines.detect_trendlines).
-    Only indicators that declare those parameters receive them.
+    `benchmark` is the VN-Index close Series (from ta.benchmark.fetch_vnindex_closes),
+    consumed by relative-strength indicators only.
 
     Returns rows shaped for ta_signals: {date, symbol, indicator, triggered, value, metadata}.
     Dates where an indicator returns NaN value (insufficient history) are skipped.
@@ -99,7 +103,7 @@ def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame, *, levels=None,
     rows: list[dict] = []
     for spec in INDICATOR_SPECS:
         try:
-            kwargs = _compute_kwargs_for(spec.compute, levels=levels, trendlines=trendlines)
+            kwargs = _compute_kwargs_for(spec.compute, levels=levels, trendlines=trendlines, benchmark=benchmark)
             result = spec.compute(ohlcv, **kwargs)
         except Exception as e:
             print(f"    {symbol} / {spec.key} failed: {e}")
@@ -195,6 +199,7 @@ def inspect_symbol_date(client, symbol: str, target_date: str):
         print(f"  No OHLCV for {symbol}")
         return
 
+    benchmark = fetch_vnindex_closes()
     levels = detect_levels(ohlcv)
     lines = detect_trendlines(ohlcv)
     print(f"  {len(ohlcv)} bars, range {ohlcv.index.min()} → {ohlcv.index.max()}")
@@ -221,7 +226,7 @@ def inspect_symbol_date(client, symbol: str, target_date: str):
 
     for spec in INDICATOR_SPECS:
         try:
-            kwargs = _compute_kwargs_for(spec.compute, levels=levels, trendlines=lines)
+            kwargs = _compute_kwargs_for(spec.compute, levels=levels, trendlines=lines, benchmark=benchmark)
             result = spec.compute(ohlcv, **kwargs)
         except Exception as e:
             print(f"  {spec.key:<28} ERROR: {e}")
@@ -284,6 +289,14 @@ def main():
     if not args.dry_run:
         run_id = start_run(client, trading_date_str)
 
+    # VN-Index benchmark for relative-strength indicators. Fetched once;
+    # passed into every symbol's compute pass. If the fetch fails (e.g.,
+    # vnstock outage), RS indicators silently return False — the rest of the
+    # pipeline still runs.
+    benchmark = fetch_vnindex_closes()
+    if benchmark is None:
+        print("Warning: VN-Index benchmark unavailable — relative-strength indicators will be skipped.")
+
     total_signals = 0
     processed = 0
     start = time.time()
@@ -314,7 +327,7 @@ def main():
                 if avg_vol_20d is not None:
                     client.table("ta_universe").update({"avg_volume_20d": avg_vol_20d}).eq("symbol", symbol).execute()
 
-            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines)
+            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines, benchmark=benchmark)
             rows = filter_dates(rows, since_date, latest_only, ohlcv)
             n_triggered = sum(1 for r in rows if r["triggered"])
 
