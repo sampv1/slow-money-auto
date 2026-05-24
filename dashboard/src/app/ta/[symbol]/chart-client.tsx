@@ -262,6 +262,18 @@ const VOLUME_PANE_KEYS = new Set([
   "pocket_pivot",
 ]);
 
+// State-based MA position indicators — they trigger on every bar the condition
+// holds (often months in a row), which would flood the chart with redundant
+// markers/chips. The MA line itself still renders as context.
+const CHART_HIDDEN_KEYS = new Set([
+  "above_ma50",
+  "below_ma50",
+  "above_ma150",
+  "below_ma150",
+  "above_ma200",
+  "below_ma200",
+]);
+
 function paneForIndicator(key: string, panes: { volume: number; rsi: number; macd: number }): number {
   if (VOLUME_PANE_KEYS.has(key)) return panes.volume;
   if (key.startsWith("rsi_") && panes.rsi !== -1) return panes.rsi;
@@ -608,6 +620,7 @@ export function ChartClient({
     if (panes.macd !== -1) buckets[panes.macd] = [];
 
     for (const sig of chartSignals) {
+      if (CHART_HIDDEN_KEYS.has(sig.indicator)) continue;
       const spec = INDICATORS_BY_KEY[sig.indicator];
       const direction = spec?.direction ?? "neutral";
       const paneIdx = paneForIndicator(sig.indicator, panes);
@@ -686,6 +699,7 @@ export function ChartClient({
         {selected.length > 0 && (
           <div className="flex items-center flex-wrap gap-1">
             {selected.map((key) => {
+              if (CHART_HIDDEN_KEYS.has(key)) return null;
               const spec = INDICATORS_BY_KEY[key];
               if (!spec) return null;
               return (
