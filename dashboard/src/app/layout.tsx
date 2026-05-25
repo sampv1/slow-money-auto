@@ -21,7 +21,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Slow Money",
+  title: "Signal Flow",
   description: "Vietnamese stock recommendation tracker",
 };
 
@@ -38,7 +38,9 @@ export default async function RootLayout({
   const { data: { user } } = await supabase.auth.getUser();
 
   const navLinks = [
-    { href: "/", label: t(locale, "navAnalysis") },
+    // Market analysis is for logged-in users only; anonymous visitors are
+    // redirected from / to the scanner.
+    ...(user ? [{ href: "/", label: t(locale, "navAnalysis") }] : []),
     { href: "/scanner", label: t(locale, "navScanner") },
     { href: "/ta", label: t(locale, "navTA") },
     ...(role === "admin"
@@ -64,7 +66,7 @@ export default async function RootLayout({
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-14">
               <Link href="/" className="font-semibold text-lg">
-                Slow Money
+                Signal Flow
               </Link>
               <div className="flex items-center gap-2">
                 <NavLinks links={navLinks} />

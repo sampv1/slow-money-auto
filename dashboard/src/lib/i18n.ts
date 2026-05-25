@@ -3,7 +3,7 @@ export type Locale = "en" | "vi";
 export const translations = {
   en: {
     // Layout / Nav
-    appName: "Slow Money",
+    appName: "Signal Flow",
     navAnalysis: "Market analysis",
     navActive: "Active",
     navHistory: "History",
@@ -229,7 +229,7 @@ export const translations = {
 
     // Feedback
     navFeedbacks: "Feedbacks",
-    feedbackTitle: "Leave your idea or send a message to the Slow Money team",
+    feedbackTitle: "Leave your idea or send a message to the Signal Flow team",
     feedbackPlaceholder: "Share your thoughts, suggestions, or report an issue...",
     feedbackContactLabel: "Your email or mobile phone",
     feedbackContactPlaceholder: "e.g. you@example.com or 0901234567",
@@ -257,7 +257,7 @@ export const translations = {
   },
   vi: {
     // Layout / Nav
-    appName: "Slow Money",
+    appName: "Signal Flow",
     navAnalysis: "Phân tích thị trường",
     navActive: "Đang nắm giữ",
     navHistory: "Lịch sử",
@@ -483,7 +483,7 @@ export const translations = {
 
     // Feedback
     navFeedbacks: "Phản hồi",
-    feedbackTitle: "Để lại ý kiến hoặc gửi tin nhắn cho đội ngũ Slow Money",
+    feedbackTitle: "Để lại ý kiến hoặc gửi tin nhắn cho đội ngũ Signal Flow",
     feedbackPlaceholder: "Chia sẻ ý kiến, đề xuất hoặc báo lỗi của bạn...",
     feedbackContactLabel: "Email hoặc số điện thoại của bạn",
     feedbackContactPlaceholder: "VD: ban@example.com hoặc 0901234567",

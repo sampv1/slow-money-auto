@@ -1,11 +1,21 @@
+import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { DailyLog } from "@/lib/types";
 import { getLocale } from "@/lib/i18n";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import { ResponseViewer } from "@/components/response-viewer";
 
 export const revalidate = 0;
 
 export default async function HomePage() {
+  // Market analysis is gated to logged-in users; anonymous visitors land on the
+  // TA Scanner instead.
+  const sb = await createSupabaseServer();
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) {
+    redirect("/scanner");
+  }
+
   const locale = await getLocale();
 
   const { data: logs, error } = await supabase

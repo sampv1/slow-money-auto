@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Slow Money is a Vietnamese stock recommendation tracker. An AI prompt (Claude) generates daily buy/sell recommendations for HOSE/HNX stocks. This project stores those recommendations, tracks actual market prices, and evaluates accuracy over time. Paper trading only — no real trades.
+Signal Flow is a Vietnamese stock recommendation tracker. An AI prompt (Claude) generates daily buy/sell recommendations for HOSE/HNX stocks. This project stores those recommendations, tracks actual market prices, and evaluates accuracy over time. Paper trading only — no real trades.
 
 See PROJECT_PLAN.md for the full phased roadmap and current progress.
 
