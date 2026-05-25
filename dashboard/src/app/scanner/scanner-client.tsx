@@ -26,6 +26,44 @@ const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 // localStorage key + shape for user-saved indicator combos.
 const COMBOS_STORAGE_KEY = "ta-scanner-combos-v1";
 
+// localStorage key for the active filter selection, so it survives navigating
+// away to the TA page and back.
+const FILTER_STORAGE_KEY = "ta-scanner-filter-v1";
+
+type SavedFilter = {
+  indicators: string[];
+  minAvgVolume: number;
+};
+
+function loadFilterFromStorage(): SavedFilter | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(FILTER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed
+      && Array.isArray(parsed.indicators)
+      && parsed.indicators.every((i: unknown) => typeof i === "string")
+      && typeof parsed.minAvgVolume === "number"
+    ) {
+      return { indicators: parsed.indicators, minAvgVolume: parsed.minAvgVolume };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveFilterToStorage(filter: SavedFilter) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filter));
+  } catch {
+    // quota exceeded / disabled — swallow silently
+  }
+}
+
 type SavedCombo = {
   id: string;
   name: string;
@@ -107,6 +145,10 @@ export function ScannerClient({
   const [stylePresetsExpanded, setStylePresetsExpanded] = useState(true);
   const [myCombosExpanded, setMyCombosExpanded] = useState(true);
 
+  // Tracks whether the active filter has been hydrated from localStorage, so we
+  // don't overwrite the saved selection with the initial empty state.
+  const [filterHydrated, setFilterHydrated] = useState(false);
+
   useEffect(() => {
     setSavedCombos(loadCombosFromStorage());
     setCombosHydrated(true);
@@ -115,6 +157,23 @@ export function ScannerClient({
   useEffect(() => {
     if (combosHydrated) saveCombosToStorage(savedCombos);
   }, [savedCombos, combosHydrated]);
+
+  // Restore the last-used filter selection on mount.
+  useEffect(() => {
+    const saved = loadFilterFromStorage();
+    if (saved) {
+      setSelected(new Set(saved.indicators));
+      setMinAvgVolume(saved.minAvgVolume);
+    }
+    setFilterHydrated(true);
+  }, []);
+
+  // Persist the active filter whenever it changes (after hydration).
+  useEffect(() => {
+    if (filterHydrated) {
+      saveFilterToStorage({ indicators: [...selected], minAvgVolume });
+    }
+  }, [selected, minAvgVolume, filterHydrated]);
 
   function commitSaveCombo() {
     const name = newComboName.trim();
