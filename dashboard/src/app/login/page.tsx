@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import { useRouter } from "next/navigation";
+import { track } from "@/lib/analytics";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -26,6 +27,7 @@ export default function LoginPage() {
       setError(error.message);
       setLoading(false);
     } else {
+      track("login_success");
       router.push("/");
       router.refresh();
     }

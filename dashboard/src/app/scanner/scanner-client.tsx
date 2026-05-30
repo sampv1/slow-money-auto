@@ -19,6 +19,7 @@ import {
   presetDescription,
   presetName,
 } from "@/lib/ta-presets";
+import { track } from "@/lib/analytics";
 import type { LatestClose, TriggeredSignal, UniverseLiquidity } from "./page";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
@@ -175,6 +176,14 @@ export function ScannerClient({
     }
   }, [selected, minAvgVolume, filterHydrated]);
 
+  // Analytics: emit a scan_run event whenever the user has an active selection.
+  // Gated on filterHydrated so the initial empty state doesn't fire spuriously.
+  useEffect(() => {
+    if (!filterHydrated) return;
+    if (selected.size === 0) return;
+    track("scan_run", { indicator_count: selected.size });
+  }, [selected, filterHydrated]);
+
   function commitSaveCombo() {
     const name = newComboName.trim();
     if (!name || selected.size === 0) return;
@@ -188,6 +197,7 @@ export function ScannerClient({
     setSavedCombos((prev) => [combo, ...prev]);
     setNewComboName("");
     setShowSaveForm(false);
+    track("combo_saved", { indicator_count: combo.indicators.length });
   }
 
   function loadCombo(combo: SavedCombo) {
@@ -198,6 +208,7 @@ export function ScannerClient({
   function applyPreset(preset: StylePreset) {
     setSelected(new Set(preset.indicators));
     setMinAvgVolume(preset.minAvgVolume);
+    track("preset_applied", { preset_id: preset.id });
   }
 
   function deleteCombo(id: string) {

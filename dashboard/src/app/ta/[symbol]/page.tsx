@@ -181,7 +181,7 @@ export default async function SymbolDrillDown({
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-2">
-        <ChartClient candles={candles} selected={selected} chartSignals={chartSignals} srLevels={srLevels} trendlines={trendlines} locale={locale} />
+        <ChartClient symbol={symbol} candles={candles} selected={selected} chartSignals={chartSignals} srLevels={srLevels} trendlines={trendlines} locale={locale} />
       </div>
 
       <section className="mt-6">

@@ -2,12 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import type { Locale } from "@/lib/i18n";
+import { track } from "@/lib/analytics";
 
 export function LocaleSwitcher({ locale }: { locale: Locale }) {
   const router = useRouter();
 
   function handleChange(newLocale: Locale) {
     document.cookie = `locale=${newLocale};path=/;max-age=${365 * 24 * 60 * 60}`;
+    track("locale_switched", { from: locale, to: newLocale });
     router.refresh();
   }
 

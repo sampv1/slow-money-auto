@@ -6,9 +6,13 @@ import { getLocaleFromCookie, t } from "@/lib/i18n";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { AuthButton } from "@/components/auth-button";
 import { NavLinks } from "@/components/nav-links";
+import { GAUserIdentify } from "@/components/ga-user-identify";
 import { getUserRole } from "@/lib/supabase-server";
 import { createSupabaseServer } from "@/lib/supabase-server";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
+
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -79,7 +83,9 @@ export default async function RootLayout({
         <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
           {children}
         </main>
+        {user && GA_MEASUREMENT_ID && <GAUserIdentify userId={user.id} />}
       </body>
+      {GA_MEASUREMENT_ID && <GoogleAnalytics gaId={GA_MEASUREMENT_ID} />}
     </html>
   );
 }

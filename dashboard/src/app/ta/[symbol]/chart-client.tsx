@@ -15,6 +15,7 @@ import {
 import type { Candle } from "./page";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, indicatorLabel } from "@/lib/ta-indicators";
 import type { Locale } from "@/lib/i18n";
+import { track } from "@/lib/analytics";
 
 const UP_COLOR = "#16a34a";
 const DOWN_COLOR = "#dc2626";
@@ -287,6 +288,7 @@ export type Trendline = {
 };
 
 export function ChartClient({
+  symbol,
   candles,
   selected,
   chartSignals,
@@ -294,6 +296,7 @@ export function ChartClient({
   trendlines = [],
   locale,
 }: {
+  symbol: string;
   candles: Candle[];
   selected: string[];
   chartSignals: { date: string; indicator: string }[];
@@ -303,6 +306,10 @@ export function ChartClient({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+
+  useEffect(() => {
+    track("stock_viewed", { symbol });
+  }, [symbol]);
 
   const features = useMemo(() => featuresFor(selected), [selected]);
   const panes = useMemo(() => paneIndices(features), [features]);
