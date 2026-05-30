@@ -47,6 +47,7 @@ export default async function RootLayout({
     ...(user ? [{ href: "/", label: t(locale, "navAnalysis") }] : []),
     { href: "/scanner", label: t(locale, "navScanner") },
     { href: "/ta", label: t(locale, "navTA") },
+    { href: "/realtime", label: t(locale, "navRealtime") },
     ...(role === "admin"
       ? [
           { href: "/active", label: t(locale, "navActive") },
