@@ -2,12 +2,17 @@ name: TA Daily Update
 
 on:
   schedule:
-    # VN market closes at 15:00 GMT+7 (08:00 UTC). We run at 09:23 UTC
-    # (16:23 ICT) to give vnstock ~80 min to publish today's closing bar.
-    # Weekdays only. Avoiding round-minute marks (:00/:15/:30/:45) reduces
-    # GitHub Actions free-tier cron queue contention, which can cause fast
-    # SIGTERM kills during pip install.
+    # Primary: 09:23 UTC (16:23 ICT) — VN market closes at 15:00 GMT+7
+    # (08:00 UTC), so ~80 min after close gives vnstock time to publish
+    # today's closing bar. Weekdays only. Off-minute mark avoids GitHub
+    # Actions free-tier cron queue contention.
     - cron: "23 9 * * 1-5"
+    # Backup: 13:47 UTC (20:47 ICT) — GitHub free-tier silently drops
+    # ~one scheduled run every few weeks under platform load. This second
+    # trigger catches those misses. The `precheck` job below queries
+    # today's run history and short-circuits the backup if today's primary
+    # already succeeded, so on a normal day the backup is a cheap no-op.
+    - cron: "47 13 * * 1-5"
   workflow_dispatch: # allow manual trigger from GitHub UI
 
 # Serialize scheduled and manual runs so they never clobber each other —
@@ -18,7 +23,49 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Lightweight gate that runs on every trigger. For the backup cron, it
+  # queries today's run history and skips the heavy `update` job if today's
+  # primary run already succeeded. For the primary cron and manual
+  # workflow_dispatch, it always green-lights the update job.
+  precheck:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.decide.outputs.should_run }}
+    steps:
+      - name: Decide whether to run update
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IS_BACKUP_CRON: ${{ github.event.schedule == '47 13 * * 1-5' }}
+        run: |
+          # Primary cron + manual dispatch always run.
+          if [ "$IS_BACKUP_CRON" != "true" ]; then
+            echo "Trigger is ${{ github.event_name }} (schedule='${{ github.event.schedule }}') — proceeding."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Backup cron: skip if any earlier run of THIS workflow already
+          # succeeded today (UTC). Excludes the current run from the count.
+          since=$(date -u +%Y-%m-%dT00:00:00Z)
+          earlier_successes=$(gh run list \
+            --workflow=ta-daily.yml \
+            --status=success \
+            --created=">=${since}" \
+            --limit=20 \
+            --json databaseId \
+            -R "${{ github.repository }}" \
+            | jq "[.[] | select(.databaseId != ${{ github.run_id }})] | length")
+          if [ "$earlier_successes" -gt 0 ]; then
+            echo "::notice::Backup cron firing but ${earlier_successes} successful run(s) already exist today — skipping update."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Backup cron firing and no successful run yet today — proceeding with update."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   update:
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     environment: supabase
     timeout-minutes: 150
