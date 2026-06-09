@@ -3,14 +3,14 @@ import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { formatPnl, pnlColor, conclusionBadge, regimeLabel } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
-import { getUserRole } from "@/lib/supabase-server";
+import { getUserRole, isStaff } from "@/lib/supabase-server";
 import type { DailyLog } from "@/lib/types";
 
 export const revalidate = 0;
 
 export default async function LogsPage() {
   const role = await getUserRole();
-  if (role !== "admin") {
+  if (!isStaff(role)) {
     redirect("/login");
   }
   const locale = await getLocale();

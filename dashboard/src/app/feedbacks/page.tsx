@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getUserRole, createSupabaseServer } from "@/lib/supabase-server";
+import { getUserRole, isStaff, createSupabaseServer } from "@/lib/supabase-server";
 import { getLocale, t } from "@/lib/i18n";
 
 export const revalidate = 0;
@@ -14,7 +14,7 @@ interface Feedback {
 export default async function FeedbacksPage() {
   const role = await getUserRole();
 
-  if (role !== "admin") {
+  if (!isStaff(role)) {
     redirect("/login");
   }
 

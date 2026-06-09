@@ -7,7 +7,7 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 import { AuthButton } from "@/components/auth-button";
 import { NavLinks } from "@/components/nav-links";
 import { GAUserIdentify } from "@/components/ga-user-identify";
-import { getUserRole } from "@/lib/supabase-server";
+import { getUserRole, isStaff } from "@/lib/supabase-server";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
@@ -48,13 +48,15 @@ export default async function RootLayout({
     { href: "/scanner", label: t(locale, "navScanner") },
     { href: "/ta", label: t(locale, "navTA") },
     { href: "/realtime", label: t(locale, "navRealtime") },
-    ...(role === "admin"
+    // Staff (admin + viewer) see the internal dashboards. Only admin
+    // additionally sees Input (the data-creation page).
+    ...(isStaff(role)
       ? [
           { href: "/active", label: t(locale, "navActive") },
           { href: "/history", label: t(locale, "navHistory") },
           { href: "/logs", label: t(locale, "navLogs") },
           { href: "/stats", label: t(locale, "navStats") },
-          { href: "/input", label: t(locale, "navInput") },
+          ...(role === "admin" ? [{ href: "/input", label: t(locale, "navInput") }] : []),
           { href: "/feedbacks", label: t(locale, "navFeedbacks") },
         ]
       : []),

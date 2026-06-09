@@ -31,7 +31,7 @@ export async function createSupabaseServer() {
   );
 }
 
-export type UserRole = "admin" | "pro" | null;
+export type UserRole = "admin" | "viewer" | "pro" | null;
 
 /**
  * Get the current user's role, or null if not logged in.
@@ -49,4 +49,13 @@ export async function getUserRole(): Promise<UserRole> {
     .single();
 
   return (profile?.role as UserRole) ?? "pro";
+}
+
+/**
+ * Staff = admin + viewer. Both see the internal/admin nav block and
+ * read-only dashboards. Only admin can also create data (Input page,
+ * /api/push endpoint).
+ */
+export function isStaff(role: UserRole): boolean {
+  return role === "admin" || role === "viewer";
 }

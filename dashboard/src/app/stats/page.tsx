@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { formatPnl, pnlColor, regimeLabel } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
-import { getUserRole } from "@/lib/supabase-server";
+import { getUserRole, isStaff } from "@/lib/supabase-server";
 import type { Recommendation, DailyLog } from "@/lib/types";
 import { CLOSED_STATUSES } from "@/lib/types";
 import { EquityCurve } from "@/components/equity-curve";
@@ -13,7 +13,7 @@ export const revalidate = 0;
 
 export default async function StatsPage() {
   const role = await getUserRole();
-  if (role !== "admin") {
+  if (!isStaff(role)) {
     redirect("/login");
   }
   const locale = await getLocale();
