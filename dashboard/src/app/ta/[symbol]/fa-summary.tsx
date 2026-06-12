@@ -45,9 +45,8 @@ export function FaSummary({ row, locale }: { row: FaScore | null; locale: Locale
             {t(locale, "faAsOf")} {row.as_of_period}
           </div>
         </div>
-        <p className="text-xs text-gray-400 mt-2">{t(locale, "faQoqNotice")}</p>
         {unrated && (
-          <p className="text-xs text-amber-600 mt-1">{t(locale, "faUnrated")}</p>
+          <p className="text-xs text-amber-600 mt-2">{t(locale, "faUnrated")}</p>
         )}
       </div>
 
