@@ -114,15 +114,15 @@ def compute_score(metrics: dict, n_quarters: int) -> ScoreResult:
 
     res.total_score = sum(c["pts"] for c in res.criteria.values())
 
-    # If none of the growth/quality metrics could be computed, the statement
-    # format is unsupported (banks/insurers use different line items than the
-    # "Net sales"/"Gross Profit" layout we parse). Don't pass off a misleading
-    # C-grade — mark UNRATED. (c3 is a count that defaults to 0, so exclude it.)
-    core_vals = [metrics.get(k) for k in (
-        "c1_eps_qoq", "c2_eps_3q_avg", "c4_rev_qoq",
-        "c5_gross_margin_delta", "c6_net_margin_delta", "c7_roe", "c8_debt_to_equity",
+    # Banks / insurers use a different income-statement layout (no "Net sales"
+    # or "Gross Profit"), so none of the revenue-derived metrics can be read.
+    # The rubric's revenue/margin/debt thresholds are designed for non-financial
+    # companies and produce misleading results for them — mark UNRATED rather
+    # than pass off a partial, misleading grade.
+    revenue_metrics = [metrics.get(k) for k in (
+        "c4_rev_qoq", "c5_gross_margin_delta", "c6_net_margin_delta",
     )]
-    no_usable_fundamentals = all(v is None for v in core_vals)
+    no_usable_fundamentals = all(v is None for v in revenue_metrics)
 
     if insufficient:
         res.rating = "UNRATED"

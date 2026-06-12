@@ -1,5 +1,31 @@
 # FA Scanner — Implementation Plan
 
+## Implementation status (June 2026)
+
+**Built & verified** with a 5-symbol set (FPT 56·B, HPG 68·A, MWG 68·A, VNM 52·B, VCB UNRATED).
+Backend pipeline, all 3 tables, the `/fa-scanner` page and the `/ta/[symbol]` FA panel all
+work against live data; `tsc` + `eslint` clean. Migration `013` applied.
+
+**Deferred (user choice):** the full ~1500-symbol run (D1) — DB holds the 5 test symbols for
+now; populate later via the committed `fa-quarterly.yml` action or a local `refresh_fa.py` run.
+
+### Key data-quality decisions (discovered during implementation)
+
+- **Earnings-growth criteria (C1/C2/C3) use parent-attributable net income, NOT vnstock's EPS
+  field.** vnstock's quarterly EPS is unreliable — for FPT it reads 1135/1036/1173/1460 while
+  parent income moves steadily 2257/2434/2509/2487B (the EPS field doesn't track earnings);
+  for HPG it's mostly `0.0`. Real EPS = parent income ÷ shares, and share count is ~stable
+  QoQ, so parent-income growth is an accurate, robust proxy. See `scripts/fa/metrics.py`.
+  (The reported EPS field is still used only for the P/E valuation, falling back to a neutral
+  C9=8 when it's missing.)
+- **Banks / insurers → UNRATED.** They use a different income-statement layout (no "Net sales"
+  / "Gross Profit"), so revenue/margin metrics can't be read and the rubric's thresholds
+  mislead. Detected via all revenue-derived metrics being null. See `scripts/fa/scoring.py`.
+- **`ratio()` endpoint is NOT used** — it returns a stale fixed window (2018 for FPT). ROE /
+  margins / D/E are computed manually from income statement + balance sheet.
+- **Financial debt = Short-term + Long-term borrowings** (interest-bearing), matching the
+  original "Financial Debt / Equity" criterion (FPT D/E ≈ 0.40).
+
 ## Context
 
 The project currently has a Technical Analysis pipeline (`ta_*` tables, daily signals, `/scanner` page, per-symbol `/ta/[symbol]` chart) but no Fundamental Analysis. We want:

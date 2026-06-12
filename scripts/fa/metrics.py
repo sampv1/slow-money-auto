@@ -23,14 +23,22 @@ def _pct_growth(curr, prev):
 
 
 def eps_qoq_series(quarters: list[dict]) -> list[float]:
-    """QoQ EPS growth (%) for each consecutive pair, latest pair first.
+    """QoQ earnings growth (%) for each consecutive pair, latest pair first.
 
-    With 4 quarters this yields up to 3 values:
-    {Q0 vs Q1, Q1 vs Q2, Q2 vs Q3}.
+    Uses PARENT-ATTRIBUTABLE net income, not the reported EPS field: vnstock's
+    quarterly EPS is unreliable (e.g. for FPT it reads 1135/1036/1173/1460 while
+    parent income moves steadily 2257/2434/2509/2487B — the EPS field doesn't
+    track earnings at all; HPG returns 0.0 for most quarters). Real EPS is
+    parent income / shares, and share count is ~stable quarter-to-quarter, so
+    parent-income growth is an accurate, robust proxy for EPS growth. (The
+    reported EPS field is still used for P/E valuation, where the absolute level
+    is needed and we fall back to neutral when it's missing.)
+
+    With 4 quarters this yields up to 3 values: {Q0 vs Q1, Q1 vs Q2, Q2 vs Q3}.
     """
     out = []
     for i in range(len(quarters) - 1):
-        g = _pct_growth(quarters[i]["eps"], quarters[i + 1]["eps"])
+        g = _pct_growth(quarters[i]["net_income_parent"], quarters[i + 1]["net_income_parent"])
         if g is not None:
             out.append(g)
     return out

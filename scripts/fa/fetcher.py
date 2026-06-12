@@ -43,6 +43,7 @@ RETRY_DELAYS_SECONDS = (5.0, 20.0, 60.0)
 _INC_REVENUE = "Net sales"
 _INC_GROSS_PROFIT = "Gross Profit"
 _INC_NET_INCOME = "Net profit/(loss) after tax"
+_INC_NET_INCOME_PARENT = "Attributable to parent company"
 _INC_EPS_DILUTED = "EPS diluted (VND)"
 _INC_EPS_BASIC = "EPS basic (VND)"
 
@@ -146,6 +147,7 @@ def fetch_quarters(symbol: str) -> list[dict]:
     revenue = _row_by_item_en(inc, _INC_REVENUE) or {}
     gross = _row_by_item_en(inc, _INC_GROSS_PROFIT) or {}
     net = _row_by_item_en(inc, _INC_NET_INCOME) or {}
+    net_parent = _row_by_item_en(inc, _INC_NET_INCOME_PARENT) or {}
     eps = _row_by_item_en(inc, _INC_EPS_DILUTED) or _row_by_item_en(inc, _INC_EPS_BASIC) or {}
 
     equity = _row_by_item_en(bs, _BS_EQUITY) or {}
@@ -161,6 +163,7 @@ def fetch_quarters(symbol: str) -> list[dict]:
         rev = _num(revenue.get(period))
         gp = _num(gross.get(period))
         ni = _num(net.get(period))
+        ni_parent = _num(net_parent.get(period))
         eq = _num(equity.get(period))
         stb = _num(st_borrow.get(period)) or 0.0
         ltb = _num(lt_borrow.get(period)) or 0.0
@@ -173,6 +176,7 @@ def fetch_quarters(symbol: str) -> list[dict]:
             "revenue": rev,
             "gross_profit": gp,
             "net_income": ni,
+            "net_income_parent": ni_parent if ni_parent is not None else ni,
             "eps": _num(eps.get(period)),
             "total_equity": eq,
             "total_debt": total_debt,
