@@ -51,6 +51,14 @@ _INC_EPS_BASIC = "EPS basic (VND)"
 _BS_EQUITY = "Owner's Equity"
 _BS_ST_BORROW = "Short-term borrowings"
 _BS_LT_BORROW = "Long-term borrowings"
+_BS_PAID_IN_CAPITAL = "Paid-in capital"
+
+# Vietnamese listed shares have a standard par value of 10,000 VND, so
+# shares outstanding = paid-in (charter) capital / 10,000. Verified to match
+# actual share counts for FPT/HPG/VNM. We derive EPS this way because vnstock's
+# reported quarterly EPS field is unreliable (zeros for HPG, jumps around for
+# FPT). Derived EPS = parent-attributable net income / shares.
+_PAR_VALUE = 10000.0
 
 
 def _meta_cols(df) -> list[str]:
@@ -153,6 +161,7 @@ def fetch_quarters(symbol: str) -> list[dict]:
     equity = _row_by_item_en(bs, _BS_EQUITY) or {}
     st_borrow = _row_by_item_en(bs, _BS_ST_BORROW) or {}
     lt_borrow = _row_by_item_en(bs, _BS_LT_BORROW) or {}
+    paid_in = _row_by_item_en(bs, _BS_PAID_IN_CAPITAL) or {}
 
     quarters: list[dict] = []
     for period in _period_cols(inc):
@@ -164,10 +173,19 @@ def fetch_quarters(symbol: str) -> list[dict]:
         gp = _num(gross.get(period))
         ni = _num(net.get(period))
         ni_parent = _num(net_parent.get(period))
+        ni_parent = ni_parent if ni_parent is not None else ni
         eq = _num(equity.get(period))
         stb = _num(st_borrow.get(period)) or 0.0
         ltb = _num(lt_borrow.get(period)) or 0.0
         total_debt = stb + ltb if (st_borrow or lt_borrow) else None
+
+        # Derive EPS from parent income / shares (shares = charter capital / par).
+        # vnstock's reported EPS field is unreliable, so prefer the derived value
+        # and only fall back to the reported field when shares can't be computed.
+        pic = _num(paid_in.get(period))
+        shares = (pic / _PAR_VALUE) if (pic and pic > 0) else None
+        derived_eps = (ni_parent / shares) if (ni_parent is not None and shares) else None
+        eps_val = derived_eps if derived_eps is not None else _num(eps.get(period))
 
         quarters.append({
             "period": period,
@@ -176,8 +194,8 @@ def fetch_quarters(symbol: str) -> list[dict]:
             "revenue": rev,
             "gross_profit": gp,
             "net_income": ni,
-            "net_income_parent": ni_parent if ni_parent is not None else ni,
-            "eps": _num(eps.get(period)),
+            "net_income_parent": ni_parent,
+            "eps": eps_val,
             "total_equity": eq,
             "total_debt": total_debt,
             "gross_margin": (gp / rev) if (gp is not None and rev) else None,

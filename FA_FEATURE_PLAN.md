@@ -16,8 +16,12 @@ now; populate later via the committed `fa-quarterly.yml` action or a local `refr
   parent income moves steadily 2257/2434/2509/2487B (the EPS field doesn't track earnings);
   for HPG it's mostly `0.0`. Real EPS = parent income ÷ shares, and share count is ~stable
   QoQ, so parent-income growth is an accurate, robust proxy. See `scripts/fa/metrics.py`.
-  (The reported EPS field is still used only for the P/E valuation, falling back to a neutral
-  C9=8 when it's missing.)
+- **EPS is DERIVED, not read from vnstock.** Because the reported EPS field is junk, `eps`
+  (used for P/E valuation, C9) is computed as `parent income / shares`, where
+  `shares = "Paid-in capital" / 10,000` (standard VN par value — verified to match actual
+  share counts for FPT/HPG/VNM). Falls back to vnstock's reported EPS only when charter capital
+  is unreadable (e.g. banks, which don't expose "Paid-in capital" under that label → EPS 0, but
+  they're UNRATED anyway). See `scripts/fa/fetcher.py` (`_BS_PAID_IN_CAPITAL`, `_PAR_VALUE`).
 - **Banks / insurers → UNRATED.** They use a different income-statement layout (no "Net sales"
   / "Gross Profit"), so revenue/margin metrics can't be read and the rubric's thresholds
   mislead. Detected via all revenue-derived metrics being null. See `scripts/fa/scoring.py`.
