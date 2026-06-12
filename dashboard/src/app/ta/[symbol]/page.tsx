@@ -3,7 +3,9 @@ import { supabase } from "@/lib/supabase";
 import { getLocale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, directionColor, indicatorLabel } from "@/lib/ta-indicators";
+import type { FaScore } from "@/lib/fa";
 import { ChartClient } from "./chart-client";
+import { FaSummary } from "./fa-summary";
 
 export const revalidate = 0;
 
@@ -151,6 +153,13 @@ export default async function SymbolDrillDown({
     trendlines = (tlRaw ?? []) as typeof trendlines;
   }
 
+  // Fundamental-analysis snapshot (one row per symbol; may be absent).
+  const { data: faRow } = await supabase
+    .from("fa_scores")
+    .select("*")
+    .eq("symbol", symbol)
+    .maybeSingle();
+
   const latest = candles[candles.length - 1];
   const prev = candles.length > 1 ? candles[candles.length - 2] : null;
   const dayChangePct = prev && prev.close ? ((latest.close - prev.close) / prev.close) * 100 : null;
@@ -239,6 +248,8 @@ export default async function SymbolDrillDown({
           </div>
         )}
       </section>
+
+      <FaSummary row={(faRow as FaScore | null) ?? null} locale={locale} />
     </div>
   );
 }

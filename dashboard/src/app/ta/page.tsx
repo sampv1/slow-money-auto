@@ -30,7 +30,7 @@ export default async function TAPage() {
 
   return (
     <div className="max-w-xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-2">{t(locale, "navTA")}</h1>
+      <h1 className="text-2xl font-semibold mb-2">{t(locale, "navStockAnalysis")}</h1>
       <p className="text-sm text-gray-500 mb-6">{t(locale, "taSearchSubtitle")}</p>
       <TaSearch symbols={symbols} locale={locale} />
     </div>

@@ -46,7 +46,8 @@ export default async function RootLayout({
     // redirected from / to the scanner.
     ...(user ? [{ href: "/", label: t(locale, "navAnalysis") }] : []),
     { href: "/scanner", label: t(locale, "navScanner") },
-    { href: "/ta", label: t(locale, "navTA") },
+    { href: "/fa-scanner", label: t(locale, "navFAScanner") },
+    { href: "/ta", label: t(locale, "navStockAnalysis") },
     { href: "/realtime", label: t(locale, "navRealtime") },
     // Staff (admin + viewer) see the internal dashboards. Only admin
     // additionally sees Input (the data-creation page).
