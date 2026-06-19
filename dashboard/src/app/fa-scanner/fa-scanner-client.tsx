@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, FA_MAX_SCORE, ratingBadge } from "@/lib/fa";
 
@@ -26,7 +27,18 @@ function fmt(v: number | null, digits = 2): string {
   return v.toFixed(digits);
 }
 
-export function FaScannerClient({ rows, locale }: { rows: FaScore[]; locale: Locale }) {
+export function FaScannerClient({
+  rows,
+  locale,
+  quarters,
+  selectedQuarter,
+}: {
+  rows: FaScore[];
+  locale: Locale;
+  quarters: string[];
+  selectedQuarter: string;
+}) {
+  const router = useRouter();
   const [rating, setRating] = useState<RatingFilter>("all");
   const [minScore, setMinScore] = useState<string>("");
   const [search, setSearch] = useState("");
@@ -85,6 +97,18 @@ export function FaScannerClient({ rows, locale }: { rows: FaScore[]; locale: Loc
     <div>
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-4 mb-3">
+        <label className="text-sm">
+          <span className="block text-gray-500 mb-1">{t(locale, "faQuarter")}</span>
+          <select
+            value={selectedQuarter}
+            onChange={(e) => router.push(`/fa-scanner?q=${encodeURIComponent(e.target.value)}`)}
+            className="border border-gray-300 rounded px-2 py-1"
+          >
+            {quarters.map((q) => (
+              <option key={q} value={q}>{q}</option>
+            ))}
+          </select>
+        </label>
         <label className="text-sm">
           <span className="block text-gray-500 mb-1">{t(locale, "faMinRating")}</span>
           <select

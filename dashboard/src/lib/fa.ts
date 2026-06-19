@@ -1,17 +1,17 @@
 import type { Locale } from "./i18n";
 import { t } from "./i18n";
 
-// Mirrors the fa_scores table (see supabase/013_create_fa_tables.sql).
+// Mirrors the fa_scores table (see supabase/014_fa_excel_revision.sql).
 export type FaScore = {
   symbol: string;
   as_of_period: string;
-  c1_eps_qoq: number | null;
+  c1_eps_yoy: number | null;
   c1_pts: number;
-  c2_eps_3q_avg: number | null;
+  c2_eps_3q_avg_yoy: number | null;
   c2_pts: number;
   c3_eps_pos_count: number | null;
   c3_pts: number;
-  c4_rev_qoq: number | null;
+  c4_rev_yoy: number | null;
   c4_pts: number;
   c5_gross_margin_delta: number | null;
   c5_pts: number;
@@ -27,7 +27,7 @@ export type FaScore = {
   rating: "A" | "B" | "C" | "UNRATED";
   current_eps_ttm: number | null;
   current_pe: number | null;
-  pe_4q_median: number | null;
+  pe_5y_median: number | null;
   current_price: number | null;
   current_price_date: string | null;
   notes: string | null;
@@ -88,10 +88,10 @@ export type CriterionRow = {
 // Build the 9 breakdown rows from a FaScore, with per-criterion value formatting.
 export function criterionRows(row: FaScore, locale: Locale): CriterionRow[] {
   return [
-    { key: "c1", label: t(locale, "faC1"), value: fmtPct(row.c1_eps_qoq), pts: row.c1_pts },
-    { key: "c2", label: t(locale, "faC2"), value: fmtPct(row.c2_eps_3q_avg), pts: row.c2_pts },
+    { key: "c1", label: t(locale, "faC1"), value: fmtPct(row.c1_eps_yoy), pts: row.c1_pts },
+    { key: "c2", label: t(locale, "faC2"), value: fmtPct(row.c2_eps_3q_avg_yoy), pts: row.c2_pts },
     { key: "c3", label: t(locale, "faC3"), value: fmtCount(row.c3_eps_pos_count), pts: row.c3_pts },
-    { key: "c4", label: t(locale, "faC4"), value: fmtPct(row.c4_rev_qoq), pts: row.c4_pts },
+    { key: "c4", label: t(locale, "faC4"), value: fmtPct(row.c4_rev_yoy), pts: row.c4_pts },
     { key: "c5", label: t(locale, "faC5"), value: fmtPp(row.c5_gross_margin_delta), pts: row.c5_pts },
     { key: "c6", label: t(locale, "faC6"), value: fmtPp(row.c6_net_margin_delta), pts: row.c6_pts },
     { key: "c7", label: t(locale, "faC7"), value: fmtPct(row.c7_roe), pts: row.c7_pts },

@@ -1,291 +1,316 @@
 # FA Scanner — Implementation Plan
 
-## Implementation status (June 2026)
+## Status & June-17 redesign
 
-**Built & verified** with a 5-symbol set (FPT 56·B, HPG 68·A, MWG 68·A, VNM 52·B, VCB UNRATED).
-Backend pipeline, all 3 tables, the `/fa-scanner` page and the `/ta/[symbol]` FA panel all
-work against live data; `tsc` + `eslint` clean. Migration `013` applied.
+The v1 pipeline (vnstock-fetched, QoQ scoring, 4-quarter-median P/E) was built and verified
+on 5 symbols. **It is now being replaced.** The user supplies authoritative data via Excel
+exports (FiinProX), so:
 
-**Deferred (user choice):** the full ~1500-symbol run (D1) — DB holds the 5 test symbols for
-now; populate later via the committed `fa-quarterly.yml` action or a local `refresh_fa.py` run.
+- **Remove all vnstock download logic** — delete `scripts/fa/fetcher.py` and the `vnstock_ezchart`
+  stub; the pipeline no longer fetches anything.
+- **Growth is YoY** (year-over-year, vs the same quarter last year), not QoQ.
+- **All financial inputs are single-quarter** (not TTM), supplied as pre-computed per-quarter EPS
+  and per-quarter margins. Exception: **ROE is TTM** (matches criterion 7). TTM EPS (for the C14
+  P/E denominator) = **sum of the last 4 single-quarter EPS**.
+- **D/E denominator is total owner's equity** (`II. VỐN CHỦ SỞ HỮU`), now correct — *supersedes the
+  earlier charter-capital decision.*
+- **New data source:** `Data_FiinPro.xlsx` (multi-sheet financials) + `PE.xlsx`, imported into the
+  DB via additive upserts; the criterion sheet defines the rubric but is **not** imported.
+- **Updated criterion tiers** (gross margin −3/0/3, net margin −2/0/2) per the criterion sheet.
+- **Valuation uses a real 5-year median P/E** from `PE.xlsx`.
+- **Scoring tiers are data-driven** — read from the `fa_scoring_config` DB table, which is
+  **seeded once by the migration** and **edited directly in the DB** by the user when needed
+  (no import feature — see §Data sources #3).
 
-### Key data-quality decisions (discovered during implementation)
+What stays: the 9-criterion 0–108 graduated score, A/B/C/UNRATED bands, the `/fa-scanner`
+single-table page, the `/ta/[symbol]` FA panel, and the "TA → Stock Analysis" nav rename
+(all already built — only field names / labels change; see §4).
 
-- **Earnings-growth criteria (C1/C2/C3) use parent-attributable net income, NOT vnstock's EPS
-  field.** vnstock's quarterly EPS is unreliable — for FPT it reads 1135/1036/1173/1460 while
-  parent income moves steadily 2257/2434/2509/2487B (the EPS field doesn't track earnings);
-  for HPG it's mostly `0.0`. Real EPS = parent income ÷ shares, and share count is ~stable
-  QoQ, so parent-income growth is an accurate, robust proxy. See `scripts/fa/metrics.py`.
-- **EPS is DERIVED, not read from vnstock.** Because the reported EPS field is junk, `eps`
-  (used for P/E valuation, C9) is computed as `parent income / shares`, where
-  `shares = "Paid-in capital" / 10,000` (standard VN par value — verified to match actual
-  share counts for FPT/HPG/VNM). Falls back to vnstock's reported EPS only when charter capital
-  is unreadable (e.g. banks, which don't expose "Paid-in capital" under that label → EPS 0, but
-  they're UNRATED anyway). See `scripts/fa/fetcher.py` (`_BS_PAID_IN_CAPITAL`, `_PAR_VALUE`).
-- **Banks / insurers → UNRATED.** They use a different income-statement layout (no "Net sales"
-  / "Gross Profit"), so revenue/margin metrics can't be read and the rubric's thresholds
-  mislead. Detected via all revenue-derived metrics being null. See `scripts/fa/scoring.py`.
-- **`ratio()` endpoint is NOT used** — it returns a stale fixed window (2018 for FPT). ROE /
-  margins / D/E are computed manually from income statement + balance sheet.
-- **Financial debt = Short-term + Long-term borrowings** (interest-bearing), matching the
-  original "Financial Debt / Equity" criterion (FPT D/E ≈ 0.40).
+## Data sources (Excel)
 
-## Context
+Files live in `initial_fa_data/`. **Both financial files are imported into the DB; every import is
+an additive UPSERT of only the rows present** — files may contain any subset of symbols, the same
+type can be imported many times as symbols become available, and imports never truncate. (The
+criterion file is not imported — #3.)
 
-The project currently has a Technical Analysis pipeline (`ta_*` tables, daily signals, `/scanner` page, per-symbol `/ta/[symbol]` chart) but no Fundamental Analysis. We want:
+### 1. `Data_FiinPro.xlsx` → `fa_quarterly`
+**Multi-sheet** workbook (7 sheets). In every sheet: rows 0–6 are a preamble, **the header is row 7**
+(`STT | Mã | Tên công ty | Sàn | <metric+period> …`), data starts row 8; column B = symbol. The
+initial file has **8 single-quarter columns Q2.2024 → Q1.2026** (latest = Q1.2026). The parser reads
+each header cell to detect the quarter (three label formats appear: `Quý: Qn ⏎ Năm: YYYY`,
+`Qn.YYYY`, and `Qn/YYYY`), so it survives files with a different number of quarters.
 
-1. A new `/fa-scanner` page with **a single composite-score view** — rates each stock on a 0–108 scale across 9 graduated criteria (CANSLIM-flavored: EPS growth, revenue growth, margin growth, ROE, debt/equity, P/E valuation). Letter rating: A (60–108), B (30–<60), C (<30), UNRATED (no data). Users filter by min rating. Valuation is folded into the score as the 9th criterion (no separate Undervalued/Overvalued tab).
-2. **Rename the existing "TA" page label to "Stock Analysis"** (UI / i18n only — URL stays `/ta`). The per-symbol drill-down [dashboard/src/app/ta/[symbol]/page.tsx](dashboard/src/app/ta/[symbol]/page.tsx) becomes the combined TA+FA view for a given symbol: existing chart + signals on top, new FA summary panel below (composite score + 9-criterion breakdown).
-3. Clicking a symbol in `/fa-scanner` (like `/scanner` already does) navigates to `/ta/{symbol}` — the combined Stock Analysis page.
+| Sheet | Field (column block) | Type / unit | Used for |
+|---|---|---|---|
+| `EPS` | **"EPS Qn/YYYY"** (single-quarter EPS) | single-quarter, VND | C1, C2, C3, TTM-EPS for C14 |
+| `Biên lãi gộp + ròng` | **"Biên lãi gộp Qn/YYYY"** | single-quarter gross margin, **fraction** | C5 |
+| `Biên lãi gộp + ròng` | **"Biên lãi ròng Qn/YYYY"** | single-quarter net margin, fraction | C6 |
+| `Doanh thu` | "3. Doanh thu thuần" | single-quarter revenue, VND | C4 |
+| `Nợ ngắn hạn` | "1.10. Vay và nợ thuê tài chính ngắn hạn" | single-quarter, VND | C9 numerator |
+| `Nợ dài hạn` | "2.8. Vay và nợ thuê tài chính dài hạn" | single-quarter, VND | C9 numerator |
+| `Vốn chủ` | **"II. VỐN CHỦ SỞ HỮU"** (total equity) | single-quarter, VND | C9 denominator |
+| `ROE` | "ROE %" | **TTM**, fraction (0.30 = 30%) | C7 |
 
-Data sourced from vnstock's Finance module against the existing ~1500-symbol `ta_universe`, refreshed quarterly via GitHub Actions.
+> Notes: EPS and both margins are supplied **pre-computed per quarter** — use them directly (don't
+> recompute). Margins/ROE are **fractions** (×100 for pp / % tiers). The `EPS` sheet also carries
+> parent net income + shares, and the margin sheet carries revenue/gross-profit/net-profit, but we
+> only import the fields above. Sheets are joined by symbol (column B).
 
-## Data source constraint (resolved 2026-06)
+### 2. `PE.xlsx` → `fa_annual_pe`
+9 columns: 4 ID + E–I = **annual P/E (Chỉ số năm)** for 2021–2025 (unit: Lần / times). Contains
+negative values (loss years). **Future yearly files contain only the one newest year.** Parser
+detects years from headers and upserts per (symbol, year).
 
-**vnstock free tier returns only 4 most recent periods** (verified empirically on FPT: `2026-Q1, 2025-Q4, 2025-Q3, 2025-Q2`). The library banner: *"Phiên bản cộng đồng: Báo cáo tài chính được giới hạn tối đa 4 kỳ"*. This makes YoY (quarter-vs-same-quarter-prior-year) impossible without the paid `vnstock_data` upgrade.
+### 3. `fa_classification_criterion.xlsx` → NOT imported (reference only)
+The scoring rubric. Its tiers + A/B/C bands are **seeded into `fa_scoring_config` by migration 014**
+(hardcoded INSERT from the values below). There is **no import feature** — when the user wants to
+change tiers, they edit the `fa_scoring_config` row directly in the DB. Changes apply to **all
+forward scoring runs (no retroactive rescore)**. (This also avoids parsing the fragile Vietnamese
+free-text scoring cells.)
 
-**Decision:** Ship v1 using **QoQ (quarter-over-quarter)** for short-history metrics. Each criterion's threshold is unchanged from the original spec — only the comparison window changes. Label clearly in the UI: *"QoQ-based scoring — YoY upgrade pending data source"*. Once we accumulate ≥5 quarters of history in `fa_quarterly` (after ~5 quarterly cron runs), we can switch C1–C6 to true YoY without a UI change.
+## Scoring rubric (YoY) — source of truth = `fa_scoring_config`
 
-## Scoring rubric (v1 — graduated, QoQ-substituted)
+Graduated points (0/4/8/12; debt can be −4). Max = 108. **All growth is YoY.**
+Boundary convention: tiers are `[low, high)`. These tiers are the *current* values parsed from the
+criterion sheet and stored in `fa_scoring_config`; the scorer reads them from the DB.
 
-Each criterion awards **graduated points (0 / 4 / 8 / 12)** based on tiers (debt criterion can go to −4). Source rubric: `fa_score.md`. Growth metrics use **QoQ** (quarter-over-quarter) instead of YoY in v1 due to the 4-period data cap (see constraint above) — thresholds are unchanged, only the comparison window differs.
-
-| # | Criterion | Scoring tiers |
+| # | Criterion | Tiers (points) |
 |---|---|---|
-| C1 | Latest Quarter EPS Growth % **(QoQ)** | <20% → 0 · 20–30% → 4 · 30–60% → 8 · >60% → 12 |
-| C2 | Average EPS Growth, last 3 **(QoQ comparisons)** | <25% → 0 · 25–35% → 4 · 35–45% → 8 · >45% → 12 |
-| C3 | # of the 3 **QoQ comparisons** with positive EPS growth | 0 → 0 · 1 → 4 · 2 → 8 · 3 → 12 |
-| C4 | Revenue Growth **(QoQ)** | <10% → 0 · 10–15% → 4 · 15–20% → 8 · >20% → 12 |
-| C5 | Gross Profit Margin Growth (pp change **QoQ**) | <−5% → 0 · −5–0% → 4 · 0–10% → 8 · >10% → 12 |
-| C6 | Net Profit Margin Growth (pp change **QoQ**) | <−5% → 0 · −5–0% → 4 · 0–10% → 8 · >10% → 12 |
-| C7 | Return on Equity (ROE, TTM) | <15% → 0 · 15–17% → 4 · 17–20% → 8 · >20% → 12 |
-| C8 | Financial Health (Total Debt / Equity, latest BS) | >1.5 → **−4** · 0.8–1.5 → 6 · <0.8 → 12 |
-| C9 | Valuation (P/E vs **4-quarter median**) | P/E ≥20% below median → 12 · in between → 8 · P/E ≥20% above median → 4 |
+| 1 | Latest-Q EPS growth YoY | <20%→0 · 20–30%→4 · 30–60%→8 · >60%→12 |
+| 2 | Avg EPS growth, last 3 Q (each YoY) | <25%→0 · 25–35%→4 · 35–45%→8 · >45%→12 |
+| 3 | # of last 3 Q with EPS growth YoY | 0→0 · 1→4 · 2→8 · 3→12 |
+| 4 | Revenue growth YoY | <10%→0 · 10–15%→4 · 15–20%→8 · >20%→12 |
+| 5 | Gross-margin improvement YoY (pp) | <−3→0 · −3–0→4 · 0–3→8 · >3→12 |
+| 6 | Net-margin improvement YoY (pp) | <−2→0 · −2–0→4 · 0–2→8 · >2→12 |
+| 7 | ROE TTM (level) | <15%→0 · 15–17%→4 · 17–20%→8 · >20%→12 |
+| 9 | Financial health: financial debt / total equity | >1.5→**−4** · 0.8–1.5→6 · <0.8→12 |
+| 14| Valuation: current P/E vs 5-yr median | cheap (curr < 0.8×median)→12 · neutral→8 · expensive (curr > 1.2×median)→4 |
 
-With 4 quarters in window, "3 QoQ comparisons" = {Q_latest vs Q_-1, Q_-1 vs Q_-2, Q_-2 vs Q_-3}.
+**9 scored criteria, max 108. Rating:** A = 60–108 · B = 30–<60 · C = <30 · UNRATED.
 
-**Max = 108** (9 × 12). **Rating:** **A = 60–108**, **B = 30–<60**, **C = <30**, **UNRATED** (insufficient data — e.g., <4 quarters available, common for recently listed stocks). Qualitative "New product/management" criterion skipped in v1.
+### Per-criterion formulas & field mapping
 
-### C9 valuation (4-quarter median P/E — computed in v1)
+Let `Qn` = the latest quarter with data for the symbol; `Qn−4` = same quarter prior year. **EPS,
+revenue, and margins are all single-quarter values** taken directly from the file.
 
-Original spec said "5-yr median P/E" but vnstock free only returns 4 periods. **v1 uses a 4-quarter median P/E** instead, which is fully computable today:
+- **C1** = `EPS[Qn] / EPS[Qn−4] − 1` (single-quarter EPS).
+- **C2** = **signed mean** of the YoY growth of the last 3 quarters `{Qn, Qn−1, Qn−2}`, each vs its
+  `−4` counterpart. Down quarters subtract — e.g. (25% + (−10%) + 40%)/3 = **+18.3%**. A quarter
+  whose year-ago value is missing is skipped from the average (note it); needs up to 7 quarters of
+  EPS history.
+- **C3** = count of those 3 quarters whose YoY EPS growth > 0.
+- **C4** = `revenue[Qn] / revenue[Qn−4] − 1` (single-quarter revenue).
+- **C5** = `(gross_margin[Qn] − gross_margin[Qn−4]) × 100` → pp (single-quarter margins).
+- **C6** = `(net_margin[Qn] − net_margin[Qn−4]) × 100` → pp.
+- **C7** = `ROE_TTM[Qn]` (level; ×100 from fraction) — ROE is the one TTM input.
+- **C9** = `(st_debt[Qn] + lt_debt[Qn]) / total_equity[Qn]` — denominator is **total owner's equity**
+  (`II. VỐN CHỦ SỞ HỮU`).
+- **C14** (per snapshot quarter `Qn`): `current_pe = price / TTM_EPS[Qn]`, where
+  **`TTM_EPS[Qn] = EPS[Qn] + EPS[Qn−1] + EPS[Qn−2] + EPS[Qn−3]`** (sum of the last 4 single-quarter
+  EPS), and `price` is **point-in-time** — the `ta_ohlcv` close on/before `Qn`'s quarter-end date;
+  **for the latest quarter the snapshot refreshes daily with the live close** until the next quarter
+  arrives. `pe_5y_median = median` of the symbol's `fa_annual_pe` values for years ≤ `Qn`'s year
+  (negatives included, blanks skipped, e.g. [4,5,6,7,30]→6). Tier `<0.8×median→12`, `>1.2×median→4`,
+  else 8. Guard: if median or current_pe missing, or `median ≤ 0` or `current_pe ≤ 0` → neutral **8**.
 
-1. For each of the 4 quarters `q`, get the quarter-end close from `ta_ohlcv` and compute an **annualized P/E**: `pe_q = close_at_qend(q) / (eps_q × 4)`. Skip a quarter if `eps_q ≤ 0`.
-2. `pe_4q_median = median(pe_q over the valid quarters)`.
-3. `current_pe = latest_close / current_eps_ttm` where `current_eps_ttm = sum(eps over the 4 quarters)`. (TTM-based — the most accurate current value.)
-4. Tier: `current_pe ≤ 0.8 × pe_4q_median` → 12 · `current_pe ≥ 1.2 × pe_4q_median` → 4 · otherwise → 8.
-5. If `pe_4q_median` can't be computed (all quarters had `eps ≤ 0`), award the neutral **8** and note it.
+**FPT worked example (verified with `Data_FiinPro.xlsx`, latest = Q1.2026):**
+C1 = 1460.1/1478.0−1 = **−1.21% → 0** · C2 = mean(−1.21, +3.46, −0.07) = **+0.73% → 0** ·
+C3 = 1/3 → **4** · C4 = 12,480B/16,058B−1 = **−22.28% → 0** · C5 = (34.01−39.24) = **−5.23 pp → 0** ·
+C6 = (19.85−16.16) = **+3.68 pp → 12** · C7 = **26.82% → 12** · C9 = (14,491B+1,605B)/40,122B =
+**0.401 → 12** · C14 = P/E 12.16 (price 71,600 ÷ TTM-EPS 5,887) vs median 18.44 (<0.8×) → **12**.
+**Total = 52 → B.**
 
-Store both `pe_4q_median` and `current_pe` in `fa_scores`. (Slight method note: per-quarter P/E annualizes a single quarter while `current_pe` uses TTM — both are annual-equivalent, so comparable; documented in `metrics.py`. When ≥5yr of history accumulates we can widen the median window without a schema change.)
+### UNRATED handling
+- Banks/securities/insurers have blank revenue & gross/net margin → C4/C5/C6 uncomputable; mark
+  `rating = UNRATED` rather than emit a misleading C.
+- < 7 quarters of EPS history (can't form C2/C3 YoY) → score what's computable, mark UNRATED if
+  core EPS/revenue YoY can't be formed; record the reason in `notes`.
+- A single uncomputable criterion → 0 pts (neutral 8 for C14) with a note; the rest still scores.
 
-Boundary convention (applies to all tiers): ranges are interpreted as `[low, high)` — e.g. EPS growth of exactly 30% scores in the "30–60%" tier (8 pts). Document this in `scoring.py` and keep it consistent across criteria.
+## 1. Database schema — migration `supabase/014_fa_excel_revision.sql`
 
-## 1. Database schema
+Migration 013 is superseded. 014 drops & recreates `fa_quarterly` and `fa_scores` (the 5 test rows
+are disposable), and adds `fa_annual_pe` + `fa_scoring_config`. All upserts are incremental-friendly.
 
-New migration: [supabase/013_create_fa_tables.sql](supabase/013_create_fa_tables.sql)
+- **`fa_quarterly`** (symbol × quarter, from `Data_FiinPro.xlsx`): `symbol`, `period` (`'2026-Q1'`),
+  `year`, `quarter`, `eps` (single-quarter), `gross_margin` (single-quarter), `net_margin`
+  (single-quarter), `roe_ttm`, `revenue` (single-quarter), `st_debt`, `lt_debt`, `total_equity`,
+  `imported_at`. PK (symbol, period). (Margins/ROE stored as fractions, as in the file.)
+- **`fa_annual_pe`** (symbol × year, from PE.xlsx): `symbol`, `year`, `pe`, `imported_at`.
+  PK (symbol, year).
+- **`fa_scoring_config`** (tiers + rating bands): one active config, **seeded by the migration**
+  with the §rubric values; the user edits it directly in the DB. Shape: `id`, `config jsonb`
+  (per-criterion tier bounds+points, plus A/B/C band cutoffs), `updated_at`. Scorer reads the
+  latest row. No import path.
+- **`fa_scores`** (**one snapshot per symbol per quarter — full history**): **PK (symbol,
+  as_of_period)**. Columns: value+points for the 9 criteria — YoY field names: `c1_eps_yoy`/`c1_pts`,
+  `c2_eps_3q_avg_yoy`/`c2_pts`, `c3_eps_pos_count`/`c3_pts`, `c4_rev_yoy`/`c4_pts`,
+  `c5_gross_margin_delta`/`c5_pts`, `c6_net_margin_delta`/`c6_pts`, `c7_roe`/`c7_pts`,
+  `c8_debt_to_equity`/`c8_pts` (debt ÷ **total equity**), `c9_current_pe`/`c9_pts` — plus
+  `total_score`, `rating`, `current_eps_ttm` (= sum of 4 single-quarter EPS), `current_pe`,
+  `pe_5y_median`, `current_price`, `current_price_date`, `notes`, `computed_at`.
+  Indexes on `as_of_period`, `(as_of_period, rating)`,
+  `(as_of_period, total_score DESC)` for fast per-quarter listing/sorting.
+- **`fa_runs`** unchanged. RLS anon-all on all tables (matches `ta_*`). Note: writes from the
+  Input page use the same anon key the app already uses.
 
-Three tables (matches existing `ta_*` style — anon RLS, see [supabase/008_create_ta_tables.sql](supabase/008_create_ta_tables.sql) for the pattern):
+### History & snapshots
+`fa_scores` keeps **one row per (symbol, quarter)** — the full FA-scanner history. A snapshot for
+quarter `Qn` is built from that symbol's fundamentals through `Qn` plus the point-in-time C14 price
+(§per-criterion). Behavior:
+- **Backfill (now):** the `score` run computes a snapshot for **every quarter that has enough
+  history** in `fa_quarterly` (C1 needs `Qn−4`; C2/C3 need up to `Qn−6`), for all symbols — so the
+  quarter dropdown is populated immediately.
+- **New quarter:** when a new quarter is imported, the next `score` run adds that quarter's snapshot
+  for the affected symbols (additive — older snapshots are not recomputed).
+- **Daily refresh:** the daily job recomputes **only each symbol's latest-quarter snapshot**, to
+  refresh `current_pe`/C14 (and `current_price`/date) with the live close. Historical snapshots are
+  frozen at their point-in-time values.
+- **Config changes** apply to whatever the next `score` run computes (latest-quarter daily refresh +
+  any newly imported quarters); past snapshots already stored are not retroactively rescored.
 
-- **`fa_quarterly`** — append-only raw history per (symbol, period). Columns: revenue, gross_profit, net_income, eps, total_equity, total_debt, gross_margin, net_margin, roe, debt_to_equity, close_at_qend, pe_at_qend, fetched_at. PK (symbol, period). Lets us recompute scores without re-fetching.
-- **`fa_scores`** — latest snapshot per symbol (overwritten each run). Columns: symbol PK, as_of_period, per-criterion **raw value + awarded points** for all 9 criteria (`c1_eps_qoq`/`c1_pts`, `c2_eps_3q_avg`/`c2_pts`, `c3_eps_pos_count`/`c3_pts`, `c4_rev_qoq`/`c4_pts`, `c5_gross_margin_delta`/`c5_pts`, `c6_net_margin_delta`/`c6_pts`, `c7_roe`/`c7_pts`, `c8_debt_to_equity`/`c8_pts`, `c9_current_pe`/`c9_pts`), `total_score` (int, −4..108), `rating` ('A'|'B'|'C'|'UNRATED'), valuation fields `current_eps_ttm`, `current_pe`, `pe_4q_median`, `current_price`, `current_price_date`, plus `notes`, `computed_at`. Indexes on `rating`, `total_score DESC`. (No separate valuation_status/fair_value/discount columns — valuation is folded into the score.)
-- **`fa_runs`** — run log (mirrors `ta_runs`): id, started_at, finished_at, as_of_period, symbols_processed, symbols_skipped, status, error_message.
+## 2. Data import architecture
 
-All three with `enable row level security` + `Allow all for anon` policy (matches existing convention).
+Only the **`Data_FiinPro.xlsx`** (multi-sheet financials) and **`PE.xlsx`** files are imported. Both
+entry points share one header-driven, period-count-agnostic column-mapping spec, and **both perform
+additive per-row upserts** — `fa_quarterly` keyed on (symbol, period), `fa_annual_pe` on (symbol,
+year). Importing a file only touches the rows it contains; missing symbols/periods are left
+untouched. The same file type can be imported repeatedly as more symbols/periods become available.
+No truncate, ever.
 
-## 2. Python pipeline
+The `Data_FiinPro.xlsx` parser must: skip the 6-row preamble and read **header row 7** in each of
+the 7 sheets; map each sheet's metric columns to the `fa_quarterly` fields (§Data sources #1);
+detect each column's quarter from the header (3 label formats); and **join the sheets by symbol**
+(column B) into one row per (symbol, period).
 
-Reuse [scripts/ta/common.py](scripts/ta/common.py) helpers: `get_supabase_client`, `safe_execute`, `VNSTOCK_SOURCE = "VCI"`, `REQUEST_DELAY = 4.0`.
+**A. Bulk load (script).** `scripts/fa/excel_import.py` reads a `Data_FiinPro` and/or `PE` workbook
+and upserts. Used now for the large initial load, and re-runnable any time. CLI:
+`python3 refresh_fa.py import [--fiin <path>] [--pe <path>]`.
 
-New files:
+**B. Ongoing updates (admin, via the `/input` page).** The admin uploads a `Data_FiinPro` file or a
+`PE` file. A Next.js **server route** parses it (SheetJS / `xlsx` npm lib) with the same multi-sheet,
+header-row-7 mapping and upserts. A file may hold one quarter/year for a subset of symbols, or many —
+the parser detects what's present and upserts only those rows.
+
+(The criterion file is not imported; `fa_scoring_config` is seeded by the migration and edited
+directly in the DB — see §Data sources #3.)
+
+## 3. Python scoring pipeline (no vnstock)
 
 ```
 scripts/
-  refresh_fa.py              # entrypoint (CLI mirrors refresh_ta_universe.py)
+  refresh_fa.py        # CLI: `import` (bulk Excel→DB) and `score` (DB→fa_scores)
   fa/
     __init__.py
-    fetcher.py               # vnstock Finance/Company wrappers — version-fragile module
-    metrics.py               # QoQ growth math, TTM rollups, current P/E (pure)
-    scoring.py               # 9-criterion graduated rubric → ScoreResult (tiered 0/4/8/12)
-    persist.py               # upserts to fa_quarterly / fa_scores / fa_runs
+    excel_import.py    # NEW: parse Data_FiinPro (7 sheets, header row 7) + PE; header-driven, period-agnostic
+    metrics.py         # REWRITE: single-quarter YoY growth (signed), margin pp deltas, ROE TTM level, D/E (total equity), TTM-EPS = sum 4 single-q EPS, current P/E, 5y median
+    scoring.py         # REWRITE: tiers loaded from fa_scoring_config (data-driven); same A/B/C bands
+    persist.py         # UPDATE: revised fa_quarterly / fa_scores columns; + fa_annual_pe, fa_scoring_config
+    fetcher.py         # DELETE (vnstock removed)
 ```
 
-CLI:
-```
-python3 refresh_fa.py                          # full universe
-python3 refresh_fa.py --symbols FPT HPG        # subset for debugging
-python3 refresh_fa.py --inspect FPT            # print breakdown, no DB write
-python3 refresh_fa.py --dry-run                # compute, log counts, no write
-python3 refresh_fa.py --limit 50               # phased rollout / smoke tests
-```
+- `score`: for each symbol, load its `fa_quarterly` series + `fa_annual_pe` + `ta_ohlcv` closes +
+  active `fa_scoring_config`; compute a snapshot **per eligible quarter** (point-in-time C14 price)
+  and upsert into `fa_scores` keyed (symbol, as_of_period). Pure DB reads, no network. Flags:
+  `--backfill` (all eligible quarters) vs default daily mode (**latest quarter only**, live price);
+  `--symbols`, `--inspect`, `--dry-run`. Reuse `scripts/ta/common.py`.
 
-### vnstock integration (verified empirically — Phase A done)
+## 4. Coverage & price expansion (confirmed)
 
-Source: **VCI** (already standard in this repo via `scripts/ta/common.py:20`). Confirmed API:
-- `stock.finance.income_statement(period="quarter", lang="en", dropna=True)` — DataFrame in "tall" format: rows are line items (25 rows), columns include `item`, `item_en`, `item_id`, plus 4 period columns like `2026-Q1`, `2025-Q4`, `2025-Q3`, `2025-Q2`. Key `item_en` values: `Net sales`, `Gross Profit`, `Net profit/(loss) after tax`, `EPS basic (VND)`, `EPS diluted (VND)`.
-- `stock.finance.balance_sheet(period="quarter", lang="en", dropna=True)` — same shape, 122 rows including total equity, short/long-term debt, total assets.
-- `stock.finance.ratio(period="quarter", ...)` — has ROE/P/E/D/E precomputed but returns a fixed historical window (2018 for FPT), not current data — **do not use; compute these manually from income/balance instead**.
+- `fa_quarterly`/`fa_scores` cover all 1,597 FiinProX symbols.
+- C14 needs a live price; **`ta_ohlcv` will be expanded to cover all FiinProX symbols** (user
+  confirmed) so valuation works universe-wide. This means widening `ta_universe` / the OHLCV
+  backfill+daily refresh to the full FiinProX symbol list. (Scope/impact on the TA pipeline to be
+  detailed at implementation; it also benefits the TA scanner.) Until expanded, symbols without a
+  price get `current_pe` null → C14 neutral 8.
 
-Import workaround for vnstock 4.0.3 broken `vnstock_ezchart` dependency (verified): inject a `sys.modules` stub at the top of `fa/fetcher.py` before importing `vnstock`:
-```python
-import sys, types
-_stub = types.ModuleType("vnstock_ezchart")
-class _C: pass
-_stub.Chart = _C
-sys.modules.setdefault("vnstock_ezchart", _stub)
-_mp = types.ModuleType("vnstock_ezchart.mplot")
-_mp.MPlot = _C
-sys.modules.setdefault("vnstock_ezchart.mplot", _mp)
-from vnstock import Vnstock  # now succeeds
-```
-This stub is only needed where the Finance API path triggers `common/viz.py`. The existing TA scripts may need the same stub once they touch any code path that imports `common.indices`.
+## 5. Frontend
 
-Per-symbol loop pattern mirrors [scripts/compute_ta_signals.py](scripts/compute_ta_signals.py): try/except per symbol, never crash the whole run, refresh Supabase client every 150 symbols to avoid HTTP/2 stream exhaustion. Apply `REQUEST_DELAY = 4.0` from `scripts/ta/common.py`.
+### Already built — only field renames + labels
+- [dashboard/src/lib/fa.ts](dashboard/src/lib/fa.ts): rename `FaScore` fields `c1_eps_qoq`→`c1_eps_yoy`,
+  `c2_eps_3q_avg`→`c2_eps_3q_avg_yoy`, `c4_rev_qoq`→`c4_rev_yoy`, `pe_4q_median`→`pe_5y_median`.
+- [dashboard/src/lib/i18n.ts](dashboard/src/lib/i18n.ts): criterion labels `faC1…faC6` "(QoQ)"→"(YoY)";
+  `faPe4qMedian` → "P/E 5-yr median" / "P/E trung vị 5 năm".
+- [fa-summary.tsx](dashboard/src/app/ta/[symbol]/fa-summary.tsx) +
+  [fa-scanner-client.tsx](dashboard/src/app/fa-scanner/fa-scanner-client.tsx): use renamed fields.
+- Breakdown/nav components otherwise unchanged.
 
-### Valuation / C9 (4-quarter median P/E)
+### NEW — quarter history dropdown on `/fa-scanner`
+`fa_scores` now has multiple rows per symbol (one per quarter), so the page is quarter-scoped:
+- [page.tsx](dashboard/src/app/fa-scanner/page.tsx): read the selected quarter from a search param
+  (`?q=2026-Q1`); if absent, default to the **latest** `as_of_period` (one cheap
+  `select distinct as_of_period order desc` query → also feeds the dropdown options). Fetch
+  `fa_scores` filtered to that quarter (`.eq("as_of_period", q)`) via the existing paged helper.
+- [fa-scanner-client.tsx](dashboard/src/app/fa-scanner/fa-scanner-client.tsx): add a **quarter
+  dropdown** (the distinct quarters, newest first, default = latest) that updates `?q=` and
+  re-renders the table for that quarter. Mirrors the server-param filter pattern used by `/history`.
+- [ta/[symbol]/page.tsx](dashboard/src/app/ta/[symbol]/page.tsx): `fa_scores` is now multi-row per
+  symbol → select the **latest** snapshot (`order("as_of_period", desc).limit(1)`) for the FA panel.
+  (A per-symbol quarter selector is out of scope for now.)
 
-Computed per the "C9 valuation" rubric section above. `metrics.py` provides:
-- `current_eps_ttm = sum(eps over the 4 quarters)`; `current_price = latest close from ta_ohlcv`; `current_pe = current_price / current_eps_ttm` (if TTM EPS > 0).
-- Per-quarter annualized P/E series `pe_q = close_at_qend(q) / (eps_q × 4)` using quarter-end closes from `ta_ohlcv`; `pe_4q_median = median(valid pe_q)`.
-- C9 tier from `current_pe` vs `pe_4q_median` (≤0.8× → 12, ≥1.2× → 4, else 8; neutral 8 if median uncomputable).
+### NEW — Input-page upload (admin only)
+Add an "FA data import" section to [dashboard/src/app/input/](dashboard/src/app/input/) (admin-gated,
+matching the page's existing role check):
+- File picker + a type selector (**Financials / Annual P/E** — two types only).
+- Posts to a new Next.js server route (e.g. `app/api/fa-import/route.ts`) that parses with `xlsx`
+  (new dep) via the shared header-driven mapping and **upserts only the rows present** to the
+  matching table; returns a summary (rows upserted, symbols + periods detected, warnings).
+- After an import, the next daily `score` run (or a "rescore now" action) refreshes `fa_scores`.
 
-Quarter-end close lookup: map each `YYYY-Qn` period to its last calendar day, then take the latest `ta_ohlcv.close` on/before that date for the symbol.
+## 6. Refresh workflow (replaces the vnstock cron)
 
-### Scoring (graduated tiers)
+Delete `.github/workflows/fa-quarterly.yml` (vnstock, ~5h). Replace with a **daily score job**
+(confirmed): `refresh_fa.py score` (default mode) re-reads each symbol's `fa_quarterly` +
+`fa_annual_pe` + the daily `ta_ohlcv` price + active config, and refreshes **only the latest-quarter
+snapshot** in `fa_scores` (live `current_pe`/C14). Cheap, DB-only — a new
+`.github/workflows/fa-score-daily.yml` (or appended to `ta-daily` after prices update). The
+**backfill** of historical quarters is a one-time `score --backfill` run (alongside the initial
+import); each new quarter import is followed by a `score` run that adds that quarter's snapshot.
 
-`scoring.py` exposes `compute_score(metrics: dict) -> ScoreResult` where `ScoreResult` carries, per criterion, the raw value + awarded points, plus `total_score`, `rating`, `notes`. Tier lookup is a small table per criterion (see rubric above), using `[low, high)` boundary convention. C8 can award −4. Rating from total: `A` if ≥60, `B` if ≥30, `C` if ≥0 (and computed), `UNRATED` if no usable data.
+## 7. Decisions locked
+- Data source = **`Data_FiinPro.xlsx`** (multi-sheet, header row 7) + `PE.xlsx`. All inputs are
+  **single-quarter** except ROE (TTM).
+- D/E denominator = **total owner's equity** (`II. VỐN CHỦ SỞ HỮU`).
+- Current P/E = **live price ÷ TTM EPS**, where **TTM EPS = sum of the last 4 single-quarter EPS**;
+  5-yr median includes negatives, skips blanks.
+- EPS growth = **single-quarter EPS YoY**; C2 = signed mean.
+- **Daily score job**; **expand `ta_ohlcv` to all FiinProX symbols**.
+- Rating boundaries **A≥60, B≥30, C<30**.
+- **Imports are additive per-row upserts of only the rows present** (partial files, re-importable
+  many times; never truncate). Latest quarter/year is per-symbol, growing as files arrive.
+- **No criterion import** — `fa_scoring_config` is seeded by the migration and edited directly in
+  the DB; changes apply **forward only** (no historical rescore).
+- **FA-scanner history** — `fa_scores` keyed (symbol, as_of_period); **backfill all eligible quarters
+  now**; historical C14 uses **point-in-time quarter-end close**, latest quarter refreshes daily with
+  live price. `/fa-scanner` gets a **quarter dropdown (default latest)**.
 
-### Error handling
-
-- Symbols missing income_statement entirely (vnstock returns empty / errors) → row with `rating='UNRATED'`, `notes='No fundamental data from vnstock'` (skip score, don't write 0 which would imply a real C-grade).
-- Symbols with <4 quarterly periods → `rating='UNRATED'`, `notes='Insufficient quarterly history (n=X)'`. Still upsert whatever we have to `fa_quarterly` to build future history.
-- A single criterion that can't be computed (e.g. zero/negative prior-quarter EPS denominator → use `abs()`; missing margin) → award that criterion 0 pts, append a note; the rest of the score still computes.
-- `safe_execute` handles transient network errors via retry.
-
-### Rate / timing
-
-~3 vnstock calls × 1500 symbols × 4s delay ≈ **5 hours per full run**. Acceptable for a quarterly cron; workflow timeout set to 360 min.
-
-## 3. Frontend page
-
-New files under [dashboard/src/app/fa-scanner/](dashboard/src/app/fa-scanner/):
-
-- `page.tsx` — server component. Fetches `fa_scores` via `fetchAllPaged` (reuse the helper pattern from [dashboard/src/app/scanner/page.tsx:12-26](dashboard/src/app/scanner/page.tsx#L12-L26)).
-- `fa-scanner-client.tsx` — client component: **single sortable table** (no tabs), filters, rows link to `/ta/{symbol}`.
-
-> **Watch-out:** Per [dashboard/AGENTS.md](dashboard/AGENTS.md), this Next.js version has breaking changes from the standard one. Before writing the page, read the relevant guide under `dashboard/node_modules/next/dist/docs/`. Mirror the exact patterns in `scanner/page.tsx` + `scanner-client.tsx` rather than inventing new ones.
-
-### UI behavior
-
-- **Single table, columns:** Symbol | Total Score (0–108) | Rating (A/B/C badge) | + a few key metric columns (ROE, D/E, Current P/E) for at-a-glance scanning. The full 9-criterion breakdown lives on the `/ta/{symbol}` Stock Analysis page (via the shared breakdown component), not inline here.
-- **Row click → `/ta/{symbol}`** (the combined Stock Analysis page) — same UX as `/scanner` → `/ta/{symbol}`.
-- **Filters:** rating dropdown (All / A / A+B / A+B+C), min-score numeric input, symbol search.
-- **Sort:** by clicking column headers; default sort = `total_score DESC`.
-
-### Row click → Stock Analysis
-
-Each row is wrapped in a `Link` to `/ta/{symbol}`, mirroring `/scanner` → `/ta/{symbol}` (see [dashboard/src/app/scanner/scanner-client.tsx:598](dashboard/src/app/scanner/scanner-client.tsx#L598)). No query string needed — the symbol page shows the latest signals and the FA panel.
-
-### Nav placement + "TA" → "Stock Analysis" rename
-
-Edit [dashboard/src/app/layout.tsx:48-49](dashboard/src/app/layout.tsx#L48-L49) — insert FA Scanner immediately after `/scanner` (TA Scanner), so the two scanners sit side-by-side:
-
-```tsx
-{ href: "/scanner", label: t(locale, "navScanner") },
-{ href: "/fa-scanner", label: t(locale, "navFAScanner") },   // NEW — next to TA Scanner
-{ href: "/ta", label: t(locale, "navStockAnalysis") },        // RENAMED (was "navTA")
-{ href: "/realtime", label: t(locale, "navRealtime") },
-```
-
-In [dashboard/src/lib/i18n.ts](dashboard/src/lib/i18n.ts):
-- Replace existing `navTA` key with `navStockAnalysis` — en: `"Stock Analysis"`, vi: `"Phân tích cổ phiếu"`.
-- Add `navFAScanner` — en: `"FA Scanner"`, vi: `"Bộ lọc FA"` (or similar).
-- Add breakdown-table labels (criterion names, threshold, value, score) in both en + vi.
-- Update the back-link text used at [dashboard/src/app/ta/[symbol]/page.tsx:76](dashboard/src/app/ta/[symbol]/page.tsx#L76) (`taBackToTA`) to `taBackToStockAnalysis` (or just adjust the en/vi strings to "← Back to Stock Analysis" / "← Quay lại Phân tích cổ phiếu").
-
-URL stays `/ta` — avoids breaking the existing scanner→`/ta/{symbol}` link, bookmarks, and any external references. Page is public (no `isStaff` gate — matches `/scanner` and `/ta`).
-
-### Add FA panel to `/ta/[symbol]` page
-
-Modify [dashboard/src/app/ta/[symbol]/page.tsx](dashboard/src/app/ta/[symbol]/page.tsx) — after the existing chart + signals block, add a server-side fetch of the corresponding `fa_scores` row and render an "Fundamental Analysis" section:
-
-```tsx
-const { data: faRow } = await supabase
-  .from("fa_scores")
-  .select("*")
-  .eq("symbol", symbol)
-  .maybeSingle();
-```
-
-Then render a small `FaSummary` component (new file `dashboard/src/app/ta/[symbol]/fa-summary.tsx`) showing:
-- Score header: `total_score / 108` + rating badge (A/B/C) + `as_of_period` + a small **"QoQ-based scoring — YoY upgrade pending data source"** notice
-- The **9-criterion breakdown table** (shared component `dashboard/src/components/fa-breakdown-table.tsx`, reused by `/fa-scanner` if needed). Each row shows criterion name, the raw value, and the awarded points (0/4/8/12, or −4 for debt). Criterion labels say "QoQ" not "YoY" in v1; C9 row shows `current_pe` vs `pe_4q_median` and is labelled *"P/E vs 4-quarter median (5-yr window pending data)"*.
-- A small valuation line for context: current_price, current_eps_ttm, current_pe, pe_4q_median (display only; not a separate Undervalued/Overvalued verdict).
-
-If no `fa_scores` row exists for the symbol (e.g., excluded by the refresh script), render a muted "No fundamental data available" panel rather than hiding the section — makes the layout consistent.
-
-## 4. GitHub Actions
-
-New file: [.github/workflows/fa-quarterly.yml](.github/workflows/fa-quarterly.yml)
-
-Cron: `0 4 1 2,5,8,11 *` — 04:00 UTC on the 1st of Feb, May, Aug, Nov (after Vietnamese quarterly earnings deadlines). Add `workflow_dispatch` for manual triggers.
-
-Structure mirrors [.github/workflows/ta-daily.yml](.github/workflows/ta-daily.yml) but simpler — no precheck or backup cron (quarterly missed runs are recoverable via manual trigger; the extra complexity isn't worth it for this cadence). Timeout: 360 min.
-
-## 5. Phased rollout
-
-**Phase A — Schema + smoke test** (1 sitting)
-1. **Rewrite** `013_create_fa_tables.sql` to the graduated/9-criterion `fa_scores` schema (the draft on disk uses the older binary schema and must be regenerated — c1..c9 value+pts columns, no valuation_status/fair_value, add `pe_5y_median`). Then apply it in Supabase.
-2. Implement `fa/fetcher.py` + `--inspect` mode only. Run `refresh_fa.py --inspect FPT` — print raw dataframes; eyeball against CafeF / FireAnt. (vnstock API already verified — see above.)
-
-**Phase B — Scoring + persistence + UI** (1–2 sittings)
-3. Implement `metrics.py` (QoQ growth, TTM, current P/E), `scoring.py` (9-criterion graduated tiers), `persist.py`.
-4. Run `refresh_fa.py --symbols FPT HPG VCB VNM MWG --dry-run` then for real. Spot-check `fa_scores` rows (verify graduated points + rating).
-5. Build `/fa-scanner` page + single-table client component (read AGENTS.md guidance first).
-6. Build shared `fa-breakdown-table.tsx`, add `FaSummary` to `/ta/[symbol]`, rename nav + i18n strings.
-
-**Phase C — Full universe + CI** (1 sitting)
-7. Run `refresh_fa.py` against full universe locally (~5h overnight).
-8. Verify dashboard renders ~1500 rows performantly. If slow, server-side filter to `rating != 'UNRATED'` for the default view.
-9. Add `fa-quarterly.yml` workflow; trigger via `workflow_dispatch` to confirm CI parity.
-
-## 6. Verification
-
-| What | How |
-|---|---|
-| Schema applies cleanly | Run migration in Supabase SQL editor → confirm 3 tables + indexes + RLS. |
-| vnstock Finance call works | `python3 refresh_fa.py --inspect FPT` prints quarterly statements; eyeball against a public source. |
-| Graduated scoring correct | Cross-check FPT: Q1'26 EPS=1460 vs Q4'25 EPS=1173 → QoQ=+24.5% → C1 tier "20–30%" → 4 pts. Verify a few tiers + C8 (−4/6/12) + C9 (current_pe vs 4Q-median tier) + total + rating band by hand. |
-| Graceful skipping | `--symbols <small-cap-with-thin-data>` produces an UNRATED row with `notes`, doesn't crash. |
-| QoQ notice in UI | `/ta/{symbol}` FA panel shows the "QoQ-based scoring — YoY upgrade pending data source" note. Breakdown labels say "QoQ" not "YoY"; C9 labelled as placeholder. |
-| Run log | `select * from fa_runs order by started_at desc limit 1` after a run shows `finished_at` + counts. |
-| Dashboard renders | Visit `/fa-scanner` — single table loads, filters work, rows link to `/ta/{symbol}`. |
-| Sort by score | Click the Score header → rows reorder (default `total_score DESC`). |
-| Nav link present | Visible after `/scanner` and before `/ta` (Stock Analysis); click marks it active. |
-| CI parity | `workflow_dispatch` on `fa-quarterly.yml`; confirm completion and a fresh `fa_runs` row. |
-
-## 7. Risks & mitigations
-
-| Risk | Mitigation |
-|---|---|
-| **vnstock free caps financial data at 4 periods** (verified) | Forces QoQ instead of YoY for C1–C6 and a placeholder C9. Documented in UI. Upgrade path: accumulate history in `fa_quarterly` over quarterly runs, or switch to paid `vnstock_data`. |
-| `ratio()` endpoint returns stale fixed window (2018 for FPT) | Don't use `ratio()`. Compute ROE / margins / P/E manually from `income_statement` + `balance_sheet`. |
-| vnstock 4.0.3 broken `vnstock_ezchart` import | `sys.modules` stub at top of `fa/fetcher.py` (verified working — see integration section). |
-| EPS-divided-by-zero / negative prior-quarter EPS | `abs()` in QoQ formulas + null guards; that single criterion scores 0 with a note, rest of score still computes. |
-| First full run takes ~5h | Phased rollout: runs locally before CI. Quarterly cadence makes long cron acceptable. Workflow timeout 360 min. |
-| Non-standard Next.js version | Read `dashboard/node_modules/next/dist/docs/` before writing the page. Mirror existing `/scanner` page patterns exactly. |
-| Schema evolution (YoY/real-C9 upgrade later) | `fa_scores` keeps NULLable `pe_5y_median`; switching C1–C6 to YoY and C9 to real median needs no schema change — just `scoring.py`/`metrics.py` edits once history exists. |
+## 8. Verification
+- **Import:** `fa_quarterly` ≈ (#symbols in file) × (#populated quarters); `fa_annual_pe` similar;
+  `fa_scoring_config` seeded row matches the §rubric tiers. Spot-check FPT cells. Re-import a
+  partial file and confirm it only upserts its rows (others untouched, no truncate).
+- **Scoring:** reproduce the FPT worked example (**Total 52 → B**), incl. C2 signed-mean and the
+  C9 total-equity 0.401→12. Confirm a bank (VCB) → UNRATED.
+- **History:** after `score --backfill`, `fa_scores` has multiple `as_of_period` rows per symbol;
+  FPT shows snapshots for each eligible quarter, each C14 using that quarter-end close (older rows
+  unchanged by the daily run; only the latest quarter's `current_pe` moves with price).
+- **Dropdown:** `/fa-scanner?q=<older quarter>` lists that quarter's scores; default (no `q`) =
+  latest quarter; switching quarters re-renders the table.
+- **C14:** verify `pe_5y_median` = median incl. negatives; cheap/neutral/expensive tier vs live P/E.
+- **Incremental:** upload a single-quarter `Data_FiinPro` via /input → one new `fa_quarterly` row per
+  symbol, scores refresh on the next run.
+- **Frontend:** `tsc` + `eslint` clean; `/fa-scanner` + `/ta/{symbol}` render with renamed fields;
+  breakdown labels read "YoY".
 
 ## Critical files
-
-- [supabase/013_create_fa_tables.sql](supabase/013_create_fa_tables.sql) — new schema (model on [supabase/008_create_ta_tables.sql](supabase/008_create_ta_tables.sql))
-- [scripts/refresh_fa.py](scripts/refresh_fa.py) — new entrypoint (model on [scripts/refresh_ta_universe.py](scripts/refresh_ta_universe.py) + [scripts/compute_ta_signals.py](scripts/compute_ta_signals.py))
-- [scripts/fa/fetcher.py](scripts/fa/fetcher.py) — new, vnstock Finance wrappers (the version-fragile module)
-- [scripts/fa/metrics.py](scripts/fa/metrics.py) (QoQ growth, TTM, current P/E), [scripts/fa/scoring.py](scripts/fa/scoring.py) (9-criterion graduated tiers), [scripts/fa/persist.py](scripts/fa/persist.py) — new modules (no separate `valuation.py`; valuation folded into metrics/scoring)
-- [dashboard/src/app/fa-scanner/page.tsx](dashboard/src/app/fa-scanner/page.tsx) — new server component (model on [dashboard/src/app/scanner/page.tsx](dashboard/src/app/scanner/page.tsx))
-- [dashboard/src/app/fa-scanner/fa-scanner-client.tsx](dashboard/src/app/fa-scanner/fa-scanner-client.tsx) — new client component (model on `scanner-client.tsx`); each row links to `/ta/{symbol}`
-- [dashboard/src/components/fa-breakdown-table.tsx](dashboard/src/components/fa-breakdown-table.tsx) — new shared component for the 9-criterion breakdown table (used by Stock Analysis page)
-- [dashboard/src/app/ta/[symbol]/page.tsx](dashboard/src/app/ta/[symbol]/page.tsx) — edit to fetch `fa_scores` and render an FA section below the chart
-- [dashboard/src/app/ta/[symbol]/fa-summary.tsx](dashboard/src/app/ta/[symbol]/fa-summary.tsx) — new server component composing score header + 9-criterion breakdown + valuation line
-- [dashboard/src/app/layout.tsx](dashboard/src/app/layout.tsx) — edit nav link list at line 49 (rename `navTA` → `navStockAnalysis`, add `/fa-scanner`)
-- [dashboard/src/lib/i18n.ts](dashboard/src/lib/i18n.ts) — rename `navTA` → `navStockAnalysis` ("Stock Analysis" / "Phân tích cổ phiếu"), add `navFAScanner`, add breakdown-table labels, update `taBackToTA` strings (en + vi)
-- [.github/workflows/fa-quarterly.yml](.github/workflows/fa-quarterly.yml) — new cron workflow (model on [.github/workflows/ta-daily.yml](.github/workflows/ta-daily.yml))
+- `supabase/014_fa_excel_revision.sql` — NEW (drop/recreate fa_quarterly + **fa_scores keyed (symbol, as_of_period) for history**; add fa_annual_pe + fa_scoring_config **seeded with initial tiers**)
+- `scripts/fa/excel_import.py` — NEW parser/importer (Data_FiinPro 7-sheet + PE; header row 7; additive upsert)
+- `scripts/fa/metrics.py`, `scripts/fa/scoring.py`, `scripts/fa/persist.py` — REWRITE (YoY signed, config-driven tiers, new columns)
+- `scripts/refresh_fa.py` — REWRITE: `import` + `score` subcommands; remove vnstock
+- `scripts/fa/fetcher.py` — DELETE
+- `dashboard/src/app/api/fa-import/route.ts` — NEW server route (xlsx parse + upsert)
+- `dashboard/src/app/input/` — NEW admin upload UI
+- `dashboard/src/app/fa-scanner/page.tsx` + `fa-scanner-client.tsx` — quarter dropdown (`?q=`, default latest); per-quarter fetch
+- `dashboard/src/app/ta/[symbol]/page.tsx` — select latest snapshot (multi-row fa_scores)
+- `dashboard/src/lib/fa.ts`, `dashboard/src/lib/i18n.ts`, `fa-summary.tsx` — field renames + YoY labels
+- `.github/workflows/fa-quarterly.yml` → replace with `fa-score-daily.yml`
+- TA pipeline (`ta_universe` / OHLCV backfill+daily) — widen to all FiinProX symbols (for C14 prices)

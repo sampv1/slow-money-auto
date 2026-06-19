@@ -1,166 +1,119 @@
-"""Pure metric computations for the FA scorer.
+"""Pure metric computations for the FA scorer (single-quarter YoY).
 
-Input is the normalized quarter list from `fetcher.fetch_quarters` (latest
-first), plus price inputs sourced from ta_ohlcv by the caller (so this module
-stays pure / DB-free and unit-testable).
+Input is a symbol's quarterly series as {period: row_dict} (row_dict has the
+fa_quarterly fields: eps, gross_margin, net_margin, roe_ttm, revenue, st_debt,
+lt_debt, total_equity), plus a price and the symbol's annual-P/E list.
 
-Growth metrics are QoQ (quarter-over-quarter) because vnstock free caps
-statements at 4 periods — see FA_FEATURE_PLAN.md. Margin "growth" is expressed
-as a percentage-POINT change (pp), not a relative % change.
-
-All functions return None when the inputs needed are missing, so scoring can
-award 0 (or the neutral tier) and note it rather than crashing.
+All growth is YoY = quarter vs the same quarter one year earlier (Qn vs Qn-4).
+Margins are stored as fractions; deltas are returned in percentage points.
 """
 
 from statistics import median
 
 
-def _pct_growth(curr, prev):
-    """Relative growth (curr - prev) / |prev|, as a percent. None if unusable."""
-    if curr is None or prev is None or prev == 0:
+def period_to_index(period: str) -> int:
+    """'2026-Q1' -> integer quarter index (year*4 + quarter-1)."""
+    year, q = period.split("-Q")
+    return int(year) * 4 + (int(q) - 1)
+
+
+def index_to_period(idx: int) -> str:
+    return f"{idx // 4}-Q{idx % 4 + 1}"
+
+
+def shift(period: str, k: int) -> str:
+    """Period k quarters earlier."""
+    return index_to_period(period_to_index(period) - k)
+
+
+def period_year(period: str) -> int:
+    return int(period.split("-Q")[0])
+
+
+def _get(series, period, field):
+    row = series.get(period)
+    return row.get(field) if row else None
+
+
+def _yoy_pct(series, field, period):
+    """(value[period] - value[period-4]) / |value[period-4]| * 100, or None."""
+    a = _get(series, period, field)
+    b = _get(series, shift(period, 4), field)
+    if a is None or b is None or b == 0:
         return None
-    return (curr - prev) / abs(prev) * 100.0
+    return (a - b) / abs(b) * 100.0
 
 
-def eps_qoq_series(quarters: list[dict]) -> list[float]:
-    """QoQ earnings growth (%) for each consecutive pair, latest pair first.
-
-    Uses PARENT-ATTRIBUTABLE net income, not the reported EPS field: vnstock's
-    quarterly EPS is unreliable (e.g. for FPT it reads 1135/1036/1173/1460 while
-    parent income moves steadily 2257/2434/2509/2487B — the EPS field doesn't
-    track earnings at all; HPG returns 0.0 for most quarters). Real EPS is
-    parent income / shares, and share count is ~stable quarter-to-quarter, so
-    parent-income growth is an accurate, robust proxy for EPS growth. (The
-    reported EPS field is still used for P/E valuation, where the absolute level
-    is needed and we fall back to neutral when it's missing.)
-
-    With 4 quarters this yields up to 3 values: {Q0 vs Q1, Q1 vs Q2, Q2 vs Q3}.
-    """
-    out = []
-    for i in range(len(quarters) - 1):
-        g = _pct_growth(quarters[i]["net_income_parent"], quarters[i + 1]["net_income_parent"])
-        if g is not None:
-            out.append(g)
-    return out
-
-
-def latest_eps_qoq(quarters: list[dict]):
-    series = eps_qoq_series(quarters)
-    return series[0] if series else None
-
-
-def avg_eps_growth_3q(quarters: list[dict]):
-    """Mean of the (up to 3) QoQ EPS growth comparisons."""
-    series = eps_qoq_series(quarters)[:3]
-    if not series:
+def _margin_delta_pp(series, field, period):
+    """(margin[period] - margin[period-4]) * 100  → percentage points, or None."""
+    a = _get(series, period, field)
+    b = _get(series, shift(period, 4), field)
+    if a is None or b is None:
         return None
-    return sum(series) / len(series)
+    return (a - b) * 100.0
 
 
-def eps_positive_count(quarters: list[dict]) -> int:
-    """How many of the (up to 3) QoQ comparisons show positive EPS growth."""
-    return sum(1 for g in eps_qoq_series(quarters)[:3] if g > 0)
+def is_fully_scorable(series, period: str) -> bool:
+    """True if EPS exists for the 3 recent quarters AND their year-ago quarters
+    (so C2/C3's three YoY comparisons can all be formed)."""
+    needed = [period, shift(period, 1), shift(period, 2),
+              shift(period, 4), shift(period, 5), shift(period, 6)]
+    return all(_get(series, p, "eps") is not None for p in needed)
 
 
-def revenue_qoq(quarters: list[dict]):
-    if len(quarters) < 2:
-        return None
-    return _pct_growth(quarters[0]["revenue"], quarters[1]["revenue"])
+def eligible_periods(series) -> list[str]:
+    """Sorted (ascending) list of periods that are fully scorable."""
+    return sorted((p for p in series if is_fully_scorable(series, p)), key=period_to_index)
 
 
-def _margin_delta_pp(quarters: list[dict], key: str):
-    """Percentage-point change in a margin between the latest two quarters."""
-    if len(quarters) < 2:
-        return None
-    m0, m1 = quarters[0][key], quarters[1][key]
-    if m0 is None or m1 is None:
-        return None
-    return (m0 - m1) * 100.0
-
-
-def gross_margin_delta(quarters: list[dict]):
-    return _margin_delta_pp(quarters, "gross_margin")
-
-
-def net_margin_delta(quarters: list[dict]):
-    return _margin_delta_pp(quarters, "net_margin")
-
-
-def trailing_ttm_eps(quarters: list[dict]):
-    """Sum of EPS over the available quarters (up to 4 = TTM)."""
-    vals = [q["eps"] for q in quarters[:4] if q["eps"] is not None]
-    if not vals:
+def trailing_ttm_eps(series, period):
+    """Sum of single-quarter EPS over {period .. period-3}; None if any missing."""
+    vals = [_get(series, shift(period, k), "eps") for k in range(4)]
+    if any(v is None for v in vals):
         return None
     return sum(vals)
 
 
-def trailing_roe(quarters: list[dict]):
-    """TTM net income / average equity over the available quarters, as %."""
-    nets = [q["net_income"] for q in quarters[:4] if q["net_income"] is not None]
-    eqs = [q["total_equity"] for q in quarters[:4] if q["total_equity"] is not None]
-    if not nets or not eqs:
-        return None
-    ttm_net = sum(nets)
-    avg_eq = sum(eqs) / len(eqs)
-    if avg_eq == 0:
-        return None
-    return ttm_net / avg_eq * 100.0
+def pe_5y_median(annual_pe: list[tuple[int, float]], up_to_year: int):
+    """Median of annual P/E for years <= up_to_year (negatives included)."""
+    vals = [pe for (y, pe) in annual_pe if y <= up_to_year and pe is not None]
+    return median(vals) if vals else None
 
 
-def debt_to_equity(quarters: list[dict]):
-    """Latest-quarter financial debt / equity ratio."""
-    if not quarters:
-        return None
-    q = quarters[0]
-    debt, eq = q["total_debt"], q["total_equity"]
-    if debt is None or eq is None or eq == 0:
-        return None
-    return debt / eq
+def compute_metrics(series, period: str, price, annual_pe: list[tuple[int, float]]) -> dict:
+    """Raw metric values for one snapshot quarter `period`."""
+    # C1 / C2 / C3 — single-quarter EPS YoY over the last 3 quarters
+    g3 = []
+    for q in (period, shift(period, 1), shift(period, 2)):
+        g = _yoy_pct(series, "eps", q)
+        if g is not None:
+            g3.append(g)
+    c2 = (sum(g3) / len(g3)) if g3 else None
 
+    st = _get(series, period, "st_debt")
+    lt = _get(series, period, "lt_debt")
+    eq = _get(series, period, "total_equity")
+    debt = None
+    if st is not None or lt is not None:
+        debt = (st or 0.0) + (lt or 0.0)
+    de = (debt / eq) if (debt is not None and eq not in (None, 0)) else None
 
-def current_pe(ttm_eps, current_price):
-    """Current price / TTM EPS. None if TTM EPS is non-positive."""
-    if ttm_eps is None or ttm_eps <= 0 or current_price is None:
-        return None
-    return current_price / ttm_eps
+    roe = _get(series, period, "roe_ttm")
+    ttm_eps = trailing_ttm_eps(series, period)
+    current_pe = (price / ttm_eps) if (ttm_eps and ttm_eps > 0 and price) else None
+    med = pe_5y_median(annual_pe, period_year(period))
 
-
-def pe_4q_median(quarters: list[dict], qend_closes: dict):
-    """Median of annualized quarter-end P/Es.
-
-    For each quarter with eps > 0 and a known quarter-end close:
-        pe_q = close_at_qend / (eps_q * 4)   (annualize the single quarter)
-    Returns the median, or None if no quarter qualifies.
-
-    Note: this annualizes each single quarter, while `current_pe` uses true
-    TTM EPS. Both are annual-equivalent and thus comparable; the slight method
-    difference is acceptable for a v1 valuation baseline (see FA_FEATURE_PLAN.md).
-    """
-    pes = []
-    for q in quarters[:4]:
-        eps = q["eps"]
-        close = qend_closes.get(q["period"])
-        if eps is not None and eps > 0 and close is not None and close > 0:
-            pes.append(close / (eps * 4.0))
-    if not pes:
-        return None
-    return median(pes)
-
-
-def compute_metrics(quarters: list[dict], qend_closes: dict, current_price) -> dict:
-    """Bundle every raw metric the scorer needs into one dict."""
-    ttm_eps = trailing_ttm_eps(quarters)
     return {
-        "c1_eps_qoq": latest_eps_qoq(quarters),
-        "c2_eps_3q_avg": avg_eps_growth_3q(quarters),
-        "c3_eps_pos_count": eps_positive_count(quarters),
-        "c4_rev_qoq": revenue_qoq(quarters),
-        "c5_gross_margin_delta": gross_margin_delta(quarters),
-        "c6_net_margin_delta": net_margin_delta(quarters),
-        "c7_roe": trailing_roe(quarters),
-        "c8_debt_to_equity": debt_to_equity(quarters),
+        "c1_eps_yoy": _yoy_pct(series, "eps", period),
+        "c2_eps_3q_avg_yoy": c2,
+        "c3_eps_pos_count": sum(1 for g in g3 if g > 0),
+        "c4_rev_yoy": _yoy_pct(series, "revenue", period),
+        "c5_gross_margin_delta": _margin_delta_pp(series, "gross_margin", period),
+        "c6_net_margin_delta": _margin_delta_pp(series, "net_margin", period),
+        "c7_roe": (roe * 100.0) if roe is not None else None,
+        "c8_debt_to_equity": de,
         "current_eps_ttm": ttm_eps,
-        "current_price": current_price,
-        "current_pe": current_pe(ttm_eps, current_price),
-        "pe_4q_median": pe_4q_median(quarters, qend_closes),
+        "current_pe": current_pe,
+        "pe_5y_median": med,
+        "current_price": price,
     }

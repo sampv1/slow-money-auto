@@ -153,11 +153,14 @@ export default async function SymbolDrillDown({
     trendlines = (tlRaw ?? []) as typeof trendlines;
   }
 
-  // Fundamental-analysis snapshot (one row per symbol; may be absent).
+  // Fundamental-analysis snapshot — fa_scores has one row per quarter; show the
+  // latest. (May be absent for symbols without FA data.)
   const { data: faRow } = await supabase
     .from("fa_scores")
     .select("*")
     .eq("symbol", symbol)
+    .order("as_of_period", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   const latest = candles[candles.length - 1];

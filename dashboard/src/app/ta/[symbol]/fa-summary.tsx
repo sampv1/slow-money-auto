@@ -59,7 +59,7 @@ export function FaSummary({ row, locale }: { row: FaScore | null; locale: Locale
         <span>{t(locale, "faPrice")}: <span className="font-mono">{formatPrice(row.current_price)}</span></span>
         <span>{t(locale, "faEpsTtm")}: <span className="font-mono">{formatPrice(row.current_eps_ttm)}</span></span>
         <span>{t(locale, "faCurrentPe")}: <span className="font-mono">{num(row.current_pe, 1)}</span></span>
-        <span>{t(locale, "faPe4qMedian")}: <span className="font-mono">{num(row.pe_4q_median, 1)}</span></span>
+        <span>{t(locale, "faPe5yMedian")}: <span className="font-mono">{num(row.pe_5y_median, 1)}</span></span>
       </div>
     </section>
   );

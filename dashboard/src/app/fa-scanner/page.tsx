@@ -25,13 +25,50 @@ async function fetchAllPaged<T>(
   return { data: all, error: null };
 }
 
-export default async function FaScannerPage() {
+export default async function FaScannerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | undefined }>;
+}) {
   const locale = await getLocale();
+  const params = await searchParams;
+
+  // Distinct quarters (newest first) → dropdown options. Default = latest.
+  const { data: periodRows, error: periodErr } = await supabase
+    .from("fa_scores")
+    .select("as_of_period")
+    .order("as_of_period", { ascending: false });
+
+  if (periodErr) {
+    return <p className="text-red-600">Error loading FA scanner: {periodErr.message}</p>;
+  }
+
+  const quarters = Array.from(new Set((periodRows ?? []).map((r) => r.as_of_period as string)));
+  const selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
+
+  const header = (
+    <div className="mb-4">
+      <h1 className="text-xl font-semibold">{t(locale, "faScannerTitle")}</h1>
+      <p className="text-sm text-gray-500">{t(locale, "faScannerSubtitle")}</p>
+    </div>
+  );
+
+  if (!selected) {
+    return (
+      <div>
+        {header}
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+          {t(locale, "faNoData")}
+        </div>
+      </div>
+    );
+  }
 
   const { data: rows, error } = await fetchAllPaged<FaScore>((from, to) =>
     supabase
       .from("fa_scores")
       .select("*")
+      .eq("as_of_period", selected)
       .order("total_score", { ascending: false })
       .range(from, to),
   );
@@ -42,17 +79,8 @@ export default async function FaScannerPage() {
 
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold">{t(locale, "faScannerTitle")}</h1>
-        <p className="text-sm text-gray-500">{t(locale, "faScannerSubtitle")}</p>
-      </div>
-      {rows.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-          {t(locale, "faNoData")}
-        </div>
-      ) : (
-        <FaScannerClient rows={rows} locale={locale} />
-      )}
+      {header}
+      <FaScannerClient rows={rows} locale={locale} quarters={quarters} selectedQuarter={selected} />
     </div>
   );
 }

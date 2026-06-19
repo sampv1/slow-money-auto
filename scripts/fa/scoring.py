@@ -1,29 +1,19 @@
-"""9-criterion graduated scoring rubric for the FA Scanner.
+"""Config-driven 9-criterion scoring for the FA Scanner.
 
-Each criterion awards tiered points (typically 0 / 4 / 8 / 12; the debt
-criterion can award -4). Max total = 108. See FA_FEATURE_PLAN.md for the
-authoritative rubric.
+Tiers + rating bands come from `fa_scoring_config` (a JSON blob), so the rubric
+can be changed in the DB without code edits. See migration 014 for the shape.
 
-Boundary convention: tiers are interpreted as [low, high) — i.e. a value equal
-to a tier's lower bound falls into that tier. E.g. EPS growth of exactly 30%
-scores in the "30-60%" tier (8 pts).
-
-Growth metrics are QoQ in v1 (4-period data cap). C9 valuation compares the
-current P/E to a 4-quarter median P/E.
+Boundary convention for `tier_lt`: points[i] if value < bounds[i] (ascending),
+else points[-1]. So a value equal to a bound falls into the upper tier
+(e.g. EPS growth of exactly 30% → the 30–60% tier).
 """
 
 from dataclasses import dataclass, field
 
-# Rating bands on the 0..108 total (debt can push slightly negative).
-RATING_A_MIN = 60
-RATING_B_MIN = 30
-
-C9_NEUTRAL_PTS = 8  # awarded when the 4-quarter median P/E can't be computed
-
 
 @dataclass
 class ScoreResult:
-    criteria: dict = field(default_factory=dict)  # cN -> {"value": x, "pts": y}
+    criteria: dict = field(default_factory=dict)   # cN -> {"value", "pts"}
     total_score: int = 0
     rating: str = "UNRATED"
     notes: list = field(default_factory=list)
@@ -32,108 +22,76 @@ class ScoreResult:
         return self.criteria.get(key, {}).get("pts", 0)
 
 
-def _tiered(value, tiers, default_pts):
-    """Pick points for `value` from ascending (upper_bound, pts) tiers.
-
-    Each tier (ub, pts) matches when value < ub. The final tier should use
-    float('inf'). Returns default_pts if value is None.
-    """
+def _tier_lt(value, spec) -> int:
+    bounds, points = spec["bounds"], spec["points"]
     if value is None:
-        return default_pts
-    for upper, pts in tiers:
-        if value < upper:
-            return pts
-    return default_pts
-
-
-# Per-criterion tier tables (upper_bound, points), ascending.
-_C1 = [(20, 0), (30, 4), (60, 8), (float("inf"), 12)]
-_C2 = [(25, 0), (35, 4), (45, 8), (float("inf"), 12)]
-_C4 = [(10, 0), (15, 4), (20, 8), (float("inf"), 12)]
-_C5 = [(-5, 0), (0, 4), (10, 8), (float("inf"), 12)]   # pp change
-_C6 = [(-5, 0), (0, 4), (10, 8), (float("inf"), 12)]   # pp change
-_C7 = [(15, 0), (17, 4), (20, 8), (float("inf"), 12)]  # ROE %
-
-_C3_MAP = {0: 0, 1: 4, 2: 8, 3: 12}
-
-
-def _score_c3(count):
-    if count is None:
         return 0
-    return _C3_MAP.get(min(count, 3), 12)
+    for b, p in zip(bounds, points):
+        if value < b:
+            return p
+    return points[-1]
 
 
-def _score_c8(de):
-    """Debt/Equity: >1.5 -> -4, [0.8,1.5] -> 6, <0.8 -> 12."""
-    if de is None:
+def _count_map(value, spec) -> int:
+    if value is None:
         return 0
-    if de > 1.5:
-        return -4
-    if de >= 0.8:
-        return 6
-    return 12
+    m = spec["map"]
+    key = str(min(int(value), max(int(k) for k in m)))   # clamp to highest defined tier
+    return m.get(key, 0)
 
 
-def _score_c9(current_pe, pe_median, notes):
-    """P/E vs 4-quarter median: <=0.8x -> 12, >=1.2x -> 4, else 8."""
-    if current_pe is None or pe_median is None or pe_median <= 0:
-        notes.append("C9: 4Q median P/E unavailable — neutral 8")
-        return C9_NEUTRAL_PTS
-    if current_pe <= 0.8 * pe_median:
-        return 12
-    if current_pe >= 1.2 * pe_median:
-        return 4
-    return 8
+def _debt_equity(value, spec) -> int:
+    if value is None:
+        return 0
+    if value > spec["high"]:
+        return spec["points_high"]
+    if value >= spec["low"]:
+        return spec["points_mid"]
+    return spec["points_low"]
 
 
-def compute_score(metrics: dict, n_quarters: int) -> ScoreResult:
-    """Compute the graduated 9-criterion score from a metrics dict.
+def _pe_median(current_pe, median, spec, notes) -> int:
+    if current_pe is None or median is None or median <= 0 or current_pe <= 0:
+        notes.append("C14: P/E or 5-yr median unavailable — neutral")
+        return spec["points_neutral"]
+    if current_pe < spec["low_mult"] * median:
+        return spec["points_cheap"]
+    if current_pe > spec["high_mult"] * median:
+        return spec["points_expensive"]
+    return spec["points_neutral"]
 
-    `n_quarters` is how many quarterly statements were available — used to
-    flag UNRATED when there's too little data to score meaningfully.
-    """
+
+def compute_score(metrics: dict, config: dict, fully_scorable: bool) -> ScoreResult:
+    """Score one snapshot from a metrics dict + the active config."""
     res = ScoreResult()
+    crit = config["criteria"]
 
-    insufficient = n_quarters < 4
-    if insufficient:
-        res.notes.append(f"Insufficient quarterly history (n={n_quarters})")
-        # Still record whatever metrics we have, with their points, for transparency.
-
-    def record(key, value, pts):
+    def rec(key, value, pts):
         res.criteria[key] = {"value": value, "pts": pts}
 
-    record("c1", metrics.get("c1_eps_qoq"), _tiered(metrics.get("c1_eps_qoq"), _C1, 0))
-    record("c2", metrics.get("c2_eps_3q_avg"), _tiered(metrics.get("c2_eps_3q_avg"), _C2, 0))
-    record("c3", metrics.get("c3_eps_pos_count"), _score_c3(metrics.get("c3_eps_pos_count")))
-    record("c4", metrics.get("c4_rev_qoq"), _tiered(metrics.get("c4_rev_qoq"), _C4, 0))
-    record("c5", metrics.get("c5_gross_margin_delta"), _tiered(metrics.get("c5_gross_margin_delta"), _C5, 0))
-    record("c6", metrics.get("c6_net_margin_delta"), _tiered(metrics.get("c6_net_margin_delta"), _C6, 0))
-    record("c7", metrics.get("c7_roe"), _tiered(metrics.get("c7_roe"), _C7, 0))
-    record("c8", metrics.get("c8_debt_to_equity"), _score_c8(metrics.get("c8_debt_to_equity")))
-    record("c9", metrics.get("current_pe"), _score_c9(metrics.get("current_pe"), metrics.get("pe_4q_median"), res.notes))
+    rec("c1", metrics.get("c1_eps_yoy"), _tier_lt(metrics.get("c1_eps_yoy"), crit["c1"]))
+    rec("c2", metrics.get("c2_eps_3q_avg_yoy"), _tier_lt(metrics.get("c2_eps_3q_avg_yoy"), crit["c2"]))
+    rec("c3", metrics.get("c3_eps_pos_count"), _count_map(metrics.get("c3_eps_pos_count"), crit["c3"]))
+    rec("c4", metrics.get("c4_rev_yoy"), _tier_lt(metrics.get("c4_rev_yoy"), crit["c4"]))
+    rec("c5", metrics.get("c5_gross_margin_delta"), _tier_lt(metrics.get("c5_gross_margin_delta"), crit["c5"]))
+    rec("c6", metrics.get("c6_net_margin_delta"), _tier_lt(metrics.get("c6_net_margin_delta"), crit["c6"]))
+    rec("c7", metrics.get("c7_roe"), _tier_lt(metrics.get("c7_roe"), crit["c7"]))
+    rec("c8", metrics.get("c8_debt_to_equity"), _debt_equity(metrics.get("c8_debt_to_equity"), crit["c9"]))
+    rec("c9", metrics.get("current_pe"), _pe_median(metrics.get("current_pe"), metrics.get("pe_5y_median"), crit["c14"], res.notes))
 
     res.total_score = sum(c["pts"] for c in res.criteria.values())
 
-    # Banks / insurers use a different income-statement layout (no "Net sales"
-    # or "Gross Profit"), so none of the revenue-derived metrics can be read.
-    # The rubric's revenue/margin/debt thresholds are designed for non-financial
-    # companies and produce misleading results for them — mark UNRATED rather
-    # than pass off a partial, misleading grade.
-    revenue_metrics = [metrics.get(k) for k in (
-        "c4_rev_qoq", "c5_gross_margin_delta", "c6_net_margin_delta",
-    )]
-    no_usable_fundamentals = all(v is None for v in revenue_metrics)
-
-    if insufficient:
+    # UNRATED rules: too little history, or no operating data (banks/insurers
+    # lack revenue & margins → the rubric's revenue/margin thresholds mislead).
+    revenue_metrics = [metrics.get(k) for k in ("c4_rev_yoy", "c5_gross_margin_delta", "c6_net_margin_delta")]
+    if not fully_scorable:
         res.rating = "UNRATED"
-    elif no_usable_fundamentals:
+        res.notes.append("Insufficient quarterly history")
+    elif all(v is None for v in revenue_metrics):
         res.rating = "UNRATED"
         res.notes.append("No usable fundamentals (e.g. bank/financial statement format)")
-    elif res.total_score >= RATING_A_MIN:
-        res.rating = "A"
-    elif res.total_score >= RATING_B_MIN:
-        res.rating = "B"
     else:
-        res.rating = "C"
+        bands = config["rating"]
+        res.rating = "A" if res.total_score >= bands["A_min"] else ("B" if res.total_score >= bands["B_min"] else "C")
 
     return res
