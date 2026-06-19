@@ -78,7 +78,12 @@ export function FaSummary({
       {/* Valuation line */}
       <div className="mt-3 text-sm text-gray-600 flex flex-wrap gap-x-6 gap-y-1">
         <span className="font-medium text-gray-500">{t(locale, "faValuationLine")}:</span>
-        <span>{t(locale, "faPrice")}: <span className="font-mono">{formatPrice(row.current_price)}</span></span>
+        <span>
+          {t(locale, "faPrice")}: <span className="font-mono">{formatPrice(row.current_price)}</span>
+          {row.current_price_date && (
+            <span className="text-gray-400"> ({t(locale, "faCloseOn")} {row.current_price_date})</span>
+          )}
+        </span>
         <span>{t(locale, "faEpsTtm")}: <span className="font-mono">{formatPrice(row.current_eps_ttm)}</span></span>
         <span>{t(locale, "faCurrentPe")}: <span className="font-mono">{num(row.current_pe, 1)}</span></span>
         <span>{t(locale, "faPe5yMedian")}: <span className="font-mono">{num(row.pe_5y_median, 1)}</span></span>
