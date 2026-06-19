@@ -34,16 +34,23 @@ export default async function FaScannerPage({
   const params = await searchParams;
 
   // Distinct quarters (newest first) → dropdown options. Default = latest.
-  const { data: periodRows, error: periodErr } = await supabase
-    .from("fa_scores")
-    .select("as_of_period")
-    .order("as_of_period", { ascending: false });
+  // Must page: there are >1000 rows per quarter, so a single un-paged query
+  // (capped at 1000) would only ever see the newest quarter.
+  const { data: periodRows, error: periodErr } = await fetchAllPaged<{ as_of_period: string }>(
+    (from, to) =>
+      supabase
+        .from("fa_scores")
+        .select("as_of_period")
+        .order("as_of_period", { ascending: false })
+        .range(from, to),
+  );
 
   if (periodErr) {
     return <p className="text-red-600">Error loading FA scanner: {periodErr.message}</p>;
   }
 
-  const quarters = Array.from(new Set((periodRows ?? []).map((r) => r.as_of_period as string)));
+  // Paged in descending order, so Set insertion order is already newest-first.
+  const quarters = Array.from(new Set((periodRows ?? []).map((r) => r.as_of_period)));
   const selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
 
   const header = (
