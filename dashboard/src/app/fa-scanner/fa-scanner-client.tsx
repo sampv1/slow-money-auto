@@ -180,7 +180,7 @@ export function FaScannerClient({
                 return (
                   <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">
-                      <Link href={`/ta/${row.symbol}`} className="text-blue-600 hover:underline">
+                      <Link href={`/analysis/${row.symbol}`} className="text-blue-600 hover:underline">
                         {row.symbol}
                       </Link>
                     </td>

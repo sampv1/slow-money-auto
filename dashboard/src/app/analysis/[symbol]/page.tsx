@@ -23,10 +23,10 @@ export default async function SymbolDrillDown({
   searchParams,
 }: {
   params: Promise<{ symbol: string }>;
-  searchParams: Promise<{ ind?: string }>;
+  searchParams: Promise<{ ind?: string; fq?: string }>;
 }) {
   const { symbol: raw } = await params;
-  const { ind } = await searchParams;
+  const { ind, fq } = await searchParams;
   const symbol = raw.toUpperCase();
   const locale = await getLocale();
   const explicitSelection = ind !== undefined;
@@ -75,7 +75,7 @@ export default async function SymbolDrillDown({
   if (candles.length === 0) {
     return (
       <div>
-        <Link href="/ta" className="text-sm text-gray-500 hover:text-gray-900">
+        <Link href="/analysis" className="text-sm text-gray-500 hover:text-gray-900">
           ← {t(locale, "taBackToTA")}
         </Link>
         <h1 className="text-xl font-semibold mt-2 mb-4">{symbol}</h1>
@@ -153,15 +153,25 @@ export default async function SymbolDrillDown({
     trendlines = (tlRaw ?? []) as typeof trendlines;
   }
 
-  // Fundamental-analysis snapshot — fa_scores has one row per quarter; show the
-  // latest. (May be absent for symbols without FA data.)
-  const { data: faRow } = await supabase
+  // Fundamental-analysis snapshots — fa_scores has one row per quarter.
+  // List the quarters for the dropdown and show the selected one (default = latest).
+  const { data: faPeriodRows } = await supabase
     .from("fa_scores")
-    .select("*")
+    .select("as_of_period")
     .eq("symbol", symbol)
-    .order("as_of_period", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("as_of_period", { ascending: false });
+  const faQuarters = (faPeriodRows ?? []).map((r) => r.as_of_period as string);
+  const selectedFq = fq && faQuarters.includes(fq) ? fq : faQuarters[0];
+  let faRow: FaScore | null = null;
+  if (selectedFq) {
+    const { data } = await supabase
+      .from("fa_scores")
+      .select("*")
+      .eq("symbol", symbol)
+      .eq("as_of_period", selectedFq)
+      .maybeSingle();
+    faRow = (data as FaScore | null) ?? null;
+  }
 
   const latest = candles[candles.length - 1];
   const prev = candles.length > 1 ? candles[candles.length - 2] : null;
@@ -170,7 +180,7 @@ export default async function SymbolDrillDown({
 
   return (
     <div>
-      <Link href="/ta" className="text-sm text-gray-500 hover:text-gray-900">
+      <Link href="/analysis" className="text-sm text-gray-500 hover:text-gray-900">
         ← {t(locale, "taBackToTA")}
       </Link>
 
@@ -192,12 +202,16 @@ export default async function SymbolDrillDown({
         </div>
       </div>
 
+      <h2 className="text-lg font-semibold border-b border-gray-200 pb-1 mb-3">
+        {t(locale, "taSection")}
+      </h2>
+
       <div className="bg-white rounded-lg border border-gray-200 p-2">
         <ChartClient symbol={symbol} candles={candles} selected={selected} chartSignals={chartSignals} srLevels={srLevels} trendlines={trendlines} locale={locale} />
       </div>
 
       <section className="mt-6">
-        <h2 className="font-medium mb-2">{t(locale, "taRecentSignals")}</h2>
+        <h3 className="font-medium mb-2">{t(locale, "taRecentSignals")}</h3>
         {signals.length === 0 ? (
           <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
             {t(locale, "taNoRecentSignals")}
@@ -252,7 +266,7 @@ export default async function SymbolDrillDown({
         )}
       </section>
 
-      <FaSummary row={(faRow as FaScore | null) ?? null} locale={locale} />
+      <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
     </div>
   );
 }

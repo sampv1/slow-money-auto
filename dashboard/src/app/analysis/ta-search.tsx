@@ -28,7 +28,7 @@ export function TaSearch({
 
   function go(sym: string) {
     if (!sym) return;
-    router.push(`/ta/${encodeURIComponent(sym.toUpperCase())}`);
+    router.push(`/analysis/${encodeURIComponent(sym.toUpperCase())}`);
   }
 
   function onSubmit(e: React.FormEvent) {

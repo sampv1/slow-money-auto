@@ -2,7 +2,7 @@ import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, criterionRows, pointsColor } from "@/lib/fa";
 
 // Shared 9-criterion breakdown table. Server-component friendly (no client
-// hooks) so it can be rendered from both /fa-scanner and /ta/[symbol].
+// hooks) so it can be rendered from both /fa-scanner and /analysis/[symbol].
 export function FaBreakdownTable({ row, locale }: { row: FaScore; locale: Locale }) {
   const rows = criterionRows(row, locale);
   return (

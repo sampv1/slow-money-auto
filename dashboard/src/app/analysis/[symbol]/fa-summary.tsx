@@ -2,14 +2,32 @@ import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, FA_MAX_SCORE, ratingBadge } from "@/lib/fa";
 import { formatPrice } from "@/lib/format";
 import { FaBreakdownTable } from "@/components/fa-breakdown-table";
+import { FaQuarterSelect } from "./fa-quarter-select";
 
-// Fundamental-analysis panel shown on the Stock Analysis (/ta/[symbol]) page,
-// below the chart + signals. Server component (no client hooks).
-export function FaSummary({ row, locale }: { row: FaScore | null; locale: Locale }) {
+// Fundamental-analysis panel shown on the Analysis (/analysis/[symbol]) page,
+// below the Technical Analysis part. Server component; the quarter picker is a
+// small client sub-component.
+export function FaSummary({
+  row,
+  locale,
+  quarters,
+  selectedQuarter,
+}: {
+  row: FaScore | null;
+  locale: Locale;
+  quarters: string[];
+  selectedQuarter: string | null;
+}) {
+  const heading = (
+    <h2 className="text-lg font-semibold border-b border-gray-200 pb-1 mb-3">
+      {t(locale, "faSection")}
+    </h2>
+  );
+
   if (!row) {
     return (
       <section className="mt-6">
-        <h2 className="font-medium mb-2">{t(locale, "faSection")}</h2>
+        {heading}
         <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
           {t(locale, "faNoData")}
         </div>
@@ -27,7 +45,7 @@ export function FaSummary({ row, locale }: { row: FaScore | null; locale: Locale
 
   return (
     <section className="mt-6">
-      <h2 className="font-medium mb-2">{t(locale, "faSection")}</h2>
+      {heading}
 
       {/* Score header */}
       <div className="bg-white rounded-lg border border-gray-200 p-4 mb-3">
@@ -41,9 +59,13 @@ export function FaSummary({ row, locale }: { row: FaScore | null; locale: Locale
               {badge.label}
             </span>
           </div>
-          <div className="text-xs text-gray-500">
-            {t(locale, "faAsOf")} {row.as_of_period}
-          </div>
+          {quarters.length > 0 && selectedQuarter ? (
+            <FaQuarterSelect quarters={quarters} selected={selectedQuarter} label={t(locale, "faAsOf")} />
+          ) : (
+            <div className="text-xs text-gray-500">
+              {t(locale, "faAsOf")} {row.as_of_period}
+            </div>
+          )}
         </div>
         {unrated && (
           <p className="text-xs text-amber-600 mt-2">{t(locale, "faUnrated")}</p>

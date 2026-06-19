@@ -10,7 +10,7 @@ export const translations = {
     navLogs: "Daily Logs",
     navStats: "Stats",
     navInput: "Input",
-    navStockAnalysis: "Stock Analysis",
+    navStockAnalysis: "Analysis",
     navScanner: "TA Scanner",
     navFAScanner: "FA Scanner",
     navRealtime: "Real-time",
@@ -23,7 +23,7 @@ export const translations = {
     taSymbolNoSuggestion: "No matching symbol in the active universe.",
     taSearchHint: "Tip: use ↑/↓ to pick a suggestion, Enter to open.",
     taLatestIndicatorsSubtitle: "Daily candlestick chart with the most recently triggered indicators highlighted.",
-    taBackToTA: "Back to Stock Analysis",
+    taBackToTA: "Back to Analysis",
 
     // FA Scanner page + fundamental-analysis panel
     faScannerTitle: "FA Scanner",
@@ -44,6 +44,7 @@ export const translations = {
     faNoData: "No fundamental data available.",
     faNoRows: "No stocks match the current filters.",
     faSection: "Fundamental Analysis",
+    taSection: "Technical Analysis",
     faBreakdownCriterion: "Criterion",
     faBreakdownValue: "Value",
     faBreakdownPoints: "Pts",
@@ -336,7 +337,7 @@ export const translations = {
     navLogs: "Nhật ký",
     navStats: "Thống kê",
     navInput: "Nhập liệu",
-    navStockAnalysis: "Phân tích cổ phiếu",
+    navStockAnalysis: "Phân tích",
     navScanner: "Lọc kỹ thuật",
     navFAScanner: "Lọc cơ bản",
     navRealtime: "Thời gian thực",
@@ -349,7 +350,7 @@ export const translations = {
     taSymbolNoSuggestion: "Không có mã nào khớp trong danh mục.",
     taSearchHint: "Mẹo: dùng ↑/↓ để chọn gợi ý, Enter để mở.",
     taLatestIndicatorsSubtitle: "Biểu đồ nến hàng ngày — đánh dấu các chỉ báo vừa kích hoạt gần nhất.",
-    taBackToTA: "Quay lại Phân tích cổ phiếu",
+    taBackToTA: "Quay lại Phân tích",
 
     // FA Scanner page + fundamental-analysis panel
     faScannerTitle: "Lọc cơ bản",
@@ -370,6 +371,7 @@ export const translations = {
     faNoData: "Chưa có dữ liệu cơ bản.",
     faNoRows: "Không có cổ phiếu nào khớp bộ lọc.",
     faSection: "Phân tích cơ bản",
+    taSection: "Phân tích kỹ thuật",
     faBreakdownCriterion: "Tiêu chí",
     faBreakdownValue: "Giá trị",
     faBreakdownPoints: "Điểm",
