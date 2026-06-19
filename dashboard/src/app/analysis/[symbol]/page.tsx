@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { getLocale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
@@ -75,10 +74,7 @@ export default async function SymbolDrillDown({
   if (candles.length === 0) {
     return (
       <div>
-        <Link href="/analysis" className="text-sm text-gray-500 hover:text-gray-900">
-          ← {t(locale, "taBackToTA")}
-        </Link>
-        <h1 className="text-xl font-semibold mt-2 mb-4">{symbol}</h1>
+        <h1 className="text-xl font-semibold mb-4">{symbol}</h1>
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           {t(locale, "taSymbolNotFound")}
         </div>
@@ -180,16 +176,9 @@ export default async function SymbolDrillDown({
 
   return (
     <div>
-      <Link href="/analysis" className="text-sm text-gray-500 hover:text-gray-900">
-        ← {t(locale, "taBackToTA")}
-      </Link>
-
-      <div className="flex items-baseline justify-between mt-2 mb-4">
+      <div className="flex items-baseline justify-between mb-4">
         <div>
           <h1 className="text-2xl font-semibold">{symbol}</h1>
-          <p className="text-sm text-gray-500">
-            {explicitSelection ? t(locale, "taPriceChart") : t(locale, "taLatestIndicatorsSubtitle")}
-          </p>
         </div>
         <div className="text-right">
           <div className="text-xl font-mono">{formatPrice(latest.close)}</div>

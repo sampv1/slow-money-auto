@@ -16,7 +16,7 @@ export const translations = {
     navRealtime: "Real-time",
 
     // TA page (single-symbol drill-down entry)
-    taSearchSubtitle: "Enter a stock symbol to view its technical-analysis chart.",
+    taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
     taSymbolLabel: "Symbol",
     taSymbolPlaceholder: "e.g. FPT",
     taSearchButton: "View",
@@ -343,7 +343,7 @@ export const translations = {
     navRealtime: "Thời gian thực",
 
     // TA page (single-symbol drill-down entry)
-    taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ phân tích kỹ thuật.",
+    taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",
     taSymbolLabel: "Mã cổ phiếu",
     taSymbolPlaceholder: "VD: FPT",
     taSearchButton: "Xem",
