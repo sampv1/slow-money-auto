@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ta.benchmark import fetch_vnindex_closes
-from ta.common import REQUEST_DELAY, get_supabase_client, today_vn
+from ta.common import REQUEST_DELAY, get_supabase_client, safe_execute, today_vn
 from ta.ohlcv import fetch_today_snapshot, upsert_ohlcv
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
@@ -156,7 +156,10 @@ def main():
                 upsert_levels(client, symbol, levels)
                 upsert_trendlines(client, symbol, lines)
                 if avg_vol_20d is not None:
-                    client.table("ta_universe").update({"avg_volume_20d": avg_vol_20d}).eq("symbol", symbol).execute()
+                    safe_execute(
+                        client.table("ta_universe").update({"avg_volume_20d": avg_vol_20d}).eq("symbol", symbol),
+                        label=f"avg_vol {symbol}",
+                    )
 
             rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines, benchmark=benchmark)
             rows = filter_dates(rows, since=None, latest_only=True, ohlcv=ohlcv)

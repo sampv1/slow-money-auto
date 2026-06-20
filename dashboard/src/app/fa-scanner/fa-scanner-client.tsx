@@ -45,7 +45,7 @@ export function FaScannerClient({
   const router = useRouter();
   const [rating, setRating] = useState<RatingFilter>("all");
   const [minScore, setMinScore] = useState<string>("");
-  const [minAvgVolume, setMinAvgVolume] = useState<string>(String(DEFAULT_MIN_AVG_VOLUME_20D));
+  const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("total_score");
   const [sortAsc, setSortAsc] = useState(false);
@@ -58,17 +58,16 @@ export function FaScannerClient({
 
   const filtered = useMemo(() => {
     const min = minScore.trim() === "" ? null : Number(minScore);
-    const minVol = minAvgVolume.trim() === "" ? 0 : Number(minAvgVolume);
     const q = search.trim().toUpperCase();
     const out = rows.filter((r) => {
       if (!passesRating(r.rating, rating)) return false;
       if (min !== null && !Number.isNaN(min) && r.total_score < min) return false;
       // Liquidity filter: drop symbols whose 20-session avg volume is below the
       // threshold (or NULL = unknown), matching the TA scanner.
-      if (!Number.isNaN(minVol) && minVol > 0) {
+      if (minAvgVolume > 0) {
         const avgVol = avgVolBySymbol.get(r.symbol);
         if (avgVol === null || avgVol === undefined) return false;
-        if (avgVol < minVol) return false;
+        if (avgVol < minAvgVolume) return false;
       }
       if (q && !r.symbol.toUpperCase().includes(q)) return false;
       return true;
@@ -114,6 +113,35 @@ export function FaScannerClient({
 
   return (
     <div>
+      {/* Liquidity filter — its own bar at the top, matching the TA scanner. */}
+      <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
+        <label htmlFor="fa-min-avg-vol" className="text-sm text-gray-700">
+          {t(locale, "taMinAvgVolume")}
+        </label>
+        <input
+          id="fa-min-avg-vol"
+          type="number"
+          min={0}
+          step={50000}
+          value={Number.isFinite(minAvgVolume) ? minAvgVolume : 0}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            setMinAvgVolume(Number.isFinite(n) && n >= 0 ? n : 0);
+          }}
+          className="w-32 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+        />
+        <span className="text-xs text-gray-500">{t(locale, "taMinAvgVolumeHint")}</span>
+        {minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D && (
+          <button
+            type="button"
+            onClick={() => setMinAvgVolume(DEFAULT_MIN_AVG_VOLUME_20D)}
+            className="text-xs text-gray-500 hover:text-gray-900 ml-auto"
+          >
+            {t(locale, "reset")}
+          </button>
+        )}
+      </div>
+
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-4 mb-3">
         <label className="text-sm">
@@ -149,16 +177,6 @@ export function FaScannerClient({
             onChange={(e) => setMinScore(e.target.value)}
             placeholder="0"
             className="border border-gray-300 rounded px-2 py-1 w-24"
-          />
-        </label>
-        <label className="text-sm">
-          <span className="block text-gray-500 mb-1">{t(locale, "faMinAvgVolume")}</span>
-          <input
-            type="number"
-            value={minAvgVolume}
-            onChange={(e) => setMinAvgVolume(e.target.value)}
-            placeholder="0"
-            className="border border-gray-300 rounded px-2 py-1 w-32"
           />
         </label>
         <label className="text-sm flex-1 min-w-[160px]">
