@@ -118,16 +118,150 @@ def upsert_symbols_with_exchanges(client, items: list[tuple[str, str]]) -> int:
     return len(rows)
 
 
+# Normalize vnstock exchange codes to the labels stored in ta_universe.
+_EXCHANGE_NORM = {"HSX": "HOSE", "HOSE": "HOSE", "HNX": "HNX", "UPCOM": "UPCOM", "UPCo M": "UPCOM"}
+
+
+def _paged_symbols(client, table: str, column: str = "symbol") -> set[str]:
+    """Return the distinct set of values of `column` from `table`, paging past
+    the PostgREST 1000-row cap."""
+    out: set[str] = set()
+    offset = 0
+    page = 1000
+    while True:
+        rows = (
+            client.table(table)
+            .select(column)
+            .range(offset, offset + page - 1)
+            .execute()
+            .data
+        )
+        for r in rows:
+            v = r.get(column)
+            if v:
+                out.add(str(v).upper())
+        if len(rows) < page:
+            break
+        offset += page
+    return out
+
+
+def fetch_fa_symbols(client) -> set[str]:
+    """The symbol set the FA scanner covers (distinct symbols in fa_scores)."""
+    return _paged_symbols(client, "fa_scores", "symbol")
+
+
+def _resolve_exchanges(symbols: list[str]) -> dict[str, str]:
+    """Look up the exchange for each symbol via a bulk price_board snapshot.
+    Returns {symbol: exchange}; symbols not resolved are simply omitted."""
+    if not symbols:
+        return {}
+    from .ohlcv import _make_trading, PRICE_BOARD_CHUNK
+
+    trading = _make_trading()
+    out: dict[str, str] = {}
+    for start in range(0, len(symbols), PRICE_BOARD_CHUNK):
+        chunk = symbols[start:start + PRICE_BOARD_CHUNK]
+        try:
+            df = trading.price_board(chunk)
+        except Exception as e:
+            print(f"  exchange lookup chunk failed: {str(e)[:120]}")
+            continue
+        if df is None or df.empty:
+            continue
+        listing = df["listing"]
+        for i in range(len(df)):
+            sym = str(listing["symbol"].iloc[i]).upper()
+            exch = str(listing["exchange"].iloc[i])
+            out[sym] = _EXCHANGE_NORM.get(exch, exch)
+    return out
+
+
+def align_universe_to_fa(client) -> dict:
+    """Make the active ta_universe equal the FA-scanner universe.
+
+    - Every FA symbol is upserted with is_active=true (reactivating any that the
+      liquidity filter previously deactivated). New symbols get their exchange
+      resolved via price_board.
+    - Symbols in ta_universe that are NOT in the FA set are deactivated, so the
+      two scanners cover exactly the same names.
+
+    Returns a stats dict.
+    """
+    fa_syms = fetch_fa_symbols(client)
+    if not fa_syms:
+        return {"fa_symbols": 0, "activated": 0, "deactivated": 0, "new": 0}
+
+    # Existing rows: symbol -> exchange.
+    existing: dict[str, str] = {}
+    offset, page = 0, 1000
+    while True:
+        rows = (
+            client.table("ta_universe")
+            .select("symbol,exchange")
+            .range(offset, offset + page - 1)
+            .execute()
+            .data
+        )
+        for r in rows:
+            existing[str(r["symbol"]).upper()] = r.get("exchange") or "HOSE"
+        if len(rows) < page:
+            break
+        offset += page
+
+    new_syms = sorted(fa_syms - set(existing))
+    resolved = _resolve_exchanges(new_syms) if new_syms else {}
+
+    # Upsert all FA symbols as active.
+    rows = [
+        {
+            "symbol": s,
+            "exchange": existing.get(s) or resolved.get(s) or "HOSE",
+            "is_active": True,
+        }
+        for s in sorted(fa_syms)
+    ]
+    chunk = 500
+    for i in range(0, len(rows), chunk):
+        client.table("ta_universe").upsert(rows[i:i + chunk], on_conflict="symbol").execute()
+
+    # Deactivate everything not in the FA set.
+    to_deactivate = sorted(set(existing) - fa_syms)
+    for i in range(0, len(to_deactivate), chunk):
+        batch = to_deactivate[i:i + chunk]
+        client.table("ta_universe").update({"is_active": False}).in_("symbol", batch).execute()
+
+    return {
+        "fa_symbols": len(fa_syms),
+        "activated": len(rows),
+        "deactivated": len(to_deactivate),
+        "new": len(new_syms),
+    }
+
+
 def get_active_symbols(client) -> list[str]:
-    """Return the list of symbols where is_active = true, sorted alphabetically."""
-    result = (
-        client.table("ta_universe")
-        .select("symbol")
-        .eq("is_active", True)
-        .order("symbol")
-        .execute()
-    )
-    return [r["symbol"] for r in result.data]
+    """Return the list of symbols where is_active = true, sorted alphabetically.
+
+    Pages past the PostgREST 1000-row cap — the active universe is now ~1,568,
+    so an un-paged query would silently process only the first 1,000 symbols.
+    """
+    out: list[str] = []
+    offset, page = 0, 1000
+    while True:
+        rows = (
+            client.table("ta_universe")
+            .select("symbol")
+            .eq("is_active", True)
+            .order("symbol")
+            .range(offset, offset + page - 1)
+            .execute()
+            .data
+        )
+        out.extend(r["symbol"] for r in rows)
+        if len(rows) < page:
+            break
+        offset += page
+    return out
 
 
 def apply_liquidity_filter(

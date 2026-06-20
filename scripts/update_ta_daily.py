@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ta.benchmark import fetch_vnindex_closes
 from ta.common import REQUEST_DELAY, get_supabase_client, today_vn
-from ta.ohlcv import backfill_symbols
+from ta.ohlcv import fetch_today_snapshot, upsert_ohlcv
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
 from ta.universe import get_active_symbols
@@ -62,8 +62,8 @@ from compute_ta_signals import (  # noqa: E402
 
 def main():
     parser = argparse.ArgumentParser(description="Daily incremental TA update (OHLCV + signals)")
-    parser.add_argument("--ohlcv-days", type=int, default=10, help="OHLCV lookback days (default 10 — provides self-healing if a previous day failed)")
-    parser.add_argument("--delay", type=float, default=REQUEST_DELAY, help=f"vnstock request delay (default {REQUEST_DELAY}s)")
+    parser.add_argument("--ohlcv-days", type=int, default=10, help="[legacy] Ignored — the daily path now uses a single price_board snapshot (today only). Use backfill_ta_ohlcv.py to repair multi-day gaps.")
+    parser.add_argument("--delay", type=float, default=REQUEST_DELAY, help="[legacy] Ignored by the bulk snapshot path.")
     parser.add_argument("--dry-run", action="store_true", help="Compute and report, don't write to DB")
     args = parser.parse_args()
 
@@ -85,39 +85,34 @@ def main():
     ohlcv_total = 0
     failed_first_pass: list[str] = []
     final_failed: list[str] = []
+    # Bulk snapshot path: vnstock price_board returns today's full OHLCV bar for
+    # the whole universe in a few requests (~600 symbols/call). It only ever
+    # returns the latest session, so the today-only guard (expected_date) ensures
+    # a stale snapshot — run on a holiday or before today's close is published —
+    # is never written as a new bar. Multi-day gaps (a fully missed cron) are
+    # repaired with `backfill_ta_ohlcv.py`, not here.
     recovered_count = 0
     if args.dry_run:
-        print(f"(dry-run) would fetch {args.ohlcv_days} days for {len(symbols)} symbols")
+        print(f"(dry-run) would fetch today's ({today_str}) snapshot for {len(symbols)} symbols")
     else:
         t0 = time.time()
-        results = backfill_symbols(client, symbols, days=args.ohlcv_days, delay=args.delay)
-        ohlcv_total = sum(results.values())
-        ohlcv_ok = sum(1 for n in results.values() if n > 0)
-        first_pass_elapsed = time.time() - t0
-        print(f"OHLCV pass 1: {ohlcv_ok}/{len(symbols)} symbols ok, {ohlcv_total:,} rows in {first_pass_elapsed:.1f}s")
+        rows, snap_stats = fetch_today_snapshot(symbols, expected_date=today_str)
+        # Chunked upsert keeps payloads well under PostgREST limits.
+        for j in range(0, len(rows), 500):
+            upsert_ohlcv(client, rows[j:j + 500])
+        ohlcv_total = len(rows)
+        written_syms = {r["symbol"] for r in rows}
+        ohlcv_ok = len(written_syms)
+        print(f"OHLCV snapshot: {ohlcv_ok}/{len(symbols)} symbols, {ohlcv_total:,} rows in {time.time()-t0:.1f}s "
+              f"(no-price today: {snap_stats['skipped_no_price']}, stale skipped: {snap_stats['skipped_stale']})")
+        if snap_stats["skipped_stale"]:
+            print(f"  NOTE: snapshot trading_date(s) {sorted(snap_stats['stale_dates'])} != {today_str} "
+                  f"— likely a non-trading day or close not yet published; those rows were NOT written.")
 
-        failed_first_pass = [s for s, n in results.items() if n == 0]
-        if failed_first_pass:
-            # Reconciliation pass — re-fetch failed symbols with a longer per-
-            # request delay so vnstock's rate-limit window has time to recover
-            # from whatever caused the first-pass failures.
-            recon_delay = max(args.delay * 2.0, 8.0)
-            print(f"\n--- Step 1b: reconciliation for {len(failed_first_pass)} failed symbols (delay {recon_delay:.1f}s) ---")
-            t1 = time.time()
-            recon_results = backfill_symbols(client, failed_first_pass, days=args.ohlcv_days, delay=recon_delay)
-            for s, n in recon_results.items():
-                if n > 0:
-                    results[s] = n
-                    recovered_count += 1
-            ohlcv_total = sum(results.values())
-            ohlcv_ok = sum(1 for n in results.values() if n > 0)
-            print(f"Reconciliation: recovered {recovered_count}/{len(failed_first_pass)} in {time.time()-t1:.1f}s")
-
-        final_failed = [s for s, n in results.items() if n == 0]
-        if final_failed:
-            print(f"Still failed after reconciliation ({len(final_failed)}): {', '.join(final_failed)}")
-        else:
-            print(f"All {len(symbols)} symbols ok after pass 1 + reconciliation.")
+        # Symbols with no fresh bar today (halted / untraded / stale). Not a
+        # hard failure, but surfaced in the summary for visibility.
+        failed_first_pass = [s for s in symbols if s not in written_syms]
+        final_failed = failed_first_pass
 
     # Step 2: compute signals (latest date only) and log to ta_runs
     print(f"\n--- Step 2: compute signals (latest date) ---")
@@ -188,16 +183,13 @@ def main():
             "",
             f"- **Trading date**: {today_str}",
             f"- **Universe size**: {len(symbols)}",
-            f"- **OHLCV pass 1**: {len(symbols) - len(failed_first_pass)}/{len(symbols)} ok",
+            f"- **OHLCV snapshot**: {ohlcv_ok}/{len(symbols)} symbols ({ohlcv_total:,} rows)",
         ]
-        if failed_first_pass:
-            summary_lines.append(f"- **Reconciliation recovered**: {recovered_count}/{len(failed_first_pass)}")
-        summary_lines.append(f"- **OHLCV final**: {ohlcv_ok}/{len(symbols)} ok ({ohlcv_total:,} rows)")
         summary_lines.append(f"- **Signals written**: {total_signals:,} ({triggered_total} triggered)")
         if final_failed:
             shown = ", ".join(final_failed[:25])
             more = f" (+{len(final_failed) - 25} more)" if len(final_failed) > 25 else ""
-            summary_lines.append(f"- **Still failed**: {shown}{more}")
+            summary_lines.append(f"- **No fresh bar today**: {len(final_failed)} — {shown}{more}")
         summary_lines.append("")
         write_job_summary("\n".join(summary_lines))
 

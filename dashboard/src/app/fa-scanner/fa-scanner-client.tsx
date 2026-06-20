@@ -9,6 +9,8 @@ import { type FaScore, FA_MAX_SCORE, ratingBadge } from "@/lib/fa";
 type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "total_score" | "c7_roe" | "c8_debt_to_equity" | "current_pe" | "symbol";
 
+const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
+
 function passesRating(rating: string, filter: RatingFilter): boolean {
   switch (filter) {
     case "A":
@@ -29,11 +31,13 @@ function fmt(v: number | null, digits = 2): string {
 
 export function FaScannerClient({
   rows,
+  universe,
   locale,
   quarters,
   selectedQuarter,
 }: {
   rows: FaScore[];
+  universe: { symbol: string; avg_volume_20d: number | null }[];
   locale: Locale;
   quarters: string[];
   selectedQuarter: string;
@@ -41,16 +45,31 @@ export function FaScannerClient({
   const router = useRouter();
   const [rating, setRating] = useState<RatingFilter>("all");
   const [minScore, setMinScore] = useState<string>("");
+  const [minAvgVolume, setMinAvgVolume] = useState<string>(String(DEFAULT_MIN_AVG_VOLUME_20D));
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("total_score");
   const [sortAsc, setSortAsc] = useState(false);
 
+  const avgVolBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const u of universe) m.set(u.symbol, u.avg_volume_20d);
+    return m;
+  }, [universe]);
+
   const filtered = useMemo(() => {
     const min = minScore.trim() === "" ? null : Number(minScore);
+    const minVol = minAvgVolume.trim() === "" ? 0 : Number(minAvgVolume);
     const q = search.trim().toUpperCase();
     const out = rows.filter((r) => {
       if (!passesRating(r.rating, rating)) return false;
       if (min !== null && !Number.isNaN(min) && r.total_score < min) return false;
+      // Liquidity filter: drop symbols whose 20-session avg volume is below the
+      // threshold (or NULL = unknown), matching the TA scanner.
+      if (!Number.isNaN(minVol) && minVol > 0) {
+        const avgVol = avgVolBySymbol.get(r.symbol);
+        if (avgVol === null || avgVol === undefined) return false;
+        if (avgVol < minVol) return false;
+      }
       if (q && !r.symbol.toUpperCase().includes(q)) return false;
       return true;
     });
@@ -76,7 +95,7 @@ export function FaScannerClient({
       return 0;
     });
     return out;
-  }, [rows, rating, minScore, search, sortKey, sortAsc]);
+  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, search, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -130,6 +149,16 @@ export function FaScannerClient({
             onChange={(e) => setMinScore(e.target.value)}
             placeholder="0"
             className="border border-gray-300 rounded px-2 py-1 w-24"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="block text-gray-500 mb-1">{t(locale, "faMinAvgVolume")}</span>
+          <input
+            type="number"
+            value={minAvgVolume}
+            onChange={(e) => setMinAvgVolume(e.target.value)}
+            placeholder="0"
+            className="border border-gray-300 rounded px-2 py-1 w-32"
           />
         </label>
         <label className="text-sm flex-1 min-w-[160px]">

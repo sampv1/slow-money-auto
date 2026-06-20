@@ -215,14 +215,34 @@ scripts/
   `--backfill` (all eligible quarters) vs default daily mode (**latest quarter only**, live price);
   `--symbols`, `--inspect`, `--dry-run`. Reuse `scripts/ta/common.py`.
 
-## 4. Coverage & price expansion (confirmed)
+## 4. Coverage & TA↔FA universe alignment (IMPLEMENTED 2026-06-20)
 
-- `fa_quarterly`/`fa_scores` cover all 1,597 FiinProX symbols.
-- C14 needs a live price; **`ta_ohlcv` will be expanded to cover all FiinProX symbols** (user
-  confirmed) so valuation works universe-wide. This means widening `ta_universe` / the OHLCV
-  backfill+daily refresh to the full FiinProX symbol list. (Scope/impact on the TA pipeline to be
-  detailed at implementation; it also benefits the TA scanner.) Until expanded, symbols without a
-  price get `current_pe` null → C14 neutral 8.
+- `fa_quarterly`/`fa_scores` cover ~1,568 FiinProX symbols.
+- The TA pipeline now tracks **exactly the FA universe**, so the TA scanner, the per-symbol analysis
+  page, and the FA scanner all cover the same symbols and C14 valuation works universe-wide.
+
+**Design decisions (confirmed with user):**
+- **Universe = FA universe.** `refresh_ta_universe.py --source fa` reads the distinct symbols from
+  `fa_scores`, upserts them all `is_active=true`, resolves exchange for new ones via `price_board`,
+  and **deactivates** any `ta_universe` symbol not in the FA set. (First run: 1,568 active, 60 new,
+  27 deactivated.)
+- **Liquidity is decoupled from `is_active`.** `is_active` means "tracked," not "liquid." The old
+  `apply_liquidity_filter` (`--apply-filter`) is **superseded** — never run in the cron, and flagged
+  as it would undo the alignment. Liquidity is a **view-time** filter on both scanners (TA scanner
+  and FA scanner each have a "Min 20-session avg volume" input, default 200,000).
+- **Daily OHLCV via bulk `price_board`.** vnstock `Trading.price_board` returns today's full OHLCV
+  bar (open/high/low/match price/volume) for ~600 symbols per call in <1s, verified byte-for-byte
+  identical to `history()` for the same trading day (values are raw VND — no ×1000). The whole
+  universe is 2–3 calls / a few seconds. `update_ta_daily.py` Step 1 now does one post-ATC snapshot
+  sweep instead of ~1,568 sequential `history()` calls (~105 min). A **today-only guard**
+  (`expected_date`) ensures a stale snapshot (holiday / pre-close) is never written as a new bar.
+  `history()` remains the **backfill / gap-fill** path (`backfill_ta_ohlcv.py`); a fully-missed
+  trading day is repaired there, not by the daily run.
+- **`get_active_symbols` now pages** past the PostgREST 1000-row cap (was silently capping the daily
+  pipeline at 1,000 of 1,568 symbols).
+- **Signal compute** (`update_ta_daily.py` Step 2 / `compute_ta_signals.py`) runs latest-date for the
+  full active universe (~1.7 s/symbol ≈ 44 min for 1,568 — within the CI budget) and writes
+  `avg_volume_20d` for every symbol, so the FA scanner's volume filter works universe-wide.
 
 ## 5. Frontend
 
@@ -274,7 +294,8 @@ import); each new quarter import is followed by a `score` run that adds that qua
 - Current P/E = **live price ÷ TTM EPS**, where **TTM EPS = sum of the last 4 single-quarter EPS**;
   5-yr median includes negatives, skips blanks.
 - EPS growth = **single-quarter EPS YoY**; C2 = signed mean.
-- **Daily score job**; **expand `ta_ohlcv` to all FiinProX symbols**.
+- **Daily score job**; **TA pipeline aligned to the FA universe** (done — see §4: `--source fa`,
+  decoupled liquidity, bulk `price_board` daily OHLCV).
 - Rating boundaries **A≥60, B≥30, C<30**.
 - **Imports are additive per-row upserts of only the rows present** (partial files, re-importable
   many times; never truncate). Latest quarter/year is per-symbol, growing as files arrive.
@@ -313,4 +334,6 @@ import); each new quarter import is followed by a `score` run that adds that qua
 - `dashboard/src/app/ta/[symbol]/page.tsx` — select latest snapshot (multi-row fa_scores)
 - `dashboard/src/lib/fa.ts`, `dashboard/src/lib/i18n.ts`, `fa-summary.tsx` — field renames + YoY labels
 - `.github/workflows/fa-quarterly.yml` → replace with `fa-score-daily.yml`
-- TA pipeline (`ta_universe` / OHLCV backfill+daily) — widen to all FiinProX symbols (for C14 prices)
+- TA pipeline aligned to FA universe (DONE 2026-06-20): `scripts/ta/universe.py` (`align_universe_to_fa`,
+  paged `get_active_symbols`), `scripts/ta/ohlcv.py` (`fetch_today_snapshot` via `price_board`),
+  `scripts/refresh_ta_universe.py` (`--source fa`), `scripts/update_ta_daily.py` (bulk-snapshot Step 1)

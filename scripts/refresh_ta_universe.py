@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ta.common import get_supabase_client
 from ta.universe import (
     DEFAULT_HOSE_SYMBOLS,
+    align_universe_to_fa,
     apply_liquidity_filter,
     fetch_all_listed_stocks,
     fetch_vn100_from_vnstock,
@@ -61,13 +62,14 @@ def main():
     parser = argparse.ArgumentParser(description="Refresh the TA scanner universe")
     parser.add_argument(
         "--source",
-        choices=("all-exchanges", "vnstock", "default", "file"),
+        choices=("fa", "all-exchanges", "vnstock", "default", "file"),
         default="all-exchanges",
-        help="Where to pull the symbol list from (default: all-exchanges)",
+        help="Where to pull the symbol list from (default: all-exchanges). "
+             "'fa' aligns the active universe to the FA scanner's symbols.",
     )
     parser.add_argument("--file", help="Path to a newline-delimited symbol file (for --source file)")
     parser.add_argument("--exchange", default="HOSE", help="Exchange to tag inserted symbols with for single-exchange sources (default: HOSE)")
-    parser.add_argument("--apply-filter", action="store_true", help="Deactivate symbols failing the liquidity filter")
+    parser.add_argument("--apply-filter", action="store_true", help="[superseded] Deactivate symbols failing the liquidity filter. The universe is now decoupled from liquidity (--source fa keeps all FA symbols active; liquidity is a view-time filter on the scanners). Running this will undo that alignment.")
     parser.add_argument("--min-avg-volume", type=int, default=300_000, help="Liquidity filter: min avg 20d volume (default 300k)")
     parser.add_argument("--min-close", type=int, default=10_000, help="Liquidity filter: min latest close in VND (default 10000)")
     parser.add_argument("--list", action="store_true", help="Just list the active universe and exit")
@@ -93,6 +95,15 @@ def main():
         return
 
     # Otherwise: refresh the symbol list
+    if args.source == "fa":
+        print("Aligning ta_universe to the FA scanner universe (fa_scores)...")
+        stats = align_universe_to_fa(client)
+        print(f"FA symbols: {stats['fa_symbols']}    "
+              f"Activated (upserted): {stats['activated']} ({stats['new']} new)    "
+              f"Deactivated (not in FA): {stats['deactivated']}")
+        print("Next: backfill OHLCV for any new symbols, then recompute signals.")
+        return
+
     if args.source == "file":
         if not args.file:
             print("Error: --source file requires --file <path>")

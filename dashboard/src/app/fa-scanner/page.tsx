@@ -84,10 +84,25 @@ export default async function FaScannerPage({
     return <p className="text-red-600">Error loading FA scanner: {error.message}</p>;
   }
 
+  // 20-session avg volume for the liquidity filter (same source as TA scanner).
+  const { data: universe } = await fetchAllPaged<{ symbol: string; avg_volume_20d: number | null }>(
+    (from, to) =>
+      supabase
+        .from("ta_universe")
+        .select("symbol,avg_volume_20d")
+        .range(from, to),
+  );
+
   return (
     <div>
       {header}
-      <FaScannerClient rows={rows} locale={locale} quarters={quarters} selectedQuarter={selected} />
+      <FaScannerClient
+        rows={rows}
+        universe={universe}
+        locale={locale}
+        quarters={quarters}
+        selectedQuarter={selected}
+      />
     </div>
   );
 }
