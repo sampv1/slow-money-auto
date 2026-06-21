@@ -23,6 +23,7 @@ import { track } from "@/lib/analytics";
 import type { LatestClose, TriggeredSignal, UniverseLiquidity } from "./page";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
+const DEFAULT_MIN_COMPOSITE_RS = 90;
 
 // localStorage key + shape for user-saved indicator combos.
 const COMBOS_STORAGE_KEY = "ta-scanner-combos-v1";
@@ -34,6 +35,7 @@ const FILTER_STORAGE_KEY = "ta-scanner-filter-v1";
 type SavedFilter = {
   indicators: string[];
   minAvgVolume: number;
+  minCompositeRs: number;
 };
 
 function loadFilterFromStorage(): SavedFilter | null {
@@ -48,7 +50,12 @@ function loadFilterFromStorage(): SavedFilter | null {
       && parsed.indicators.every((i: unknown) => typeof i === "string")
       && typeof parsed.minAvgVolume === "number"
     ) {
-      return { indicators: parsed.indicators, minAvgVolume: parsed.minAvgVolume };
+      return {
+        indicators: parsed.indicators,
+        minAvgVolume: parsed.minAvgVolume,
+        // Back-compat: older saved filters predate the RS threshold.
+        minCompositeRs: typeof parsed.minCompositeRs === "number" ? parsed.minCompositeRs : DEFAULT_MIN_COMPOSITE_RS,
+      };
     }
     return null;
   } catch {
@@ -120,6 +127,7 @@ type ResultRow = {
   close: number | null;
   volume: number | null;
   avgVolume20d: number | null;
+  rsComposite: number | null;
 };
 
 export function ScannerClient({
@@ -137,6 +145,7 @@ export function ScannerClient({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
+  const [minCompositeRs, setMinCompositeRs] = useState<number>(DEFAULT_MIN_COMPOSITE_RS);
 
   // Saved combos: hydrated from localStorage on mount, kept in sync after that.
   const [savedCombos, setSavedCombos] = useState<SavedCombo[]>([]);
@@ -165,6 +174,7 @@ export function ScannerClient({
     if (saved) {
       setSelected(new Set(saved.indicators));
       setMinAvgVolume(saved.minAvgVolume);
+      setMinCompositeRs(saved.minCompositeRs);
     }
     setFilterHydrated(true);
   }, []);
@@ -172,9 +182,9 @@ export function ScannerClient({
   // Persist the active filter whenever it changes (after hydration).
   useEffect(() => {
     if (filterHydrated) {
-      saveFilterToStorage({ indicators: [...selected], minAvgVolume });
+      saveFilterToStorage({ indicators: [...selected], minAvgVolume, minCompositeRs });
     }
-  }, [selected, minAvgVolume, filterHydrated]);
+  }, [selected, minAvgVolume, minCompositeRs, filterHydrated]);
 
   // Analytics: emit a scan_run event whenever the user has an active selection.
   // Gated on filterHydrated so the initial empty state doesn't fire spuriously.
@@ -244,6 +254,12 @@ export function ScannerClient({
     return m;
   }, [universe]);
 
+  const rsBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const u of universe) m.set(u.symbol, u.rs_composite);
+    return m;
+  }, [universe]);
+
   const grouped = useMemo(() => indicatorsByCategory(), []);
 
   // Compute ranked results: stocks with at least one matching selected indicator
@@ -267,6 +283,13 @@ export function ScannerClient({
         if (avgVol === null || avgVol === undefined) continue;
         if (avgVol < minAvgVolume) continue;
       }
+      // Composite RS filter: drop symbols below the threshold (or NULL = not
+      // rated, e.g. insufficient history / below the RS liquidity floor).
+      const rsComposite = rsBySymbol.get(symbol) ?? null;
+      if (minCompositeRs > 0) {
+        if (rsComposite === null) continue;
+        if (rsComposite < minCompositeRs) continue;
+      }
       const close = closeBySymbol.get(symbol);
       rows.push({
         symbol,
@@ -274,11 +297,12 @@ export function ScannerClient({
         close: close?.close ?? null,
         volume: close?.volume ?? null,
         avgVolume20d: avgVol ?? null,
+        rsComposite,
       });
     }
     rows.sort((a, b) => a.symbol.localeCompare(b.symbol));
     return rows;
-  }, [selected, signalsBySymbol, closeBySymbol, avgVolBySymbol, minAvgVolume]);
+  }, [selected, signalsBySymbol, closeBySymbol, avgVolBySymbol, minAvgVolume, rsBySymbol, minCompositeRs]);
 
   function toggle(key: string) {
     setSelected((prev) => {
@@ -326,7 +350,36 @@ export function ScannerClient({
           <button
             type="button"
             onClick={() => setMinAvgVolume(DEFAULT_MIN_AVG_VOLUME_20D)}
-            className="text-xs text-gray-500 hover:text-gray-900 ml-auto"
+            className="text-xs text-gray-500 hover:text-gray-900"
+          >
+            {t(locale, "reset")}
+          </button>
+        )}
+
+        <span className="h-5 w-px bg-gray-200 mx-1" aria-hidden />
+
+        <label htmlFor="min-composite-rs" className="text-sm text-gray-700">
+          {t(locale, "taMinCompositeRs")}
+        </label>
+        <input
+          id="min-composite-rs"
+          type="number"
+          min={0}
+          max={99}
+          step={1}
+          value={Number.isFinite(minCompositeRs) ? minCompositeRs : 0}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            setMinCompositeRs(Number.isFinite(n) && n >= 0 ? Math.min(n, 99) : 0);
+          }}
+          className="w-20 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+        />
+        <span className="text-xs text-gray-500">{t(locale, "taMinCompositeRsHint")}</span>
+        {minCompositeRs !== DEFAULT_MIN_COMPOSITE_RS && (
+          <button
+            type="button"
+            onClick={() => setMinCompositeRs(DEFAULT_MIN_COMPOSITE_RS)}
+            className="text-xs text-gray-500 hover:text-gray-900"
           >
             {t(locale, "reset")}
           </button>
@@ -586,6 +639,7 @@ export function ScannerClient({
                   <tr className="border-b border-gray-200 text-left text-gray-500">
                     <th className="px-4 py-3 font-medium">{t(locale, "symbol")}</th>
                     <th className="px-4 py-3 font-medium">{t(locale, "taScore")}</th>
+                    <th className="px-4 py-3 font-medium text-right">{t(locale, "taCompositeRs")}</th>
                     <th className="px-4 py-3 font-medium text-right">{t(locale, "taClose")}</th>
                     <th className="px-4 py-3 font-medium">{t(locale, "taSignalsFired")}</th>
                   </tr>
@@ -603,6 +657,9 @@ export function ScannerClient({
                       </td>
                       <td className="px-4 py-3 text-gray-700 font-mono whitespace-nowrap">
                         {row.matched.length} / {selected.size}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono">
+                        {row.rsComposite ?? "—"}
                       </td>
                       <td className="px-4 py-3 text-right font-mono">{formatPrice(row.close)}</td>
                       <td className="px-4 py-3">

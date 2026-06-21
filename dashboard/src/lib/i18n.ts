@@ -13,6 +13,7 @@ export const translations = {
     navStockAnalysis: "Analysis",
     navScanner: "TA Scanner",
     navFAScanner: "FA Scanner",
+    navSignalPro: "Signal Pro",
     navRealtime: "Real-time",
 
     // TA page (single-symbol drill-down entry)
@@ -28,6 +29,8 @@ export const translations = {
     // FA Scanner page + fundamental-analysis panel
     faScannerTitle: "FA Scanner",
     faScannerSubtitle: "Fundamental-analysis stock screener (0–108 composite score)",
+    signalProTitle: "Signal Pro",
+    signalProSubtitle: "FA composite score paired with market-wide RS Rating",
     faTotalScore: "Score",
     faRating: "Rating",
     faRoe: "ROE",
@@ -108,6 +111,9 @@ export const translations = {
     taCategoryVolatility: "Volatility",
     taMinAvgVolume: "Min 20-session avg volume:",
     taMinAvgVolumeHint: "shares",
+    taMinCompositeRs: "Composite RS ≥",
+    taMinCompositeRsHint: "(1–99)",
+    taCompositeRs: "Composite RS",
     taStylePresets: "Trading style presets",
     taCombos: "Combos",
     taMyCombos: "My combos",
@@ -341,6 +347,7 @@ export const translations = {
     navStockAnalysis: "Phân tích",
     navScanner: "Lọc kỹ thuật",
     navFAScanner: "Lọc cơ bản",
+    navSignalPro: "Tín hiệu Pro",
     navRealtime: "Thời gian thực",
 
     // TA page (single-symbol drill-down entry)
@@ -356,6 +363,8 @@ export const translations = {
     // FA Scanner page + fundamental-analysis panel
     faScannerTitle: "Lọc cơ bản",
     faScannerSubtitle: "Bộ lọc cổ phiếu theo phân tích cơ bản (điểm tổng hợp 0–108)",
+    signalProTitle: "Tín hiệu Pro",
+    signalProSubtitle: "Điểm tổng hợp cơ bản kết hợp xếp hạng RS toàn thị trường",
     faTotalScore: "Điểm",
     faRating: "Xếp hạng",
     faRoe: "ROE",
@@ -436,6 +445,9 @@ export const translations = {
     taCategoryVolatility: "Biến động",
     taMinAvgVolume: "KLGD TB 20 phiên tối thiểu:",
     taMinAvgVolumeHint: "cổ phiếu",
+    taMinCompositeRs: "RS tổng hợp ≥",
+    taMinCompositeRsHint: "(1–99)",
+    taCompositeRs: "RS tổng hợp",
     taStylePresets: "Phong cách giao dịch",
     taCombos: "Bộ chỉ báo",
     taMyCombos: "Của tôi",

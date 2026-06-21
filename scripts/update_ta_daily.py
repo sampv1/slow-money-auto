@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ta.benchmark import fetch_vnindex_closes
 from ta.common import REQUEST_DELAY, get_supabase_client, safe_execute, today_vn
 from ta.ohlcv import fetch_today_snapshot, upsert_ohlcv
+from ta.rs_rating import compute_rs_ratings
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
 from ta.universe import get_active_symbols
@@ -180,6 +181,18 @@ def main():
         if not args.dry_run:
             finish_run(client, run_id, "success", processed, total_signals)
 
+        # Step 3: RS ratings (cross-sectional). Isolated so a failure here does
+        # not undo the already-committed signal run.
+        rs_stats = {"liquid": 0, "scored": 0, "rs_date": None}
+        if not args.dry_run:
+            try:
+                print("\n--- Step 3: RS ratings ---")
+                rs_stats = compute_rs_ratings(client)
+                print(f"RS: scored {rs_stats['scored']}/{rs_stats['liquid']} liquid symbols "
+                      f"(rs_date {rs_stats['rs_date']}).")
+            except Exception as e:
+                print(f"  RS ratings failed (non-fatal): {str(e)[:160]}")
+
         # GitHub Actions Job Summary — visible on the run page without opening logs.
         summary_lines = [
             "## TA Daily Update Summary",
@@ -189,6 +202,7 @@ def main():
             f"- **OHLCV snapshot**: {ohlcv_ok}/{len(symbols)} symbols ({ohlcv_total:,} rows)",
         ]
         summary_lines.append(f"- **Signals written**: {total_signals:,} ({triggered_total} triggered)")
+        summary_lines.append(f"- **RS scored**: {rs_stats['scored']} liquid (rs_date {rs_stats['rs_date']})")
         if final_failed:
             shown = ", ".join(final_failed[:25])
             more = f" (+{len(final_failed) - 25} more)" if len(final_failed) > 25 else ""
