@@ -34,7 +34,7 @@ export function SignalProClient({
   selectedQuarter,
 }: {
   rows: FaScore[];
-  universe: { symbol: string; avg_volume_20d: number | null; rs_3m: number | null; rs_composite: number | null; rs_line: number[] | null }[];
+  universe: { symbol: string; avg_volume_20d: number | null; rs_3m: number | null; rs_composite: number | null; rs_line_full: number[] | null }[];
   locale: Locale;
   quarters: string[];
   selectedQuarter: string;
@@ -67,7 +67,7 @@ export function SignalProClient({
 
   const rsLineBySymbol = useMemo(() => {
     const m = new Map<string, number[] | null>();
-    for (const u of universe) m.set(u.symbol, u.rs_line);
+    for (const u of universe) m.set(u.symbol, u.rs_line_full);
     return m;
   }, [universe]);
 

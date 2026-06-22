@@ -90,12 +90,12 @@ export default async function SignalProPage({
     avg_volume_20d: number | null;
     rs_3m: number | null;
     rs_composite: number | null;
-    rs_line: number[] | null;
+    rs_line_full: number[] | null;
   }>(
     (from, to) =>
       supabase
         .from("ta_universe")
-        .select("symbol,avg_volume_20d,rs_3m,rs_composite,rs_line")
+        .select("symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_full")
         .range(from, to),
   );
 
