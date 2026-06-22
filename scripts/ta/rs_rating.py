@@ -136,17 +136,18 @@ def _trailing_returns(closes: list[tuple[str, float]]) -> dict[str, float] | Non
     return rets
 
 
-# RS Line = stock close ÷ VN-Index close over the trailing ~1 year, downsampled
-# to at most this many points (≈ weekly) for a compact sparkline.
-RS_LINE_POINTS = 48
+# RS Line = stock close ÷ VN-Index close over the trailing ~1 year. The full
+# daily series feeds the detail chart; a downsampled copy (≈ weekly) feeds the
+# compact in-cell sparkline.
 RS_LINE_WINDOW_DAYS = 365
-_RS_LINE_MIN_POINTS = 20  # need a reasonable span to draw a meaningful line
+RS_LINE_SPARK_POINTS = 48  # downsample target for the in-cell sparkline
+_RS_LINE_MIN_POINTS = 20   # need a reasonable span to draw a meaningful line
 
 
 def _build_rs_line(closes: list[tuple[str, float]], vnindex: dict) -> tuple[list[float], list[str]] | None:
-    """Build a downsampled RS-Line for one symbol: stock close ÷ VN-Index close
-    over the trailing ~1 year. Returns (ratios, dates) parallel arrays
-    (oldest→newest), or None if too few overlapping points."""
+    """Build the FULL daily RS-Line for one symbol: stock close ÷ VN-Index close
+    over the trailing ~1 year. Returns (ratios, dates) parallel arrays for every
+    trading day in the window (oldest→newest), or None if too few points."""
     if not closes:
         return None
     last_ord = _date_cls.fromisoformat(closes[-1][0]).toordinal()
@@ -159,16 +160,19 @@ def _build_rs_line(closes: list[tuple[str, float]], vnindex: dict) -> tuple[list
             continue
         v = vnindex.get(d)
         if v and v > 0 and c and c > 0:
-            ratios.append(c / v)
+            ratios.append(round(c / v, 6))
             dates.append(d_str)
     if len(ratios) < _RS_LINE_MIN_POINTS:
         return None
-    if len(ratios) > RS_LINE_POINTS:
-        step = len(ratios) / RS_LINE_POINTS
-        idx = [min(int(i * step), len(ratios) - 1) for i in range(RS_LINE_POINTS)]
-        ratios = [ratios[j] for j in idx]
-        dates = [dates[j] for j in idx]
-    return [round(x, 6) for x in ratios], dates
+    return ratios, dates
+
+
+def _downsample(values: list[float], target: int) -> list[float]:
+    """Evenly sample `values` down to at most `target` points (for the sparkline)."""
+    if len(values) <= target:
+        return values
+    step = len(values) / target
+    return [values[min(int(i * step), len(values) - 1)] for i in range(target)]
 
 
 def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR,
@@ -236,7 +240,8 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
         client.table("ta_universe")
         .update({"rs_3m": None, "rs_6m": None, "rs_9m": None, "rs_12m": None,
                  "rs_composite": None, "rs_date": None,
-                 "rs_line": None, "rs_line_date": None, "rs_line_dates": None})
+                 "rs_line": None, "rs_line_full": None, "rs_line_date": None,
+                 "rs_line_dates": None})
         .eq("is_active", True),
         label="rs clear",
     )
@@ -252,7 +257,8 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
             "rs_12m": int(row["rs_12m"]),
             "rs_composite": int(row["rs_composite"]),
             "rs_date": rs_date,
-            "rs_line": rs_lines[sym][0] if sym in rs_lines else None,
+            "rs_line": _downsample(rs_lines[sym][0], RS_LINE_SPARK_POINTS) if sym in rs_lines else None,
+            "rs_line_full": rs_lines[sym][0] if sym in rs_lines else None,
             "rs_line_dates": rs_lines[sym][1] if sym in rs_lines else None,
             "rs_line_date": rs_date if sym in rs_lines else None,
         }

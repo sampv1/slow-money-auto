@@ -82,13 +82,13 @@ export function SignalProClient({
     setRsModal({ symbol, loading: true, values, dates: [] });
     const { data } = await supabase
       .from("ta_universe")
-      .select("rs_line,rs_line_dates")
+      .select("rs_line_full,rs_line_dates")
       .eq("symbol", symbol)
       .maybeSingle();
     setRsModal({
       symbol,
       loading: false,
-      values: (data?.rs_line as number[] | null) ?? values,
+      values: (data?.rs_line_full as number[] | null) ?? values,
       dates: (data?.rs_line_dates as string[] | null) ?? [],
     });
   }
