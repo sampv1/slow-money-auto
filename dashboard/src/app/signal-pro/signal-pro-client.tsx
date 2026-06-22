@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, FA_MAX_SCORE, ratingBadge } from "@/lib/fa";
-import { RsSparkline } from "./rs-line";
+import { supabase } from "@/lib/supabase";
+import { RsSparkline, DetailedRsChart } from "./rs-line";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "total_score" | "rs_3m" | "rs_composite" | "symbol";
@@ -70,8 +71,27 @@ export function SignalProClient({
     return m;
   }, [universe]);
 
-  // Symbol whose RS Line is shown enlarged in the modal (null = closed).
-  const [rsLineModal, setRsLineModal] = useState<string | null>(null);
+  // RS Line detail modal. Values render instantly from the inline sparkline
+  // data; the per-point dates are fetched on demand (kept out of the list
+  // payload to keep this page light).
+  const [rsModal, setRsModal] = useState<
+    { symbol: string; loading: boolean; values: number[]; dates: string[] } | null
+  >(null);
+
+  async function openRsLine(symbol: string, values: number[]) {
+    setRsModal({ symbol, loading: true, values, dates: [] });
+    const { data } = await supabase
+      .from("ta_universe")
+      .select("rs_line,rs_line_dates")
+      .eq("symbol", symbol)
+      .maybeSingle();
+    setRsModal({
+      symbol,
+      loading: false,
+      values: (data?.rs_line as number[] | null) ?? values,
+      dates: (data?.rs_line_dates as string[] | null) ?? [],
+    });
+  }
 
   const filtered = useMemo(() => {
     const min = minScore.trim() === "" ? null : Number(minScore);
@@ -268,7 +288,7 @@ export function SignalProClient({
                       {rsLine && rsLine.length >= 2 ? (
                         <button
                           type="button"
-                          onClick={() => setRsLineModal(row.symbol)}
+                          onClick={() => openRsLine(row.symbol, rsLine)}
                           title={t(locale, "taRsLineCaption")}
                           className="block cursor-pointer hover:opacity-70"
                         >
@@ -286,24 +306,23 @@ export function SignalProClient({
         </div>
       )}
 
-      {/* Enlarged RS Line — opened by clicking a sparkline. */}
-      {rsLineModal && (() => {
-        const series = rsLineBySymbol.get(rsLineModal) ?? null;
-        if (!series || series.length < 2) return null;
-        const netChg = (series[series.length - 1] / series[0] - 1) * 100;
+      {/* Enlarged RS Line detail chart — opened by clicking a sparkline. */}
+      {rsModal && (() => {
+        const { symbol, loading, values, dates } = rsModal;
+        const netChg = values.length >= 2 ? (values[values.length - 1] / values[0] - 1) * 100 : 0;
         const chgColor = netChg > 5 ? "text-green-600" : netChg < -5 ? "text-red-600" : "text-gray-500";
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-            onClick={() => setRsLineModal(null)}
+            onClick={() => setRsModal(null)}
           >
             <div
-              className="bg-white rounded-lg shadow-xl border border-gray-200 p-5 w-full max-w-2xl"
+              className="bg-white rounded-lg shadow-xl border border-gray-200 p-5 w-full max-w-3xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-start justify-between mb-1">
                 <div>
-                  <h3 className="text-lg font-semibold">{rsLineModal} — {t(locale, "taRsLine")}</h3>
+                  <h3 className="text-lg font-semibold">{symbol} — {t(locale, "taRsLine")}</h3>
                   <p className="text-xs text-gray-500">
                     {t(locale, "taRsLineCaption")} ·{" "}
                     <span className={`font-mono ${chgColor}`}>{netChg >= 0 ? "+" : ""}{netChg.toFixed(1)}%</span>
@@ -311,7 +330,7 @@ export function SignalProClient({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setRsLineModal(null)}
+                  onClick={() => setRsModal(null)}
                   className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
                   aria-label="Close"
                 >
@@ -319,7 +338,13 @@ export function SignalProClient({
                 </button>
               </div>
               <div className="mt-3 w-full">
-                <RsSparkline series={series} width={640} height={280} strokeWidth={2} className="w-full h-auto" />
+                {loading && dates.length === 0 ? (
+                  <div className="h-[280px] flex items-center justify-center text-sm text-gray-400">
+                    {t(locale, "loading")}…
+                  </div>
+                ) : (
+                  <DetailedRsChart values={values} dates={dates} />
+                )}
               </div>
             </div>
           </div>

@@ -143,15 +143,16 @@ RS_LINE_WINDOW_DAYS = 365
 _RS_LINE_MIN_POINTS = 20  # need a reasonable span to draw a meaningful line
 
 
-def _build_rs_line(closes: list[tuple[str, float]], vnindex: dict, ) -> list[float] | None:
-    """Build a downsampled RS-Line ratio series (oldest→newest) for one symbol:
-    stock close ÷ VN-Index close, over the trailing ~1 year. Returns None if too
-    few overlapping points."""
+def _build_rs_line(closes: list[tuple[str, float]], vnindex: dict) -> tuple[list[float], list[str]] | None:
+    """Build a downsampled RS-Line for one symbol: stock close ÷ VN-Index close
+    over the trailing ~1 year. Returns (ratios, dates) parallel arrays
+    (oldest→newest), or None if too few overlapping points."""
     if not closes:
         return None
     last_ord = _date_cls.fromisoformat(closes[-1][0]).toordinal()
     start_ord = last_ord - RS_LINE_WINDOW_DAYS
     ratios: list[float] = []
+    dates: list[str] = []
     for d_str, c in closes:
         d = _date_cls.fromisoformat(d_str)
         if d.toordinal() < start_ord:
@@ -159,12 +160,15 @@ def _build_rs_line(closes: list[tuple[str, float]], vnindex: dict, ) -> list[flo
         v = vnindex.get(d)
         if v and v > 0 and c and c > 0:
             ratios.append(c / v)
+            dates.append(d_str)
     if len(ratios) < _RS_LINE_MIN_POINTS:
         return None
     if len(ratios) > RS_LINE_POINTS:
         step = len(ratios) / RS_LINE_POINTS
-        ratios = [ratios[min(int(i * step), len(ratios) - 1)] for i in range(RS_LINE_POINTS)]
-    return [round(x, 6) for x in ratios]
+        idx = [min(int(i * step), len(ratios) - 1) for i in range(RS_LINE_POINTS)]
+        ratios = [ratios[j] for j in idx]
+        dates = [dates[j] for j in idx]
+    return [round(x, 6) for x in ratios], dates
 
 
 def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR,
@@ -215,7 +219,7 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
     from .benchmark import fetch_vnindex_closes
     vn_series = fetch_vnindex_closes()
     vnindex = {d: float(v) for d, v in vn_series.items()} if vn_series is not None else {}
-    rs_lines: dict[str, list[float]] = {}
+    rs_lines: dict[str, tuple[list[float], list[str]]] = {}
     if vnindex:
         for sym in df.index:
             line = _build_rs_line(closes_by_sym.get(sym) or [], vnindex)
@@ -232,7 +236,7 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
         client.table("ta_universe")
         .update({"rs_3m": None, "rs_6m": None, "rs_9m": None, "rs_12m": None,
                  "rs_composite": None, "rs_date": None,
-                 "rs_line": None, "rs_line_date": None})
+                 "rs_line": None, "rs_line_date": None, "rs_line_dates": None})
         .eq("is_active", True),
         label="rs clear",
     )
@@ -248,7 +252,8 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
             "rs_12m": int(row["rs_12m"]),
             "rs_composite": int(row["rs_composite"]),
             "rs_date": rs_date,
-            "rs_line": rs_lines.get(sym),
+            "rs_line": rs_lines[sym][0] if sym in rs_lines else None,
+            "rs_line_dates": rs_lines[sym][1] if sym in rs_lines else None,
             "rs_line_date": rs_date if sym in rs_lines else None,
         }
         for sym, row in df.iterrows()
