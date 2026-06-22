@@ -7,7 +7,7 @@ import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, FA_MAX_SCORE, ratingBadge } from "@/lib/fa";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
-type SortKey = "total_score" | "rs_composite" | "symbol";
+type SortKey = "total_score" | "rs_3m" | "rs_composite" | "symbol";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 
@@ -32,7 +32,7 @@ export function SignalProClient({
   selectedQuarter,
 }: {
   rows: FaScore[];
-  universe: { symbol: string; avg_volume_20d: number | null; rs_composite: number | null }[];
+  universe: { symbol: string; avg_volume_20d: number | null; rs_3m: number | null; rs_composite: number | null }[];
   locale: Locale;
   quarters: string[];
   selectedQuarter: string;
@@ -54,6 +54,12 @@ export function SignalProClient({
   const rsBySymbol = useMemo(() => {
     const m = new Map<string, number | null>();
     for (const u of universe) m.set(u.symbol, u.rs_composite);
+    return m;
+  }, [universe]);
+
+  const rs3mBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const u of universe) m.set(u.symbol, u.rs_3m);
     return m;
   }, [universe]);
 
@@ -81,10 +87,14 @@ export function SignalProClient({
         av = a.symbol;
         bv = b.symbol;
       } else {
-        // total_score lives on the row; rs_composite comes from the universe map.
+        // total_score lives on the row; RS values come from the universe maps.
         // Nulls sort last regardless of direction.
-        const an = sortKey === "rs_composite" ? (rsBySymbol.get(a.symbol) ?? null) : a.total_score;
-        const bn = sortKey === "rs_composite" ? (rsBySymbol.get(b.symbol) ?? null) : b.total_score;
+        const pick = (sym: string) =>
+          sortKey === "rs_composite" ? (rsBySymbol.get(sym) ?? null)
+          : sortKey === "rs_3m" ? (rs3mBySymbol.get(sym) ?? null)
+          : null;
+        const an = sortKey === "total_score" ? a.total_score : pick(a.symbol);
+        const bn = sortKey === "total_score" ? b.total_score : pick(b.symbol);
         if (an === null && bn === null) return 0;
         if (an === null) return 1;
         if (bn === null) return -1;
@@ -96,7 +106,7 @@ export function SignalProClient({
       return 0;
     });
     return out;
-  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, rsBySymbol, search, sortKey, sortAsc]);
+  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, rsBySymbol, rs3mBySymbol, search, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -212,6 +222,9 @@ export function SignalProClient({
                   {t(locale, "faTotalScore")}{sortIndicator("total_score")}
                 </th>
                 <th className="px-4 py-3 font-medium">{t(locale, "faRating")}</th>
+                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
+                  {t(locale, "taRs3m")}{sortIndicator("rs_3m")}
+                </th>
                 <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
                   {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
                 </th>
@@ -221,6 +234,7 @@ export function SignalProClient({
               {filtered.map((row) => {
                 const badge = ratingBadge(row.rating);
                 const rs = rsBySymbol.get(row.symbol) ?? null;
+                const rs3m = rs3mBySymbol.get(row.symbol) ?? null;
                 return (
                   <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">
@@ -236,6 +250,7 @@ export function SignalProClient({
                         {badge.label}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-right font-mono">{rs3m ?? "—"}</td>
                     <td className="px-4 py-3 text-right font-mono">{rs ?? "—"}</td>
                   </tr>
                 );

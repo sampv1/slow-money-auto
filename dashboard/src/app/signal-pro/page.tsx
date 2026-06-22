@@ -88,12 +88,13 @@ export default async function SignalProPage({
   const { data: universe } = await fetchAllPaged<{
     symbol: string;
     avg_volume_20d: number | null;
+    rs_3m: number | null;
     rs_composite: number | null;
   }>(
     (from, to) =>
       supabase
         .from("ta_universe")
-        .select("symbol,avg_volume_20d,rs_composite")
+        .select("symbol,avg_volume_20d,rs_3m,rs_composite")
         .range(from, to),
   );
 

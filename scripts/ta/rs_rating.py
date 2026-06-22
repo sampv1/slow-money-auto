@@ -21,20 +21,27 @@ needs full ~12-month history to be rated; those without it are left null.
 
 from datetime import timedelta
 
+from datetime import date as _date_cls
+
 from .common import safe_execute, today_vn
 from .universe import get_active_symbols
 
-# Trailing windows in trading days (≈21 sessions/month).
-PERIODS = {"3m": 63, "6m": 126, "9m": 189, "12m": 252}
+# Trailing windows as CALENDAR days (3/6/9/12 months). RS is "trailing N
+# months" by date, so we anchor the lookback to the calendar — not to a fixed
+# number of trading bars — which gives the correct period and also rates thinly
+# traded stocks (a bar count would exclude any stock that trades with gaps).
+PERIOD_DAYS = {"3m": 91, "6m": 182, "9m": 273, "12m": 365}
 WEIGHTS = {"3m": 0.4, "6m": 0.2, "9m": 0.2, "12m": 0.2}
-MAX_LOOKBACK = max(PERIODS.values())  # 252 — need this many prior bars + 1
+# A stock is rated for a period if it has a bar within this many calendar days
+# of the target date (handles holidays/weekends and sparse trading).
+_TOLERANCE_DAYS = 25
 
 # "Min 20-session avg volume for RS" — the configurable liquidity floor for the
 # RS ranking universe. 0 = rank across every symbol in the market (no floor).
 DEFAULT_RS_LIQUIDITY_FLOOR = 0
 
-# Calendar days of history to pull so we reliably have ≥ MAX_LOOKBACK+1 bars.
-_WINDOW_DAYS = 400
+# Calendar days of history to pull: ≥ 12-month window + tolerance + buffer.
+_WINDOW_DAYS = 430
 
 
 def _liquid_symbols(client, active: list[str], floor: int) -> list[str]:
@@ -53,6 +60,25 @@ def _liquid_symbols(client, active: list[str], floor: int) -> list[str]:
         offset += page
     active_set = set(active)
     return [s for s in active if s in active_set and (vol.get(s) or 0) >= floor]
+
+
+def _exchange_map(client) -> dict[str, str]:
+    """symbol → exchange for all ta_universe rows. Needed because the RS upsert
+    is INSERT…ON CONFLICT, whose INSERT path requires the NOT NULL `exchange`
+    column even though every symbol already exists (always hits DO UPDATE)."""
+    out: dict[str, str] = {}
+    offset, page = 0, 1000
+    while True:
+        rows = safe_execute(
+            client.table("ta_universe").select("symbol,exchange").range(offset, offset + page - 1),
+            label="rs exchange",
+        ).data
+        for r in rows:
+            out[r["symbol"]] = r.get("exchange") or "HOSE"
+        if len(rows) < page:
+            break
+        offset += page
+    return out
 
 
 def _load_closes(client, symbols: list[str], cutoff_iso: str) -> dict[str, list[tuple[str, float]]]:
@@ -85,20 +111,28 @@ def _load_closes(client, symbols: list[str], cutoff_iso: str) -> dict[str, list[
 
 
 def _trailing_returns(closes: list[tuple[str, float]]) -> dict[str, float] | None:
-    """Return {period: pct_return} using the last bar vs the bar `lookback` ago.
-    Requires full history for every period (so all four are comparable)."""
-    n = len(closes)
-    if n < MAX_LOOKBACK + 1:
+    """Return {period: pct_return}, where each period's prior price is the bar
+    nearest (by date) to `last_date − N months`. A period is skipped (whole
+    symbol returned None) if no bar lies within _TOLERANCE_DAYS of its target,
+    so a symbol must have ≥ ~12 months of listing to be fully rated."""
+    if not closes:
         return None
-    last = closes[-1][1]
-    if not last or last <= 0:
+    parsed = [(_date_cls.fromisoformat(d), c) for d, c in closes if c and c > 0]
+    if not parsed:
         return None
+    last_date, last = parsed[-1]
     rets: dict[str, float] = {}
-    for key, lb in PERIODS.items():
-        past = closes[-1 - lb][1]
-        if not past or past <= 0:
+    for key, days in PERIOD_DAYS.items():
+        target = last_date.toordinal() - days
+        best = None
+        best_diff = None
+        for d, c in parsed:
+            diff = abs(d.toordinal() - target)
+            if best_diff is None or diff < best_diff:
+                best_diff, best = diff, c
+        if best is None or best_diff > _TOLERANCE_DAYS:
             return None
-        rets[key] = last / past - 1.0
+        rets[key] = last / best - 1.0
     return rets
 
 
@@ -138,9 +172,9 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
         # Percentile rank → 1..99 (lowest→~1, highest→99). Average ties.
         return (s.rank(method="average", pct=True) * 99).round().clip(1, 99).astype(int)
 
-    for k in PERIODS:
+    for k in PERIOD_DAYS:
         df[f"rs_{k}"] = pct(df[k])
-    blend = sum(WEIGHTS[k] * df[f"rs_{k}"] for k in PERIODS)
+    blend = sum(WEIGHTS[k] * df[f"rs_{k}"] for k in PERIOD_DAYS)
     df["rs_composite"] = pct(blend)
 
     stats["scored"] = len(df)
@@ -159,9 +193,11 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
         label="rs clear",
     )
 
+    exch = _exchange_map(client)
     payload = [
         {
             "symbol": sym,
+            "exchange": exch.get(sym, "HOSE"),
             "rs_3m": int(row["rs_3m"]),
             "rs_6m": int(row["rs_6m"]),
             "rs_9m": int(row["rs_9m"]),
