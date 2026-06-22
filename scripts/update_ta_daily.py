@@ -188,8 +188,8 @@ def main():
             try:
                 print("\n--- Step 3: RS ratings ---")
                 rs_stats = compute_rs_ratings(client)
-                print(f"RS: scored {rs_stats['scored']}/{rs_stats['liquid']} liquid symbols "
-                      f"(rs_date {rs_stats['rs_date']}).")
+                print(f"RS: scored {rs_stats['scored']}/{rs_stats['liquid']} liquid symbols, "
+                      f"{rs_stats.get('rs_lines', 0)} RS lines (rs_date {rs_stats['rs_date']}).")
             except Exception as e:
                 print(f"  RS ratings failed (non-fatal): {str(e)[:160]}")
 

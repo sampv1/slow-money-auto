@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, FA_MAX_SCORE, ratingBadge } from "@/lib/fa";
+import { RsSparkline } from "./rs-line";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "total_score" | "rs_3m" | "rs_composite" | "symbol";
@@ -32,7 +33,7 @@ export function SignalProClient({
   selectedQuarter,
 }: {
   rows: FaScore[];
-  universe: { symbol: string; avg_volume_20d: number | null; rs_3m: number | null; rs_composite: number | null }[];
+  universe: { symbol: string; avg_volume_20d: number | null; rs_3m: number | null; rs_composite: number | null; rs_line: number[] | null }[];
   locale: Locale;
   quarters: string[];
   selectedQuarter: string;
@@ -62,6 +63,15 @@ export function SignalProClient({
     for (const u of universe) m.set(u.symbol, u.rs_3m);
     return m;
   }, [universe]);
+
+  const rsLineBySymbol = useMemo(() => {
+    const m = new Map<string, number[] | null>();
+    for (const u of universe) m.set(u.symbol, u.rs_line);
+    return m;
+  }, [universe]);
+
+  // Symbol whose RS Line is shown enlarged in the modal (null = closed).
+  const [rsLineModal, setRsLineModal] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const min = minScore.trim() === "" ? null : Number(minScore);
@@ -228,6 +238,7 @@ export function SignalProClient({
                 <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
                   {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
                 </th>
+                <th className="px-4 py-3 font-medium">{t(locale, "taRsLine")}</th>
               </tr>
             </thead>
             <tbody>
@@ -235,6 +246,7 @@ export function SignalProClient({
                 const badge = ratingBadge(row.rating);
                 const rs = rsBySymbol.get(row.symbol) ?? null;
                 const rs3m = rs3mBySymbol.get(row.symbol) ?? null;
+                const rsLine = rsLineBySymbol.get(row.symbol) ?? null;
                 return (
                   <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">
@@ -252,6 +264,20 @@ export function SignalProClient({
                     </td>
                     <td className="px-4 py-3 text-right font-mono">{rs3m ?? "—"}</td>
                     <td className="px-4 py-3 text-right font-mono">{rs ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      {rsLine && rsLine.length >= 2 ? (
+                        <button
+                          type="button"
+                          onClick={() => setRsLineModal(row.symbol)}
+                          title={t(locale, "taRsLineCaption")}
+                          className="block cursor-pointer hover:opacity-70"
+                        >
+                          <RsSparkline series={rsLine} width={96} height={28} />
+                        </button>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -259,6 +285,46 @@ export function SignalProClient({
           </table>
         </div>
       )}
+
+      {/* Enlarged RS Line — opened by clicking a sparkline. */}
+      {rsLineModal && (() => {
+        const series = rsLineBySymbol.get(rsLineModal) ?? null;
+        if (!series || series.length < 2) return null;
+        const netChg = (series[series.length - 1] / series[0] - 1) * 100;
+        const chgColor = netChg > 5 ? "text-green-600" : netChg < -5 ? "text-red-600" : "text-gray-500";
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setRsLineModal(null)}
+          >
+            <div
+              className="bg-white rounded-lg shadow-xl border border-gray-200 p-5 w-full max-w-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between mb-1">
+                <div>
+                  <h3 className="text-lg font-semibold">{rsLineModal} — {t(locale, "taRsLine")}</h3>
+                  <p className="text-xs text-gray-500">
+                    {t(locale, "taRsLineCaption")} ·{" "}
+                    <span className={`font-mono ${chgColor}`}>{netChg >= 0 ? "+" : ""}{netChg.toFixed(1)}%</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRsLineModal(null)}
+                  className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="mt-3 w-full">
+                <RsSparkline series={series} width={640} height={280} strokeWidth={2} className="w-full h-auto" />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

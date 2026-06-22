@@ -136,6 +136,37 @@ def _trailing_returns(closes: list[tuple[str, float]]) -> dict[str, float] | Non
     return rets
 
 
+# RS Line = stock close ÷ VN-Index close over the trailing ~1 year, downsampled
+# to at most this many points (≈ weekly) for a compact sparkline.
+RS_LINE_POINTS = 48
+RS_LINE_WINDOW_DAYS = 365
+_RS_LINE_MIN_POINTS = 20  # need a reasonable span to draw a meaningful line
+
+
+def _build_rs_line(closes: list[tuple[str, float]], vnindex: dict, ) -> list[float] | None:
+    """Build a downsampled RS-Line ratio series (oldest→newest) for one symbol:
+    stock close ÷ VN-Index close, over the trailing ~1 year. Returns None if too
+    few overlapping points."""
+    if not closes:
+        return None
+    last_ord = _date_cls.fromisoformat(closes[-1][0]).toordinal()
+    start_ord = last_ord - RS_LINE_WINDOW_DAYS
+    ratios: list[float] = []
+    for d_str, c in closes:
+        d = _date_cls.fromisoformat(d_str)
+        if d.toordinal() < start_ord:
+            continue
+        v = vnindex.get(d)
+        if v and v > 0 and c and c > 0:
+            ratios.append(c / v)
+    if len(ratios) < _RS_LINE_MIN_POINTS:
+        return None
+    if len(ratios) > RS_LINE_POINTS:
+        step = len(ratios) / RS_LINE_POINTS
+        ratios = [ratios[min(int(i * step), len(ratios) - 1)] for i in range(RS_LINE_POINTS)]
+    return [round(x, 6) for x in ratios]
+
+
 def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR,
                        dry_run: bool = False) -> dict:
     """Compute + persist RS ratings for the liquid universe. Returns a stats dict
@@ -144,7 +175,7 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
 
     active = get_active_symbols(client)
     liquid = _liquid_symbols(client, active, liquidity_floor)
-    stats = {"liquid": len(liquid), "scored": 0, "rs_date": None}
+    stats = {"liquid": len(liquid), "scored": 0, "rs_date": None, "rs_lines": 0}
     if not liquid:
         return stats
 
@@ -180,6 +211,18 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
     stats["scored"] = len(df)
     stats["rs_date"] = rs_date
 
+    # RS Line (stock ÷ VN-Index) sparkline series for each rated symbol.
+    from .benchmark import fetch_vnindex_closes
+    vn_series = fetch_vnindex_closes()
+    vnindex = {d: float(v) for d, v in vn_series.items()} if vn_series is not None else {}
+    rs_lines: dict[str, list[float]] = {}
+    if vnindex:
+        for sym in df.index:
+            line = _build_rs_line(closes_by_sym.get(sym) or [], vnindex)
+            if line:
+                rs_lines[sym] = line
+    stats["rs_lines"] = len(rs_lines)
+
     if dry_run:
         return stats
 
@@ -188,7 +231,8 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
     safe_execute(
         client.table("ta_universe")
         .update({"rs_3m": None, "rs_6m": None, "rs_9m": None, "rs_12m": None,
-                 "rs_composite": None, "rs_date": None})
+                 "rs_composite": None, "rs_date": None,
+                 "rs_line": None, "rs_line_date": None})
         .eq("is_active", True),
         label="rs clear",
     )
@@ -204,6 +248,8 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
             "rs_12m": int(row["rs_12m"]),
             "rs_composite": int(row["rs_composite"]),
             "rs_date": rs_date,
+            "rs_line": rs_lines.get(sym),
+            "rs_line_date": rs_date if sym in rs_lines else None,
         }
         for sym, row in df.iterrows()
     ]
