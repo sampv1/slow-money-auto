@@ -31,6 +31,7 @@ export const translations = {
     faScannerSubtitle: "Fundamental-analysis stock screener (0–108 composite score)",
     signalProTitle: "Signal Pro",
     signalProSubtitle: "FA composite score paired with market-wide RS Rating",
+    spBaseCol: "Price base",
     faTotalScore: "Score",
     faRating: "Rating",
     faRoe: "ROE",
@@ -151,7 +152,7 @@ export const translations = {
     noFullResponse: "No full analysis text stored for this day. Push the complete Claude response (not just JSON) to see the analysis here.",
     previousDay: "Previous day",
     nextDay: "Next day",
-    poweredBy: "Analysis written by Claude Opus 4.7",
+    poweredBy: "Analysis written by Claude Opus 4.8",
     frontierModel: "World's most advanced reasoning AI",
 
     // Active page
@@ -369,6 +370,7 @@ export const translations = {
     faScannerSubtitle: "Bộ lọc cổ phiếu theo phân tích cơ bản (điểm tổng hợp 0–108)",
     signalProTitle: "Tín hiệu Pro",
     signalProSubtitle: "Điểm tổng hợp cơ bản kết hợp xếp hạng RS toàn thị trường",
+    spBaseCol: "Nền giá",
     faTotalScore: "Điểm",
     faRating: "Xếp hạng",
     faRoe: "ROE",
@@ -489,7 +491,7 @@ export const translations = {
     noFullResponse: "Chưa lưu nội dung phân tích cho ngày này. Hãy đẩy phản hồi đầy đủ từ Claude (không chỉ JSON) để xem phân tích ở đây.",
     previousDay: "Ngày trước",
     nextDay: "Ngày sau",
-    poweredBy: "Phân tích được viết bởi Claude Opus 4.7",
+    poweredBy: "Phân tích được viết bởi Claude Opus 4.8",
     frontierModel: "AI suy luận tiên tiến nhất thế giới",
 
     // Active page

@@ -7,6 +7,7 @@ import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, FA_MAX_SCORE, ratingBadge } from "@/lib/fa";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart } from "./rs-line";
+import { PriceBaseBadge, PriceBaseBreakdown } from "./price-base";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "total_score" | "rs_3m" | "rs_composite" | "symbol";
@@ -34,7 +35,17 @@ export function SignalProClient({
   selectedQuarter,
 }: {
   rows: FaScore[];
-  universe: { symbol: string; avg_volume_20d: number | null; rs_3m: number | null; rs_composite: number | null; rs_line_full: number[] | null }[];
+  universe: {
+    symbol: string;
+    avg_volume_20d: number | null;
+    rs_3m: number | null;
+    rs_composite: number | null;
+    rs_line_full: number[] | null;
+    base_score: number | null;
+    base_grade: string | null;
+    base_type: string | null;
+    base_status: string | null;
+  }[];
   locale: Locale;
   quarters: string[];
   selectedQuarter: string;
@@ -70,6 +81,25 @@ export function SignalProClient({
     for (const u of universe) m.set(u.symbol, u.rs_line_full);
     return m;
   }, [universe]);
+
+  const baseBySymbol = useMemo(() => {
+    const m = new Map<string, { score: number | null; grade: string | null; type: string | null; status: string | null }>();
+    for (const u of universe) m.set(u.symbol, { score: u.base_score, grade: u.base_grade, type: u.base_type, status: u.base_status });
+    return m;
+  }, [universe]);
+
+  // Price-base breakdown modal (detail fetched on demand).
+  const [baseModal, setBaseModal] = useState<{ symbol: string; loading: boolean; detail: unknown | null } | null>(null);
+
+  async function openBase(symbol: string) {
+    setBaseModal({ symbol, loading: true, detail: null });
+    const { data } = await supabase
+      .from("ta_universe")
+      .select("base_detail")
+      .eq("symbol", symbol)
+      .maybeSingle();
+    setBaseModal({ symbol, loading: false, detail: data?.base_detail ?? null });
+  }
 
   // RS Line detail modal. Values render instantly from the inline sparkline
   // data; the per-point dates are fetched on demand (kept out of the list
@@ -259,6 +289,7 @@ export function SignalProClient({
                   {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
                 </th>
                 <th className="px-4 py-3 font-medium">{t(locale, "taRsLine")}</th>
+                <th className="px-4 py-3 font-medium">{t(locale, "spBaseCol")}</th>
               </tr>
             </thead>
             <tbody>
@@ -267,6 +298,7 @@ export function SignalProClient({
                 const rs = rsBySymbol.get(row.symbol) ?? null;
                 const rs3m = rs3mBySymbol.get(row.symbol) ?? null;
                 const rsLine = rsLineBySymbol.get(row.symbol) ?? null;
+                const base = baseBySymbol.get(row.symbol);
                 return (
                   <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">
@@ -293,6 +325,19 @@ export function SignalProClient({
                           className="block cursor-pointer hover:opacity-70"
                         >
                           <RsSparkline series={rsLine} width={96} height={28} />
+                        </button>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {base && base.score !== null ? (
+                        <button
+                          type="button"
+                          onClick={() => openBase(row.symbol)}
+                          className="cursor-pointer hover:opacity-70"
+                        >
+                          <PriceBaseBadge score={base.score} grade={base.grade} type={base.type} status={base.status} locale={locale} />
                         </button>
                       ) : (
                         <span className="text-gray-300">—</span>
@@ -350,6 +395,38 @@ export function SignalProClient({
           </div>
         );
       })()}
+
+      {/* Price-base breakdown — opened by clicking the base badge. */}
+      {baseModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setBaseModal(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl border border-gray-200 p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-3">
+              <h3 className="text-lg font-semibold">{baseModal.symbol} — {t(locale, "spBaseCol")}</h3>
+              <button
+                type="button"
+                onClick={() => setBaseModal(null)}
+                className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            {baseModal.loading ? (
+              <div className="h-32 flex items-center justify-center text-sm text-gray-400">{t(locale, "loading")}…</div>
+            ) : baseModal.detail ? (
+              <PriceBaseBreakdown detail={baseModal.detail as Parameters<typeof PriceBaseBreakdown>[0]["detail"]} locale={locale} />
+            ) : (
+              <p className="text-sm text-gray-500">{t(locale, "faNoData")}</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

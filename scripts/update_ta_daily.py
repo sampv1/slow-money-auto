@@ -34,6 +34,7 @@ from ta.benchmark import fetch_vnindex_closes
 from ta.common import REQUEST_DELAY, get_supabase_client, safe_execute, today_vn
 from ta.ohlcv import fetch_today_snapshot, upsert_ohlcv
 from ta.rs_rating import compute_rs_ratings
+from ta.price_base import compute_price_bases
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
 from ta.universe import get_active_symbols
@@ -193,6 +194,19 @@ def main():
             except Exception as e:
                 print(f"  RS ratings failed (non-fatal): {str(e)[:160]}")
 
+        # Step 4: Price bases (BQS V3). Runs after RS (Module 14 reuses the RS
+        # Line). Isolated so a failure here doesn't undo the signal run.
+        base_stats = {"based": 0, "by_grade": {}, "as_of": None}
+        if not args.dry_run:
+            try:
+                print("\n--- Step 4: price bases (BQS V3) ---")
+                base_stats = compute_price_bases(client)
+                bg = base_stats["by_grade"]
+                print(f"Price bases: {base_stats['based']} detected "
+                      f"(A={bg.get('A',0)} B={bg.get('B',0)} C={bg.get('C',0)} D={bg.get('D',0)}).")
+            except Exception as e:
+                print(f"  price bases failed (non-fatal): {str(e)[:160]}")
+
         # GitHub Actions Job Summary — visible on the run page without opening logs.
         summary_lines = [
             "## TA Daily Update Summary",
@@ -203,6 +217,7 @@ def main():
         ]
         summary_lines.append(f"- **Signals written**: {total_signals:,} ({triggered_total} triggered)")
         summary_lines.append(f"- **RS scored**: {rs_stats['scored']} liquid (rs_date {rs_stats['rs_date']})")
+        summary_lines.append(f"- **Price bases**: {base_stats['based']} detected")
         if final_failed:
             shown = ", ".join(final_failed[:25])
             more = f" (+{len(final_failed) - 25} more)" if len(final_failed) > 25 else ""
