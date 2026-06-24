@@ -26,22 +26,10 @@ from datetime import date as _date_cls
 from .common import safe_execute, today_vn
 from .universe import get_active_symbols
 
-# Trailing windows as CALENDAR days (3/6/9/12 months). RS is "trailing N
-# months" by date, so we anchor the lookback to the calendar — not to a fixed
-# number of trading bars — which gives the correct period and also rates thinly
-# traded stocks (a bar count would exclude any stock that trades with gaps).
-PERIOD_DAYS = {"3m": 91, "6m": 182, "9m": 273, "12m": 365}
-WEIGHTS = {"3m": 0.4, "6m": 0.2, "9m": 0.2, "12m": 0.2}
-# A stock is rated for a period if it has a bar within this many calendar days
-# of the target date (handles holidays/weekends and sparse trading).
-_TOLERANCE_DAYS = 25
-
-# "Min 20-session avg volume for RS" — the configurable liquidity floor for the
-# RS ranking universe. 0 = rank across every symbol in the market (no floor).
-DEFAULT_RS_LIQUIDITY_FLOOR = 0
-
-# Calendar days of history to pull: ≥ 12-month window + tolerance + buffer.
-_WINDOW_DAYS = 430
+# RS uses CALENDAR-day trailing windows (3/6/9/12 months) by date, not a fixed
+# number of trading bars, which gives the correct period and also rates thinly
+# traded stocks. All tunables live in scoring_config 'rs_rating' (RS_DEFAULTS
+# below is the fallback; see compute_rs_ratings).
 
 
 def _liquid_symbols(client, active: list[str], floor: int) -> list[str]:
@@ -110,11 +98,22 @@ def _load_closes(client, symbols: list[str], cutoff_iso: str) -> dict[str, list[
     return out
 
 
-def _trailing_returns(closes: list[tuple[str, float]]) -> dict[str, float] | None:
+# DB-overridable defaults (see scoring_config key 'rs_rating').
+RS_DEFAULTS = {
+    "periods": {"3m": 91, "6m": 182, "9m": 273, "12m": 365},
+    "weights": {"3m": 0.4, "6m": 0.2, "9m": 0.2, "12m": 0.2},
+    "tolerance_days": 25,
+    "liquidity_floor": 0,
+    "window_days": 430,
+    "rs_line": {"window_days": 365, "spark_points": 48, "min_points": 20},
+}
+
+
+def _trailing_returns(closes: list[tuple[str, float]], periods: dict, tol_days: int) -> dict[str, float] | None:
     """Return {period: pct_return}, where each period's prior price is the bar
     nearest (by date) to `last_date − N months`. A period is skipped (whole
-    symbol returned None) if no bar lies within _TOLERANCE_DAYS of its target,
-    so a symbol must have ≥ ~12 months of listing to be fully rated."""
+    symbol returned None) if no bar lies within `tol_days` of its target, so a
+    symbol must have ≥ ~12 months of listing to be fully rated."""
     if not closes:
         return None
     parsed = [(_date_cls.fromisoformat(d), c) for d, c in closes if c and c > 0]
@@ -122,7 +121,7 @@ def _trailing_returns(closes: list[tuple[str, float]]) -> dict[str, float] | Non
         return None
     last_date, last = parsed[-1]
     rets: dict[str, float] = {}
-    for key, days in PERIOD_DAYS.items():
+    for key, days in periods.items():
         target = last_date.toordinal() - days
         best = None
         best_diff = None
@@ -130,7 +129,7 @@ def _trailing_returns(closes: list[tuple[str, float]]) -> dict[str, float] | Non
             diff = abs(d.toordinal() - target)
             if best_diff is None or diff < best_diff:
                 best_diff, best = diff, c
-        if best is None or best_diff > _TOLERANCE_DAYS:
+        if best is None or best_diff > tol_days:
             return None
         rets[key] = last / best - 1.0
     return rets
@@ -138,20 +137,18 @@ def _trailing_returns(closes: list[tuple[str, float]]) -> dict[str, float] | Non
 
 # RS Line = stock close ÷ VN-Index close over the trailing ~1 year. The full
 # daily series feeds the detail chart; a downsampled copy (≈ weekly) feeds the
-# compact in-cell sparkline.
-RS_LINE_WINDOW_DAYS = 365
-RS_LINE_SPARK_POINTS = 48  # downsample target for the in-cell sparkline
-_RS_LINE_MIN_POINTS = 20   # need a reasonable span to draw a meaningful line
+# compact in-cell sparkline. (Params come from RS_DEFAULTS / scoring_config.)
 
 
-def _build_rs_line(closes: list[tuple[str, float]], vnindex: dict) -> tuple[list[float], list[str]] | None:
+def _build_rs_line(closes: list[tuple[str, float]], vnindex: dict,
+                   window_days: int, min_points: int) -> tuple[list[float], list[str]] | None:
     """Build the FULL daily RS-Line for one symbol: stock close ÷ VN-Index close
     over the trailing ~1 year. Returns (ratios, dates) parallel arrays for every
     trading day in the window (oldest→newest), or None if too few points."""
     if not closes:
         return None
     last_ord = _date_cls.fromisoformat(closes[-1][0]).toordinal()
-    start_ord = last_ord - RS_LINE_WINDOW_DAYS
+    start_ord = last_ord - window_days
     ratios: list[float] = []
     dates: list[str] = []
     for d_str, c in closes:
@@ -162,7 +159,7 @@ def _build_rs_line(closes: list[tuple[str, float]], vnindex: dict) -> tuple[list
         if v and v > 0 and c and c > 0:
             ratios.append(round(c / v, 6))
             dates.append(d_str)
-    if len(ratios) < _RS_LINE_MIN_POINTS:
+    if len(ratios) < min_points:
         return None
     return ratios, dates
 
@@ -175,26 +172,35 @@ def _downsample(values: list[float], target: int) -> list[float]:
     return [values[min(int(i * step), len(values) - 1)] for i in range(target)]
 
 
-def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR,
+def compute_rs_ratings(client, liquidity_floor: int | None = None,
                        dry_run: bool = False) -> dict:
     """Compute + persist RS ratings for the liquid universe. Returns a stats dict
-    with keys: liquid, scored, rs_date."""
+    with keys: liquid, scored, rs_date. Tiers/weights/periods come from the
+    scoring_config 'rs_rating' row (deep-merged over RS_DEFAULTS)."""
     import pandas as pd
+    from .common import load_scoring_config
+
+    cfg = load_scoring_config(client, "rs_rating", RS_DEFAULTS)
+    periods = cfg["periods"]
+    weights = cfg["weights"]
+    tol = cfg["tolerance_days"]
+    floor = liquidity_floor if liquidity_floor is not None else cfg["liquidity_floor"]
+    rl = cfg["rs_line"]
 
     active = get_active_symbols(client)
-    liquid = _liquid_symbols(client, active, liquidity_floor)
+    liquid = _liquid_symbols(client, active, floor)
     stats = {"liquid": len(liquid), "scored": 0, "rs_date": None, "rs_lines": 0}
     if not liquid:
         return stats
 
-    cutoff = (today_vn() - timedelta(days=_WINDOW_DAYS)).isoformat()
+    cutoff = (today_vn() - timedelta(days=cfg["window_days"])).isoformat()
     closes_by_sym = _load_closes(client, liquid, cutoff)
 
     rets: dict[str, dict[str, float]] = {}
     rs_date = None
     for sym in liquid:
         series = closes_by_sym.get(sym) or []
-        r = _trailing_returns(series)
+        r = _trailing_returns(series, periods, tol)
         if r is None:
             continue
         rets[sym] = r
@@ -211,9 +217,9 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
         # Percentile rank → 1..99 (lowest→~1, highest→99). Average ties.
         return (s.rank(method="average", pct=True) * 99).round().clip(1, 99).astype(int)
 
-    for k in PERIOD_DAYS:
+    for k in periods:
         df[f"rs_{k}"] = pct(df[k])
-    blend = sum(WEIGHTS[k] * df[f"rs_{k}"] for k in PERIOD_DAYS)
+    blend = sum(weights[k] * df[f"rs_{k}"] for k in periods)
     df["rs_composite"] = pct(blend)
 
     stats["scored"] = len(df)
@@ -226,7 +232,7 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
     rs_lines: dict[str, tuple[list[float], list[str]]] = {}
     if vnindex:
         for sym in df.index:
-            line = _build_rs_line(closes_by_sym.get(sym) or [], vnindex)
+            line = _build_rs_line(closes_by_sym.get(sym) or [], vnindex, rl["window_days"], rl["min_points"])
             if line:
                 rs_lines[sym] = line
     stats["rs_lines"] = len(rs_lines)
@@ -257,7 +263,7 @@ def compute_rs_ratings(client, liquidity_floor: int = DEFAULT_RS_LIQUIDITY_FLOOR
             "rs_12m": int(row["rs_12m"]),
             "rs_composite": int(row["rs_composite"]),
             "rs_date": rs_date,
-            "rs_line": _downsample(rs_lines[sym][0], RS_LINE_SPARK_POINTS) if sym in rs_lines else None,
+            "rs_line": _downsample(rs_lines[sym][0], rl["spark_points"]) if sym in rs_lines else None,
             "rs_line_full": rs_lines[sym][0] if sym in rs_lines else None,
             "rs_line_dates": rs_lines[sym][1] if sym in rs_lines else None,
             "rs_line_date": rs_date if sym in rs_lines else None,

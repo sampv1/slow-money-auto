@@ -20,28 +20,43 @@ from datetime import timedelta
 from .common import safe_execute, today_vn
 from .universe import get_active_symbols
 
-# --- tunable parameters -----------------------------------------------------
-WINDOW_DAYS = 500          # calendar days of history to load
-MIN_BARS = 70              # need enough history for context + a base
-MIN_BASE_BARS = 20         # 4 weeks — shorter is a Pause/Tight Area, not a base
-MAX_BASE_BARS = 52 * 5     # cap base length at ~52 weeks
-WINDOW_STEP = 2            # evaluate candidate window lengths every N bars
-DEPTH_SANITY_CAP = 0.50    # ignore windows wider than this (not a base)
-PRIOR_BARS = 130           # ~26 weeks of pre-base context for the prior move
-BARS_52W = 250
-NEAR_TOP = 0.95            # within 5% of base high = "near top"
-BREAKOUT_VOL_MULT = 1.5    # vol ≥ 1.5× MA20 vol = strong breakout
+# --- DB-overridable defaults (see scoring_config key 'price_base') ----------
+# Tiers are [threshold, points] (ascending; pick highest threshold ≤ value).
+# max-per-type is derived from the tiers → Bottoming 130, Continuation 120.
+BASE_DEFAULTS = {
+    "detection": {
+        "window_days": 500, "min_bars": 70, "min_base_bars": 20, "max_base_bars": 260,
+        "window_step": 2, "depth_sanity_cap": 0.50, "prior_bars": 130, "bars_52w": 250,
+        "near_top": 0.95, "breakout_vol_mult": 1.5,
+    },
+    "classification": {
+        "bottoming_drawdown_min": 0.25, "bottoming_min_weeks": 6,
+        "continuation_runup_min": 0.20, "continuation_runup_max": 0.60,
+        "continuation_min_weeks": 4, "continuation_max_dist52w": 0.25,
+        "both_pick_continuation_dist52w": 0.15,
+    },
+    "tiers": {
+        "len1": [[0, 0], [6, 10], [10, 15], [30, 12], [52, 8]],
+        "len2": [[0, 0], [4, 10], [6, 15], [12, 12], [20, 8]],
+        "depth1": [[0, 8], [10, 15], [20, 20], [30, 10], [40, 0]],
+        "depth2": [[0, 12], [5, 20], [15, 15], [25, 8], [35, 0]],
+        "tight": [[0, 25], [5, 20], [8, 15], [12, 8], [15, 0]],
+        "voldry": [[0, 20], [50, 15], [70, 10], [90, 5], [120, 0]],
+        "dist1": [[0, 10], [20, 7], [40, 4], [60, 2]],
+        "dist2": [[0, 10], [10, 7], [20, 4], [30, 0]],
+    },
+    "categorical": {
+        "trend_bottoming": {"cross_up": 10, "above_ma50": 8, "above_ma20": 5, "below": 0},
+        "trend_continuation": {"stacked": 10, "ma20_gt_ma50": 8, "above_ma50": 5, "below": 0},
+        "spring": {"strong": 10, "weak": 5, "none": 0},
+        "breakout": {"strong": 10, "weak": 5, "near_top": 8, "mid": 4, "fail": 0},
+        "rs": {"new_high": 10, "rising": 8, "flat": 5, "falling": 0},
+    },
+    "grades": [[80, "A"], [65, "B"], [50, "C"], [0, "D"]],
+}
 
-# --- BQS V3 tier tables (ascending threshold → points; pick highest ≤ value) -
-LEN1 = [(0, 0), (6, 10), (10, 15), (30, 12), (52, 8)]          # weeks
-LEN2 = [(0, 0), (4, 10), (6, 15), (12, 12), (20, 8)]
-DEPTH1 = [(0, 8), (10, 15), (20, 20), (30, 10), (40, 0)]        # percent
-DEPTH2 = [(0, 12), (5, 20), (15, 15), (25, 8), (35, 0)]
-TIGHT = [(0, 25), (5, 20), (8, 15), (12, 8), (15, 0)]          # percent
-VOLDRY = [(0, 20), (50, 15), (70, 10), (90, 5), (120, 0)]      # ratio percent
-DIST1 = [(0, 10), (20, 7), (40, 4), (60, 2)]                   # percent
-DIST2 = [(0, 10), (10, 7), (20, 4), (30, 0)]
-GRADES = [(80, "A"), (65, "B"), (50, "C"), (0, "D")]
+# Bar count for the 52-week high; safe to keep as a constant (not user-facing).
+BARS_52W = 250
 
 
 def _tier(value: float, table) -> int:
@@ -58,8 +73,8 @@ def _max_pts(table) -> int:
     return max(p for _, p in table)
 
 
-def _grade(bqs: float) -> str:
-    for thr, g in GRADES:
+def _grade(bqs: float, grades) -> str:
+    for thr, g in grades:
         if bqs >= thr:
             return g
     return "D"
@@ -104,18 +119,19 @@ def _current_metrics(highs, lows, closes, vols, n) -> dict:
     }
 
 
-def _build_attrs(highs, lows, closes, dates, start, last, base_high, base_low, m) -> dict | None:
+def _build_attrs(highs, lows, closes, dates, start, last, base_high, base_low, m, cfg) -> dict | None:
     """Build the attributes for one candidate window [start, last], or None if it
     doesn't classify as a base."""
+    det, cl = cfg["detection"], cfg["classification"]
     if base_high <= 0:
         return None
     base_depth = (base_high - base_low) / base_high
-    if base_depth > DEPTH_SANITY_CAP:
+    if base_depth > det["depth_sanity_cap"]:
         return None  # too wide to be a base
     dur_bars = last - start + 1
     dur_weeks = dur_bars / 5.0
 
-    pre0 = max(0, start - PRIOR_BARS)
+    pre0 = max(0, start - det["prior_bars"])
     if start <= pre0:
         return None  # need prior-move context
     pre_peak = max(highs[pre0:start])
@@ -124,10 +140,12 @@ def _build_attrs(highs, lows, closes, dates, start, last, base_high, base_low, m
     runup_pre = (base_high - pre_run_low) / pre_run_low if pre_run_low > 0 else 0.0
 
     # Type classification (Module 1).
-    is_bottoming = drawdown_pre >= 0.25 and dur_weeks >= 6
-    is_continuation = 0.20 <= runup_pre <= 0.60 and dur_weeks >= 4 and m["dist_52w"] <= 0.25
+    is_bottoming = drawdown_pre >= cl["bottoming_drawdown_min"] and dur_weeks >= cl["bottoming_min_weeks"]
+    is_continuation = (cl["continuation_runup_min"] <= runup_pre <= cl["continuation_runup_max"]
+                       and dur_weeks >= cl["continuation_min_weeks"]
+                       and m["dist_52w"] <= cl["continuation_max_dist52w"])
     if is_bottoming and is_continuation:
-        base_type = "continuation" if m["dist_52w"] <= 0.15 else "bottoming"
+        base_type = "continuation" if m["dist_52w"] <= cl["both_pick_continuation_dist52w"] else "bottoming"
     elif is_bottoming:
         base_type = "bottoming"
     elif is_continuation:
@@ -153,32 +171,34 @@ def _build_attrs(highs, lows, closes, dates, start, last, base_high, base_low, m
     }
 
 
-def detect_base(highs, lows, closes, vols, dates, rs_line) -> tuple[dict, dict] | None:
+def detect_base(highs, lows, closes, vols, dates, rs_line, cfg) -> tuple[dict, dict] | None:
     """Multi-window search: evaluate every candidate base window ending at the
     latest bar and keep the highest-BQS valid base. Returns (attrs, result) or
     None. Shorter windows are tried first, so ties favor the tighter/most-recent
     base."""
+    det = cfg["detection"]
     n = len(closes)
-    if n < MIN_BARS:
+    if n < det["min_bars"]:
         return None
     last = n - 1
     m = _current_metrics(highs, lows, closes, vols, n)
 
+    min_base, step = det["min_base_bars"], det["window_step"]
     hi, lo = highs[last], lows[last]
     best = None
-    limit = max(0, last - MAX_BASE_BARS)
+    limit = max(0, last - det["max_base_bars"])
     for start in range(last, limit - 1, -1):
         if highs[start] > hi:
             hi = highs[start]
         if lows[start] < lo:
             lo = lows[start]
         dur_bars = last - start + 1
-        if dur_bars < MIN_BASE_BARS or (dur_bars - MIN_BASE_BARS) % WINDOW_STEP != 0:
+        if dur_bars < min_base or (dur_bars - min_base) % step != 0:
             continue
-        attrs = _build_attrs(highs, lows, closes, dates, start, last, hi, lo, m)
+        attrs = _build_attrs(highs, lows, closes, dates, start, last, hi, lo, m, cfg)
         if not attrs:
             continue
-        res = score_base(attrs, rs_line)
+        res = score_base(attrs, rs_line, cfg)
         if best is None or res["score"] > best[1]["score"]:
             best = (attrs, res)
     return best
@@ -186,7 +206,7 @@ def detect_base(highs, lows, closes, vols, dates, rs_line) -> tuple[dict, dict] 
 
 # --- scoring (BQS V3) -------------------------------------------------------
 
-def _spring_points(a) -> int:
+def _spring_points(a, cat) -> int:
     """Module 12 (Bottoming only): a dip 1–8% below the base shelf that closes
     back above it within ≤5 sessions = shakeout/spring."""
     lows, closes, start, last = a["_lows"], a["_closes"], a["_start"], a["_last"]
@@ -198,110 +218,107 @@ def _spring_points(a) -> int:
         if 0.01 <= (shelf - lows[i]) / shelf <= 0.08:  # dipped below shelf
             for j in range(i + 1, min(i + 6, last + 1)):
                 if closes[j] > shelf:
-                    return 10 if closes[j] > mid else 5
-    return 0
+                    return cat["strong"] if closes[j] > mid else cat["weak"]
+    return cat["none"]
 
 
-def _breakout(a):
+def _breakout(a, det, cat):
     """Module 13: returns (points, status)."""
     close, bh, bl = a["close"], a["base_high"], a["base_low"]
     vol, ma20v = a["_last_vol"], a["_ma20vol"]
     if close < bl:
-        return 0, "fail"
+        return cat["fail"], "fail"
     if close > bh:
-        if ma20v and vol >= BREAKOUT_VOL_MULT * ma20v:
-            return 10, "breakout"
-        return 5, "breakout"
-    if close >= bh * NEAR_TOP:
-        return 8, "watchlist"
-    return 4, "watchlist"  # in-base, not near top (interpolated; sheet enumerates 4 states)
+        if ma20v and vol >= det["breakout_vol_mult"] * ma20v:
+            return cat["strong"], "breakout"
+        return cat["weak"], "breakout"
+    if close >= bh * det["near_top"]:
+        return cat["near_top"], "watchlist"
+    return cat["mid"], "watchlist"  # in-base, not near top (sheet enumerates 4 states)
 
 
-def _rs_points(a, rs_line: list[float] | None) -> int:
+def _rs_points(a, rs_line: list[float] | None, cat) -> int:
     """Module 14: RS Line trend during the base (reuses the RS module)."""
     if not rs_line or len(rs_line) < 20:
-        return 0
+        return cat["falling"]
     cur, prev = rs_line[-1], rs_line[-20]
     rs_at_high = cur >= max(rs_line) * 0.999
     price_at_high = a["close"] >= a["base_high"] * 0.999
     if rs_at_high and not price_at_high:
-        return 10
+        return cat["new_high"]
     if prev > 0:
         chg = cur / prev - 1
         if chg > 0.01:
-            return 8
+            return cat["rising"]
         if chg >= -0.01:
-            return 5
-    return 0
+            return cat["flat"]
+    return cat["falling"]
 
 
-def _trend_points(a) -> int:
+def _trend_points(a, cat_bot, cat_con) -> int:
     close, ma20, ma50, ma200 = a["close"], a["_ma20"], a["_ma50"], a["_ma200"]
     if a["base_type"] == "bottoming":
         if a["_ma20_cross_up"]:
-            return 10
+            return cat_bot["cross_up"]
         if ma50 is not None and close > ma50:
-            return 8
+            return cat_bot["above_ma50"]
         if ma20 is not None and close > ma20:
-            return 5
-        return 0
+            return cat_bot["above_ma20"]
+        return cat_bot["below"]
     # continuation
     if ma20 and ma50 and ma200 and ma20 > ma50 > ma200:
-        return 10
+        return cat_con["stacked"]
     if ma20 and ma50 and ma20 > ma50 and close > ma50:
-        return 8
+        return cat_con["ma20_gt_ma50"]
     if ma50 and close > ma50:
-        return 5
-    return 0
+        return cat_con["above_ma50"]
+    return cat_con["below"]
 
 
-def score_base(a: dict, rs_line: list[float] | None) -> dict:
+def score_base(a: dict, rs_line: list[float] | None, cfg) -> dict:
     """Score a detected base. Returns score/grade/status + breakdown."""
     t = a["base_type"]
+    tiers, cat = cfg["tiers"], cfg["categorical"]
     b = []  # breakdown rows
 
     def add(key, en, vi, value, pts, mx):
         b.append({"key": key, "label_en": en, "label_vi": vi, "value": value, "points": pts, "max": mx})
 
-    if t == "bottoming":
-        add("length", "Base length (weeks)", "Độ dài nền (tuần)", a["duration_weeks"],
-            _tier(a["duration_weeks"], LEN1), _max_pts(LEN1))
-        add("depth", "Base depth %", "Độ sâu nền %", a["depth_pct"],
-            _tier(a["depth_pct"], DEPTH1), _max_pts(DEPTH1))
-    else:
-        add("length", "Base length (weeks)", "Độ dài nền (tuần)", a["duration_weeks"],
-            _tier(a["duration_weeks"], LEN2), _max_pts(LEN2))
-        add("depth", "Base depth %", "Độ sâu nền %", a["depth_pct"],
-            _tier(a["depth_pct"], DEPTH2), _max_pts(DEPTH2))
+    len_t = tiers["len1"] if t == "bottoming" else tiers["len2"]
+    depth_t = tiers["depth1"] if t == "bottoming" else tiers["depth2"]
+    dist_t = tiers["dist1"] if t == "bottoming" else tiers["dist2"]
 
+    add("length", "Base length (weeks)", "Độ dài nền (tuần)", a["duration_weeks"],
+        _tier(a["duration_weeks"], len_t), _max_pts(len_t))
+    add("depth", "Base depth %", "Độ sâu nền %", a["depth_pct"],
+        _tier(a["depth_pct"], depth_t), _max_pts(depth_t))
     add("tightness", "Tightness (last 20)", "Độ chặt 20 phiên", a["tightness20_pct"],
-        _tier(a["tightness20_pct"], TIGHT), _max_pts(TIGHT))
+        _tier(a["tightness20_pct"], tiers["tight"]), _max_pts(tiers["tight"]))
 
     vdr = a["vol_dry_ratio_pct"]
     add("vol_dry", "Volume dry-up", "Khối lượng khô cạn", vdr,
-        _tier(vdr, VOLDRY) if vdr is not None else 0, _max_pts(VOLDRY))
+        _tier(vdr, tiers["voldry"]) if vdr is not None else 0, _max_pts(tiers["voldry"]))
+    add("dist52w", "Distance to 52W high %", "Vị trí so với đỉnh 52W", a["dist52w_pct"],
+        _tier(a["dist52w_pct"], dist_t), _max_pts(dist_t))
+
+    cat_bot, cat_con = cat["trend_bottoming"], cat["trend_continuation"]
+    add("trend", "MA / Trend filter", "Bộ lọc MA/Xu hướng", None,
+        _trend_points(a, cat_bot, cat_con), max((cat_bot if t == "bottoming" else cat_con).values()))
 
     if t == "bottoming":
-        add("dist52w", "Distance to 52W high %", "Vị trí so với đỉnh 52W", a["dist52w_pct"],
-            _tier(a["dist52w_pct"], DIST1), _max_pts(DIST1))
-    else:
-        add("dist52w", "Distance to 52W high %", "Vị trí so với đỉnh 52W", a["dist52w_pct"],
-            _tier(a["dist52w_pct"], DIST2), _max_pts(DIST2))
+        add("spring", "Spring / Shakeout", "Spring/Shakeout", None,
+            _spring_points(a, cat["spring"]), max(cat["spring"].values()))
 
-    add("trend", "MA / Trend filter", "Bộ lọc MA/Xu hướng", None, _trend_points(a), 10)
-
-    if t == "bottoming":
-        add("spring", "Spring / Shakeout", "Spring/Shakeout", None, _spring_points(a), 10)
-
-    bo_pts, status = _breakout(a)
-    add("breakout", "Breakout / SOS", "Breakout/SOS", status, bo_pts, 10)
-    add("rs", "RS confirmation", "RS xác nhận", None, _rs_points(a, rs_line), 10)
+    bo_pts, status = _breakout(a, cfg["detection"], cat["breakout"])
+    add("breakout", "Breakout / SOS", "Breakout/SOS", status, bo_pts, max(cat["breakout"].values()))
+    add("rs", "RS confirmation", "RS xác nhận", None,
+        _rs_points(a, rs_line, cat["rs"]), max(cat["rs"].values()))
 
     raw = sum(r["points"] for r in b)
     mx = sum(r["max"] for r in b)
     bqs = round(raw / mx * 100) if mx else 0
     return {
-        "score": bqs, "grade": _grade(bqs), "type": t, "status": status,
+        "score": bqs, "grade": _grade(bqs, cfg["grades"]), "type": t, "status": status,
         "raw": raw, "max": mx, "breakdown": b,
     }
 
@@ -347,13 +364,19 @@ def _load_rs_lines(client, symbols):
 
 
 def compute_price_bases(client, dry_run: bool = False) -> dict:
-    """Detect + score the current base for every active symbol. Returns stats."""
+    """Detect + score the current base for every active symbol. Returns stats.
+    Tiers/weights/thresholds come from scoring_config 'price_base' (deep-merged
+    over BASE_DEFAULTS)."""
+    from .common import load_scoring_config
+    cfg = load_scoring_config(client, "price_base", BASE_DEFAULTS)
+    min_bars = cfg["detection"]["min_bars"]
+
     active = get_active_symbols(client)
     stats = {"active": len(active), "based": 0, "by_grade": {}, "as_of": None}
     if not active:
         return stats
 
-    cutoff = (today_vn() - timedelta(days=WINDOW_DAYS)).isoformat()
+    cutoff = (today_vn() - timedelta(days=cfg["detection"]["window_days"])).isoformat()
     ohlcv = _load_ohlcv(client, active, cutoff)
     rs_lines = _load_rs_lines(client, active)
 
@@ -361,9 +384,9 @@ def compute_price_bases(client, dry_run: bool = False) -> dict:
     as_of = None
     for sym in active:
         o = ohlcv.get(sym)
-        if not o or len(o["c"]) < MIN_BARS:
+        if not o or len(o["c"]) < min_bars:
             continue
-        found = detect_base(o["h"], o["l"], o["c"], o["v"], o["d"], rs_lines.get(sym))
+        found = detect_base(o["h"], o["l"], o["c"], o["v"], o["d"], rs_lines.get(sym), cfg)
         if not found:
             continue
         attrs, res = found

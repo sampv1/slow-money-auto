@@ -64,6 +64,32 @@ def is_transient_error(exc: BaseException) -> bool:
     return any(marker in err for marker in _TRANSIENT_ERROR_MARKERS)
 
 
+def _deep_merge(default: dict, override: dict) -> dict:
+    """Recursively merge `override` onto `default` (override wins; nested dicts
+    merged). Lists/scalars are replaced wholesale."""
+    out = dict(default)
+    for k, v in (override or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def load_scoring_config(client, key: str, default: dict) -> dict:
+    """Load a JSON scoring config row from the `scoring_config` table by key,
+    deep-merged onto `default` so a missing key or missing fields fall back to
+    the hardcoded defaults. Never raises — returns `default` on any error."""
+    try:
+        res = client.table("scoring_config").select("config").eq("key", key).maybe_single().execute()
+        cfg = (res.data or {}).get("config") if res and res.data else None
+        if isinstance(cfg, dict):
+            return _deep_merge(default, cfg)
+    except Exception as e:
+        print(f"  scoring_config[{key}] load failed, using defaults — {str(e)[:100]}")
+    return default
+
+
 def safe_execute(query_builder, label: str = "query", max_retries: int = 4, base_delay: float = 1.0):
     """Execute a Supabase / postgrest query builder with retry-on-transient.
 
