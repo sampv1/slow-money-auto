@@ -35,6 +35,7 @@ from ta.common import REQUEST_DELAY, get_supabase_client, safe_execute, today_vn
 from ta.ohlcv import fetch_today_snapshot, upsert_ohlcv
 from ta.rs_rating import compute_rs_ratings
 from ta.price_base import compute_price_bases
+from ta.ta_score import compute_ta_score
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
 from ta.universe import get_active_symbols
@@ -207,6 +208,17 @@ def main():
             except Exception as e:
                 print(f"  price bases failed (non-fatal): {str(e)[:160]}")
 
+        # Step 5: TA Score (weighted blend of RS3M / RS Composite / RS Line /
+        # BQS). Runs last because it re-reads the columns the prior steps wrote.
+        ta_stats = {"rows": 0, "scored": 0}
+        if not args.dry_run:
+            try:
+                print("\n--- Step 5: TA Score ---")
+                ta_stats = compute_ta_score(client)
+                print(f"TA Score: scored {ta_stats['scored']}/{ta_stats['rows']} symbols.")
+            except Exception as e:
+                print(f"  TA Score failed (non-fatal): {str(e)[:160]}")
+
         # GitHub Actions Job Summary — visible on the run page without opening logs.
         summary_lines = [
             "## TA Daily Update Summary",
@@ -218,6 +230,7 @@ def main():
         summary_lines.append(f"- **Signals written**: {total_signals:,} ({triggered_total} triggered)")
         summary_lines.append(f"- **RS scored**: {rs_stats['scored']} liquid (rs_date {rs_stats['rs_date']})")
         summary_lines.append(f"- **Price bases**: {base_stats['based']} detected")
+        summary_lines.append(f"- **TA Score**: {ta_stats['scored']}/{ta_stats['rows']} scored")
         if final_failed:
             shown = ", ".join(final_failed[:25])
             more = f" (+{len(final_failed) - 25} more)" if len(final_failed) > 25 else ""

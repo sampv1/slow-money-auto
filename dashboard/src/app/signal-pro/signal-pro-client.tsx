@@ -10,7 +10,7 @@ import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import { PriceBaseBadge, PriceBaseBreakdown } from "./price-base";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
-type SortKey = "total_score" | "rs_3m" | "rs_composite" | "symbol";
+type SortKey = "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "symbol";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 
@@ -47,6 +47,7 @@ export function SignalProClient({
     base_grade: string | null;
     base_type: string | null;
     base_status: string | null;
+    ta_score: number | null;
   }[];
   locale: Locale;
   quarters: string[];
@@ -87,6 +88,12 @@ export function SignalProClient({
   const rsLineScoreBySymbol = useMemo(() => {
     const m = new Map<string, { score: number | null; grade: string | null }>();
     for (const u of universe) m.set(u.symbol, { score: u.rs_line_score, grade: u.rs_line_grade });
+    return m;
+  }, [universe]);
+
+  const taScoreBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const u of universe) m.set(u.symbol, u.ta_score);
     return m;
   }, [universe]);
 
@@ -160,6 +167,7 @@ export function SignalProClient({
         const pick = (sym: string) =>
           sortKey === "rs_composite" ? (rsBySymbol.get(sym) ?? null)
           : sortKey === "rs_3m" ? (rs3mBySymbol.get(sym) ?? null)
+          : sortKey === "ta_score" ? (taScoreBySymbol.get(sym) ?? null)
           : null;
         const an = sortKey === "total_score" ? a.total_score : pick(a.symbol);
         const bn = sortKey === "total_score" ? b.total_score : pick(b.symbol);
@@ -174,7 +182,7 @@ export function SignalProClient({
       return 0;
     });
     return out;
-  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, rsBySymbol, rs3mBySymbol, search, sortKey, sortAsc]);
+  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, search, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -287,7 +295,10 @@ export function SignalProClient({
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
                 <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
-                  {t(locale, "faTotalScore")}{sortIndicator("total_score")}
+                  {t(locale, "spFaScore")}{sortIndicator("total_score")}
+                </th>
+                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
+                  {t(locale, "spTaScore")}{sortIndicator("ta_score")}
                 </th>
                 <th className="px-4 py-3 font-medium">{t(locale, "faRating")}</th>
                 <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
@@ -307,6 +318,7 @@ export function SignalProClient({
                 const rs3m = rs3mBySymbol.get(row.symbol) ?? null;
                 const rsLine = rsLineBySymbol.get(row.symbol) ?? null;
                 const rsLineScore = rsLineScoreBySymbol.get(row.symbol);
+                const taScore = taScoreBySymbol.get(row.symbol) ?? null;
                 const base = baseBySymbol.get(row.symbol);
                 return (
                   <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
@@ -317,6 +329,9 @@ export function SignalProClient({
                     </td>
                     <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
                       {row.total_score} / {FA_MAX_SCORE}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {taScore ?? "—"}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-medium ${badge.className}`}>
