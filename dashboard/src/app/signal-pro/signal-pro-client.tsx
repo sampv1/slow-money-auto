@@ -48,7 +48,7 @@ function ScoreCell({ score, highlight = false }: { score: number | null; highlig
     <td className={`px-4 py-3 ${highlight ? "bg-amber-50" : ""}`}>
       {score !== null ? (
         <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-          <span className={`font-mono ${highlight ? "font-semibold" : ""}`}>{score} / 100</span>
+          <span className={`font-mono ${highlight ? "font-semibold" : ""}`}>{score}</span>
           <GradeBadge grade={gradeOf(score)} />
         </div>
       ) : (
