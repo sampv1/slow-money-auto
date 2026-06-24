@@ -58,14 +58,19 @@ function ScoreCell({ score, highlight = false }: { score: number | null; highlig
   );
 }
 
-function passesRating(rating: string, filter: RatingFilter): boolean {
+// Min-rating filter against the Final-score grade (A+/A/B/C/D). Treated as a
+// floor, so "A" also admits A+, etc. A null grade (no Final score) is excluded
+// whenever a minimum is set.
+function passesRating(grade: string | null, filter: RatingFilter): boolean {
+  if (filter === "all") return true;
+  if (!grade) return false;
   switch (filter) {
     case "A":
-      return rating === "A";
+      return grade === "A+" || grade === "A";
     case "AB":
-      return rating === "A" || rating === "B";
+      return grade === "A+" || grade === "A" || grade === "B";
     case "ABC":
-      return rating === "A" || rating === "B" || rating === "C";
+      return grade === "A+" || grade === "A" || grade === "B" || grade === "C";
     default:
       return true;
   }
@@ -201,8 +206,10 @@ export function SignalProClient({
     const min = minScore.trim() === "" ? null : Number(minScore);
     const q = search.trim().toUpperCase();
     const out = rows.filter((r) => {
-      if (!passesRating(r.rating, rating)) return false;
-      if (min !== null && !Number.isNaN(min) && faNormalizedScore(r) < min) return false;
+      // Min rating + min score both key off the Final score (and its grade).
+      const finalScore = finalBySymbol.get(r.symbol) ?? null;
+      if (!passesRating(gradeOf(finalScore), rating)) return false;
+      if (min !== null && !Number.isNaN(min) && (finalScore === null || finalScore < min)) return false;
       // Liquidity filter: drop symbols whose 20-session avg volume is below the
       // threshold (or NULL = unknown), matching the TA/FA scanners.
       if (minAvgVolume > 0) {
