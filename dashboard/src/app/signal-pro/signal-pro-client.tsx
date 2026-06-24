@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
-import { type FaScore, FA_MAX_SCORE, ratingBadge } from "@/lib/fa";
+import { type FaScore, FA_NORMALIZED_MAX, faNormalizedScore, ratingBadge } from "@/lib/fa";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import { PriceBaseBadge, PriceBaseBreakdown } from "./price-base";
@@ -143,7 +143,7 @@ export function SignalProClient({
     const q = search.trim().toUpperCase();
     const out = rows.filter((r) => {
       if (!passesRating(r.rating, rating)) return false;
-      if (min !== null && !Number.isNaN(min) && r.total_score < min) return false;
+      if (min !== null && !Number.isNaN(min) && faNormalizedScore(r) < min) return false;
       // Liquidity filter: drop symbols whose 20-session avg volume is below the
       // threshold (or NULL = unknown), matching the TA/FA scanners.
       if (minAvgVolume > 0) {
@@ -328,7 +328,7 @@ export function SignalProClient({
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
-                      {row.total_score} / {FA_MAX_SCORE}
+                      {faNormalizedScore(row)} / {FA_NORMALIZED_MAX}
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
                       {taScore ?? "—"}

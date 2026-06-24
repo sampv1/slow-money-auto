@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 class ScoreResult:
     criteria: dict = field(default_factory=dict)   # cN -> {"value", "pts"}
     total_score: int = 0
+    normalized_score: float = 0.0   # total_score rescaled to a 0-100 display scale
     rating: str = "UNRATED"
     notes: list = field(default_factory=list)
 
@@ -81,6 +82,12 @@ def compute_score(metrics: dict, config: dict, fully_scorable: bool) -> ScoreRes
 
     res.total_score = sum(c["pts"] for c in res.criteria.values())
 
+    # Normalized display score (0-100). Divisor lives in config so it's tunable.
+    norm = config.get("normalize", {"raw_max": 108, "target": 100})
+    raw_max = norm.get("raw_max") or 108
+    target = norm.get("target", 100)
+    res.normalized_score = round(res.total_score / raw_max * target, 2)
+
     # UNRATED rules: too little history, or no operating data (banks/insurers
     # lack revenue & margins → the rubric's revenue/margin thresholds mislead).
     revenue_metrics = [metrics.get(k) for k in ("c4_rev_yoy", "c5_gross_margin_delta", "c6_net_margin_delta")]
@@ -91,7 +98,8 @@ def compute_score(metrics: dict, config: dict, fully_scorable: bool) -> ScoreRes
         res.rating = "UNRATED"
         res.notes.append("No usable fundamentals (e.g. bank/financial statement format)")
     else:
+        # Rating bands apply to the NORMALIZED (0-100) score, not the raw total.
         bands = config["rating"]
-        res.rating = "A" if res.total_score >= bands["A_min"] else ("B" if res.total_score >= bands["B_min"] else "C")
+        res.rating = "A" if res.normalized_score >= bands["A_min"] else ("B" if res.normalized_score >= bands["B_min"] else "C")
 
     return res

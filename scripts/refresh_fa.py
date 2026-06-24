@@ -232,7 +232,7 @@ def _print_inspect(client, symbol, series_all, pe_all, config):
         vs = f"{v:.2f}" if isinstance(v, (int, float)) else "—"
         print(f"  {_LABELS[k]:<22}{vs:>12}{res.pts(k):>5}")
     print("  " + "-" * 40)
-    print(f"  {'TOTAL':<22}{'':>12}{res.total_score:>5}  -> {res.rating}")
+    print(f"  {'TOTAL':<22}{'':>12}{res.total_score:>5}  ({res.normalized_score:g}/100)  -> {res.rating}")
     if res.notes:
         print(f"  notes: {'; '.join(res.notes)}")
 

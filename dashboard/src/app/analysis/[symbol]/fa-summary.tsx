@@ -1,5 +1,5 @@
 import { type Locale, t } from "@/lib/i18n";
-import { type FaScore, FA_MAX_SCORE, ratingBadge } from "@/lib/fa";
+import { type FaScore, FA_NORMALIZED_MAX, faNormalizedScore, ratingBadge } from "@/lib/fa";
 import { formatPrice } from "@/lib/format";
 import { FaBreakdownTable } from "@/components/fa-breakdown-table";
 import { FaQuarterSelect } from "./fa-quarter-select";
@@ -52,8 +52,8 @@ export function FaSummary({
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-3">
             <span className="text-2xl font-mono font-semibold">
-              {row.total_score}
-              <span className="text-gray-400 text-base"> / {FA_MAX_SCORE}</span>
+              {faNormalizedScore(row)}
+              <span className="text-gray-400 text-base"> / {FA_NORMALIZED_MAX}</span>
             </span>
             <span className={`inline-flex items-center px-2.5 py-1 text-sm rounded font-medium ${badge.className}`}>
               {badge.label}

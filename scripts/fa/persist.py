@@ -61,6 +61,7 @@ def score_row_for(symbol: str, as_of_period: str, metrics: dict, result, current
         "c8_debt_to_equity": c.get("c8", {}).get("value"),     "c8_pts": result.pts("c8"),
         "c9_current_pe": c.get("c9", {}).get("value"),         "c9_pts": result.pts("c9"),
         "total_score": result.total_score,
+        "normalized_score": result.normalized_score,
         "rating": result.rating,
         "current_eps_ttm": metrics.get("current_eps_ttm"),
         "current_pe": metrics.get("current_pe"),

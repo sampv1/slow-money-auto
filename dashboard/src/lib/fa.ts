@@ -24,6 +24,7 @@ export type FaScore = {
   c9_current_pe: number | null;
   c9_pts: number;
   total_score: number;
+  normalized_score: number | null;
   rating: "A" | "B" | "C" | "UNRATED";
   current_eps_ttm: number | null;
   current_pe: number | null;
@@ -34,7 +35,17 @@ export type FaScore = {
   computed_at: string;
 };
 
+// Raw rubric max (sum of the 9 criteria). The headline FA Score is normalized
+// to a 0-100 scale for display (the criteria breakdown stays on the raw scale).
 export const FA_MAX_SCORE = 108;
+export const FA_NORMALIZED_MAX = 100;
+
+// Normalized FA Score (0-100), rounded for display. Falls back to computing
+// from total_score if the stored normalized_score is missing (pre-backfill rows).
+export function faNormalizedScore(row: FaScore): number {
+  const n = row.normalized_score ?? (row.total_score / FA_MAX_SCORE) * FA_NORMALIZED_MAX;
+  return Math.round(n);
+}
 
 export function ratingBadge(rating: string): { label: string; className: string } {
   switch (rating) {
