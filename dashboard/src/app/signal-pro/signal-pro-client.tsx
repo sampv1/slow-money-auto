@@ -4,24 +4,59 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
-import { type FaScore, FA_NORMALIZED_MAX, faNormalizedScore } from "@/lib/fa";
+import { type FaScore, faNormalizedScore } from "@/lib/fa";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
-import { PriceBaseBadge, PriceBaseBreakdown } from "./price-base";
+import { PriceBaseBreakdown, GRADE_CLASS as BASE_GRADE_CLASS, baseTypeLabel, baseStatusLabel } from "./price-base";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
-type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "symbol";
+type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 
-// Badge colors for the Final-score rating grades (A+ / A / B / C / D).
-const FINAL_GRADE_CLASS: Record<string, string> = {
+// Score grades (A+/A/B/C/D) on the 90/80/70/60 bands — applied to FA, TA and
+// Final scores alike.
+const SCORE_GRADE_CLASS: Record<string, string> = {
   "A+": "bg-green-100 text-green-800",
   A: "bg-green-100 text-green-700",
   B: "bg-blue-100 text-blue-700",
   C: "bg-amber-100 text-amber-700",
   D: "bg-red-100 text-red-700",
 };
+
+function gradeOf(score: number | null | undefined): string | null {
+  if (score === null || score === undefined) return null;
+  if (score >= 90) return "A+";
+  if (score >= 80) return "A";
+  if (score >= 70) return "B";
+  if (score >= 60) return "C";
+  return "D";
+}
+
+function GradeBadge({ grade }: { grade: string | null }) {
+  if (!grade) return <span className="text-gray-300">—</span>;
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-medium ${SCORE_GRADE_CLASS[grade] ?? "bg-gray-100 text-gray-600"}`}>
+      {grade}
+    </span>
+  );
+}
+
+// One score column's cell: "NN / 100" + its grade badge (or — when missing).
+function ScoreCell({ score, highlight = false }: { score: number | null; highlight?: boolean }) {
+  return (
+    <td className={`px-4 py-3 ${highlight ? "bg-amber-50" : ""}`}>
+      {score !== null ? (
+        <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+          <span className={`font-mono ${highlight ? "font-semibold" : ""}`}>{score} / 100</span>
+          <GradeBadge grade={gradeOf(score)} />
+        </div>
+      ) : (
+        <div className="text-right text-gray-300">—</div>
+      )}
+    </td>
+  );
+}
 
 function passesRating(rating: string, filter: RatingFilter): boolean {
   switch (filter) {
@@ -121,15 +156,6 @@ export function SignalProClient({
     return m;
   }, [universe, isLatestQuarter]);
 
-  // Rating = grade of the Final score; same latest-quarter gating.
-  const finalGradeBySymbol = useMemo(() => {
-    const m = new Map<string, string | null>();
-    if (isLatestQuarter) {
-      for (const u of universe) m.set(u.symbol, u.final_grade);
-    }
-    return m;
-  }, [universe, isLatestQuarter]);
-
   const baseBySymbol = useMemo(() => {
     const m = new Map<string, { score: number | null; grade: string | null; type: string | null; status: string | null }>();
     for (const u of universe) m.set(u.symbol, { score: u.base_score, grade: u.base_grade, type: u.base_type, status: u.base_status });
@@ -202,6 +228,7 @@ export function SignalProClient({
           : sortKey === "rs_3m" ? (rs3mBySymbol.get(sym) ?? null)
           : sortKey === "ta_score" ? (taScoreBySymbol.get(sym) ?? null)
           : sortKey === "final_score" ? (finalBySymbol.get(sym) ?? null)
+          : sortKey === "base_score" ? (baseBySymbol.get(sym)?.score ?? null)
           : null;
         const an = sortKey === "total_score" ? a.total_score : pick(a.symbol);
         const bn = sortKey === "total_score" ? b.total_score : pick(b.symbol);
@@ -216,7 +243,7 @@ export function SignalProClient({
       return 0;
     });
     return out;
-  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, search, sortKey, sortAsc]);
+  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, baseBySymbol, search, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -324,33 +351,45 @@ export function SignalProClient({
         <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
+              {/* Group row */}
               <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th className="px-4 py-3 font-medium cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
+                <th rowSpan={2} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
-                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("final_score")}>
-                  {t(locale, "spFinalScore")}{sortIndicator("final_score")}
+                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
+                  <div>{t(locale, "spFaScore")} (100)</div>
+                  <div className="text-xs font-normal text-gray-400">{t(locale, "spGrade")}{sortIndicator("total_score")}</div>
                 </th>
-                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
-                  {t(locale, "spFaScore")}{sortIndicator("total_score")}
+                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
+                  <div>{t(locale, "spTaScore")} (100)</div>
+                  <div className="text-xs font-normal text-gray-400">{t(locale, "spGrade")}{sortIndicator("ta_score")}</div>
                 </th>
-                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
-                  {t(locale, "spTaScore")}{sortIndicator("ta_score")}
+                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none bg-amber-50" onClick={() => toggleSort("final_score")}>
+                  <div>{t(locale, "spFinalScore")} (100)</div>
+                  <div className="text-xs font-normal text-gray-400">{t(locale, "spOverallGrade")}{sortIndicator("final_score")}</div>
                 </th>
-                <th className="px-4 py-3 font-medium">{t(locale, "faRating")}</th>
-                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
+                <th colSpan={3} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spTaComponents")}</th>
+                <th colSpan={4} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
+              </tr>
+              {/* Sub-header row */}
+              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs">
+                <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
                   {t(locale, "taRs3m")}{sortIndicator("rs_3m")}
                 </th>
-                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
+                <th className="px-4 py-2 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
                   {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
                 </th>
-                <th className="px-4 py-3 font-medium">{t(locale, "taRsLine")}</th>
-                <th className="px-4 py-3 font-medium">{t(locale, "spBaseCol")}</th>
+                <th className="px-4 py-2 font-medium">{t(locale, "taRsLine")}</th>
+                <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
+                  {t(locale, "spBaseScore")}{sortIndicator("base_score")}
+                </th>
+                <th className="px-4 py-2 font-medium">{t(locale, "spBaseGrade")}</th>
+                <th className="px-4 py-2 font-medium">{t(locale, "spBaseType")}</th>
+                <th className="px-4 py-2 font-medium">{t(locale, "spBaseStatus")}</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((row) => {
-                const finalGrade = finalGradeBySymbol.get(row.symbol) ?? null;
                 const rs = rsBySymbol.get(row.symbol) ?? null;
                 const rs3m = rs3mBySymbol.get(row.symbol) ?? null;
                 const rsLine = rsLineBySymbol.get(row.symbol) ?? null;
@@ -365,25 +404,10 @@ export function SignalProClient({
                         {row.symbol}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-right font-mono font-semibold whitespace-nowrap">
-                      {finalScore !== null ? `${finalScore} / 100` : <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
-                      {faNormalizedScore(row)} / {FA_NORMALIZED_MAX}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono">
-                      {taScore ?? "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {finalGrade ? (
-                        <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-medium ${FINAL_GRADE_CLASS[finalGrade] ?? "bg-gray-100 text-gray-600"}`}>
-                          {finalGrade}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono">{rs3m ?? "—"}</td>
+                    <ScoreCell score={faNormalizedScore(row)} />
+                    <ScoreCell score={taScore} />
+                    <ScoreCell score={finalScore} highlight />
+                    <td className="px-4 py-3 text-right font-mono border-l border-gray-100">{rs3m ?? "—"}</td>
                     <td className="px-4 py-3 text-right font-mono">{rs ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -410,18 +434,34 @@ export function SignalProClient({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-right font-mono border-l border-gray-100">
                       {base && base.score !== null ? (
                         <button
                           type="button"
                           onClick={() => openBase(row.symbol)}
-                          className="cursor-pointer hover:opacity-70"
+                          className="cursor-pointer text-blue-600 hover:underline"
+                          title={t(locale, "spBaseCol")}
                         >
-                          <PriceBaseBadge score={base.score} grade={base.grade} type={base.type} status={base.status} locale={locale} />
+                          {base.score}
                         </button>
                       ) : (
                         <span className="text-gray-300">—</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {base && base.grade ? (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 text-xs rounded font-semibold ${BASE_GRADE_CLASS[base.grade] ?? BASE_GRADE_CLASS.D}`}>
+                          {base.grade}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                      {base && base.score !== null ? baseTypeLabel(base.type, locale) : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                      {base && base.score !== null ? baseStatusLabel(base.status, locale) : <span className="text-gray-300">—</span>}
                     </td>
                   </tr>
                 );
@@ -430,6 +470,28 @@ export function SignalProClient({
           </table>
         </div>
       )}
+
+      {/* Legend + formula footer */}
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="text-xs font-medium text-gray-500 mb-2">{t(locale, "spGradeLegend")}</div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            {([["A+", "90 - 100"], ["A", "80 - 89"], ["B", "70 - 79"], ["C", "60 - 69"], ["D", "< 60"]] as const).map(([g, r]) => (
+              <span key={g} className="inline-flex items-center gap-1.5">
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded font-medium ${SCORE_GRADE_CLASS[g]}`}>{g}</span>
+                <span className="text-gray-500">{r}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="text-xs font-medium text-gray-500 mb-2">{t(locale, "spFormula")}</div>
+          <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside font-mono">
+            <li>{t(locale, "spFormulaTa")}</li>
+            <li>{t(locale, "spFormulaFinal")}</li>
+          </ul>
+        </div>
+      </div>
 
       {/* Enlarged RS Line detail chart — opened by clicking a sparkline. */}
       {rsModal && (() => {
