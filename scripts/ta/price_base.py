@@ -15,7 +15,7 @@ latest snapshot on ta_universe (base_score / base_grade / base_type /
 base_status / base_detail / base_date).
 """
 
-from datetime import date as _date_cls, timedelta
+from datetime import timedelta
 
 from .common import safe_execute, today_vn
 from .universe import get_active_symbols
@@ -25,7 +25,8 @@ WINDOW_DAYS = 500          # calendar days of history to load
 MIN_BARS = 70              # need enough history for context + a base
 MIN_BASE_BARS = 20         # 4 weeks — shorter is a Pause/Tight Area, not a base
 MAX_BASE_BARS = 52 * 5     # cap base length at ~52 weeks
-DEPTH_CAP = 0.40           # extend the base window while range stays ≤ 40%
+WINDOW_STEP = 2            # evaluate candidate window lengths every N bars
+DEPTH_SANITY_CAP = 0.50    # ignore windows wider than this (not a base)
 PRIOR_BARS = 130           # ~26 weeks of pre-base context for the prior move
 BARS_52W = 250
 NEAR_TOP = 0.95            # within 5% of base high = "near top"
@@ -73,77 +74,67 @@ def _ma(vals: list[float], n: int, idx: int) -> float | None:
 
 # --- detection --------------------------------------------------------------
 
-def detect_base(highs, lows, closes, vols, dates) -> dict | None:
-    """Find the current base (ending at the last bar). Returns an attributes
-    dict or None if no qualifying base."""
-    n = len(closes)
-    if n < MIN_BARS:
-        return None
+def _current_metrics(highs, lows, closes, vols, n) -> dict:
+    """Metrics evaluated at the latest bar — independent of the base window, so
+    computed once per symbol and shared across all candidate windows."""
     last = n - 1
-
-    # Extend the window backward while the high-low range stays ≤ DEPTH_CAP.
-    hi, lo, start = highs[last], lows[last], last
-    limit = max(0, last - MAX_BASE_BARS)
-    for i in range(last - 1, limit - 1, -1):
-        nhi, nlo = max(hi, highs[i]), min(lo, lows[i])
-        if nhi <= 0 or (nhi - nlo) / nhi > DEPTH_CAP:
-            break
-        hi, lo, start = nhi, nlo, i
-
-    dur_bars = last - start + 1
-    if dur_bars < MIN_BASE_BARS:
-        return None  # 4–8 sessions etc. = Pause/Tight Area, not a base
-
-    base_high, base_low = hi, lo
-    base_depth = (base_high - base_low) / base_high if base_high else 1.0
-    dur_weeks = dur_bars / 5.0
-    close = closes[last]
-
-    # Prior-move context (the PRIOR_BARS before the base started).
-    pre0 = max(0, start - PRIOR_BARS)
-    if start > pre0:
-        pre_peak = max(highs[pre0:start])
-        pre_run_low = min(lows[pre0:start])
-    else:
-        pre_peak, pre_run_low = base_high, base_low
-    drawdown_pre = (pre_peak - base_low) / pre_peak if pre_peak > 0 else 0.0
-    runup_pre = (base_high - pre_run_low) / pre_run_low if pre_run_low > 0 else 0.0
-
-    high_52w = max(highs[max(0, n - BARS_52W):])
-    dist_52w = (high_52w - close) / high_52w if high_52w > 0 else 1.0
-
-    # Type classification (Module 1).
-    is_bottoming = drawdown_pre >= 0.25 and dur_weeks >= 6
-    is_continuation = 0.20 <= runup_pre <= 0.60 and dur_weeks >= 4 and dist_52w <= 0.25
-    if is_bottoming and is_continuation:
-        base_type = "continuation" if dist_52w <= 0.15 else "bottoming"
-    elif is_bottoming:
-        base_type = "bottoming"
-    elif is_continuation:
-        base_type = "continuation"
-    else:
-        return None  # no clear prior-move context → not a valid base
-
-    # Tightness of the last 20 sessions (Module 6).
     seg = slice(max(0, last - 19), last + 1)
     t_hi, t_lo = max(highs[seg]), min(lows[seg])
     tightness20 = (t_hi - t_lo) / t_lo if t_lo > 0 else 1.0
 
-    # Volume dry-up: MA20 vol / MA50 vol (Module 7).
     ma20v, ma50v = _ma(vols, 20, last), _ma(vols, 50, last)
     vol_dry = (ma20v / ma50v) if (ma20v and ma50v) else None
 
-    # Moving averages for the trend filter (Modules 10/11).
     ma20 = _ma(closes, 20, last)
     ma50 = _ma(closes, 50, last)
     ma200 = _ma(closes, 200, last)
     ma20_prev = _ma(closes, 20, last - 20) if last >= 40 else None
     ma50_prev = _ma(closes, 50, last - 20) if last >= 70 else None
-    ma20_slope_up = (ma20 is not None and ma20_prev is not None and ma20 >= ma20_prev)
-    ma20_cross_up = (ma20 is not None and ma50 is not None and ma50_prev is not None
-                     and ma20_prev is not None and ma20 > ma50 and ma20_prev <= ma50_prev)
 
-    ma20vol = ma20v
+    high_52w = max(highs[max(0, n - BARS_52W):])
+    close = closes[last]
+    dist_52w = (high_52w - close) / high_52w if high_52w > 0 else 1.0
+    return {
+        "close": close, "tightness20": tightness20, "vol_dry": vol_dry,
+        "ma20": ma20, "ma50": ma50, "ma200": ma200,
+        "ma20_slope_up": (ma20 is not None and ma20_prev is not None and ma20 >= ma20_prev),
+        "ma20_cross_up": (ma20 is not None and ma50 is not None and ma50_prev is not None
+                          and ma20_prev is not None and ma20 > ma50 and ma20_prev <= ma50_prev),
+        "ma20vol": ma20v, "last_vol": vols[last], "dist_52w": dist_52w,
+    }
+
+
+def _build_attrs(highs, lows, closes, dates, start, last, base_high, base_low, m) -> dict | None:
+    """Build the attributes for one candidate window [start, last], or None if it
+    doesn't classify as a base."""
+    if base_high <= 0:
+        return None
+    base_depth = (base_high - base_low) / base_high
+    if base_depth > DEPTH_SANITY_CAP:
+        return None  # too wide to be a base
+    dur_bars = last - start + 1
+    dur_weeks = dur_bars / 5.0
+
+    pre0 = max(0, start - PRIOR_BARS)
+    if start <= pre0:
+        return None  # need prior-move context
+    pre_peak = max(highs[pre0:start])
+    pre_run_low = min(lows[pre0:start])
+    drawdown_pre = (pre_peak - base_low) / pre_peak if pre_peak > 0 else 0.0
+    runup_pre = (base_high - pre_run_low) / pre_run_low if pre_run_low > 0 else 0.0
+
+    # Type classification (Module 1).
+    is_bottoming = drawdown_pre >= 0.25 and dur_weeks >= 6
+    is_continuation = 0.20 <= runup_pre <= 0.60 and dur_weeks >= 4 and m["dist_52w"] <= 0.25
+    if is_bottoming and is_continuation:
+        base_type = "continuation" if m["dist_52w"] <= 0.15 else "bottoming"
+    elif is_bottoming:
+        base_type = "bottoming"
+    elif is_continuation:
+        base_type = "continuation"
+    else:
+        return None
+
     return {
         "base_start": dates[start], "base_end": dates[last],
         "duration_weeks": round(dur_weeks, 1), "duration_bars": dur_bars,
@@ -151,17 +142,46 @@ def detect_base(highs, lows, closes, vols, dates) -> dict | None:
         "depth_pct": round(base_depth * 100, 1),
         "drawdown_pre_pct": round(drawdown_pre * 100, 1),
         "runup_pre_pct": round(runup_pre * 100, 1),
-        "dist52w_pct": round(dist_52w * 100, 1),
-        "tightness20_pct": round(tightness20 * 100, 1),
-        "vol_dry_ratio_pct": round(vol_dry * 100, 1) if vol_dry is not None else None,
-        "base_type": base_type,
-        "close": close,
-        # raw helpers for scoring
-        "_ma20": ma20, "_ma50": ma50, "_ma200": ma200,
-        "_ma20_slope_up": ma20_slope_up, "_ma20_cross_up": ma20_cross_up,
-        "_ma20vol": ma20vol, "_last_vol": vols[last],
+        "dist52w_pct": round(m["dist_52w"] * 100, 1),
+        "tightness20_pct": round(m["tightness20"] * 100, 1),
+        "vol_dry_ratio_pct": round(m["vol_dry"] * 100, 1) if m["vol_dry"] is not None else None,
+        "base_type": base_type, "close": m["close"],
+        "_ma20": m["ma20"], "_ma50": m["ma50"], "_ma200": m["ma200"],
+        "_ma20_slope_up": m["ma20_slope_up"], "_ma20_cross_up": m["ma20_cross_up"],
+        "_ma20vol": m["ma20vol"], "_last_vol": m["last_vol"],
         "_highs": highs, "_lows": lows, "_closes": closes, "_start": start, "_last": last,
     }
+
+
+def detect_base(highs, lows, closes, vols, dates, rs_line) -> tuple[dict, dict] | None:
+    """Multi-window search: evaluate every candidate base window ending at the
+    latest bar and keep the highest-BQS valid base. Returns (attrs, result) or
+    None. Shorter windows are tried first, so ties favor the tighter/most-recent
+    base."""
+    n = len(closes)
+    if n < MIN_BARS:
+        return None
+    last = n - 1
+    m = _current_metrics(highs, lows, closes, vols, n)
+
+    hi, lo = highs[last], lows[last]
+    best = None
+    limit = max(0, last - MAX_BASE_BARS)
+    for start in range(last, limit - 1, -1):
+        if highs[start] > hi:
+            hi = highs[start]
+        if lows[start] < lo:
+            lo = lows[start]
+        dur_bars = last - start + 1
+        if dur_bars < MIN_BASE_BARS or (dur_bars - MIN_BASE_BARS) % WINDOW_STEP != 0:
+            continue
+        attrs = _build_attrs(highs, lows, closes, dates, start, last, hi, lo, m)
+        if not attrs:
+            continue
+        res = score_base(attrs, rs_line)
+        if best is None or res["score"] > best[1]["score"]:
+            best = (attrs, res)
+    return best
 
 
 # --- scoring (BQS V3) -------------------------------------------------------
@@ -343,10 +363,10 @@ def compute_price_bases(client, dry_run: bool = False) -> dict:
         o = ohlcv.get(sym)
         if not o or len(o["c"]) < MIN_BARS:
             continue
-        attrs = detect_base(o["h"], o["l"], o["c"], o["v"], o["d"])
-        if not attrs:
+        found = detect_base(o["h"], o["l"], o["c"], o["v"], o["d"], rs_lines.get(sym))
+        if not found:
             continue
-        res = score_base(attrs, rs_lines.get(sym))
+        attrs, res = found
         d = o["d"][-1]
         as_of = d if as_of is None or d > as_of else as_of
         detail = {k: v for k, v in attrs.items() if not k.startswith("_")}
