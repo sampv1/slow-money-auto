@@ -38,7 +38,8 @@ def main():
     stats = compute_rs_ratings(client, liquidity_floor=args.min_volume, dry_run=args.dry_run)
     verb = "would score" if args.dry_run else "scored"
     print(f"Liquid universe: {stats['liquid']}    {verb}: {stats['scored']}    "
-          f"rs_lines: {stats.get('rs_lines', 0)}    rs_date: {stats['rs_date']}")
+          f"rs_lines: {stats.get('rs_lines', 0)}    rs_line_scored: {stats.get('rs_scored', 0)}    "
+          f"rs_date: {stats['rs_date']}")
 
 
 if __name__ == "__main__":

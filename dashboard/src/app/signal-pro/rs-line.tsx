@@ -117,6 +117,36 @@ export function DetailedRsChart({
   );
 }
 
+// Color for an RS-Line-Score grade (A+/A/B/C/D).
+const RS_GRADE_CLASS: Record<string, string> = {
+  "A+": "bg-green-100 text-green-800",
+  A: "bg-green-100 text-green-700",
+  B: "bg-blue-100 text-blue-700",
+  C: "bg-amber-100 text-amber-700",
+  D: "bg-gray-100 text-gray-500",
+};
+
+// Compact RS-Line-Score chip shown to the left of the sparkline.
+export function RsLineScore({
+  score,
+  grade,
+  title,
+}: {
+  score: number;
+  grade: string | null;
+  title?: string;
+}) {
+  const cls = (grade && RS_GRADE_CLASS[grade]) || "bg-gray-100 text-gray-600";
+  return (
+    <span
+      title={title}
+      className={`inline-flex items-center justify-center min-w-[2rem] px-1.5 py-0.5 rounded text-xs font-mono font-medium ${cls}`}
+    >
+      {score}
+    </span>
+  );
+}
+
 export function RsSparkline({
   series,
   width,

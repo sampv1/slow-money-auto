@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, FA_MAX_SCORE, ratingBadge } from "@/lib/fa";
 import { supabase } from "@/lib/supabase";
-import { RsSparkline, DetailedRsChart } from "./rs-line";
+import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import { PriceBaseBadge, PriceBaseBreakdown } from "./price-base";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
@@ -41,6 +41,8 @@ export function SignalProClient({
     rs_3m: number | null;
     rs_composite: number | null;
     rs_line_full: number[] | null;
+    rs_line_score: number | null;
+    rs_line_grade: string | null;
     base_score: number | null;
     base_grade: string | null;
     base_type: string | null;
@@ -79,6 +81,12 @@ export function SignalProClient({
   const rsLineBySymbol = useMemo(() => {
     const m = new Map<string, number[] | null>();
     for (const u of universe) m.set(u.symbol, u.rs_line_full);
+    return m;
+  }, [universe]);
+
+  const rsLineScoreBySymbol = useMemo(() => {
+    const m = new Map<string, { score: number | null; grade: string | null }>();
+    for (const u of universe) m.set(u.symbol, { score: u.rs_line_score, grade: u.rs_line_grade });
     return m;
   }, [universe]);
 
@@ -298,6 +306,7 @@ export function SignalProClient({
                 const rs = rsBySymbol.get(row.symbol) ?? null;
                 const rs3m = rs3mBySymbol.get(row.symbol) ?? null;
                 const rsLine = rsLineBySymbol.get(row.symbol) ?? null;
+                const rsLineScore = rsLineScoreBySymbol.get(row.symbol);
                 const base = baseBySymbol.get(row.symbol);
                 return (
                   <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
@@ -317,18 +326,29 @@ export function SignalProClient({
                     <td className="px-4 py-3 text-right font-mono">{rs3m ?? "—"}</td>
                     <td className="px-4 py-3 text-right font-mono">{rs ?? "—"}</td>
                     <td className="px-4 py-3">
-                      {rsLine && rsLine.length >= 2 ? (
-                        <button
-                          type="button"
-                          onClick={() => openRsLine(row.symbol, rsLine)}
-                          title={t(locale, "taRsLineCaption")}
-                          className="block cursor-pointer hover:opacity-70"
-                        >
-                          <RsSparkline series={rsLine} width={96} height={28} />
-                        </button>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {rsLineScore && rsLineScore.score !== null ? (
+                          <RsLineScore
+                            score={rsLineScore.score}
+                            grade={rsLineScore.grade}
+                            title={t(locale, "spRsLineScore")}
+                          />
+                        ) : (
+                          <span className="min-w-[2rem] text-center text-gray-300">—</span>
+                        )}
+                        {rsLine && rsLine.length >= 2 ? (
+                          <button
+                            type="button"
+                            onClick={() => openRsLine(row.symbol, rsLine)}
+                            title={t(locale, "taRsLineCaption")}
+                            className="block cursor-pointer hover:opacity-70"
+                          >
+                            <RsSparkline series={rsLine} width={96} height={28} />
+                          </button>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {base && base.score !== null ? (

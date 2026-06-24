@@ -1,0 +1,92 @@
+RS LINE SCORE (0-100)
+
+Mục tiêu:
+Đánh giá chất lượng đường RS (Relative Strength Line) để đưa vào Scoring.
+
+Công thức:
+
+RS Line Score
+
+Xu hướng RS Line
++
+RS Line so với MA20
++
+RS Line tạo đỉnh mới
++
+RS Line phân kỳ với giá
+
+Tổng điểm tối đa: 100
+
+────────────────────────
+
+Xu hướng RS Line (40 điểm)
+
+Dữ liệu:
+
+Tính độ dốc (Slope) của RS Line trong 20 phiên gần nhất.
+
+Thang điểm:
+
+Tăng mạnh: 40 điểm
+Tăng nhẹ: 30 điểm
+Đi ngang: 20 điểm
+Giảm nhẹ: 10 điểm
+Giảm mạnh: 0 điểm
+
+────────────────────────
+
+RS Line so với MA20 (20 điểm)
+
+Dữ liệu:
+
+So sánh RS Line hiện tại với MA20 của RS Line.
+
+Thang điểm:
+
+Trên MA20 > 5%: 20 điểm
+Trên MA20: 15 điểm
+Sát MA20: 10 điểm
+Dưới MA20: 5 điểm
+Dưới MA20 xa: 0 điểm
+
+────────────────────────
+
+RS Line tạo đỉnh mới (20 điểm)
+
+Dữ liệu:
+
+So sánh RS Line hiện tại với đỉnh 52 tuần.
+
+Thang điểm:
+
+Lập đỉnh 52 tuần mới: 20 điểm
+Cách đỉnh < 5%: 15 điểm
+Cách đỉnh 5-10%: 10 điểm
+Xa đỉnh >10%: 5 điểm
+Thấp hơn đỉnh >20%: 0 điểm
+
+────────────────────────
+
+Phân kỳ RS Line với giá (20 điểm)
+
+Dữ liệu:
+
+So sánh xu hướng giá và xu hướng RS Line trong 20 phiên gần nhất.
+
+Thang điểm:
+
+Giá đi ngang + RS tăng: 20 điểm
+Giá tăng + RS tăng: 15 điểm
+Giá tăng + RS đi ngang: 10 điểm
+Giá đi ngang + RS giảm: 5 điểm
+Giá giảm + RS giảm: 0 điểm
+
+────────────────────────
+
+Xếp hạng RS Line
+
+90-100 điểm = A+
+80-89 điểm = A
+70-79 điểm = B
+60-69 điểm = C
+<60 điểm = D

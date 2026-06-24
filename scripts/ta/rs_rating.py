@@ -172,6 +172,143 @@ def _downsample(values: list[float], target: int) -> list[float]:
     return [values[min(int(i * step), len(values) - 1)] for i in range(target)]
 
 
+# ── RS Line Score (0-100) ────────────────────────────────────────────────────
+# Quality score for a symbol's RS Line, per initial_fa_data/rs_line_scoring.txt:
+# Trend (40) + vs MA20 (20) + 52-week high (20) + price/RS divergence (20).
+# All tunables live in scoring_config 'rs_line_score' (deep-merged over the
+# defaults below).
+RS_LINE_SCORE_DEFAULTS = {
+    "trend": {
+        "window": 20,
+        "strong_up": 0.10, "mild_up": 0.03, "mild_down": -0.03, "strong_down": -0.10,
+        "points": {"strong_up": 40, "mild_up": 30, "side": 20, "mild_down": 10, "strong_down": 0},
+    },
+    "ma20": {
+        "window": 20, "above_far": 0.05, "near": 0.01, "below_far": 0.05,
+        "points": {"above_far": 20, "above": 15, "near": 10, "below": 5, "below_far": 0},
+    },
+    "high52w": {
+        "tiers": [[0.05, 15], [0.10, 10], [0.20, 5]],
+        "new_high_eps": 0.001, "new_high_points": 20, "below_points": 0,
+    },
+    "divergence": {
+        "window": 20, "deadband": 0.03,
+        "matrix": {
+            "flat_up": 20, "up_up": 15, "up_flat": 10, "flat_down": 5, "down_down": 0,
+            "down_up": 20, "up_down": 0, "down_flat": 10, "flat_flat": 10,
+        },
+    },
+    "grades": [[90, "A+"], [80, "A"], [70, "B"], [60, "C"], [0, "D"]],
+}
+
+
+def _net_change(series: list[float], window: int) -> float | None:
+    """Net % change over the last `window` points (first→last of the tail)."""
+    if not series or len(series) < 2:
+        return None
+    tail = series[-window:] if len(series) >= window else series
+    if tail[0] == 0:
+        return None
+    return tail[-1] / tail[0] - 1.0
+
+
+def _trend3(chg: float | None, deadband: float) -> str:
+    """3-way trend (up / flat / down) with a symmetric deadband."""
+    if chg is None:
+        return "flat"
+    if chg > deadband:
+        return "up"
+    if chg < -deadband:
+        return "down"
+    return "flat"
+
+
+def _rs_score_trend(rs: list[float], cfg: dict) -> int:
+    c = cfg["trend"]
+    p = c["points"]
+    chg = _net_change(rs, c["window"])
+    if chg is None:
+        return p["side"]
+    if chg >= c["strong_up"]:
+        return p["strong_up"]
+    if chg >= c["mild_up"]:
+        return p["mild_up"]
+    if chg > c["mild_down"]:
+        return p["side"]
+    if chg > c["strong_down"]:
+        return p["mild_down"]
+    return p["strong_down"]
+
+
+def _rs_score_ma20(rs: list[float], cfg: dict) -> int:
+    c = cfg["ma20"]
+    p = c["points"]
+    w = c["window"]
+    if len(rs) < w:
+        return p["near"]
+    ma = sum(rs[-w:]) / w
+    if ma == 0:
+        return p["near"]
+    d = rs[-1] / ma - 1.0
+    if d > c["above_far"]:
+        return p["above_far"]
+    if d > c["near"]:
+        return p["above"]
+    if d >= -c["near"]:
+        return p["near"]
+    if d >= -c["below_far"]:
+        return p["below"]
+    return p["below_far"]
+
+
+def _rs_score_high52w(rs: list[float], cfg: dict) -> int:
+    c = cfg["high52w"]
+    if not rs:
+        return c["below_points"]
+    mx = max(rs)
+    cur = rs[-1]
+    if mx <= 0:
+        return c["below_points"]
+    if cur >= mx * (1 - c["new_high_eps"]):
+        return c["new_high_points"]
+    dist = (mx - cur) / mx
+    for thr, pts in c["tiers"]:  # ascending thresholds
+        if dist <= thr:
+            return pts
+    return c["below_points"]
+
+
+def _rs_score_divergence(rs: list[float], price: list[float], cfg: dict) -> int:
+    c = cfg["divergence"]
+    db = c["deadband"]
+    w = c["window"]
+    price_t = _trend3(_net_change(price, w), db)
+    rs_t = _trend3(_net_change(rs, w), db)
+    return c["matrix"].get(f"{price_t}_{rs_t}", 10)
+
+
+def _rs_grade(score: int, grades: list) -> str:
+    for thr, g in grades:  # descending thresholds
+        if score >= thr:
+            return g
+    return grades[-1][1]
+
+
+def score_rs_line(rs_line: list[float], price: list[float], cfg: dict) -> tuple[int, str] | tuple[None, None]:
+    """RS Line Score (0-100) + grade from the RS-Line series and the symbol's
+    own price series (both oldest→newest). Returns (None, None) if too short."""
+    if not rs_line or len(rs_line) < 2:
+        return None, None
+    total = (
+        _rs_score_trend(rs_line, cfg)
+        + _rs_score_ma20(rs_line, cfg)
+        + _rs_score_high52w(rs_line, cfg)
+        + _rs_score_divergence(rs_line, price or [], cfg)
+    )
+    total = int(round(total))
+    return total, _rs_grade(total, cfg["grades"])
+
+
 def compute_rs_ratings(client, liquidity_floor: int | None = None,
                        dry_run: bool = False) -> dict:
     """Compute + persist RS ratings for the liquid universe. Returns a stats dict
@@ -189,7 +326,7 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
 
     active = get_active_symbols(client)
     liquid = _liquid_symbols(client, active, floor)
-    stats = {"liquid": len(liquid), "scored": 0, "rs_date": None, "rs_lines": 0}
+    stats = {"liquid": len(liquid), "scored": 0, "rs_date": None, "rs_lines": 0, "rs_scored": 0}
     if not liquid:
         return stats
 
@@ -237,6 +374,16 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
                 rs_lines[sym] = line
     stats["rs_lines"] = len(rs_lines)
 
+    # RS Line Score (0-100) + grade for every symbol that has an RS Line.
+    score_cfg = load_scoring_config(client, "rs_line_score", RS_LINE_SCORE_DEFAULTS)
+    rs_scores: dict[str, tuple[int, str]] = {}
+    for sym, (line_vals, _dates) in rs_lines.items():
+        price = [c for _d, c in (closes_by_sym.get(sym) or [])]
+        s, g = score_rs_line(line_vals, price, score_cfg)
+        if s is not None:
+            rs_scores[sym] = (s, g)
+    stats["rs_scored"] = len(rs_scores)
+
     if dry_run:
         return stats
 
@@ -247,7 +394,7 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
         .update({"rs_3m": None, "rs_6m": None, "rs_9m": None, "rs_12m": None,
                  "rs_composite": None, "rs_date": None,
                  "rs_line": None, "rs_line_full": None, "rs_line_date": None,
-                 "rs_line_dates": None})
+                 "rs_line_dates": None, "rs_line_score": None, "rs_line_grade": None})
         .eq("is_active", True),
         label="rs clear",
     )
@@ -267,6 +414,8 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
             "rs_line_full": rs_lines[sym][0] if sym in rs_lines else None,
             "rs_line_dates": rs_lines[sym][1] if sym in rs_lines else None,
             "rs_line_date": rs_date if sym in rs_lines else None,
+            "rs_line_score": rs_scores[sym][0] if sym in rs_scores else None,
+            "rs_line_grade": rs_scores[sym][1] if sym in rs_scores else None,
         }
         for sym, row in df.iterrows()
     ]
