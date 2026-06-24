@@ -10,7 +10,7 @@ import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import { PriceBaseBadge, PriceBaseBreakdown } from "./price-base";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
-type SortKey = "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "symbol";
+type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "symbol";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 
@@ -48,17 +48,21 @@ export function SignalProClient({
     base_type: string | null;
     base_status: string | null;
     ta_score: number | null;
+    final_score: number | null;
   }[];
   locale: Locale;
   quarters: string[];
   selectedQuarter: string;
 }) {
   const router = useRouter();
+  // The stored Final score is a latest-snapshot value (latest TA + latest FA),
+  // so it's only meaningful for the latest quarter; older quarters show FA only.
+  const isLatestQuarter = quarters.length > 0 && selectedQuarter === quarters[0];
   const [rating, setRating] = useState<RatingFilter>("all");
   const [minScore, setMinScore] = useState<string>("");
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("total_score");
+  const [sortKey, setSortKey] = useState<SortKey>("final_score");
   const [sortAsc, setSortAsc] = useState(false);
 
   const avgVolBySymbol = useMemo(() => {
@@ -96,6 +100,16 @@ export function SignalProClient({
     for (const u of universe) m.set(u.symbol, u.ta_score);
     return m;
   }, [universe]);
+
+  // Final score: stored latest-snapshot value from ta_universe. Shown only for
+  // the latest quarter (null otherwise — per-quarter Final scores come later).
+  const finalBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    if (isLatestQuarter) {
+      for (const u of universe) m.set(u.symbol, u.final_score);
+    }
+    return m;
+  }, [universe, isLatestQuarter]);
 
   const baseBySymbol = useMemo(() => {
     const m = new Map<string, { score: number | null; grade: string | null; type: string | null; status: string | null }>();
@@ -168,6 +182,7 @@ export function SignalProClient({
           sortKey === "rs_composite" ? (rsBySymbol.get(sym) ?? null)
           : sortKey === "rs_3m" ? (rs3mBySymbol.get(sym) ?? null)
           : sortKey === "ta_score" ? (taScoreBySymbol.get(sym) ?? null)
+          : sortKey === "final_score" ? (finalBySymbol.get(sym) ?? null)
           : null;
         const an = sortKey === "total_score" ? a.total_score : pick(a.symbol);
         const bn = sortKey === "total_score" ? b.total_score : pick(b.symbol);
@@ -182,7 +197,7 @@ export function SignalProClient({
       return 0;
     });
     return out;
-  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, search, sortKey, sortAsc]);
+  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, search, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -294,6 +309,9 @@ export function SignalProClient({
                 <th className="px-4 py-3 font-medium cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
+                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("final_score")}>
+                  {t(locale, "spFinalScore")}{sortIndicator("final_score")}
+                </th>
                 <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
                   {t(locale, "spFaScore")}{sortIndicator("total_score")}
                 </th>
@@ -319,6 +337,7 @@ export function SignalProClient({
                 const rsLine = rsLineBySymbol.get(row.symbol) ?? null;
                 const rsLineScore = rsLineScoreBySymbol.get(row.symbol);
                 const taScore = taScoreBySymbol.get(row.symbol) ?? null;
+                const finalScore = finalBySymbol.get(row.symbol) ?? null;
                 const base = baseBySymbol.get(row.symbol);
                 return (
                   <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
@@ -326,6 +345,9 @@ export function SignalProClient({
                       <Link href={`/analysis/${row.symbol}`} className="text-blue-600 hover:underline">
                         {row.symbol}
                       </Link>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono font-semibold whitespace-nowrap">
+                      {finalScore !== null ? `${finalScore} / 100` : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
                       {faNormalizedScore(row)} / {FA_NORMALIZED_MAX}
