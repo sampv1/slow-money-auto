@@ -13,8 +13,19 @@ FINAL_SCORE_DEFAULTS). Runs after ta_score (it re-reads that column).
 
 from .common import load_scoring_config, safe_execute
 
-# DB-overridable defaults (see scoring_config key 'final_score').
-FINAL_SCORE_DEFAULTS = {"weights": {"ta": 0.59, "fa": 0.41}}
+# DB-overridable defaults (see scoring_config key 'final_score'). grades are
+# descending [min_score, grade]; the first whose min <= score wins.
+FINAL_SCORE_DEFAULTS = {
+    "weights": {"ta": 0.59, "fa": 0.41},
+    "grades": [[90, "A+"], [80, "A"], [70, "B"], [60, "C"], [0, "D"]],
+}
+
+
+def _grade(score: int, grades: list) -> str:
+    for thr, g in grades:  # descending thresholds
+        if score >= thr:
+            return g
+    return grades[-1][1]
 
 
 def _latest_fa_normalized(client) -> dict[str, float]:
@@ -67,6 +78,7 @@ def compute_final_score(client, dry_run: bool = False) -> dict:
     """Compute + persist final_score on ta_universe. Returns stats: rows, scored."""
     cfg = load_scoring_config(client, "final_score", FINAL_SCORE_DEFAULTS)
     w = cfg["weights"]
+    grades = cfg["grades"]
     fa = _latest_fa_normalized(client)
     rows = _ta_scores(client)
     stats = {"rows": len(rows), "scored": 0}
@@ -77,13 +89,16 @@ def compute_final_score(client, dry_run: bool = False) -> dict:
         fa_val = fa.get(r["symbol"])
         if ta is None or fa_val is None:
             score = None
+            grade = None
         else:
             score = int(round(w["ta"] * ta + w["fa"] * fa_val))
+            grade = _grade(score, grades)
             stats["scored"] += 1
         payload.append({
             "symbol": r["symbol"],
             "exchange": r.get("exchange") or "HOSE",
             "final_score": score,
+            "final_grade": grade,
         })
 
     if dry_run:

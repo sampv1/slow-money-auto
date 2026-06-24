@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
-import { type FaScore, FA_NORMALIZED_MAX, faNormalizedScore, ratingBadge } from "@/lib/fa";
+import { type FaScore, FA_NORMALIZED_MAX, faNormalizedScore } from "@/lib/fa";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import { PriceBaseBadge, PriceBaseBreakdown } from "./price-base";
@@ -13,6 +13,15 @@ type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "symbol";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
+
+// Badge colors for the Final-score rating grades (A+ / A / B / C / D).
+const FINAL_GRADE_CLASS: Record<string, string> = {
+  "A+": "bg-green-100 text-green-800",
+  A: "bg-green-100 text-green-700",
+  B: "bg-blue-100 text-blue-700",
+  C: "bg-amber-100 text-amber-700",
+  D: "bg-red-100 text-red-700",
+};
 
 function passesRating(rating: string, filter: RatingFilter): boolean {
   switch (filter) {
@@ -49,6 +58,7 @@ export function SignalProClient({
     base_status: string | null;
     ta_score: number | null;
     final_score: number | null;
+    final_grade: string | null;
   }[];
   locale: Locale;
   quarters: string[];
@@ -107,6 +117,15 @@ export function SignalProClient({
     const m = new Map<string, number | null>();
     if (isLatestQuarter) {
       for (const u of universe) m.set(u.symbol, u.final_score);
+    }
+    return m;
+  }, [universe, isLatestQuarter]);
+
+  // Rating = grade of the Final score; same latest-quarter gating.
+  const finalGradeBySymbol = useMemo(() => {
+    const m = new Map<string, string | null>();
+    if (isLatestQuarter) {
+      for (const u of universe) m.set(u.symbol, u.final_grade);
     }
     return m;
   }, [universe, isLatestQuarter]);
@@ -331,7 +350,7 @@ export function SignalProClient({
             </thead>
             <tbody>
               {filtered.map((row) => {
-                const badge = ratingBadge(row.rating);
+                const finalGrade = finalGradeBySymbol.get(row.symbol) ?? null;
                 const rs = rsBySymbol.get(row.symbol) ?? null;
                 const rs3m = rs3mBySymbol.get(row.symbol) ?? null;
                 const rsLine = rsLineBySymbol.get(row.symbol) ?? null;
@@ -356,9 +375,13 @@ export function SignalProClient({
                       {taScore ?? "—"}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-medium ${badge.className}`}>
-                        {badge.label}
-                      </span>
+                      {finalGrade ? (
+                        <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-medium ${FINAL_GRADE_CLASS[finalGrade] ?? "bg-gray-100 text-gray-600"}`}>
+                          {finalGrade}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right font-mono">{rs3m ?? "—"}</td>
                     <td className="px-4 py-3 text-right font-mono">{rs ?? "—"}</td>
