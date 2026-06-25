@@ -25,6 +25,8 @@ export type FaScore = {
   c9_pts: number;
   total_score: number;
   normalized_score: number | null;
+  final_score: number | null;
+  final_grade: string | null;
   rating: "A" | "B" | "C" | "UNRATED";
   current_eps_ttm: number | null;
   current_pe: number | null;

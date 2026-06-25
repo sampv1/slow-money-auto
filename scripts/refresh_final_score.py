@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-refresh_final_score.py — Recompute and store the Final score on ta_universe.
+refresh_final_score.py — Recompute the Final score for the latest FA period.
 
-Final score = 0.59 · TA score + 0.41 · FA score (both 0-100), using the latest
-TA score and the latest FA period's normalized score. Null unless both exist.
-Run after ta_score + FA scores are current (update_ta_daily.py runs it as its
-final step; this is for manual / post-FA-import refreshes).
+Final score = 0.59 · TA score + 0.41 · FA score (both 0-100). Written per quarter
+onto fa_scores; only the latest period is (re)written, so older quarters stay
+frozen. Run after ta_score + FA scores are current (update_ta_daily.py runs it as
+its final step; this is for manual / post-FA-import refreshes).
 
 Usage:
   python3 refresh_final_score.py            # compute + store
@@ -31,7 +31,7 @@ def main():
     print("Computing Final score...")
     stats = compute_final_score(client, dry_run=args.dry_run)
     verb = "would score" if args.dry_run else "scored"
-    print(f"{verb}: {stats['scored']}/{stats['rows']} symbols")
+    print(f"{verb}: {stats['scored']}/{stats['rows']} symbols (period {stats.get('period')})")
 
 
 if __name__ == "__main__":

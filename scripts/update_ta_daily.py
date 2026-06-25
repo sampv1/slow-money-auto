@@ -227,7 +227,8 @@ def main():
             try:
                 print("\n--- Step 6: Final score ---")
                 final_stats = compute_final_score(client)
-                print(f"Final score: scored {final_stats['scored']}/{final_stats['rows']} symbols.")
+                print(f"Final score: scored {final_stats['scored']}/{final_stats['rows']} symbols "
+                      f"(period {final_stats.get('period')}).")
             except Exception as e:
                 print(f"  Final score failed (non-fatal): {str(e)[:160]}")
 

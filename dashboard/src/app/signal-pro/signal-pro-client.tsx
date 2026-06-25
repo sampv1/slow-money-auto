@@ -97,16 +97,14 @@ export function SignalProClient({
     base_type: string | null;
     base_status: string | null;
     ta_score: number | null;
-    final_score: number | null;
-    final_grade: string | null;
   }[];
   locale: Locale;
   quarters: string[];
   selectedQuarter: string;
 }) {
   const router = useRouter();
-  // The stored Final score is a latest-snapshot value (latest TA + latest FA),
-  // so it's only meaningful for the latest quarter; older quarters show FA only.
+  // Old quarters carry a FROZEN Final score (no TA detail) — for those we show
+  // only Symbol / FA Score / Final score. The full TA layout is latest-only.
   const isLatestQuarter = quarters.length > 0 && selectedQuarter === quarters[0];
   const [rating, setRating] = useState<RatingFilter>("all");
   const [minScore, setMinScore] = useState<string>("");
@@ -151,15 +149,13 @@ export function SignalProClient({
     return m;
   }, [universe]);
 
-  // Final score: stored latest-snapshot value from ta_universe. Shown only for
-  // the latest quarter (null otherwise — per-quarter Final scores come later).
+  // Final score: per-quarter value stored on the fa_scores row (frozen for old
+  // quarters; refreshed daily for the latest one).
   const finalBySymbol = useMemo(() => {
     const m = new Map<string, number | null>();
-    if (isLatestQuarter) {
-      for (const u of universe) m.set(u.symbol, u.final_score);
-    }
+    for (const r of rows) m.set(r.symbol, r.final_score);
     return m;
-  }, [universe, isLatestQuarter]);
+  }, [rows]);
 
   const baseBySymbol = useMemo(() => {
     const m = new Map<string, { score: number | null; grade: string | null; type: string | null; status: string | null }>();
@@ -360,40 +356,48 @@ export function SignalProClient({
             <thead>
               {/* Group row */}
               <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th rowSpan={2} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
+                <th rowSpan={isLatestQuarter ? 2 : 1} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
-                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
+                <th rowSpan={isLatestQuarter ? 2 : 1} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
                   <div>{t(locale, "spFaScore")} (100)</div>
                   <div className="text-xs font-normal text-gray-400">{t(locale, "spGrade")}{sortIndicator("total_score")}</div>
                 </th>
-                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
-                  <div>{t(locale, "spTaScore")} (100)</div>
-                  <div className="text-xs font-normal text-gray-400">{t(locale, "spGrade")}{sortIndicator("ta_score")}</div>
-                </th>
-                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none bg-amber-50" onClick={() => toggleSort("final_score")}>
+                {isLatestQuarter && (
+                  <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
+                    <div>{t(locale, "spTaScore")} (100)</div>
+                    <div className="text-xs font-normal text-gray-400">{t(locale, "spGrade")}{sortIndicator("ta_score")}</div>
+                  </th>
+                )}
+                <th rowSpan={isLatestQuarter ? 2 : 1} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none bg-amber-50" onClick={() => toggleSort("final_score")}>
                   <div>{t(locale, "spFinalScore")} (100)</div>
                   <div className="text-xs font-normal text-gray-400">{t(locale, "spOverallGrade")}{sortIndicator("final_score")}</div>
                 </th>
-                <th colSpan={3} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spTaComponents")}</th>
-                <th colSpan={4} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
+                {isLatestQuarter && (
+                  <>
+                    <th colSpan={3} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spTaComponents")}</th>
+                    <th colSpan={4} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
+                  </>
+                )}
               </tr>
-              {/* Sub-header row */}
-              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs">
-                <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
-                  {t(locale, "taRs3m")}{sortIndicator("rs_3m")}
-                </th>
-                <th className="px-4 py-2 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
-                  {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
-                </th>
-                <th className="px-4 py-2 font-medium">{t(locale, "taRsLine")}</th>
-                <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
-                  {t(locale, "spBaseScore")}{sortIndicator("base_score")}
-                </th>
-                <th className="px-4 py-2 font-medium">{t(locale, "spBaseGrade")}</th>
-                <th className="px-4 py-2 font-medium">{t(locale, "spBaseType")}</th>
-                <th className="px-4 py-2 font-medium">{t(locale, "spBaseStatus")}</th>
-              </tr>
+              {/* Sub-header row (latest quarter only) */}
+              {isLatestQuarter && (
+                <tr className="border-b border-gray-200 text-left text-gray-500 text-xs">
+                  <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
+                    {t(locale, "taRs3m")}{sortIndicator("rs_3m")}
+                  </th>
+                  <th className="px-4 py-2 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
+                    {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
+                  </th>
+                  <th className="px-4 py-2 font-medium">{t(locale, "taRsLine")}</th>
+                  <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
+                    {t(locale, "spBaseScore")}{sortIndicator("base_score")}
+                  </th>
+                  <th className="px-4 py-2 font-medium">{t(locale, "spBaseGrade")}</th>
+                  <th className="px-4 py-2 font-medium">{t(locale, "spBaseType")}</th>
+                  <th className="px-4 py-2 font-medium">{t(locale, "spBaseStatus")}</th>
+                </tr>
+              )}
             </thead>
             <tbody>
               {filtered.map((row) => {
@@ -412,64 +416,68 @@ export function SignalProClient({
                       </Link>
                     </td>
                     <ScoreCell score={faNormalizedScore(row)} />
-                    <ScoreCell score={taScore} />
+                    {isLatestQuarter && <ScoreCell score={taScore} />}
                     <ScoreCell score={finalScore} highlight />
-                    <td className="px-4 py-3 text-right font-mono border-l border-gray-100">{rs3m ?? "—"}</td>
-                    <td className="px-4 py-3 text-right font-mono">{rs ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {rsLineScore && rsLineScore.score !== null ? (
-                          <RsLineScore
-                            score={rsLineScore.score}
-                            grade={rsLineScore.grade}
-                            title={t(locale, "spRsLineScore")}
-                          />
-                        ) : (
-                          <span className="min-w-[2rem] text-center text-gray-300">—</span>
-                        )}
-                        {rsLine && rsLine.length >= 2 ? (
-                          <button
-                            type="button"
-                            onClick={() => openRsLine(row.symbol, rsLine)}
-                            title={t(locale, "taRsLineCaption")}
-                            className="block cursor-pointer hover:opacity-70"
-                          >
-                            <RsSparkline series={rsLine} width={96} height={28} />
-                          </button>
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono border-l border-gray-100">
-                      {base && base.score !== null ? (
-                        <button
-                          type="button"
-                          onClick={() => openBase(row.symbol)}
-                          className="cursor-pointer text-blue-600 hover:underline"
-                          title={t(locale, "spBaseCol")}
-                        >
-                          {base.score}
-                        </button>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {base && base.grade ? (
-                        <span className={`inline-flex items-center px-1.5 py-0.5 text-xs rounded font-semibold ${BASE_GRADE_CLASS[base.grade] ?? BASE_GRADE_CLASS.D}`}>
-                          {base.grade}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
-                      {base && base.score !== null ? baseTypeLabel(base.type, locale) : <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
-                      {base && base.score !== null ? baseStatusLabel(base.status, locale) : <span className="text-gray-300">—</span>}
-                    </td>
+                    {isLatestQuarter && (
+                      <>
+                        <td className="px-4 py-3 text-right font-mono border-l border-gray-100">{rs3m ?? "—"}</td>
+                        <td className="px-4 py-3 text-right font-mono">{rs ?? "—"}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            {rsLineScore && rsLineScore.score !== null ? (
+                              <RsLineScore
+                                score={rsLineScore.score}
+                                grade={rsLineScore.grade}
+                                title={t(locale, "spRsLineScore")}
+                              />
+                            ) : (
+                              <span className="min-w-[2rem] text-center text-gray-300">—</span>
+                            )}
+                            {rsLine && rsLine.length >= 2 ? (
+                              <button
+                                type="button"
+                                onClick={() => openRsLine(row.symbol, rsLine)}
+                                title={t(locale, "taRsLineCaption")}
+                                className="block cursor-pointer hover:opacity-70"
+                              >
+                                <RsSparkline series={rsLine} width={96} height={28} />
+                              </button>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono border-l border-gray-100">
+                          {base && base.score !== null ? (
+                            <button
+                              type="button"
+                              onClick={() => openBase(row.symbol)}
+                              className="cursor-pointer text-blue-600 hover:underline"
+                              title={t(locale, "spBaseCol")}
+                            >
+                              {base.score}
+                            </button>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {base && base.grade ? (
+                            <span className={`inline-flex items-center px-1.5 py-0.5 text-xs rounded font-semibold ${BASE_GRADE_CLASS[base.grade] ?? BASE_GRADE_CLASS.D}`}>
+                              {base.grade}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                          {base && base.score !== null ? baseTypeLabel(base.type, locale) : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                          {base && base.score !== null ? baseStatusLabel(base.status, locale) : <span className="text-gray-300">—</span>}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 );
               })}

@@ -48,3 +48,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: python refresh_fa.py score
+
+      # Recompute the latest quarter's Final score AFTER the FA re-score, so it
+      # reflects BOTH today's TA score (from the morning TA Daily run) and
+      # today's FA/P-E valuation. Old quarters are untouched (stay frozen).
+      - name: Refresh Final score
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: python refresh_final_score.py
