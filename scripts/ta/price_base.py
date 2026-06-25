@@ -32,6 +32,11 @@ BASE_DEFAULTS = {
     "classification": {
         "bottoming_drawdown_min": 0.25, "bottoming_min_weeks": 6,
         "continuation_runup_min": 0.20, "continuation_runup_max": 0.60,
+        # Run-up reference window (bars before the base) for continuation. Kept
+        # SHORTER than prior_bars so a recent base isn't disqualified by a rally
+        # that began months earlier (the deep accumulation low). Bottoming's
+        # drawdown still uses the full prior_bars window.
+        "continuation_runup_lookback": 45,
         "continuation_min_weeks": 4, "continuation_max_dist52w": 0.25,
         "both_pick_continuation_dist52w": 0.15,
     },
@@ -168,9 +173,14 @@ def _build_attrs(highs, lows, closes, dates, start, last, base_high, base_low, m
     if start <= pre0:
         return None  # need prior-move context
     pre_peak = max(highs[pre0:start])
-    pre_run_low = min(lows[pre0:start])
     drawdown_pre = (pre_peak - base_low) / pre_peak if pre_peak > 0 else 0.0
-    runup_pre = (base_high - pre_run_low) / pre_run_low if pre_run_low > 0 else 0.0
+    # Run-up from a SHORTER window (the advance leading into the base), so a
+    # months-old accumulation low doesn't inflate it. Falls back to prior_bars
+    # if the knob is absent.
+    runup_lb = cl.get("continuation_runup_lookback") or det["prior_bars"]
+    ru0 = max(0, start - runup_lb)
+    run_low = min(lows[ru0:start])
+    runup_pre = (base_high - run_low) / run_low if run_low > 0 else 0.0
 
     # Type classification (Module 1).
     is_bottoming = drawdown_pre >= cl["bottoming_drawdown_min"] and dur_weeks >= cl["bottoming_min_weeks"]
