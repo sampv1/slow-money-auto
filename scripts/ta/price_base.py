@@ -80,6 +80,30 @@ def _grade(bqs: float, grades) -> str:
     return "D"
 
 
+def _downsample(values, target: int):
+    if len(values) <= target:
+        return list(values)
+    step = len(values) / target
+    return [values[min(int(i * step), len(values) - 1)] for i in range(target)]
+
+
+def _build_base_chart(closes, start, last, base_low, base_high) -> dict | None:
+    """Compact close series + base-rectangle bounds for the in-cell sparkline.
+    The window is the base plus ~half its length of prior context; `s` is the
+    fraction of the window at which the base begins (it ends at the last bar)."""
+    pad = max(20, (last - start) // 2)
+    w0 = max(0, start - pad)
+    series = closes[w0:last + 1]
+    if len(series) < 2:
+        return None
+    s_frac = (start - w0) / (last - w0) if last > w0 else 0.0
+    return {
+        "p": [round(x) for x in _downsample(series, 40)],
+        "lo": round(base_low), "hi": round(base_high),
+        "s": round(s_frac, 3),
+    }
+
+
 def _ma(vals: list[float], n: int, idx: int) -> float | None:
     if idx + 1 < n:
         return None
@@ -396,6 +420,8 @@ def compute_price_bases(client, dry_run: bool = False) -> dict:
         detail["breakdown"] = res["breakdown"]
         detail["raw"] = res["raw"]
         detail["max"] = res["max"]
+        chart = _build_base_chart(attrs["_closes"], attrs["_start"], attrs["_last"],
+                                  attrs["base_low"], attrs["base_high"])
         payload.append({
             "symbol": sym,
             "base_score": res["score"],
@@ -403,6 +429,7 @@ def compute_price_bases(client, dry_run: bool = False) -> dict:
             "base_type": res["type"],
             "base_status": res["status"],
             "base_detail": detail,
+            "base_chart": chart,
             "base_date": d,
         })
         stats["by_grade"][res["grade"]] = stats["by_grade"].get(res["grade"], 0) + 1
@@ -416,7 +443,7 @@ def compute_price_bases(client, dry_run: bool = False) -> dict:
     safe_execute(
         client.table("ta_universe").update({
             "base_score": None, "base_grade": None, "base_type": None,
-            "base_status": None, "base_detail": None, "base_date": None,
+            "base_status": None, "base_detail": None, "base_chart": None, "base_date": None,
         }).eq("is_active", True),
         label="base clear",
     )

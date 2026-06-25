@@ -7,7 +7,7 @@ import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, faNormalizedScore } from "@/lib/fa";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
-import { PriceBaseBreakdown, GRADE_CLASS as BASE_GRADE_CLASS, baseTypeLabel, baseStatusLabel } from "./price-base";
+import { PriceBaseBreakdown, PriceBaseSparkline, PriceBaseChart, type BaseChart, GRADE_CLASS as BASE_GRADE_CLASS, baseTypeLabel, baseStatusLabel } from "./price-base";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol";
@@ -61,6 +61,16 @@ function ScoreCell({ score, highlight = false }: { score: number | null; highlig
 // Min-rating filter against the Final-score grade (A+/A/B/C/D). Treated as a
 // floor, so "A" also admits A+, etc. A null grade (no Final score) is excluded
 // whenever a minimum is set.
+// Subset of base_detail the modal needs for the chart (the rectangle bounds);
+// the full object is passed on to PriceBaseBreakdown.
+type BaseDetail = { base_start?: string; base_end?: string; base_high?: number; base_low?: number };
+
+function isoMinusDays(iso: string, days: number): string {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
 function passesRating(grade: string | null, filter: RatingFilter): boolean {
   if (filter === "all") return true;
   if (!grade) return false;
@@ -96,6 +106,7 @@ export function SignalProClient({
     base_grade: string | null;
     base_type: string | null;
     base_status: string | null;
+    base_chart: BaseChart | null;
     ta_score: number | null;
   }[];
   locale: Locale;
@@ -158,22 +169,41 @@ export function SignalProClient({
   }, [rows]);
 
   const baseBySymbol = useMemo(() => {
-    const m = new Map<string, { score: number | null; grade: string | null; type: string | null; status: string | null }>();
-    for (const u of universe) m.set(u.symbol, { score: u.base_score, grade: u.base_grade, type: u.base_type, status: u.base_status });
+    const m = new Map<string, { score: number | null; grade: string | null; type: string | null; status: string | null; chart: BaseChart | null }>();
+    for (const u of universe) m.set(u.symbol, { score: u.base_score, grade: u.base_grade, type: u.base_type, status: u.base_status, chart: u.base_chart });
     return m;
   }, [universe]);
 
-  // Price-base breakdown modal (detail fetched on demand).
-  const [baseModal, setBaseModal] = useState<{ symbol: string; loading: boolean; detail: unknown | null } | null>(null);
+  // Price-base detail modal (chart window + breakdown fetched on demand).
+  const [baseModal, setBaseModal] = useState<
+    { symbol: string; loading: boolean; detail: BaseDetail | null; prices: number[]; dates: string[] } | null
+  >(null);
 
   async function openBase(symbol: string) {
-    setBaseModal({ symbol, loading: true, detail: null });
+    setBaseModal({ symbol, loading: true, detail: null, prices: [], dates: [] });
     const { data } = await supabase
       .from("ta_universe")
       .select("base_detail")
       .eq("symbol", symbol)
       .maybeSingle();
-    setBaseModal({ symbol, loading: false, detail: data?.base_detail ?? null });
+    const detail = (data?.base_detail as BaseDetail | null) ?? null;
+    let prices: number[] = [];
+    let dates: string[] = [];
+    if (detail?.base_start) {
+      // Fetch the close window covering the base + ~45 days of prior context.
+      const cutoff = isoMinusDays(detail.base_start, 45);
+      const { data: ohlcv } = await supabase
+        .from("ta_ohlcv")
+        .select("date,close")
+        .eq("symbol", symbol)
+        .gte("date", cutoff)
+        .order("date");
+      if (ohlcv) {
+        dates = ohlcv.map((r) => r.date as string);
+        prices = ohlcv.map((r) => Number(r.close));
+      }
+    }
+    setBaseModal({ symbol, loading: false, detail, prices, dates });
   }
 
   // RS Line detail modal. Values render instantly from the inline sparkline
@@ -309,7 +339,7 @@ export function SignalProClient({
           </select>
         </label>
         <label className="text-sm">
-          <span className="block text-gray-500 mb-1">{t(locale, "faMinRating")}</span>
+          <span className="block text-gray-500 mb-1">{t(locale, "spMinFinalRating")}</span>
           <select
             value={rating}
             onChange={(e) => setRating(e.target.value as RatingFilter)}
@@ -376,7 +406,7 @@ export function SignalProClient({
                 {isLatestQuarter && (
                   <>
                     <th colSpan={3} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spTaComponents")}</th>
-                    <th colSpan={4} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
+                    <th colSpan={5} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
                   </>
                 )}
               </tr>
@@ -390,7 +420,8 @@ export function SignalProClient({
                     {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
                   </th>
                   <th className="px-4 py-2 font-medium">{t(locale, "taRsLine")}</th>
-                  <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
+                  <th className="px-4 py-2 font-medium border-l border-gray-200">{t(locale, "spBaseChart")}</th>
+                  <th className="px-4 py-2 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
                     {t(locale, "spBaseScore")}{sortIndicator("base_score")}
                   </th>
                   <th className="px-4 py-2 font-medium">{t(locale, "spBaseGrade")}</th>
@@ -447,7 +478,21 @@ export function SignalProClient({
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right font-mono border-l border-gray-100">
+                        <td className="px-4 py-3 border-l border-gray-100">
+                          {base && base.chart ? (
+                            <button
+                              type="button"
+                              onClick={() => openBase(row.symbol)}
+                              title={t(locale, "spBaseCol")}
+                              className="block cursor-pointer hover:opacity-70"
+                            >
+                              <PriceBaseSparkline chart={base.chart} width={96} height={28} />
+                            </button>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono">
                           {base && base.score !== null ? (
                             <button
                               type="button"
@@ -577,7 +622,20 @@ export function SignalProClient({
             {baseModal.loading ? (
               <div className="h-32 flex items-center justify-center text-sm text-gray-400">{t(locale, "loading")}…</div>
             ) : baseModal.detail ? (
-              <PriceBaseBreakdown detail={baseModal.detail as Parameters<typeof PriceBaseBreakdown>[0]["detail"]} locale={locale} />
+              <div className="space-y-4">
+                {baseModal.prices.length >= 2 && baseModal.detail.base_start && baseModal.detail.base_end
+                  && baseModal.detail.base_high != null && baseModal.detail.base_low != null ? (
+                  <PriceBaseChart
+                    prices={baseModal.prices}
+                    dates={baseModal.dates}
+                    baseStart={baseModal.detail.base_start}
+                    baseEnd={baseModal.detail.base_end}
+                    baseHigh={baseModal.detail.base_high}
+                    baseLow={baseModal.detail.base_low}
+                  />
+                ) : null}
+                <PriceBaseBreakdown detail={baseModal.detail as Parameters<typeof PriceBaseBreakdown>[0]["detail"]} locale={locale} />
+              </div>
             ) : (
               <p className="text-sm text-gray-500">{t(locale, "faNoData")}</p>
             )}

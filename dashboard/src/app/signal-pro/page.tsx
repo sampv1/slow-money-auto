@@ -97,12 +97,13 @@ export default async function SignalProPage({
     base_grade: string | null;
     base_type: string | null;
     base_status: string | null;
+    base_chart: { p: number[]; lo: number; hi: number; s: number } | null;
     ta_score: number | null;
   }>(
     (from, to) =>
       supabase
         .from("ta_universe")
-        .select("symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_full,rs_line_score,rs_line_grade,base_score,base_grade,base_type,base_status,ta_score")
+        .select("symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_full,rs_line_score,rs_line_grade,base_score,base_grade,base_type,base_status,base_chart,ta_score")
         .range(from, to),
   );
 
