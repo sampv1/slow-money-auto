@@ -322,7 +322,7 @@ export function SignalProClient({
           </select>
         </label>
         <label className="text-sm">
-          <span className="block text-gray-500 mb-1">{t(locale, "faMinScore")}</span>
+          <span className="block text-gray-500 mb-1">{t(locale, "spMinFinalScore")}</span>
           <input
             type="number"
             value={minScore}
