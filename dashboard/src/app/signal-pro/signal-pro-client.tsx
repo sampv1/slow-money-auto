@@ -174,36 +174,42 @@ export function SignalProClient({
     return m;
   }, [universe]);
 
-  // Price-base detail modal (chart window + breakdown fetched on demand).
+  // Price-base detail modal (OHLC window + breakdown fetched on demand).
+  type OHLC = { opens: number[]; highs: number[]; lows: number[]; closes: number[]; dates: string[] };
+  const EMPTY_OHLC: OHLC = { opens: [], highs: [], lows: [], closes: [], dates: [] };
   const [baseModal, setBaseModal] = useState<
-    { symbol: string; loading: boolean; detail: BaseDetail | null; prices: number[]; dates: string[] } | null
+    { symbol: string; loading: boolean; detail: BaseDetail | null; ohlc: OHLC } | null
   >(null);
 
   async function openBase(symbol: string) {
-    setBaseModal({ symbol, loading: true, detail: null, prices: [], dates: [] });
+    setBaseModal({ symbol, loading: true, detail: null, ohlc: EMPTY_OHLC });
     const { data } = await supabase
       .from("ta_universe")
       .select("base_detail")
       .eq("symbol", symbol)
       .maybeSingle();
     const detail = (data?.base_detail as BaseDetail | null) ?? null;
-    let prices: number[] = [];
-    let dates: string[] = [];
+    let ohlc = EMPTY_OHLC;
     if (detail?.base_start) {
-      // Fetch the close window covering the base + ~45 days of prior context.
+      // Fetch the OHLC window covering the base + ~45 days of prior context.
       const cutoff = isoMinusDays(detail.base_start, 45);
-      const { data: ohlcv } = await supabase
+      const { data: rows } = await supabase
         .from("ta_ohlcv")
-        .select("date,close")
+        .select("date,open,high,low,close")
         .eq("symbol", symbol)
         .gte("date", cutoff)
         .order("date");
-      if (ohlcv) {
-        dates = ohlcv.map((r) => r.date as string);
-        prices = ohlcv.map((r) => Number(r.close));
+      if (rows) {
+        ohlc = {
+          dates: rows.map((r) => r.date as string),
+          opens: rows.map((r) => Number(r.open)),
+          highs: rows.map((r) => Number(r.high)),
+          lows: rows.map((r) => Number(r.low)),
+          closes: rows.map((r) => Number(r.close)),
+        };
       }
     }
-    setBaseModal({ symbol, loading: false, detail, prices, dates });
+    setBaseModal({ symbol, loading: false, detail, ohlc });
   }
 
   // RS Line detail modal. Values render instantly from the inline sparkline
@@ -420,10 +426,10 @@ export function SignalProClient({
                     {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
                   </th>
                   <th className="px-4 py-2 font-medium">{t(locale, "taRsLine")}</th>
-                  <th className="px-4 py-2 font-medium border-l border-gray-200">{t(locale, "spBaseChart")}</th>
-                  <th className="px-4 py-2 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
+                  <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
                     {t(locale, "spBaseScore")}{sortIndicator("base_score")}
                   </th>
+                  <th className="px-4 py-2 font-medium">{t(locale, "spBaseChart")}</th>
                   <th className="px-4 py-2 font-medium">{t(locale, "spBaseGrade")}</th>
                   <th className="px-4 py-2 font-medium">{t(locale, "spBaseType")}</th>
                   <th className="px-4 py-2 font-medium">{t(locale, "spBaseStatus")}</th>
@@ -478,21 +484,7 @@ export function SignalProClient({
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 border-l border-gray-100">
-                          {base && base.chart ? (
-                            <button
-                              type="button"
-                              onClick={() => openBase(row.symbol)}
-                              title={t(locale, "spBaseCol")}
-                              className="block cursor-pointer hover:opacity-70"
-                            >
-                              <PriceBaseSparkline chart={base.chart} width={96} height={28} />
-                            </button>
-                          ) : (
-                            <span className="text-gray-300">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono">
+                        <td className="px-4 py-3 text-right font-mono border-l border-gray-100">
                           {base && base.score !== null ? (
                             <button
                               type="button"
@@ -501,6 +493,20 @@ export function SignalProClient({
                               title={t(locale, "spBaseCol")}
                             >
                               {base.score}
+                            </button>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {base && base.chart ? (
+                            <button
+                              type="button"
+                              onClick={() => openBase(row.symbol)}
+                              title={t(locale, "spBaseCol")}
+                              className="block cursor-pointer hover:opacity-70"
+                            >
+                              <PriceBaseSparkline chart={base.chart} width={110} height={30} />
                             </button>
                           ) : (
                             <span className="text-gray-300">—</span>
@@ -623,11 +629,14 @@ export function SignalProClient({
               <div className="h-32 flex items-center justify-center text-sm text-gray-400">{t(locale, "loading")}…</div>
             ) : baseModal.detail ? (
               <div className="space-y-4">
-                {baseModal.prices.length >= 2 && baseModal.detail.base_start && baseModal.detail.base_end
+                {baseModal.ohlc.closes.length >= 2 && baseModal.detail.base_start && baseModal.detail.base_end
                   && baseModal.detail.base_high != null && baseModal.detail.base_low != null ? (
                   <PriceBaseChart
-                    prices={baseModal.prices}
-                    dates={baseModal.dates}
+                    opens={baseModal.ohlc.opens}
+                    highs={baseModal.ohlc.highs}
+                    lows={baseModal.ohlc.lows}
+                    closes={baseModal.ohlc.closes}
+                    dates={baseModal.ohlc.dates}
                     baseStart={baseModal.detail.base_start}
                     baseEnd={baseModal.detail.base_end}
                     baseHigh={baseModal.detail.base_high}

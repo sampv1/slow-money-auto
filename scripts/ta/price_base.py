@@ -80,27 +80,36 @@ def _grade(bqs: float, grades) -> str:
     return "D"
 
 
-def _downsample(values, target: int):
-    if len(values) <= target:
-        return list(values)
-    step = len(values) / target
-    return [values[min(int(i * step), len(values) - 1)] for i in range(target)]
+def _aggregate_ohlc(o, h, l, c, target: int):
+    """Aggregate OHLC bars into `target` contiguous candles (open=first,
+    close=last, high=max, low=min per bucket). Returns parallel o/h/l/c lists."""
+    n = len(c)
+    if n <= target:
+        return list(o), list(h), list(l), list(c)
+    oo, hh, ll, cc = [], [], [], []
+    for k in range(target):
+        a = k * n // target
+        b = max(a + 1, (k + 1) * n // target)
+        oo.append(o[a]); hh.append(max(h[a:b])); ll.append(min(l[a:b])); cc.append(c[b - 1])
+    return oo, hh, ll, cc
 
 
-def _build_base_chart(closes, start, last, base_low, base_high) -> dict | None:
-    """Compact close series + base-rectangle bounds for the in-cell sparkline.
+def _build_base_chart(opens, highs, lows, closes, start, last, base_low, base_high) -> dict | None:
+    """Compact OHLC candle series + base-rectangle bounds for the in-cell chart.
     The window is the base plus ~half its length of prior context; `s` is the
     fraction of the window at which the base begins (it ends at the last bar)."""
     pad = max(20, (last - start) // 2)
     w0 = max(0, start - pad)
-    series = closes[w0:last + 1]
-    if len(series) < 2:
+    sl = slice(w0, last + 1)
+    o, h, l, c = opens[sl], highs[sl], lows[sl], closes[sl]
+    if len(c) < 2:
         return None
+    o, h, l, c = _aggregate_ohlc(o, h, l, c, 30)
     s_frac = (start - w0) / (last - w0) if last > w0 else 0.0
     return {
-        "p": [round(x) for x in _downsample(series, 40)],
-        "lo": round(base_low), "hi": round(base_high),
-        "s": round(s_frac, 3),
+        "o": [round(x) for x in o], "h": [round(x) for x in h],
+        "l": [round(x) for x in l], "c": [round(x) for x in c],
+        "lo": round(base_low), "hi": round(base_high), "s": round(s_frac, 3),
     }
 
 
@@ -350,21 +359,22 @@ def score_base(a: dict, rs_line: list[float] | None, cfg) -> dict:
 # --- orchestration / persistence -------------------------------------------
 
 def _load_ohlcv(client, symbols, cutoff_iso):
-    out = {s: {"d": [], "h": [], "l": [], "c": [], "v": []} for s in symbols}
+    out = {s: {"d": [], "o": [], "h": [], "l": [], "c": [], "v": []} for s in symbols}
     CH = 120
     for i in range(0, len(symbols), CH):
         chunk = symbols[i:i + CH]
         offset = 0
         while True:
             rows = safe_execute(
-                client.table("ta_ohlcv").select("symbol,date,high,low,close,volume")
+                client.table("ta_ohlcv").select("symbol,date,open,high,low,close,volume")
                 .in_("symbol", chunk).gte("date", cutoff_iso)
                 .order("symbol").order("date").range(offset, offset + 999),
                 label="base ohlcv",
             ).data
             for r in rows:
                 o = out[r["symbol"]]
-                o["d"].append(r["date"]); o["h"].append(float(r["high"]))
+                o["d"].append(r["date"]); o["o"].append(float(r["open"]))
+                o["h"].append(float(r["high"]))
                 o["l"].append(float(r["low"])); o["c"].append(float(r["close"]))
                 o["v"].append(float(r["volume"] or 0))
             if len(rows) < 1000:
@@ -420,7 +430,7 @@ def compute_price_bases(client, dry_run: bool = False) -> dict:
         detail["breakdown"] = res["breakdown"]
         detail["raw"] = res["raw"]
         detail["max"] = res["max"]
-        chart = _build_base_chart(attrs["_closes"], attrs["_start"], attrs["_last"],
+        chart = _build_base_chart(o["o"], o["h"], o["l"], o["c"], attrs["_start"], attrs["_last"],
                                   attrs["base_low"], attrs["base_high"])
         payload.append({
             "symbol": sym,

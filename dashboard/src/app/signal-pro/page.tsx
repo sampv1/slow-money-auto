@@ -97,7 +97,7 @@ export default async function SignalProPage({
     base_grade: string | null;
     base_type: string | null;
     base_status: string | null;
-    base_chart: { p: number[]; lo: number; hi: number; s: number } | null;
+    base_chart: { o: number[]; h: number[]; l: number[]; c: number[]; lo: number; hi: number; s: number } | null;
     ta_score: number | null;
   }>(
     (from, to) =>
