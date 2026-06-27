@@ -4,30 +4,27 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
-import { type FaScore, FA_NORMALIZED_MAX, faNormalizedScore, ratingBadge } from "@/lib/fa";
+import { type FaScore, FA_NORMALIZED_MAX, faNormalizedScore, pointsColor } from "@/lib/fa";
 
-type RatingFilter = "all" | "A" | "AB" | "ABC";
-type SortKey = "total_score" | "c7_roe" | "c8_debt_to_equity" | "current_pe" | "symbol";
+// Score components shown as columns. This set is the manufacturing rubric; real
+// estate / banks rubrics will add their own component sets later, so keep it a
+// data-driven list rather than hardcoded columns.
+const FA_COMPONENTS = [
+  { code: "C1", pts: "c1_pts", label: "faC1" },
+  { code: "C2", pts: "c2_pts", label: "faC2" },
+  { code: "C3", pts: "c3_pts", label: "faC3" },
+  { code: "C4", pts: "c4_pts", label: "faC4" },
+  { code: "C5", pts: "c5_pts", label: "faC5" },
+  { code: "C6", pts: "c6_pts", label: "faC6" },
+  { code: "C7", pts: "c7_pts", label: "faC7" },
+  { code: "C8", pts: "c8_pts", label: "faC8" },
+  { code: "C9", pts: "c9_pts", label: "faC9" },
+] as const;
+
+type PtsKey = (typeof FA_COMPONENTS)[number]["pts"];
+type SortKey = "total_score" | "symbol" | PtsKey;
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
-
-function passesRating(rating: string, filter: RatingFilter): boolean {
-  switch (filter) {
-    case "A":
-      return rating === "A";
-    case "AB":
-      return rating === "A" || rating === "B";
-    case "ABC":
-      return rating === "A" || rating === "B" || rating === "C";
-    default:
-      return true;
-  }
-}
-
-function fmt(v: number | null, digits = 2): string {
-  if (v === null || v === undefined) return "—";
-  return v.toFixed(digits);
-}
 
 export function FaScannerClient({
   rows,
@@ -43,7 +40,6 @@ export function FaScannerClient({
   selectedQuarter: string;
 }) {
   const router = useRouter();
-  const [rating, setRating] = useState<RatingFilter>("all");
   const [minScore, setMinScore] = useState<string>("");
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
   const [search, setSearch] = useState("");
@@ -56,11 +52,21 @@ export function FaScannerClient({
     return m;
   }, [universe]);
 
+  // Reliable "as of" date: the most recent close-price date among the displayed
+  // rows (current_price_date is refreshed daily by the FA score job).
+  const latestData = useMemo(() => {
+    let mx: string | null = null;
+    for (const r of rows) {
+      const d = r.current_price_date;
+      if (d && (mx === null || d > mx)) mx = d;
+    }
+    return mx;
+  }, [rows]);
+
   const filtered = useMemo(() => {
     const min = minScore.trim() === "" ? null : Number(minScore);
     const q = search.trim().toUpperCase();
     const out = rows.filter((r) => {
-      if (!passesRating(r.rating, rating)) return false;
       if (min !== null && !Number.isNaN(min) && faNormalizedScore(r) < min) return false;
       // Liquidity filter: drop symbols whose 20-session avg volume is below the
       // threshold (or NULL = unknown), matching the TA scanner.
@@ -94,7 +100,7 @@ export function FaScannerClient({
       return 0;
     });
     return out;
-  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, search, sortKey, sortAsc]);
+  }, [rows, minScore, minAvgVolume, avgVolBySymbol, search, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -157,19 +163,6 @@ export function FaScannerClient({
           </select>
         </label>
         <label className="text-sm">
-          <span className="block text-gray-500 mb-1">{t(locale, "faMinRating")}</span>
-          <select
-            value={rating}
-            onChange={(e) => setRating(e.target.value as RatingFilter)}
-            className="border border-gray-300 rounded px-2 py-1"
-          >
-            <option value="all">{t(locale, "faRatingAll")}</option>
-            <option value="A">{t(locale, "faRatingAOnly")}</option>
-            <option value="AB">{t(locale, "faRatingAB")}</option>
-            <option value="ABC">{t(locale, "faRatingABC")}</option>
-          </select>
-        </label>
-        <label className="text-sm">
           <span className="block text-gray-500 mb-1">{t(locale, "faMinScore")}</span>
           <input
             type="number"
@@ -189,9 +182,12 @@ export function FaScannerClient({
             className="border border-gray-300 rounded px-2 py-1 w-full"
           />
         </label>
-        <span className="text-sm text-gray-500 self-center">
-          {filtered.length} {t(locale, "faResults")}
-        </span>
+        <div className="self-center text-sm text-gray-500 ml-auto text-right">
+          <div>{filtered.length} {t(locale, "faResults")}</div>
+          {latestData && (
+            <div className="text-xs">{t(locale, "taLastUpdated")} <span className="font-mono">{latestData}</span></div>
+          )}
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -206,45 +202,42 @@ export function FaScannerClient({
                 <th className="px-4 py-3 font-medium cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
-                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
+                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none border-r border-gray-200" onClick={() => toggleSort("total_score")}>
                   {t(locale, "faTotalScore")}{sortIndicator("total_score")}
                 </th>
-                <th className="px-4 py-3 font-medium">{t(locale, "faRating")}</th>
-                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("c7_roe")}>
-                  {t(locale, "faRoe")}{sortIndicator("c7_roe")}
-                </th>
-                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("c8_debt_to_equity")}>
-                  {t(locale, "faDebtEquity")}{sortIndicator("c8_debt_to_equity")}
-                </th>
-                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("current_pe")}>
-                  {t(locale, "faCurrentPe")}{sortIndicator("current_pe")}
-                </th>
+                {FA_COMPONENTS.map((c) => (
+                  <th
+                    key={c.code}
+                    title={t(locale, c.label)}
+                    className="px-3 py-3 font-medium text-right cursor-pointer select-none"
+                    onClick={() => toggleSort(c.pts)}
+                  >
+                    {c.code}{sortIndicator(c.pts)}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => {
-                const badge = ratingBadge(row.rating);
-                return (
-                  <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">
-                      <Link href={`/analysis/${row.symbol}`} className="text-blue-600 hover:underline">
-                        {row.symbol}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
-                      {faNormalizedScore(row)} / {FA_NORMALIZED_MAX}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-medium ${badge.className}`}>
-                        {badge.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono">{fmt(row.c7_roe, 1)}</td>
-                    <td className="px-4 py-3 text-right font-mono">{fmt(row.c8_debt_to_equity)}</td>
-                    <td className="px-4 py-3 text-right font-mono">{fmt(row.current_pe, 1)}</td>
-                  </tr>
-                );
-              })}
+              {filtered.map((row) => (
+                <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium">
+                    <Link href={`/analysis/${row.symbol}`} className="text-blue-600 hover:underline">
+                      {row.symbol}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono whitespace-nowrap border-r border-gray-100">
+                    {faNormalizedScore(row)} / {FA_NORMALIZED_MAX}
+                  </td>
+                  {FA_COMPONENTS.map((c) => {
+                    const pts = row[c.pts];
+                    return (
+                      <td key={c.code} className={`px-3 py-3 text-right font-mono ${pointsColor(pts)}`}>
+                        {pts}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

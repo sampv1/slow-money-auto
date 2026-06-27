@@ -7,7 +7,7 @@ import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, faNormalizedScore } from "@/lib/fa";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
-import { PriceBaseBreakdown, PriceBaseSparkline, PriceBaseChart, type BaseChart, GRADE_CLASS as BASE_GRADE_CLASS, baseTypeLabel, baseStatusLabel } from "./price-base";
+import { PriceBaseBreakdown, PriceBaseSparkline, PriceBaseChart, type BaseChart, baseTypeLabel, baseStatusLabel } from "./price-base";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol";
@@ -42,14 +42,15 @@ function GradeBadge({ grade }: { grade: string | null }) {
   );
 }
 
-// One score column's cell: "NN / 100" + its grade badge (or — when missing).
-function ScoreCell({ score, highlight = false }: { score: number | null; highlight?: boolean }) {
+// One score column's cell: the number, plus a grade badge only when `grade` is
+// set (Final score). FA/TA show the number alone.
+function ScoreCell({ score, highlight = false, grade = false }: { score: number | null; highlight?: boolean; grade?: boolean }) {
   return (
     <td className={`px-4 py-3 ${highlight ? "bg-amber-50" : ""}`}>
       {score !== null ? (
         <div className="flex items-center justify-end gap-2 whitespace-nowrap">
           <span className={`font-mono ${highlight ? "font-semibold" : ""}`}>{score}</span>
-          <GradeBadge grade={gradeOf(score)} />
+          {grade && <GradeBadge grade={gradeOf(score)} />}
         </div>
       ) : (
         <div className="text-right text-gray-300">—</div>
@@ -117,6 +118,16 @@ export function SignalProClient({
   // Old quarters carry a FROZEN Final score (no TA detail) — for those we show
   // only Symbol / FA Score / Final score. The full TA layout is latest-only.
   const isLatestQuarter = quarters.length > 0 && selectedQuarter === quarters[0];
+  // Reliable "as of" date: the most recent close-price date among displayed rows
+  // (current_price_date is refreshed daily by the FA score job).
+  const latestData = useMemo(() => {
+    let mx: string | null = null;
+    for (const r of rows) {
+      const d = r.current_price_date;
+      if (d && (mx === null || d > mx)) mx = d;
+    }
+    return mx;
+  }, [rows]);
   const [rating, setRating] = useState<RatingFilter>("all");
   const [minScore, setMinScore] = useState<string>("");
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
@@ -377,9 +388,12 @@ export function SignalProClient({
             className="border border-gray-300 rounded px-2 py-1 w-full"
           />
         </label>
-        <span className="text-sm text-gray-500 self-center">
-          {filtered.length} {t(locale, "faResults")}
-        </span>
+        <div className="self-center text-sm text-gray-500 ml-auto text-right">
+          <div>{filtered.length} {t(locale, "faResults")}</div>
+          {latestData && (
+            <div className="text-xs">{t(locale, "taLastUpdated")} <span className="font-mono">{latestData}</span></div>
+          )}
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -396,13 +410,11 @@ export function SignalProClient({
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
                 <th rowSpan={isLatestQuarter ? 2 : 1} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
-                  <div>{t(locale, "spFaScore")} (100)</div>
-                  <div className="text-xs font-normal text-gray-400">{t(locale, "spGrade")}{sortIndicator("total_score")}</div>
+                  {t(locale, "spFaScore")} (100){sortIndicator("total_score")}
                 </th>
                 {isLatestQuarter && (
                   <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
-                    <div>{t(locale, "spTaScore")} (100)</div>
-                    <div className="text-xs font-normal text-gray-400">{t(locale, "spGrade")}{sortIndicator("ta_score")}</div>
+                    {t(locale, "spTaScore")} (100){sortIndicator("ta_score")}
                   </th>
                 )}
                 <th rowSpan={isLatestQuarter ? 2 : 1} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none bg-amber-50" onClick={() => toggleSort("final_score")}>
@@ -412,7 +424,7 @@ export function SignalProClient({
                 {isLatestQuarter && (
                   <>
                     <th colSpan={3} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spTaComponents")}</th>
-                    <th colSpan={5} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
+                    <th colSpan={4} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
                   </>
                 )}
               </tr>
@@ -430,7 +442,6 @@ export function SignalProClient({
                     {t(locale, "spBaseScore")}{sortIndicator("base_score")}
                   </th>
                   <th className="px-4 py-2 font-medium">{t(locale, "spBaseChart")}</th>
-                  <th className="px-4 py-2 font-medium">{t(locale, "spBaseGrade")}</th>
                   <th className="px-4 py-2 font-medium">{t(locale, "spBaseType")}</th>
                   <th className="px-4 py-2 font-medium">{t(locale, "spBaseStatus")}</th>
                 </tr>
@@ -454,7 +465,7 @@ export function SignalProClient({
                     </td>
                     <ScoreCell score={faNormalizedScore(row)} />
                     {isLatestQuarter && <ScoreCell score={taScore} />}
-                    <ScoreCell score={finalScore} highlight />
+                    <ScoreCell score={finalScore} highlight grade />
                     {isLatestQuarter && (
                       <>
                         <td className="px-4 py-3 text-right font-mono border-l border-gray-100">{rs3m ?? "—"}</td>
@@ -508,15 +519,6 @@ export function SignalProClient({
                             >
                               <PriceBaseSparkline chart={base.chart} width={110} height={30} />
                             </button>
-                          ) : (
-                            <span className="text-gray-300">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          {base && base.grade ? (
-                            <span className={`inline-flex items-center px-1.5 py-0.5 text-xs rounded font-semibold ${BASE_GRADE_CLASS[base.grade] ?? BASE_GRADE_CLASS.D}`}>
-                              {base.grade}
-                            </span>
                           ) : (
                             <span className="text-gray-300">—</span>
                           )}
