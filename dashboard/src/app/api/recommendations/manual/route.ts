@@ -6,6 +6,7 @@ const ACTIVE_STATUSES = ["OPEN", "TP1_HIT"];
 interface ManualInput {
   symbol?: string;
   action?: string;
+  price?: number | null; // entry (BUY) / exit (SELL); defaults to latest close
   stop_loss?: number | null;
   tp1?: number | null;
   tp2?: number | null;
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "SELL") {
-      return sell(symbol, close, body.note);
+      return sell(symbol, close, body);
     }
     return buy(symbol, close, body);
   } catch (err) {
@@ -117,7 +118,9 @@ async function buy(
     );
   }
 
-  const entry = close.price;
+  // Entry defaults to the latest close but the admin can override it.
+  const entryInput = num(body.price);
+  const entry = entryInput !== null && entryInput > 0 ? entryInput : close.price;
   const stopLoss = num(body.stop_loss);
   const tp1 = num(body.tp1);
   const tp2 = num(body.tp2);
@@ -136,7 +139,7 @@ async function buy(
     stop_loss: stopLoss,
     tp1,
     tp2,
-    last_close: entry,
+    last_close: close.price,
     last_close_date: close.date,
     stop_loss_pct: stopLoss !== null ? Number((((stopLoss - entry) / entry) * 100).toFixed(2)) : null,
     tp1_pct: tp1 !== null ? Number((((tp1 - entry) / entry) * 100).toFixed(2)) : null,
@@ -147,9 +150,9 @@ async function buy(
     note,
     source: "MANUAL",
     status: "OPEN",
-    current_price: entry,
+    current_price: close.price,
     current_price_date: close.date,
-    unrealized_pnl_pct: 0,
+    unrealized_pnl_pct: Number((((close.price - entry) / entry) * 100).toFixed(2)),
   };
 
   const { data: inserted, error } = await supabase
@@ -167,7 +170,7 @@ async function buy(
 async function sell(
   symbol: string,
   close: { price: number; date: string },
-  noteInput: string | null | undefined,
+  body: ManualInput,
 ) {
   // Find the open manual position to finalize.
   const { data: pos } = await supabase
@@ -184,9 +187,11 @@ async function sell(
   }
 
   const entry = Number(pos.entry_price);
-  const exit = close.price;
+  // Exit defaults to the latest close but the admin can override it.
+  const exitInput = num(body.price);
+  const exit = exitInput !== null && exitInput > 0 ? exitInput : close.price;
   const pnl = Number((((exit - entry) / entry) * 100).toFixed(2));
-  const sellNote = (noteInput ?? "").toString().trim();
+  const sellNote = (body.note ?? "").toString().trim();
   const note = sellNote
     ? pos.note ? `${pos.note} | SELL: ${sellNote}` : `SELL: ${sellNote}`
     : pos.note;

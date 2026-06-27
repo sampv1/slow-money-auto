@@ -28,6 +28,8 @@ export function TradeActions({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Entry (BUY) / exit (SELL) price — editable, prefilled with the latest close.
+  const [price, setPrice] = useState("");
   // Optional BUY inputs (strings so empty = omitted).
   const [sl, setSl] = useState("");
   const [tp1, setTp1] = useState("");
@@ -38,7 +40,7 @@ export function TradeActions({
   const [note, setNote] = useState("");
 
   function reset() {
-    setSl(""); setTp1(""); setTp2(""); setHolding(""); setWinRate(""); setSharpe(""); setNote("");
+    setPrice(""); setSl(""); setTp1(""); setTp2(""); setHolding(""); setWinRate(""); setSharpe(""); setNote("");
     setError(null); setClose(null); setEntry(null);
   }
 
@@ -57,7 +59,9 @@ export function TradeActions({
     reset();
     setMode("BUY");
     setLoading(true);
-    setClose(await latestClose());
+    const c = await latestClose();
+    setClose(c);
+    setPrice(c ? String(c.price) : "");
     setLoading(false);
   }
 
@@ -78,6 +82,7 @@ export function TradeActions({
         .maybeSingle(),
     ]);
     setClose(c);
+    setPrice(c ? String(c.price) : "");
     setEntry(pos.data ? Number(pos.data.entry_price) : null);
     setLoading(false);
   }
@@ -97,8 +102,8 @@ export function TradeActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           mode === "BUY"
-            ? { symbol, action: "BUY", stop_loss: sl, tp1, tp2, holding, win_rate_est: winRate, sharpe, note }
-            : { symbol, action: "SELL", note },
+            ? { symbol, action: "BUY", price, stop_loss: sl, tp1, tp2, holding, win_rate_est: winRate, sharpe, note }
+            : { symbol, action: "SELL", price, note },
         ),
       });
       const json = await res.json();
@@ -115,8 +120,10 @@ export function TradeActions({
     }
   }
 
-  const pnl = mode === "SELL" && entry !== null && close
-    ? Number((((close.price - entry) / entry) * 100).toFixed(2))
+  const priceNum = Number(price);
+  const priceValid = price.trim() !== "" && Number.isFinite(priceNum) && priceNum > 0;
+  const pnl = mode === "SELL" && entry !== null && priceValid
+    ? Number((((priceNum - entry) / entry) * 100).toFixed(2))
     : null;
 
   return (
@@ -157,19 +164,22 @@ export function TradeActions({
               <button type="button" onClick={cancel} className="text-gray-400 hover:text-gray-700 text-2xl leading-none" aria-label="Close">×</button>
             </div>
 
-            {/* Entry (BUY) / Exit (SELL) = latest close, read-only for review. */}
+            {/* Entry (BUY) / Exit (SELL) — editable, prefilled with latest close. */}
             <div className="bg-gray-50 rounded border border-gray-200 px-3 py-2 mb-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <span className="text-sm text-gray-500">{mode === "BUY" ? t(locale, "entry") : t(locale, "spExit")}</span>
                 {loading ? (
                   <span className="text-sm text-gray-400">{t(locale, "loading")}…</span>
-                ) : close ? (
-                  <span className="text-right">
-                    <span className="font-mono font-semibold">{formatPrice(close.price)}</span>
-                    <span className="ml-2 text-xs text-gray-400 font-mono">{close.date}</span>
-                  </span>
                 ) : (
-                  <span className="text-sm text-red-500">{t(locale, "faNoData")}</span>
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      className="w-28 border border-gray-300 rounded px-2 py-1 text-sm font-mono text-right"
+                    />
+                    {close && <span className="text-xs text-gray-400 font-mono whitespace-nowrap">{close.date}</span>}
+                  </span>
                 )}
               </div>
               {mode === "SELL" && entry !== null && (
@@ -225,7 +235,7 @@ export function TradeActions({
               <button
                 type="button"
                 onClick={submit}
-                disabled={submitting || loading || !close}
+                disabled={submitting || loading || !close || !priceValid}
                 className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {submitting ? `${t(locale, "loading")}…` : t(locale, "yes")}
