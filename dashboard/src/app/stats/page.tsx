@@ -36,7 +36,7 @@ export default async function StatsPage() {
   // Core metrics
   const winRate = withPnl.length > 0 ? (wins.length / withPnl.length) * 100 : 0;
   const avgPnl = withPnl.length > 0 ? withPnl.reduce((s, r) => s + r.actual_pnl_pct!, 0) / withPnl.length : 0;
-  const avgR = withPnl.length > 0 ? withPnl.reduce((s, r) => s + r.r_multiple, 0) / withPnl.length : 0;
+  const avgR = withPnl.length > 0 ? withPnl.reduce((s, r) => s + (r.r_multiple ?? 0), 0) / withPnl.length : 0;
   const avgWin = wins.length > 0 ? wins.reduce((s, r) => s + r.actual_pnl_pct!, 0) / wins.length : 0;
   const avgLoss = losses.length > 0 ? losses.reduce((s, r) => s + r.actual_pnl_pct!, 0) / losses.length : 0;
   const avgDaysHeld = withPnl.filter((r) => r.days_held !== null).length > 0
@@ -61,7 +61,7 @@ export default async function StatsPage() {
   // Setup breakdown
   const setupStats = new Map<string, { count: number; wins: number; totalPnl: number }>();
   for (const r of withPnl) {
-    const setup = r.setup.replace(/_/g, " ");
+    const setup = (r.setup ?? "—").replace(/_/g, " ");
     const existing = setupStats.get(setup) ?? { count: 0, wins: 0, totalPnl: 0 };
     existing.count++;
     if (r.actual_pnl_pct! > 0) existing.wins++;
@@ -91,13 +91,13 @@ export default async function StatsPage() {
   const logById = new Map(allLogs.map((l) => [l.id, l]));
   const regimeStats = new Map<string, { count: number; wins: number; totalPnl: number; rSum: number }>();
   for (const r of withPnl) {
-    const log = logById.get(r.daily_log_id);
+    const log = r.daily_log_id ? logById.get(r.daily_log_id) : undefined;
     const label = log ? regimeLabel(log.regime, locale) : "Unknown";
     const existing = regimeStats.get(label) ?? { count: 0, wins: 0, totalPnl: 0, rSum: 0 };
     existing.count++;
     if (r.actual_pnl_pct! > 0) existing.wins++;
     existing.totalPnl += r.actual_pnl_pct!;
-    existing.rSum += r.r_multiple;
+    existing.rSum += r.r_multiple ?? 0;
     regimeStats.set(label, existing);
   }
   const regimeRows = [...regimeStats.entries()]

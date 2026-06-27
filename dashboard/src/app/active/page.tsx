@@ -68,8 +68,16 @@ export default async function ActivePage() {
                 return (
                   <tr key={rec.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{rec.trading_date}</td>
-                    <td className="px-4 py-3 font-medium">{rec.symbol}</td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">{rec.setup.replace(/_/g, " ")}</td>
+                    <td className="px-4 py-3 font-medium">
+                      {rec.symbol}
+                      {rec.source === "MANUAL" && (
+                        <span className="ml-1.5 inline-block px-1 py-0.5 text-[10px] rounded bg-gray-100 text-gray-500 align-middle">M</span>
+                      )}
+                      {rec.note && (
+                        <span className="block text-[11px] text-gray-400 font-normal mt-0.5 max-w-[180px] truncate" title={rec.note}>{rec.note}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
                     <td className="px-4 py-3 text-right font-mono">{formatPrice(rec.entry_price)}</td>
                     <td className="px-4 py-3 text-right font-mono text-red-500 whitespace-nowrap">
                       {formatPrice(rec.stop_loss)}
@@ -99,8 +107,8 @@ export default async function ActivePage() {
                     <td className="px-4 py-3 text-gray-600 text-xs">
                       {rec.holding_period_label ?? (rec.holding_period_sessions ? `${rec.holding_period_sessions} ${t(locale, "sessions")}` : "—")}
                     </td>
-                    <td className="px-4 py-3 text-right">{rec.win_rate_est}%</td>
-                    <td className="px-4 py-3 text-right">{rec.sharpe.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right">{rec.win_rate_est !== null ? `${rec.win_rate_est}%` : "—"}</td>
+                    <td className="px-4 py-3 text-right">{rec.sharpe !== null ? rec.sharpe.toFixed(1) : "—"}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${badge.className}`}>
                         {badge.label}

@@ -280,7 +280,7 @@ export default async function LogDetailPage({
                     <tr key={rec.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="px-4 py-3 text-gray-400">{rec.rank}</td>
                       <td className="px-4 py-3 font-medium">{rec.symbol}</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">{rec.setup.replace(/_/g, " ")}</td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
                       <td className="px-4 py-3 text-right font-mono">{formatPrice(rec.entry_price)}</td>
                       <td className="px-4 py-3 text-right font-mono text-red-500">{formatPrice(rec.stop_loss)}</td>
                       <td className="px-4 py-3 text-right font-mono text-green-600">{formatPrice(rec.tp1)}</td>
@@ -288,7 +288,7 @@ export default async function LogDetailPage({
                       <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor(pnl)}`}>
                         {formatPnl(pnl)}
                       </td>
-                      <td className="px-4 py-3 text-right">{rec.r_multiple.toFixed(1)}</td>
+                      <td className="px-4 py-3 text-right">{rec.r_multiple !== null ? rec.r_multiple.toFixed(1) : "—"}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${sBadge.className}`}>
                           {sBadge.label}
@@ -329,7 +329,7 @@ export default async function LogDetailPage({
                 </div>
                 <div>
                   <span className="text-gray-500">{t(locale, "expectancy")}: </span>
-                  <span className="font-medium">{rec.expectancy.toFixed(2)}</span>
+                  <span className="font-medium">{rec.expectancy !== null ? rec.expectancy.toFixed(2) : "—"}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">{t(locale, "hitProb")}: </span>
@@ -345,7 +345,7 @@ export default async function LogDetailPage({
                 </div>
                 <div>
                   <span className="text-gray-500">{t(locale, "sharpe")}: </span>
-                  <span className="font-medium">{rec.sharpe.toFixed(1)}</span>
+                  <span className="font-medium">{rec.sharpe !== null ? rec.sharpe.toFixed(1) : "—"}</span>
                 </div>
               </div>
               {rec.story_summary && (

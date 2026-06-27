@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { getLocale, t } from "@/lib/i18n";
+import { getUserRole } from "@/lib/supabase-server";
 import type { FaScore } from "@/lib/fa";
 import { SignalProClient } from "./signal-pro-client";
 
@@ -32,6 +33,20 @@ export default async function SignalProPage({
 }) {
   const locale = await getLocale();
   const params = await searchParams;
+  const role = await getUserRole();
+  const isAdmin = role === "admin";
+
+  // Symbols that already hold an active manual position → the BUY/SELL toggle
+  // shows "Remove" for these (admin only).
+  let activeManualSymbols: string[] = [];
+  if (isAdmin) {
+    const { data: active } = await supabase
+      .from("recommendations")
+      .select("symbol")
+      .eq("source", "MANUAL")
+      .in("status", ["OPEN", "TP1_HIT"]);
+    activeManualSymbols = Array.from(new Set((active ?? []).map((r) => r.symbol as string)));
+  }
 
   // Distinct quarters (newest first) → dropdown options. Default = latest.
   // Must page: there are >1000 rows per quarter, so a single un-paged query
@@ -116,6 +131,8 @@ export default async function SignalProPage({
         locale={locale}
         quarters={quarters}
         selectedQuarter={selected}
+        isAdmin={isAdmin}
+        activeManualSymbols={activeManualSymbols}
       />
     </div>
   );

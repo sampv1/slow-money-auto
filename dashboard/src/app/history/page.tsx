@@ -171,7 +171,7 @@ export default async function HistoryPage({
                   <tr key={rec.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-500">{rec.trading_date}</td>
                     <td className="px-4 py-3 font-medium">{rec.symbol}</td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">{rec.setup.replace(/_/g, " ")}</td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
                     <td className="px-4 py-3 text-right font-mono">{formatPrice(rec.entry_price)}</td>
                     <td className="px-4 py-3 text-right font-mono">{formatPrice(rec.actual_exit_price)}</td>
                     <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor(pnl)}`}>
@@ -180,8 +180,8 @@ export default async function HistoryPage({
                     <td className="px-4 py-3 text-right font-mono text-red-600">
                       {rec.max_drawdown_pct !== null ? `${rec.max_drawdown_pct.toFixed(1)}%` : ""}
                     </td>
-                    <td className="px-4 py-3 text-right">{rec.r_multiple.toFixed(1)}</td>
-                    <td className="px-4 py-3 text-right">{rec.sharpe.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right">{rec.r_multiple !== null ? rec.r_multiple.toFixed(1) : "—"}</td>
+                    <td className="px-4 py-3 text-right">{rec.sharpe !== null ? rec.sharpe.toFixed(1) : "—"}</td>
                     <td className="px-4 py-3 text-right text-gray-500">{rec.days_held ?? "\u2014"}</td>
                     <td className="px-4 py-3 text-gray-500">{rec.closed_at ?? "\u2014"}</td>
                     <td className="px-4 py-3">

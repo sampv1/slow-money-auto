@@ -8,6 +8,7 @@ import { type FaScore, faNormalizedScore } from "@/lib/fa";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import { PriceBaseBreakdown, PriceBaseSparkline, PriceBaseChart, type BaseChart, baseTypeLabel, baseStatusLabel } from "./price-base";
+import { TradeActions } from "./trade-actions";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol";
@@ -93,6 +94,8 @@ export function SignalProClient({
   locale,
   quarters,
   selectedQuarter,
+  isAdmin = false,
+  activeManualSymbols = [],
 }: {
   rows: FaScore[];
   universe: {
@@ -113,8 +116,11 @@ export function SignalProClient({
   locale: Locale;
   quarters: string[];
   selectedQuarter: string;
+  isAdmin?: boolean;
+  activeManualSymbols?: string[];
 }) {
   const router = useRouter();
+  const activeManual = useMemo(() => new Set(activeManualSymbols), [activeManualSymbols]);
   // Old quarters carry a FROZEN Final score (no TA detail) — for those we show
   // only Symbol / FA Score / Final score. The full TA layout is latest-only.
   const isLatestQuarter = quarters.length > 0 && selectedQuarter === quarters[0];
@@ -427,6 +433,9 @@ export function SignalProClient({
                     <th colSpan={4} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
                   </>
                 )}
+                {isAdmin && (
+                  <th rowSpan={isLatestQuarter ? 2 : 1} className="px-4 py-2 font-medium text-right align-bottom border-l border-gray-200">{t(locale, "spTrade")}</th>
+                )}
               </tr>
               {/* Sub-header row (latest quarter only) */}
               {isLatestQuarter && (
@@ -530,6 +539,11 @@ export function SignalProClient({
                           {base && base.score !== null ? baseStatusLabel(base.status, locale) : <span className="text-gray-300">—</span>}
                         </td>
                       </>
+                    )}
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-right border-l border-gray-100">
+                        <TradeActions symbol={row.symbol} isActive={activeManual.has(row.symbol)} locale={locale} />
+                      </td>
                     )}
                   </tr>
                 );

@@ -43,34 +43,40 @@ export interface DailyLog {
 
 export interface Recommendation {
   id: string;
-  daily_log_id: string;
+  // Null for manual (admin-added) entries — they are not part of an AI batch.
+  daily_log_id: string | null;
   trading_date: string;
-  rank: number;
+  // Optional fields below are null for manual entries (admin fills in only what
+  // they want); always present for AI-generated recommendations.
+  rank: number | null;
   symbol: string;
   exchange: string;
   company_name: string | null;
   sector: string | null;
   action: string;
-  setup: string;
-  setup_confidence: string;
-  rating: string;
+  setup: string | null;
+  setup_confidence: string | null;
+  rating: string | null;
   entry_price: number;
   entry_range_low: number | null;
   entry_range_high: number | null;
-  stop_loss: number;
-  tp1: number;
+  stop_loss: number | null;
+  tp1: number | null;
   tp2: number | null;
   trailing_stop_method: string | null;
   last_close: number;
   last_close_date: string;
-  stop_loss_pct: number;
-  tp1_pct: number;
+  stop_loss_pct: number | null;
+  tp1_pct: number | null;
   tp2_pct: number | null;
-  r_multiple: number;
-  sharpe: number;
-  win_rate_est: number;
-  expectancy: number;
-  hit_probability: string;
+  r_multiple: number | null;
+  sharpe: number | null;
+  win_rate_est: number | null;
+  expectancy: number | null;
+  hit_probability: string | null;
+  // Manual-entry fields (see migration 030).
+  note: string | null;
+  source: "AI" | "MANUAL";
   holding_period_sessions: number | null;
   holding_period_label: string | null;
   sizing_method: string | null;

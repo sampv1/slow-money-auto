@@ -141,8 +141,10 @@ def evaluate_recommendation(rec: dict, price: dict, days_held: int) -> dict | No
         return None
 
     entry = float(rec["entry_price"])
-    stop_loss = float(rec["stop_loss"])
-    tp1 = float(rec["tp1"])
+    # Manual (admin-added) entries may omit SL/TP — when absent, no exit is
+    # triggered and we only track current price + drawdown.
+    stop_loss = float(rec["stop_loss"]) if rec.get("stop_loss") is not None else None
+    tp1 = float(rec["tp1"]) if rec.get("tp1") is not None else None
     tp2 = float(rec["tp2"]) if rec.get("tp2") else None
     status = rec["status"]
 
@@ -159,14 +161,14 @@ def evaluate_recommendation(rec: dict, price: dict, days_held: int) -> dict | No
 
     if can_exit and status == "OPEN":
         # Check stop loss first (conservative: assume worst case hit first)
-        if day_low <= stop_loss:
+        if stop_loss is not None and day_low <= stop_loss:
             updates["status"] = "STOPPED"
             updates["actual_exit_price"] = stop_loss
             updates["actual_pnl_pct"] = round((stop_loss - entry) / entry * 100, 2)
             updates["closed_at"] = day_date
 
         # Check TP1
-        elif day_high >= tp1:
+        elif tp1 is not None and day_high >= tp1:
             updates["status"] = "TP1_HIT"
             if not tp2:
                 # No TP2 defined, close at TP1
@@ -317,11 +319,13 @@ def main():
         if days_held < MIN_DAYS_BEFORE_EXIT and rec["status"] in ACTIVE_STATUSES:
             change_str += f" (T+{days_held}, settlement pending)"
 
+        sl_str = f"{float(rec['stop_loss']):>9,.0f}" if rec.get("stop_loss") is not None else f"{'—':>9}"
+        tp1_str = f"{float(rec['tp1']):>9,.0f}" if rec.get("tp1") is not None else f"{'—':>9}"
         print(
             f"{rec['symbol']:<7} "
             f"{entry:>9,.0f} "
-            f"{float(rec['stop_loss']):>9,.0f} "
-            f"{float(rec['tp1']):>9,.0f} "
+            f"{sl_str} "
+            f"{tp1_str} "
             f"{current_str:>9} "
             f"{pnl_str:>8} "
             f"{new_status:<12} "
