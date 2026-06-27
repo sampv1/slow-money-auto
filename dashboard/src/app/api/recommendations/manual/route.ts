@@ -103,17 +103,16 @@ async function buy(
     return Response.json({ error: `Unknown symbol: ${symbol}` }, { status: 404 });
   }
 
-  // Reject duplicates: one active manual position per symbol.
+  // Reject duplicates: one active position per symbol (any source).
   const { data: dup } = await supabase
     .from("recommendations")
     .select("id")
     .eq("symbol", symbol)
-    .eq("source", "MANUAL")
     .in("status", ACTIVE_STATUSES)
     .limit(1);
   if (dup && dup.length > 0) {
     return Response.json(
-      { error: `${symbol} already has an active manual position` },
+      { error: `${symbol} already has an active position` },
       { status: 409 },
     );
   }
@@ -172,18 +171,17 @@ async function sell(
   close: { price: number; date: string },
   body: ManualInput,
 ) {
-  // Find the open manual position to finalize.
+  // Find the open position to finalize (any source — AI or manual).
   const { data: pos } = await supabase
     .from("recommendations")
     .select("id,entry_price,trading_date,note")
     .eq("symbol", symbol)
-    .eq("source", "MANUAL")
     .in("status", ACTIVE_STATUSES)
     .order("trading_date", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (!pos) {
-    return Response.json({ error: `No active manual position for ${symbol}` }, { status: 404 });
+    return Response.json({ error: `No active position for ${symbol}` }, { status: 404 });
   }
 
   const entry = Number(pos.entry_price);

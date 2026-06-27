@@ -95,7 +95,7 @@ export function SignalProClient({
   quarters,
   selectedQuarter,
   isAdmin = false,
-  activeManualSymbols = [],
+  activeSymbols = [],
 }: {
   rows: FaScore[];
   universe: {
@@ -117,10 +117,10 @@ export function SignalProClient({
   quarters: string[];
   selectedQuarter: string;
   isAdmin?: boolean;
-  activeManualSymbols?: string[];
+  activeSymbols?: string[];
 }) {
   const router = useRouter();
-  const activeManual = useMemo(() => new Set(activeManualSymbols), [activeManualSymbols]);
+  const activeSet = useMemo(() => new Set(activeSymbols), [activeSymbols]);
   // Old quarters carry a FROZEN Final score (no TA detail) — for those we show
   // only Symbol / FA Score / Final score. The full TA layout is latest-only.
   const isLatestQuarter = quarters.length > 0 && selectedQuarter === quarters[0];
@@ -542,7 +542,7 @@ export function SignalProClient({
                     )}
                     {isAdmin && (
                       <td className="px-4 py-3 text-right border-l border-gray-100">
-                        <TradeActions symbol={row.symbol} isActive={activeManual.has(row.symbol)} locale={locale} />
+                        <TradeActions symbol={row.symbol} isActive={activeSet.has(row.symbol)} locale={locale} />
                       </td>
                     )}
                   </tr>

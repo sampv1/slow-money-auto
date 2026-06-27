@@ -75,7 +75,6 @@ export function TradeActions({
         .from("recommendations")
         .select("entry_price")
         .eq("symbol", symbol)
-        .eq("source", "MANUAL")
         .in("status", ["OPEN", "TP1_HIT"])
         .order("trading_date", { ascending: false })
         .limit(1)

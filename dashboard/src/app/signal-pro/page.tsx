@@ -36,16 +36,15 @@ export default async function SignalProPage({
   const role = await getUserRole();
   const isAdmin = role === "admin";
 
-  // Symbols that already hold an active manual position → the BUY/SELL toggle
-  // shows "Remove" for these (admin only).
-  let activeManualSymbols: string[] = [];
+  // Symbols that already hold an active position (any source) → the per-row
+  // control shows SELL (finalize) instead of BUY (admin only).
+  let activeSymbols: string[] = [];
   if (isAdmin) {
     const { data: active } = await supabase
       .from("recommendations")
       .select("symbol")
-      .eq("source", "MANUAL")
       .in("status", ["OPEN", "TP1_HIT"]);
-    activeManualSymbols = Array.from(new Set((active ?? []).map((r) => r.symbol as string)));
+    activeSymbols = Array.from(new Set((active ?? []).map((r) => r.symbol as string)));
   }
 
   // Distinct quarters (newest first) → dropdown options. Default = latest.
@@ -132,7 +131,7 @@ export default async function SignalProPage({
         quarters={quarters}
         selectedQuarter={selected}
         isAdmin={isAdmin}
-        activeManualSymbols={activeManualSymbols}
+        activeSymbols={activeSymbols}
       />
     </div>
   );
