@@ -103,20 +103,6 @@ async function buy(
     return Response.json({ error: `Unknown symbol: ${symbol}` }, { status: 404 });
   }
 
-  // Reject duplicates: one active position per symbol (any source).
-  const { data: dup } = await supabase
-    .from("recommendations")
-    .select("id")
-    .eq("symbol", symbol)
-    .in("status", ACTIVE_STATUSES)
-    .limit(1);
-  if (dup && dup.length > 0) {
-    return Response.json(
-      { error: `${symbol} already has an active position` },
-      { status: 409 },
-    );
-  }
-
   // Entry defaults to the latest close but the admin can override it.
   const entryInput = num(body.price);
   const entry = entryInput !== null && entryInput > 0 ? entryInput : close.price;
@@ -171,46 +157,65 @@ async function sell(
   close: { price: number; date: string },
   body: ManualInput,
 ) {
-  // Find the open position to finalize (any source — AI or manual).
-  const { data: pos } = await supabase
+  // Finalize ALL open positions for the symbol (any source — AI or manual).
+  // Each stays an independent transaction on the Active/History pages: it closes
+  // at the same exit price but keeps its own entry, so its own P/L is computed.
+  const { data: positions } = await supabase
     .from("recommendations")
     .select("id,entry_price,trading_date,note")
     .eq("symbol", symbol)
-    .in("status", ACTIVE_STATUSES)
-    .order("trading_date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!pos) {
+    .in("status", ACTIVE_STATUSES);
+  if (!positions || positions.length === 0) {
     return Response.json({ error: `No active position for ${symbol}` }, { status: 404 });
   }
 
-  const entry = Number(pos.entry_price);
   // Exit defaults to the latest close but the admin can override it.
   const exitInput = num(body.price);
   const exit = exitInput !== null && exitInput > 0 ? exitInput : close.price;
-  const pnl = Number((((exit - entry) / entry) * 100).toFixed(2));
   const sellNote = (body.note ?? "").toString().trim();
-  const note = sellNote
-    ? pos.note ? `${pos.note} | SELL: ${sellNote}` : `SELL: ${sellNote}`
-    : pos.note;
 
-  const { error } = await supabase
-    .from("recommendations")
-    .update({
-      status: "CLOSED_MANUAL",
-      actual_exit_price: exit,
-      actual_pnl_pct: pnl,
-      closed_at: close.date,
-      current_price: exit,
-      current_price_date: close.date,
-      unrealized_pnl_pct: null,
-      days_held: businessDays(pos.trading_date as string, close.date),
-      note,
-    })
-    .eq("id", pos.id);
+  let totalEntry = 0;
+  const results = await Promise.all(
+    positions.map((pos) => {
+      const entry = Number(pos.entry_price);
+      totalEntry += entry;
+      const pnl = Number((((exit - entry) / entry) * 100).toFixed(2));
+      const note = sellNote
+        ? pos.note ? `${pos.note} | SELL: ${sellNote}` : `SELL: ${sellNote}`
+        : pos.note;
+      return supabase
+        .from("recommendations")
+        .update({
+          status: "CLOSED_MANUAL",
+          actual_exit_price: exit,
+          actual_pnl_pct: pnl,
+          closed_at: close.date,
+          current_price: exit,
+          current_price_date: close.date,
+          unrealized_pnl_pct: null,
+          days_held: businessDays(pos.trading_date as string, close.date),
+          note,
+        })
+        .eq("id", pos.id);
+    }),
+  );
 
-  if (error) {
-    return Response.json({ error: `Failed to finalize position: ${error.message}` }, { status: 500 });
+  const failed = results.find((r) => r.error);
+  if (failed?.error) {
+    return Response.json({ error: `Failed to finalize position: ${failed.error.message}` }, { status: 500 });
   }
-  return Response.json({ success: true, action: "SELL", symbol, entry, exit, pnl, date: close.date });
+
+  // Equal-weight average entry (same volume per position) for the summary.
+  const avgEntry = Number((totalEntry / positions.length).toFixed(2));
+  const avgPnl = Number((((exit - avgEntry) / avgEntry) * 100).toFixed(2));
+  return Response.json({
+    success: true,
+    action: "SELL",
+    symbol,
+    count: positions.length,
+    avg_entry: avgEntry,
+    exit,
+    pnl: avgPnl,
+    date: close.date,
+  });
 }

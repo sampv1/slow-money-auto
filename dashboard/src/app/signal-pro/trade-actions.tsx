@@ -23,7 +23,8 @@ export function TradeActions({
   const router = useRouter();
   const [mode, setMode] = useState<"BUY" | "SELL" | null>(null);
   const [close, setClose] = useState<{ price: number; date: string } | null>(null);
-  const [entry, setEntry] = useState<number | null>(null); // open-position entry (SELL)
+  const [entry, setEntry] = useState<number | null>(null); // avg entry across open positions (SELL)
+  const [posCount, setPosCount] = useState(0); // number of open positions being finalized (SELL)
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +42,7 @@ export function TradeActions({
 
   function reset() {
     setPrice(""); setSl(""); setTp1(""); setTp2(""); setHolding(""); setWinRate(""); setSharpe(""); setNote("");
-    setError(null); setClose(null); setEntry(null);
+    setError(null); setClose(null); setEntry(null); setPosCount(0);
   }
 
   async function latestClose() {
@@ -75,14 +76,18 @@ export function TradeActions({
         .from("recommendations")
         .select("entry_price")
         .eq("symbol", symbol)
-        .in("status", ["OPEN", "TP1_HIT"])
-        .order("trading_date", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+        .in("status", ["OPEN", "TP1_HIT"]),
     ]);
     setClose(c);
     setPrice(c ? String(c.price) : "");
-    setEntry(pos.data ? Number(pos.data.entry_price) : null);
+    // Equal-weight average entry across all open positions (same volume each).
+    const openRows = pos.data ?? [];
+    setPosCount(openRows.length);
+    setEntry(
+      openRows.length > 0
+        ? Number((openRows.reduce((s, r) => s + Number(r.entry_price), 0) / openRows.length).toFixed(2))
+        : null,
+    );
     setLoading(false);
   }
 
@@ -128,23 +133,22 @@ export function TradeActions({
   return (
     <>
       <div className="flex items-center gap-1.5 whitespace-nowrap">
-        {isActive ? (
-          <button
-            type="button"
-            onClick={openSell}
-            className="px-2 py-0.5 text-xs rounded bg-red-600 text-white hover:bg-red-700"
-          >
-            {t(locale, "spSell")}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={openBuy}
-            className="px-2 py-0.5 text-xs rounded bg-green-600 text-white hover:bg-green-700"
-          >
-            {t(locale, "spBuy")}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={openBuy}
+          className="px-2 py-0.5 text-xs rounded bg-green-600 text-white hover:bg-green-700"
+        >
+          {t(locale, "spBuy")}
+        </button>
+        <button
+          type="button"
+          onClick={openSell}
+          disabled={!isActive}
+          title={!isActive ? t(locale, "spSellDisabled") : undefined}
+          className="px-2 py-0.5 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-red-600"
+        >
+          {t(locale, "spSell")}
+        </button>
       </div>
 
       {mode && (
@@ -183,7 +187,11 @@ export function TradeActions({
               </div>
               {mode === "SELL" && entry !== null && (
                 <div className="mt-1 flex items-center justify-between text-sm">
-                  <span className="text-gray-500">{t(locale, "entry")}</span>
+                  <span className="text-gray-500">
+                    {posCount > 1
+                      ? `${t(locale, "spAvgEntry")} (${posCount} ${t(locale, "positions")})`
+                      : t(locale, "entry")}
+                  </span>
                   <span className="font-mono text-gray-600">{formatPrice(entry)}</span>
                 </div>
               )}
@@ -197,9 +205,9 @@ export function TradeActions({
 
             {mode === "BUY" && (
               <div className="grid grid-cols-2 gap-3">
-                <Field label={t(locale, "sl")} value={sl} onChange={setSl} type="number" />
                 <Field label={t(locale, "tp1")} value={tp1} onChange={setTp1} type="number" />
                 <Field label={t(locale, "tp2")} value={tp2} onChange={setTp2} type="number" />
+                <Field label={t(locale, "sl")} value={sl} onChange={setSl} type="number" />
                 <Field label={t(locale, "holding")} value={holding} onChange={setHolding} type="text" />
                 <Field label={t(locale, "winRateEst")} value={winRate} onChange={setWinRate} type="number" />
                 <Field label={t(locale, "sharpe")} value={sharpe} onChange={setSharpe} type="number" />
