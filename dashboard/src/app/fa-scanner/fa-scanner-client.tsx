@@ -6,19 +6,28 @@ import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, FA_NORMALIZED_MAX, faNormalizedScore, pointsColor } from "@/lib/fa";
 
-// Score components shown as columns. This set is the manufacturing rubric; real
-// estate / banks rubrics will add their own component sets later, so keep it a
-// data-driven list rather than hardcoded columns.
+// Score components shown as columns: short word-label + formula tooltip, both
+// bilingual. This set is the manufacturing rubric; real estate / banks rubrics
+// will add their own component sets later, so keep it a data-driven list.
 const FA_COMPONENTS = [
-  { code: "C1", pts: "c1_pts", label: "faC1" },
-  { code: "C2", pts: "c2_pts", label: "faC2" },
-  { code: "C3", pts: "c3_pts", label: "faC3" },
-  { code: "C4", pts: "c4_pts", label: "faC4" },
-  { code: "C5", pts: "c5_pts", label: "faC5" },
-  { code: "C6", pts: "c6_pts", label: "faC6" },
-  { code: "C7", pts: "c7_pts", label: "faC7" },
-  { code: "C8", pts: "c8_pts", label: "faC8" },
-  { code: "C9", pts: "c9_pts", label: "faC9" },
+  { pts: "c1_pts", en: "EPS YoY", vi: "EPS YoY",
+    fEn: "Latest-quarter EPS ÷ EPS same quarter last year − 1", fVi: "EPS quý mới nhất ÷ EPS cùng kỳ năm trước − 1" },
+  { pts: "c2_pts", en: "EPS 3Q avg", vi: "EPS BQ 3Q",
+    fEn: "Average EPS YoY growth over the last 3 quarters", fVi: "Trung bình tăng trưởng EPS YoY của 3 quý gần nhất" },
+  { pts: "c3_pts", en: "EPS+ Qs", vi: "Số quý EPS+",
+    fEn: "Number of the last 3 quarters with positive EPS YoY (0–3)", fVi: "Số quý trong 3 quý gần nhất có EPS YoY dương (0–3)" },
+  { pts: "c4_pts", en: "Revenue YoY", vi: "DT YoY",
+    fEn: "Latest-quarter revenue ÷ revenue same quarter last year − 1", fVi: "Doanh thu quý mới nhất ÷ doanh thu cùng kỳ năm trước − 1" },
+  { pts: "c5_pts", en: "Gross margin Δ", vi: "Biên gộp Δ",
+    fEn: "Gross margin − gross margin same quarter last year (pp)", fVi: "Biên LN gộp − biên LN gộp cùng kỳ năm trước (điểm %)" },
+  { pts: "c6_pts", en: "Net margin Δ", vi: "Biên ròng Δ",
+    fEn: "Net margin − net margin same quarter last year (pp)", fVi: "Biên LN ròng − biên LN ròng cùng kỳ năm trước (điểm %)" },
+  { pts: "c7_pts", en: "ROE", vi: "ROE",
+    fEn: "Net income (TTM) ÷ average equity", fVi: "LNST (TTM) ÷ vốn chủ sở hữu bình quân" },
+  { pts: "c8_pts", en: "D/E", vi: "Nợ/VCSH",
+    fEn: "Total debt ÷ equity", fVi: "Tổng nợ vay ÷ vốn chủ sở hữu" },
+  { pts: "c9_pts", en: "Valuation", vi: "Định giá",
+    fEn: "Current P/E vs 5-year median P/E", fVi: "P/E hiện tại so với trung vị P/E 5 năm" },
 ] as const;
 
 type PtsKey = (typeof FA_COMPONENTS)[number]["pts"];
@@ -207,12 +216,12 @@ export function FaScannerClient({
                 </th>
                 {FA_COMPONENTS.map((c) => (
                   <th
-                    key={c.code}
-                    title={t(locale, c.label)}
-                    className="px-3 py-3 font-medium text-right cursor-pointer select-none"
+                    key={c.pts}
+                    title={locale === "vi" ? c.fVi : c.fEn}
+                    className="px-3 py-3 font-medium text-right cursor-pointer select-none whitespace-nowrap"
                     onClick={() => toggleSort(c.pts)}
                   >
-                    {c.code}{sortIndicator(c.pts)}
+                    {locale === "vi" ? c.vi : c.en}{sortIndicator(c.pts)}
                   </th>
                 ))}
               </tr>
@@ -231,7 +240,7 @@ export function FaScannerClient({
                   {FA_COMPONENTS.map((c) => {
                     const pts = row[c.pts];
                     return (
-                      <td key={c.code} className={`px-3 py-3 text-right font-mono ${pointsColor(pts)}`}>
+                      <td key={c.pts} className={`px-3 py-3 text-right font-mono ${pointsColor(pts)}`}>
                         {pts}
                       </td>
                     );
