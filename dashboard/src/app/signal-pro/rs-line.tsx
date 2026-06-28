@@ -37,7 +37,7 @@ function movingAverage(series: number[], period: number): (number | null)[] {
   return out;
 }
 
-const MA_PERIOD = 50;
+const MA_PERIOD = 20;
 
 // Detailed RS Line chart for the modal: real date x-axis, value y-axis,
 // gridlines, and a hover guide reading out the exact day + value.
@@ -135,7 +135,7 @@ export function DetailedRsChart({
         <line x1={W - mR - 92} y1={mT + 4} x2={W - mR - 76} y2={mT + 4} stroke={color} strokeWidth={2} />
         <text x={W - mR - 72} y={mT + 7} fill="#64748b">RS</text>
         <line x1={W - mR - 50} y1={mT + 4} x2={W - mR - 34} y2={mT + 4} stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" />
-        <text x={W - mR - 30} y={mT + 7} fill="#94a3b8">MA50</text>
+        <text x={W - mR - 30} y={mT + 7} fill="#94a3b8">MA20</text>
       </g>
       {/* hover guide + dot + tooltip */}
       {hover !== null && (
