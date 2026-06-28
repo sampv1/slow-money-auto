@@ -25,6 +25,20 @@ const TREND_COLOR: Record<Trend, string> = {
   side: "#6b7280", // gray-500
 };
 
+// Simple moving average of `series`; entries before the window is full are null.
+function movingAverage(series: number[], period: number): (number | null)[] {
+  const out: (number | null)[] = new Array(series.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < series.length; i++) {
+    sum += series[i];
+    if (i >= period) sum -= series[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
+const MA_PERIOD = 50;
+
 // Detailed RS Line chart for the modal: real date x-axis, value y-axis,
 // gridlines, and a hover guide reading out the exact day + value.
 export function DetailedRsChart({
@@ -51,6 +65,13 @@ export function DetailedRsChart({
   const yAt = (v: number) => mT + (1 - (v - min) / range) * ih;
   const pts = values.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(" ");
   const color = TREND_COLOR[trendOf(values)];
+
+  // MA50 of the RS Line — a quieter context line under the RS line itself.
+  const ma = movingAverage(values, MA_PERIOD);
+  const maPts = ma
+    .map((v, i) => (v === null ? null : `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`))
+    .filter((p): p is string => p !== null)
+    .join(" ");
 
   const yTicks = Array.from({ length: 4 }, (_, k) => min + (range * k) / 3);
   const xTickIdx = Array.from(new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]));
@@ -94,8 +115,28 @@ export function DetailedRsChart({
       {/* axes */}
       <line x1={mL} y1={mT} x2={mL} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} />
       <line x1={mL} y1={H - mB} x2={W - mR} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} />
-      {/* the line */}
+      {/* MA50 — drawn first (underneath) and muted so the RS line stands out */}
+      {maPts && (
+        <polyline
+          points={maPts}
+          fill="none"
+          stroke="#94a3b8"
+          strokeWidth={1}
+          strokeDasharray="4 3"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          opacity={0.7}
+        />
+      )}
+      {/* the RS line */}
       <polyline points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      {/* legend */}
+      <g fontFamily="monospace" fontSize={10}>
+        <line x1={W - mR - 92} y1={mT + 4} x2={W - mR - 76} y2={mT + 4} stroke={color} strokeWidth={2} />
+        <text x={W - mR - 72} y={mT + 7} fill="#64748b">RS</text>
+        <line x1={W - mR - 50} y1={mT + 4} x2={W - mR - 34} y2={mT + 4} stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" />
+        <text x={W - mR - 30} y={mT + 7} fill="#94a3b8">MA50</text>
+      </g>
       {/* hover guide + dot + tooltip */}
       {hover !== null && (
         <g>
