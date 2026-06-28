@@ -48,6 +48,7 @@ export default async function RootLayout({
     { href: "/scanner", label: t(locale, "navScanner") },
     { href: "/fa-scanner", label: t(locale, "navFAScanner") },
     { href: "/signal-pro", label: t(locale, "navSignalPro") },
+    { href: "/implied-risk", label: t(locale, "navImpliedRisk") },
     { href: "/analysis", label: t(locale, "navStockAnalysis") },
     { href: "/realtime", label: t(locale, "navRealtime") },
     // Staff (admin + viewer) see the internal dashboards. Only admin

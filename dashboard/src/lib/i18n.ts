@@ -15,6 +15,21 @@ export const translations = {
     navFAScanner: "FA Scanner",
     navSignalPro: "Signal Pro",
     navRealtime: "Real-time",
+    navImpliedRisk: "Implied Risk",
+
+    // Implied Risk page (VN30 futures implied carry / basis)
+    irTitle: "Implied Risk",
+    irSubtitle: "Annualized implied rate of VN30 futures vs spot (−IR; higher = more hedging/fear)",
+    irLatest: "Latest",
+    irPerAnnum: "% p.a.",
+    irDiscount: "Discount (fear)",
+    irPremium: "Premium (greed)",
+    irExpiryLabel: "Front-month expiry",
+    irNoData: "No implied-risk data yet. Run refresh_implied_risk.py --backfill.",
+    irRangeAll: "All",
+    irRange3y: "3Y",
+    irRange1y: "1Y",
+    irRange6m: "6M",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
@@ -387,6 +402,21 @@ export const translations = {
     navFAScanner: "Lọc cơ bản",
     navSignalPro: "Tín hiệu Pro",
     navRealtime: "Thời gian thực",
+    navImpliedRisk: "Rủi ro hàm ý",
+
+    // Implied Risk page (VN30 futures implied carry / basis)
+    irTitle: "Rủi ro hàm ý",
+    irSubtitle: "Lãi suất hàm ý quy năm của HĐTL VN30 so với chỉ số (−IR; càng cao = phòng hộ/lo ngại càng nhiều)",
+    irLatest: "Mới nhất",
+    irPerAnnum: "%/năm",
+    irDiscount: "Chiết khấu (lo ngại)",
+    irPremium: "Phụ trội (hưng phấn)",
+    irExpiryLabel: "Đáo hạn tháng gần",
+    irNoData: "Chưa có dữ liệu. Chạy refresh_implied_risk.py --backfill.",
+    irRangeAll: "Tất cả",
+    irRange3y: "3N",
+    irRange1y: "1N",
+    irRange6m: "6T",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",

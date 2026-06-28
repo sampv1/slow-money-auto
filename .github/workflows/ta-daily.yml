@@ -107,3 +107,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: python update_ta_daily.py
+
+      # Auxiliary: VN30 futures implied risk (IR) for the Implied Risk chart.
+      # Two vnstock fetches; non-fatal so an IR hiccup never fails the TA run.
+      - name: Refresh implied risk (IR)
+        working-directory: scripts
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: python refresh_implied_risk.py
