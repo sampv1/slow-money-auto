@@ -28,7 +28,7 @@ single-table page, the `/ta/[symbol]` FA panel, and the "TA → Stock Analysis" 
 
 ## Data sources (Excel)
 
-Files live in `initial_fa_data/`. **Both financial files are imported into the DB; every import is
+Files live in `data/`. **Both financial files are imported into the DB; every import is
 an additive UPSERT of only the rows present** — files may contain any subset of symbols, the same
 type can be imported many times as symbols become available, and imports never truncate. (The
 criterion file is not imported — #3.)

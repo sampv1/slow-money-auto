@@ -1,6 +1,6 @@
 """Parse the FA Excel exports into normalized rows for the DB.
 
-Two workbooks (both in initial_fa_data/ by default):
+Two workbooks (both in data/ by default):
 
   Data_FiinPro.xlsx  — multi-sheet financials. Each sheet has a 6-row preamble,
                        the header on row 7 (0-indexed: row index 7), data from

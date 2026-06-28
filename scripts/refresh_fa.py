@@ -10,7 +10,7 @@ Subcommands:
            (point-in-time quarter-end price for older quarters).
 
 Usage:
-  python3 refresh_fa.py import --fiin ../initial_fa_data/Data_FiinPro.xlsx --pe ../initial_fa_data/PE.xlsx
+  python3 refresh_fa.py import --fiin ../data/Data_FiinPro.xlsx --pe ../data/PE.xlsx
   python3 refresh_fa.py score --backfill
   python3 refresh_fa.py score                      # daily: latest quarter, live price
   python3 refresh_fa.py score --symbols FPT HPG

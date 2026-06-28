@@ -3,7 +3,7 @@
 A price base is a sideways consolidation after a prior move. We detect the
 stock's CURRENT base (ending at the latest bar), classify it (Bottoming /
 Continuation), and score its quality 0-100 per the BQS V3 rubric
-(initial_fa_data/price_base_scoring.xlsx, sheet "BQS V3").
+(data/price_base_scoring.xlsx, sheet "BQS V3").
 
 Timeframe: daily bars, with weekly-smoothed structure where the rubric is
 expressed in weeks. Scoring is config-driven from the tier tables below

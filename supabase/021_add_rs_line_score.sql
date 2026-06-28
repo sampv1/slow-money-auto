@@ -2,7 +2,7 @@
 -- Migration: RS Line Score (0-100) + grade, plus its scoring config.
 --
 -- Scores the quality of a symbol's RS Line (price ÷ VN-Index) from four
--- components, per initial_fa_data/rs_line_scoring.txt:
+-- components, per data/rs_line_scoring.txt:
 --   Trend (40)  — net % change of the RS Line over the last 20 sessions.
 --   vs MA20 (20)— RS Line vs its own 20-session moving average.
 --   52w high(20)— distance from the trailing 52-week RS-Line high.

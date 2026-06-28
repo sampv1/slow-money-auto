@@ -173,7 +173,7 @@ def _downsample(values: list[float], target: int) -> list[float]:
 
 
 # ── RS Line Score (0-100) ────────────────────────────────────────────────────
-# Quality score for a symbol's RS Line, per initial_fa_data/rs_line_scoring.txt:
+# Quality score for a symbol's RS Line, per data/rs_line_scoring.txt:
 # Trend (40) + vs MA20 (20) + 52-week high (20) + price/RS divergence (20).
 # All tunables live in scoring_config 'rs_line_score' (deep-merged over the
 # defaults below).
