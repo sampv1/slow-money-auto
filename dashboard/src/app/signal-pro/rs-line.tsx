@@ -120,12 +120,11 @@ export function DetailedRsChart({
         <polyline
           points={maPts}
           fill="none"
-          stroke="#94a3b8"
-          strokeWidth={1}
-          strokeDasharray="4 3"
+          stroke="#f59e0b"
+          strokeWidth={1.5}
+          strokeDasharray="5 3"
           strokeLinejoin="round"
           strokeLinecap="round"
-          opacity={0.7}
         />
       )}
       {/* the RS line */}
@@ -134,8 +133,8 @@ export function DetailedRsChart({
       <g fontFamily="monospace" fontSize={10}>
         <line x1={W - mR - 92} y1={mT + 4} x2={W - mR - 76} y2={mT + 4} stroke={color} strokeWidth={2} />
         <text x={W - mR - 72} y={mT + 7} fill="#64748b">RS</text>
-        <line x1={W - mR - 50} y1={mT + 4} x2={W - mR - 34} y2={mT + 4} stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" />
-        <text x={W - mR - 30} y={mT + 7} fill="#94a3b8">MA20</text>
+        <line x1={W - mR - 50} y1={mT + 4} x2={W - mR - 34} y2={mT + 4} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3" />
+        <text x={W - mR - 30} y={mT + 7} fill="#b45309">MA20</text>
       </g>
       {/* hover guide + dot + tooltip */}
       {hover !== null && (
