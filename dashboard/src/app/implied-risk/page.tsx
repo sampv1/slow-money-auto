@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { getLocale, t } from "@/lib/i18n";
 import { ImpliedRiskChart, type IrRow } from "./ir-chart";
+import { FuturesReturnChart } from "./futures-return-chart";
 
 export const revalidate = 0;
 
@@ -61,6 +62,9 @@ export default async function ImpliedRiskPage() {
     <div>
       {header}
       <ImpliedRiskChart rows={all} locale={locale} />
+      <div className="mt-6">
+        <FuturesReturnChart rows={all} locale={locale} />
+      </div>
     </div>
   );
 }

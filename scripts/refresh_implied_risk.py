@@ -70,7 +70,7 @@ def main():
           f"spot/future dates {rows[0]['date']} -> {latest['date']}")
     print(f"Latest: {latest['date']}  spot={latest['spot']}  future={latest['future']}  "
           f"expiry={latest['expiry']}  r_days={latest['r_days']}  "
-          f"ir={latest['ir']}  (-ir = {None if latest['ir'] is None else round(-latest['ir'] * 100, 3)}% p.a.)")
+          f"ir={latest['ir']}  (-ir = {None if latest['ir'] is None else round(-latest['ir'] * 100, 3)}% log basis)")
 
     if args.dry_run:
         print("[dry-run] no writes.")

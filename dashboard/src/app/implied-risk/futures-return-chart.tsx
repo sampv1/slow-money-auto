@@ -2,18 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
+import type { IrRow } from "./ir-chart";
 
-// One daily implied-risk row. `ir` is the RAW signed log basis ln(F/S); the
-// chart plots -ir (so "up = more hedging/fear"). null only if a price was
-// non-positive (effectively never).
-export type IrRow = {
-  date: string;
-  ir: number | null;
-  spot: number;
-  future: number;
-  expiry: string;
-  r_days: number;
-};
+// Daily log return of the front-month future: ln(F_t / F_{t-1}). Derived here
+// from the `future` close already carried on each implied_risk row, so no extra
+// data fetch or DB column is needed.
 
 type Range = "6m" | "1y" | "3y" | "all";
 const RANGE_DAYS: Record<Range, number> = { "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
@@ -27,16 +20,20 @@ function quantile(sorted: number[], q: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
-export function ImpliedRiskChart({ rows, locale }: { rows: IrRow[]; locale: Locale }) {
+export function FuturesReturnChart({ rows, locale }: { rows: IrRow[]; locale: Locale }) {
   const [range, setRange] = useState<Range>("1y");
   const [hover, setHover] = useState<number | null>(null);
 
-  // Plot value = -ir as a log basis, ×100 for readable units (≈ basis %).
-  // Keep nulls so the line breaks cleanly.
-  const all = useMemo(
-    () => rows.map((r) => ({ ...r, v: r.ir === null ? null : -r.ir * 100 })),
-    [rows],
-  );
+  // v = ln(F_t / F_{t-1}) × 100 (≈ % daily return). First row has no prior, so
+  // null; also null if either close is non-positive. Nulls break the line.
+  const all = useMemo(() => {
+    return rows.map((r, i) => {
+      const prev = i > 0 ? rows[i - 1].future : null;
+      const v =
+        prev && prev > 0 && r.future > 0 ? Math.log(r.future / prev) * 100 : null;
+      return { date: r.date, future: r.future, v };
+    });
+  }, [rows]);
 
   const view = useMemo(() => {
     const days = RANGE_DAYS[range];
@@ -53,28 +50,23 @@ export function ImpliedRiskChart({ rows, locale }: { rows: IrRow[]; locale: Loca
   const n = view.length;
 
   // Robust y-domain: clamp to the 2nd–98th percentile of visible values so the
-  // everyday signal stays legible while rare extremes peg at the chart edge.
-  // The zero line is always included.
+  // everyday signal stays legible while rare extremes peg at the edge. The
+  // domain is symmetric around zero so up/down days read fairly.
   const domain = useMemo(() => {
     const vals = view.map((r) => r.v).filter((v): v is number => v !== null);
     if (vals.length === 0) return { lo: -1, hi: 1 };
     const sorted = [...vals].sort((a, b) => a - b);
-    let lo = Math.min(0, quantile(sorted, 0.02));
-    let hi = Math.max(0, quantile(sorted, 0.98));
-    const pad = (hi - lo) * 0.06 || 1;
-    lo -= pad;
-    hi += pad;
-    return { lo, hi };
+    const mag = Math.max(Math.abs(quantile(sorted, 0.02)), Math.abs(quantile(sorted, 0.98))) || 1;
+    const pad = mag * 1.06;
+    return { lo: -pad, hi: pad };
   }, [view]);
 
   const latest = useMemo(() => {
-    for (let i = all.length - 1; i >= 0; i--) if (all[i].ir !== null) return all[i];
+    for (let i = all.length - 1; i >= 0; i--) if (all[i].v !== null) return all[i];
     return null;
   }, [all]);
 
-  if (rows.length < 2) {
-    return <p className="text-sm text-gray-500">{t(locale, "irNoData")}</p>;
-  }
+  if (rows.length < 2) return null;
 
   const xAt = (i: number) => mL + (n <= 1 ? 0 : (i / (n - 1)) * iw);
   const clamp = (v: number) => Math.max(domain.lo, Math.min(domain.hi, v));
@@ -99,7 +91,7 @@ export function ImpliedRiskChart({ rows, locale }: { rows: IrRow[]; locale: Loca
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
   ).filter((i) => i >= 0 && i < n);
 
-  const fmtPct = (v: number) => `${v >= 0 ? "" : "-"}${Math.abs(v).toFixed(1)}%`;
+  const fmtPct = (v: number) => `${v >= 0 ? "" : "-"}${Math.abs(v).toFixed(2)}%`;
   const fmtDay = (d: string) => d.slice(2); // YY-MM-DD
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
@@ -110,37 +102,30 @@ export function ImpliedRiskChart({ rows, locale }: { rows: IrRow[]; locale: Loca
   }
 
   const hv = hover !== null ? view[hover] : null;
-
-  // Latest reading: ir < 0 → future at a discount (-ir positive) = fear.
-  const latestMinusIr = latest && latest.ir !== null ? -latest.ir * 100 : null;
-  const latestIsFear = latest ? latest.ir! < 0 : false;
+  const latestUp = latest ? latest.v! >= 0 : false;
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold">{t(locale, "frTitle")}</h2>
+        <p className="text-sm text-gray-500">{t(locale, "frSubtitle")}</p>
+      </div>
+
       <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
-        {latest && latestMinusIr !== null && (
-          <div className="flex items-baseline gap-3">
-            <div>
-              <div className="text-xs text-gray-500">{t(locale, "irLatest")} · {latest.date}</div>
-              <div className="flex items-baseline gap-2">
-                <span
-                  className={`text-2xl font-semibold font-mono ${latestIsFear ? "text-red-600" : "text-emerald-600"}`}
-                >
-                  {fmtPct(latestMinusIr)}
-                </span>
-                <span className="text-xs text-gray-500">{t(locale, "irPerAnnum")}</span>
-                <span
-                  className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                    latestIsFear ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
-                  }`}
-                >
-                  {latestIsFear ? t(locale, "irDiscount") : t(locale, "irPremium")}
-                </span>
-              </div>
-              <div className="text-xs text-gray-400 mt-0.5">
-                {t(locale, "irExpiryLabel")}: {latest.expiry} · {latest.r_days}d
-              </div>
-            </div>
+        {latest && latest.v !== null && (
+          <div className="flex items-baseline gap-2">
+            <div className="text-xs text-gray-500">{t(locale, "irLatest")} · {latest.date}</div>
+            <span className={`text-2xl font-semibold font-mono ${latestUp ? "text-emerald-600" : "text-red-600"}`}>
+              {fmtPct(latest.v)}
+            </span>
+            <span className="text-xs text-gray-500">{t(locale, "frUnit")}</span>
+            <span
+              className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                latestUp ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+              }`}
+            >
+              {latestUp ? t(locale, "frUp") : t(locale, "frDown")}
+            </span>
           </div>
         )}
         <div className="flex gap-1">
@@ -187,17 +172,17 @@ export function ImpliedRiskChart({ rows, locale }: { rows: IrRow[]; locale: Loca
         {/* axes */}
         <line x1={mL} y1={mT} x2={mL} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} />
         <line x1={mL} y1={H - mB} x2={W - mR} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} />
-        {/* zero reference (fear above / greed below) */}
+        {/* zero reference */}
         <line x1={mL} y1={yZero} x2={W - mR} y2={yZero} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="4 3" />
-        {/* the -IR line */}
+        {/* the return line */}
         {segments.map((pts, k) => (
-          <polyline key={k} points={pts} fill="none" stroke="#4f46e5" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+          <polyline key={k} points={pts} fill="none" stroke="#0891b2" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
         ))}
         {/* hover guide + dot + tooltip */}
         {hover !== null && hv && hv.v !== null && (
           <g>
             <line x1={xAt(hover)} y1={mT} x2={xAt(hover)} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="3 3" />
-            <circle cx={xAt(hover)} cy={yAt(hv.v)} r={3} fill="#4f46e5" />
+            <circle cx={xAt(hover)} cy={yAt(hv.v)} r={3} fill="#0891b2" />
             <text
               x={Math.min(Math.max(xAt(hover), mL + 60), W - mR - 60)}
               y={mT + 12}

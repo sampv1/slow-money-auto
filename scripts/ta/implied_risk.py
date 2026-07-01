@@ -1,13 +1,19 @@
-"""Implied risk (implied carry / basis) of the VN30 index futures.
+"""Implied risk (log basis) of the VN30 index futures.
 
-For each trading day we compute the annualized implied rate embedded in the
-front-month future relative to the spot index:
+For each trading day we compute the log basis embedded in the front-month
+future relative to the spot index:
 
-    ir = ln(future / spot) / t      where t = r_days / 365
+    ir = ln(future / spot)
 
-`r_days` is the number of calendar days from the trading day to the contract's
-expiry. We store the RAW signed `ir`; the dashboard flips the sign (plots -ir)
-so "up = more implied risk" while preserving the rare premium days as dips.
+This is the raw (un-annualized) implied-risk signal: negative in the usual VN
+discount/backwardation regime (hedging/fear), positive in premium/contango
+(greed). Dropping the old /t annualization keeps it well-behaved and defined on
+every session — including the contract-expiry day, where t -> 0 previously made
+the rate undefined. `r_days` / `t` are still stored as informational context
+(days to expiry) but no longer enter the IR computation.
+
+We store the RAW signed `ir`; the dashboard flips the sign (plots -ir) so
+"up = more implied risk" while preserving the rare premium days as dips.
 
 Expiry source (two paths, one validates the other):
   - LIVE  — the exchange-reported `last_trading_date` for VN30F1M, read from the
@@ -35,11 +41,6 @@ FUTURE_SYMBOL = "VN30F1M"
 # VN30 index futures launched 2017-08-10; the future is the binding constraint
 # on how far back we can compute IR.
 HISTORY_START = date(2017, 8, 10)
-
-# Leave the final sessions before expiry blank. With only 1-2 days left, t -> 0
-# and annualizing a sub-1% basis by 365/r_days produces meaningless triple-digit
-# rates — a recurring monthly artifact, not implied-risk signal.
-MIN_R_DAYS = 3
 
 
 # --------------------------------------------------------------------------- #
@@ -137,16 +138,17 @@ def front_month_expiry(d: date, trading_days: set[date]) -> date:
 # --------------------------------------------------------------------------- #
 # IR computation
 # --------------------------------------------------------------------------- #
-def compute_ir(spot: float, future: float, r_days: int) -> float | None:
-    """Annualized implied rate ln(future/spot) / (r_days/365).
+def compute_ir(spot: float, future: float) -> float | None:
+    """Log basis ln(future / spot) — the (un-annualized) implied-risk signal.
 
-    None in the final sessions before expiry (r_days < MIN_R_DAYS, t -> 0) where
-    the rate explodes — those are intentionally left blank on the chart.
+    Negative in the usual VN discount/backwardation regime (fear/hedging),
+    positive in premium/contango (greed). Defined on every session including
+    the expiry day, since there is no division by time-to-expiry. None only
+    when a price is non-positive (outside the log domain).
     """
-    if r_days < MIN_R_DAYS or spot <= 0 or future <= 0:
+    if spot <= 0 or future <= 0:
         return None
-    t = r_days / 365.0
-    return math.log(future / spot) / t
+    return math.log(future / spot)
 
 
 def build_rows(spot: pd.Series, future: pd.Series, override_expiry: date | None) -> list[dict]:
@@ -169,8 +171,8 @@ def build_rows(spot: pd.Series, future: pd.Series, override_expiry: date | None)
             and expiry.month == override_expiry.month
         ):
             expiry = override_expiry
-        r_days = (expiry - d).days
-        ir = compute_ir(s, f, r_days)
+        r_days = (expiry - d).days  # informational only (days to expiry)
+        ir = compute_ir(s, f)
         rows.append(
             {
                 "date": d.isoformat(),

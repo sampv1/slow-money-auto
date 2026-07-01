@@ -19,9 +19,9 @@ export const translations = {
 
     // Implied Risk page (VN30 futures implied carry / basis)
     irTitle: "Implied Risk",
-    irSubtitle: "Annualized implied rate of VN30 futures vs spot (−IR; higher = more hedging/fear)",
+    irSubtitle: "Log basis of VN30 futures vs spot (−IR; higher = more hedging/fear)",
     irLatest: "Latest",
-    irPerAnnum: "% p.a.",
+    irPerAnnum: "log basis",
     irDiscount: "Discount (fear)",
     irPremium: "Premium (greed)",
     irExpiryLabel: "Front-month expiry",
@@ -30,6 +30,13 @@ export const translations = {
     irRange3y: "3Y",
     irRange1y: "1Y",
     irRange6m: "6M",
+
+    // Futures Daily Log Return chart (second chart on the Implied Risk page)
+    frTitle: "Futures Daily Log Return",
+    frSubtitle: "Day-over-day log change in VN30F1M futures close (ln Fₜ / Fₜ₋₁)",
+    frUnit: "log return",
+    frUp: "Up",
+    frDown: "Down",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
@@ -406,9 +413,9 @@ export const translations = {
 
     // Implied Risk page (VN30 futures implied carry / basis)
     irTitle: "Rủi ro hàm ý",
-    irSubtitle: "Lãi suất hàm ý quy năm của HĐTL VN30 so với chỉ số (−IR; càng cao = phòng hộ/lo ngại càng nhiều)",
+    irSubtitle: "Chênh lệch log HĐTL VN30 so với chỉ số (−IR; càng cao = phòng hộ/lo ngại càng nhiều)",
     irLatest: "Mới nhất",
-    irPerAnnum: "%/năm",
+    irPerAnnum: "log basis",
     irDiscount: "Chiết khấu (lo ngại)",
     irPremium: "Phụ trội (hưng phấn)",
     irExpiryLabel: "Đáo hạn tháng gần",
@@ -417,6 +424,13 @@ export const translations = {
     irRange3y: "3N",
     irRange1y: "1N",
     irRange6m: "6T",
+
+    // Futures Daily Log Return chart (second chart on the Implied Risk page)
+    frTitle: "Lợi suất log HĐTL hàng ngày",
+    frSubtitle: "Thay đổi log giá đóng cửa HĐTL VN30F1M so với phiên trước (ln Fₜ / Fₜ₋₁)",
+    frUnit: "log return",
+    frUp: "Tăng",
+    frDown: "Giảm",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",
