@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import date, datetime, timedelta
 
 from .common import load_scoring_config, safe_execute, today_vn
@@ -39,7 +40,7 @@ CATALYST_DEFAULTS = {
     },
     "status_factor": {"upcoming": 1.0, "realized": 0.3},
     "priced_in": {"ref_move_pct": 20.0, "max_discount": 1.0},
-    "search_lookback_days": 180,
+    "search_lookback_days": 90,
     "model": "claude-opus-4-8",
     "max_searches_per_symbol": 4,
 }
@@ -155,27 +156,64 @@ def _extract_json_array(text: str) -> list:
     return []
 
 
-def fetch_catalysts(symbol: str, exchange: str, cfg: dict, api_key: str) -> list[dict]:
-    """Call Claude with web_search and return the raw catalyst list for a symbol.
-
-    Raises on API failure so the caller can log-and-skip one symbol without
-    aborting the batch.
-    """
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
-        model=cfg["model"],
-        max_tokens=MAX_TOKENS,
-        messages=[{"role": "user", "content": _build_prompt(symbol, exchange, cfg)}],
-        tools=[{
+def _request_params(symbol: str, exchange: str, cfg: dict) -> dict:
+    """Messages-API params for one symbol (used as a batch request body)."""
+    return {
+        "model": cfg["model"],
+        "max_tokens": MAX_TOKENS,
+        "messages": [{"role": "user", "content": _build_prompt(symbol, exchange, cfg)}],
+        "tools": [{
             "type": WEB_SEARCH_TOOL_VERSION,
             "name": "web_search",
             "max_uses": cfg["max_searches_per_symbol"],
         }],
-    )
-    text = "".join(b.text for b in message.content if b.type == "text")
-    return _extract_json_array(text)
+    }
+
+
+def fetch_catalysts_batch(agroup: list[dict], cfg: dict, api_key: str,
+                          poll_interval: float = 15.0,
+                          max_wait: float = 2400.0) -> dict[str, list] | None:
+    """Score the whole shortlist in ONE Message Batch (50% cheaper; nightly job
+    isn't latency-sensitive). Returns {symbol: raw_catalyst_list} — a symbol maps
+    to [] if its result errored/expired. Returns None on total failure (submit
+    error or poll timeout) so the caller keeps yesterday's scores untouched.
+    """
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=api_key)
+    requests = [
+        {"custom_id": a["symbol"], "params": _request_params(a["symbol"], a["exchange"], cfg)}
+        for a in agroup
+    ]
+    try:
+        batch = client.messages.batches.create(requests=requests)
+    except Exception as e:  # noqa: BLE001
+        print(f"  batch submit failed — {str(e)[:140]}")
+        return None
+
+    print(f"  batch {batch.id} submitted ({len(requests)} requests); polling…")
+    waited = 0.0
+    while True:
+        b = client.messages.batches.retrieve(batch.id)
+        if b.processing_status == "ended":
+            break
+        if waited >= max_wait:
+            print(f"  batch not finished after {int(max_wait)}s (status={b.processing_status}); "
+                  f"keeping yesterday's scores.")
+            return None
+        time.sleep(poll_interval)
+        waited += poll_interval
+
+    out: dict[str, list] = {}
+    for result in client.messages.batches.results(batch.id):
+        sym = result.custom_id
+        if result.result.type == "succeeded":
+            text = "".join(blk.text for blk in result.result.message.content if blk.type == "text")
+            out[sym] = _extract_json_array(text)
+        else:
+            print(f"  {sym}: batch result {result.result.type}")
+            out[sym] = []
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -340,15 +378,19 @@ def compute_catalysts(client, api_key: str, dry_run: bool = False,
     print(f"Catalyst refresh for {len(agroup)} symbol(s): "
           f"{', '.join(a['symbol'] for a in agroup)}")
 
+    raw_by_symbol = fetch_catalysts_batch(agroup, cfg, api_key)
+    if raw_by_symbol is None:
+        # Total batch failure — leave existing scores untouched (no clear).
+        stats["errors"] = len(agroup)
+        return stats
+
     results: list[tuple[str, list[dict], float | None]] = []
     for a in agroup:
-        sym, exch = a["symbol"], a["exchange"]
-        try:
-            raw_cats = fetch_catalysts(sym, exch, cfg, api_key)
-        except Exception as e:  # noqa: BLE001 — one bad symbol must not kill the batch
+        sym = a["symbol"]
+        raw_cats = raw_by_symbol.get(sym)
+        if raw_cats is None:  # symbol missing from batch results
             stats["errors"] += 1
-            print(f"  {sym}: fetch failed — {str(e)[:140]}")
-            continue
+            raw_cats = []
         rows = _build_rows(client, sym, raw_cats, cfg, as_of)
         stats["evaluated"] += 1
         stats["catalysts"] += len(rows)
