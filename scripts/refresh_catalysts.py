@@ -39,6 +39,8 @@ def main():
                         help="Comma-separated symbols to score instead of the A/A+ shortlist")
     parser.add_argument("--limit", type=int, default=None,
                         help="Cap the number of symbols scored (cost control / testing)")
+    parser.add_argument("--sync", action="store_true",
+                        help="Call per-symbol synchronously (no Batch API) — surfaces API errors immediately for debugging")
     args = parser.parse_args()
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -49,7 +51,8 @@ def main():
     symbols = [s.strip() for s in args.symbols.split(",") if s.strip()] if args.symbols else None
 
     client = get_supabase_client()
-    stats = compute_catalysts(client, api_key, dry_run=args.dry_run, symbols=symbols, limit=args.limit)
+    stats = compute_catalysts(client, api_key, dry_run=args.dry_run, symbols=symbols,
+                              limit=args.limit, use_batch=not args.sync)
 
     print(f"\nDone ({stats['as_of']}): {stats['evaluated']}/{stats['candidates']} evaluated, "
           f"{stats['with_catalysts']} with catalysts, {stats['catalysts']} catalyst rows, "

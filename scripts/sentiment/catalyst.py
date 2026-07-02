@@ -44,7 +44,12 @@ CATALYST_DEFAULTS = {
     "search_lookback_days": 90,
     "model": "claude-sonnet-5",
     "max_searches_per_symbol": 4,
-    "max_fetches_per_symbol": 3,
+    # web_fetch downloads FULL article pages into a growing agentic-loop context
+    # that is re-billed each turn — it 3-4x'd cost in testing. Off by default
+    # (web_search_20260209 already returns filtered page content). Set > 0 to
+    # opt in; web_fetch_max_content_tokens then caps each fetched page.
+    "max_fetches_per_symbol": 0,
+    "web_fetch_max_content_tokens": 4000,
 }
 
 WEB_SEARCH_TOOL_VERSION = "web_search_20260209"
@@ -107,7 +112,7 @@ def _build_prompt(symbol: str, exchange: str, cfg: dict) -> str:
 BƯỚC 1 — Tìm rộng. Dùng web_search với MỘT truy vấn RỘNG bao trùm cả 5 khía cạnh cùng lúc, ví dụ:
   "Tin tức mới nhất liên quan đến sản phẩm, dịch vụ, nhà máy, thị trường, ban lãnh đạo của công ty {symbol}"
   Nếu bạn biết TÊN ĐẦY ĐỦ của công ty, hãy dùng cả tên đó (không chỉ mã {symbol}) để kết quả chính xác hơn.
-BƯỚC 2 — Đọc kỹ. Xem VÀI KẾT QUẢ ĐẦU TIÊN; với bài có vẻ quan trọng, dùng web_fetch để MỞ và ĐỌC nội dung (đừng chỉ đọc tiêu đề).
+BƯỚC 2 — Đọc kỹ. Xem VÀI KẾT QUẢ ĐẦU TIÊN và đọc kỹ nội dung của những bài quan trọng (đừng chỉ đọc tiêu đề; nếu có công cụ web_fetch thì mở bài để xem chi tiết).
 BƯỚC 3 — Tìm bổ sung nếu cần. Có thể thêm 1-2 truy vấn hẹp hơn theo từng khía cạnh, hoặc "{symbol} công bố thông tin / nghị quyết HĐQT / kế hoạch".
 
 Chỉ xét tin công bố TỪ {cutoff} trở lại đây (~{lookback} ngày). Ưu tiên nguồn uy tín: cafef.vn, vietstock.vn, tinnhanhchungkhoan.vn, vneconomy.vn, ndh.vn, và công bố thông tin của sở giao dịch (hsx.vn / hnx.vn). Bỏ qua tin đồn không nguồn.
@@ -166,36 +171,53 @@ def _extract_json_array(text: str) -> list:
 def _request_params(symbol: str, exchange: str, cfg: dict) -> dict:
     """Messages-API params for one symbol (used as a batch request body).
 
-    web_search (broad query) + web_fetch (open & read the top articles) mirror a
-    human on Google; user_location biases results to Vietnamese sources.
+    web_search does the broad query (and returns filtered page content).
+    web_fetch (opt-in, capped) reads full articles — off by default because
+    full-page reads inside the agentic loop are the dominant cost. No
+    user_location: web_search rejects country "VN" (400); VN relevance comes
+    from the Vietnamese query + the source list in the prompt.
     """
+    tools = [{
+        "type": WEB_SEARCH_TOOL_VERSION,
+        "name": "web_search",
+        "max_uses": cfg["max_searches_per_symbol"],
+    }]
+    max_fetches = cfg.get("max_fetches_per_symbol", 0)
+    if max_fetches and max_fetches > 0:
+        tools.append({
+            "type": WEB_FETCH_TOOL_VERSION,
+            "name": "web_fetch",
+            "max_uses": max_fetches,
+            "max_content_tokens": cfg.get("web_fetch_max_content_tokens", 4000),
+        })
     return {
         "model": cfg["model"],
         "max_tokens": MAX_TOKENS,
         "messages": [{"role": "user", "content": _build_prompt(symbol, exchange, cfg)}],
-        "tools": [
-            {
-                "type": WEB_SEARCH_TOOL_VERSION,
-                "name": "web_search",
-                "max_uses": cfg["max_searches_per_symbol"],
-                "user_location": {"type": "approximate", "country": "VN", "timezone": "Asia/Ho_Chi_Minh"},
-            },
-            {
-                "type": WEB_FETCH_TOOL_VERSION,
-                "name": "web_fetch",
-                "max_uses": cfg.get("max_fetches_per_symbol", 3),
-            },
-        ],
+        "tools": tools,
     }
+
+
+def _result_error_detail(result_obj) -> str:
+    """Human-readable error from a non-succeeded batch/API result."""
+    err = getattr(result_obj, "error", None)
+    inner = getattr(err, "error", None)  # ErrorResponse.error -> ErrorObject(type,message)
+    if inner is not None:
+        return f"{getattr(inner, 'type', '')}: {getattr(inner, 'message', '')}".strip(": ")
+    return str(err)[:240] if err is not None else ""
+
+
+def _text_of(message) -> str:
+    return "".join(blk.text for blk in message.content if blk.type == "text")
 
 
 def fetch_catalysts_batch(agroup: list[dict], cfg: dict, api_key: str,
                           poll_interval: float = 15.0,
-                          max_wait: float = 2400.0) -> dict[str, list] | None:
+                          max_wait: float = 2400.0) -> dict[str, list | None] | None:
     """Score the whole shortlist in ONE Message Batch (50% cheaper; nightly job
-    isn't latency-sensitive). Returns {symbol: raw_catalyst_list} — a symbol maps
-    to [] if its result errored/expired. Returns None on total failure (submit
-    error or poll timeout) so the caller keeps yesterday's scores untouched.
+    isn't latency-sensitive). Returns {symbol: raw_catalyst_list | None} — None
+    for a symbol whose result errored/expired. Returns the top-level None on
+    total failure (submit error or poll timeout) so the caller writes nothing.
     """
     import anthropic
 
@@ -207,7 +229,7 @@ def fetch_catalysts_batch(agroup: list[dict], cfg: dict, api_key: str,
     try:
         batch = client.messages.batches.create(requests=requests)
     except Exception as e:  # noqa: BLE001
-        print(f"  batch submit failed — {str(e)[:140]}")
+        print(f"  batch submit failed — {str(e)[:240]}")
         return None
 
     print(f"  batch {batch.id} submitted ({len(requests)} requests); polling…")
@@ -218,20 +240,37 @@ def fetch_catalysts_batch(agroup: list[dict], cfg: dict, api_key: str,
             break
         if waited >= max_wait:
             print(f"  batch not finished after {int(max_wait)}s (status={b.processing_status}); "
-                  f"keeping yesterday's scores.")
+                  f"keeping existing scores.")
             return None
         time.sleep(poll_interval)
         waited += poll_interval
 
-    out: dict[str, list] = {}
+    out: dict[str, list | None] = {}
     for result in client.messages.batches.results(batch.id):
         sym = result.custom_id
         if result.result.type == "succeeded":
-            text = "".join(blk.text for blk in result.result.message.content if blk.type == "text")
-            out[sym] = _extract_json_array(text)
+            out[sym] = _extract_json_array(_text_of(result.result.message))
         else:
-            print(f"  {sym}: batch result {result.result.type}")
-            out[sym] = []
+            print(f"  {sym}: batch result {result.result.type} — {_result_error_detail(result.result)}")
+            out[sym] = None
+    return out
+
+
+def fetch_catalysts_sync(agroup: list[dict], cfg: dict, api_key: str) -> dict[str, list | None]:
+    """Synchronous per-symbol calls (no batch): slower and no 50% discount, but
+    surfaces API errors immediately (for debugging via --sync)."""
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=api_key)
+    out: dict[str, list | None] = {}
+    for a in agroup:
+        sym = a["symbol"]
+        try:
+            msg = client.messages.create(**_request_params(sym, a["exchange"], cfg))
+            out[sym] = _extract_json_array(_text_of(msg))
+        except Exception as e:  # noqa: BLE001
+            print(f"  {sym}: request failed — {str(e)[:300]}")
+            out[sym] = None
     return out
 
 
@@ -373,10 +412,12 @@ def _persist_symbol(client, symbol: str, rows: list[dict]) -> float | None:
 
 
 def compute_catalysts(client, api_key: str, dry_run: bool = False,
-                      symbols: list[str] | None = None, limit: int | None = None) -> dict:
+                      symbols: list[str] | None = None, limit: int | None = None,
+                      use_batch: bool = True) -> dict:
     """Refresh catalyst scores for the A-group (or an explicit symbol list).
 
-    Per-symbol failures are logged and skipped (non-fatal). Returns stats.
+    Errored symbols are logged, counted, and left UNTOUCHED (keep yesterday's
+    scores). A run with zero successful results writes nothing. Returns stats.
     """
     cfg = load_scoring_config(client, "catalyst_score", CATALYST_DEFAULTS)
     as_of = today_vn()
@@ -397,19 +438,21 @@ def compute_catalysts(client, api_key: str, dry_run: bool = False,
     print(f"Catalyst refresh for {len(agroup)} symbol(s): "
           f"{', '.join(a['symbol'] for a in agroup)}")
 
-    raw_by_symbol = fetch_catalysts_batch(agroup, cfg, api_key)
-    if raw_by_symbol is None:
-        # Total batch failure — leave existing scores untouched (no clear).
+    fetch = fetch_catalysts_batch if use_batch else fetch_catalysts_sync
+    raw_by_symbol = fetch(agroup, cfg, api_key)
+    if raw_by_symbol is None:  # total batch failure (submit/timeout)
         stats["errors"] = len(agroup)
+        print("Batch failed to run — no writes; existing scores kept.")
         return stats
 
+    # Build rows only for symbols that returned successfully; errored → skip.
     results: list[tuple[str, list[dict], float | None]] = []
     for a in agroup:
         sym = a["symbol"]
         raw_cats = raw_by_symbol.get(sym)
-        if raw_cats is None:  # symbol missing from batch results
+        if raw_cats is None:  # errored/expired — leave this symbol untouched
             stats["errors"] += 1
-            raw_cats = []
+            continue
         rows = _build_rows(client, sym, raw_cats, cfg, as_of)
         stats["evaluated"] += 1
         stats["catalysts"] += len(rows)
@@ -421,17 +464,21 @@ def compute_catalysts(client, api_key: str, dry_run: bool = False,
         results.append((sym, rows, score))
         print(f"  {sym}: {len(rows)} catalyst(s), score={score}")
 
+    if not results:
+        print(f"No successful results ({stats['errors']} errored) — no writes; existing scores kept.")
+        return stats
     if dry_run:
         print("[dry-run] no writes.")
         return stats
 
-    # Clear stale scores across the active universe, then write this run's
-    # (mirrors the price-base clear-then-write; the A-group changes daily).
-    safe_execute(
-        client.table("ta_universe").update({"catalyst_score": None, "catalyst_date": None})
-        .eq("is_active", True),
-        label="catalyst clear",
-    )
+    # Symbols that previously had catalysts (rows exist) — used to clear ones
+    # that have since dropped out of the A-group. Errored symbols are NOT here-
+    # cleared (they're in agroup), so they keep yesterday's data.
+    agroup_set = {a["symbol"] for a in agroup}
+    prev = safe_execute(client.table("symbol_catalysts").select("symbol"), label="catalyst scored").data or []
+    scored_before = {r["symbol"] for r in prev}
+
+    # Write successes.
     for sym, rows, _score in results:
         score = _persist_symbol(client, sym, rows)
         safe_execute(
@@ -439,5 +486,13 @@ def compute_catalysts(client, api_key: str, dry_run: bool = False,
                 {"catalyst_score": score, "catalyst_date": as_of.isoformat()}
             ).eq("symbol", sym),
             label="catalyst rollup",
+        )
+
+    # Clear symbols that dropped out of the A-group since they were last scored.
+    for sym in scored_before - agroup_set:
+        _persist_symbol(client, sym, [])  # delete rows
+        safe_execute(
+            client.table("ta_universe").update({"catalyst_score": None, "catalyst_date": None}).eq("symbol", sym),
+            label="catalyst dropout clear",
         )
     return stats
