@@ -8,6 +8,7 @@ import { type FaScore, faNormalizedScore } from "@/lib/fa";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import { PriceBaseBreakdown, PriceBaseSparkline, PriceBaseChart, type BaseChart, baseTypeLabel, baseStatusLabel } from "./price-base";
+import { CatalystDetail, type CatalystRow } from "./catalyst";
 import { TradeActions } from "./trade-actions";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
@@ -112,6 +113,7 @@ export function SignalProClient({
     base_status: string | null;
     base_chart: BaseChart | null;
     ta_score: number | null;
+    catalyst_score: number | null;
   }[];
   locale: Locale;
   quarters: string[];
@@ -190,6 +192,27 @@ export function SignalProClient({
     for (const u of universe) m.set(u.symbol, { score: u.base_score, grade: u.base_grade, type: u.base_type, status: u.base_status, chart: u.base_chart });
     return m;
   }, [universe]);
+
+  const catalystBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const u of universe) m.set(u.symbol, u.catalyst_score);
+    return m;
+  }, [universe]);
+
+  // Catalyst detail modal — per-catalyst rows fetched on demand from symbol_catalysts.
+  const [catModal, setCatModal] = useState<
+    { symbol: string; loading: boolean; rows: CatalystRow[] } | null
+  >(null);
+
+  async function openCatalyst(symbol: string) {
+    setCatModal({ symbol, loading: true, rows: [] });
+    const { data } = await supabase
+      .from("symbol_catalysts")
+      .select("category,raw_points,status,headline,source_url,published_date,first_seen,reasoning,price_move_pct,decay_factor,priced_in,effective")
+      .eq("symbol", symbol)
+      .order("effective", { ascending: false });
+    setCatModal({ symbol, loading: false, rows: (data as CatalystRow[] | null) ?? [] });
+  }
 
   // Price-base detail modal (OHLC window + breakdown fetched on demand).
   type OHLC = { opens: number[]; highs: number[]; lows: number[]; closes: number[]; dates: string[] };
@@ -431,6 +454,7 @@ export function SignalProClient({
                   <>
                     <th colSpan={3} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spTaComponents")}</th>
                     <th colSpan={4} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
+                    <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom border-l border-gray-200" title={t(locale, "spCatalystTitle")}>{t(locale, "spCatalyst")}</th>
                   </>
                 )}
                 {isAdmin && (
@@ -465,6 +489,7 @@ export function SignalProClient({
                 const taScore = taScoreBySymbol.get(row.symbol) ?? null;
                 const finalScore = finalBySymbol.get(row.symbol) ?? null;
                 const base = baseBySymbol.get(row.symbol);
+                const catScore = catalystBySymbol.get(row.symbol) ?? null;
                 return (
                   <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">
@@ -537,6 +562,20 @@ export function SignalProClient({
                         </td>
                         <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
                           {base && base.score !== null ? baseStatusLabel(base.status, locale) : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono border-l border-gray-100">
+                          {catScore !== null ? (
+                            <button
+                              type="button"
+                              onClick={() => openCatalyst(row.symbol)}
+                              className="cursor-pointer text-blue-600 hover:underline"
+                              title={t(locale, "spCatalystTitle")}
+                            >
+                              {catScore.toFixed(1)}
+                            </button>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
                         </td>
                       </>
                     )}
@@ -663,6 +702,36 @@ export function SignalProClient({
               </div>
             ) : (
               <p className="text-sm text-gray-500">{t(locale, "faNoData")}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Catalyst detail — opened by clicking the catalyst score. */}
+      {catModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setCatModal(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl border border-gray-200 p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-3">
+              <h3 className="text-lg font-semibold">{catModal.symbol} — {t(locale, "spCatalystTitle")}</h3>
+              <button
+                type="button"
+                onClick={() => setCatModal(null)}
+                className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            {catModal.loading ? (
+              <div className="h-32 flex items-center justify-center text-sm text-gray-400">{t(locale, "loading")}…</div>
+            ) : (
+              <CatalystDetail rows={catModal.rows} locale={locale} />
             )}
           </div>
         </div>
