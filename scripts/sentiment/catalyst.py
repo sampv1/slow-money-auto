@@ -28,7 +28,8 @@ import re
 import time
 from datetime import date, datetime, timedelta
 
-from .common import load_scoring_config, safe_execute, today_vn
+# common lives in ta/ (shared pipeline helpers: env, Supabase client, config).
+from ta.common import load_scoring_config, safe_execute, today_vn
 
 # DB-overridable defaults (see scoring_config key 'catalyst_score').
 CATALYST_DEFAULTS = {
@@ -41,11 +42,13 @@ CATALYST_DEFAULTS = {
     "status_factor": {"upcoming": 1.0, "realized": 0.3},
     "priced_in": {"ref_move_pct": 20.0, "max_discount": 1.0},
     "search_lookback_days": 90,
-    "model": "claude-opus-4-8",
+    "model": "claude-sonnet-5",
     "max_searches_per_symbol": 4,
+    "max_fetches_per_symbol": 3,
 }
 
 WEB_SEARCH_TOOL_VERSION = "web_search_20260209"
+WEB_FETCH_TOOL_VERSION = "web_fetch_20260209"
 MAX_TOKENS = 4000
 _DEFAULT_HALF_LIFE = 90
 
@@ -99,29 +102,33 @@ def _build_prompt(symbol: str, exchange: str, cfg: dict) -> str:
     lookback = cfg["search_lookback_days"]
     cutoff = (today_vn() - timedelta(days=lookback)).isoformat()
     cats = ", ".join(cfg["categories"])
-    return f"""Bạn là chuyên viên phân tích cổ phiếu Việt Nam. Hãy tìm kiếm tin tức về công ty **{symbol}** (niêm yết trên {exchange}) và xác định các "catalyst" (chất xúc tác cơ bản) theo phương pháp O'Neil CAN SLIM (chữ "N" = New).
+    return f"""Bạn là nhà đầu tư đang nghiên cứu cổ phiếu **{symbol}** (niêm yết trên {exchange}). Hãy tra cứu tin tức GIỐNG HỆT cách một người thật làm trên Google — mục tiêu là KHÔNG BỎ SÓT tin quan trọng:
 
-Chỉ xét tin tức được công bố TỪ {cutoff} trở về sau (khoảng {lookback} ngày gần nhất). Dùng web_search để tìm tin thật, có nguồn đáng tin cậy (báo tài chính, công bố thông tin của công ty). Bỏ qua tin đồn không nguồn.
+BƯỚC 1 — Tìm rộng. Dùng web_search với MỘT truy vấn RỘNG bao trùm cả 5 khía cạnh cùng lúc, ví dụ:
+  "Tin tức mới nhất liên quan đến sản phẩm, dịch vụ, nhà máy, thị trường, ban lãnh đạo của công ty {symbol}"
+  Nếu bạn biết TÊN ĐẦY ĐỦ của công ty, hãy dùng cả tên đó (không chỉ mã {symbol}) để kết quả chính xác hơn.
+BƯỚC 2 — Đọc kỹ. Xem VÀI KẾT QUẢ ĐẦU TIÊN; với bài có vẻ quan trọng, dùng web_fetch để MỞ và ĐỌC nội dung (đừng chỉ đọc tiêu đề).
+BƯỚC 3 — Tìm bổ sung nếu cần. Có thể thêm 1-2 truy vấn hẹp hơn theo từng khía cạnh, hoặc "{symbol} công bố thông tin / nghị quyết HĐQT / kế hoạch".
 
-Các loại catalyst (category), chỉ dùng đúng các mã sau: {cats}
+Chỉ xét tin công bố TỪ {cutoff} trở lại đây (~{lookback} ngày). Ưu tiên nguồn uy tín: cafef.vn, vietstock.vn, tinnhanhchungkhoan.vn, vneconomy.vn, ndh.vn, và công bố thông tin của sở giao dịch (hsx.vn / hnx.vn). Bỏ qua tin đồn không nguồn.
+
+Phân loại mỗi catalyst vào ĐÚNG một mã trong: {cats}
   - new_product: sản phẩm mới
   - new_service: dịch vụ mới
   - new_factory_capacity: nhà máy / mở rộng công suất mới
   - new_market: thị trường / khu vực / kênh phân phối mới
   - new_management: ban lãnh đạo / nhân sự cấp cao mới
 
-Với MỖI catalyst có thật, chấm điểm mức độ trọng yếu (raw_points) theo đóng góp doanh thu:
-  - 3 điểm: có, nhưng đóng góp DƯỚI 25% doanh thu
-  - 9 điểm: có, và đóng góp TRÊN 25% doanh thu
-(Nếu không phải catalyst thật thì KHÔNG đưa vào danh sách — không có mục 0 điểm.)
+Chấm điểm mức độ trọng yếu (raw_points) theo đóng góp doanh thu:
+  - 3: có, đóng góp DƯỚI 25% doanh thu
+  - 9: có, đóng góp TRÊN 25% doanh thu
+(Không phải catalyst thật thì KHÔNG đưa vào danh sách.)
 
-Phân loại trạng thái (status):
-  - "upcoming": sắp diễn ra / chưa phản ánh vào kết quả kinh doanh (còn kỳ vọng phía trước)
-  - "realized": đã diễn ra / đã phản ánh vào doanh thu-lợi nhuận (tin đã cũ)
+status: "upcoming" (chưa phản ánh vào KQKD, còn kỳ vọng phía trước) hoặc "realized" (đã phản ánh vào doanh thu-lợi nhuận).
 
-Sau khi tìm kiếm xong, trả về DUY NHẤT một mảng JSON trong một khối ```json (không thêm chữ nào sau khối này). Mỗi phần tử:
+Sau khi đọc xong, trả về DUY NHẤT một mảng JSON trong một khối ```json (không thêm chữ nào sau khối này). Mỗi phần tử:
 {{
-  "category": "<một trong các mã trên>",
+  "category": "<một mã ở trên>",
   "raw_points": 3 hoặc 9,
   "status": "upcoming" hoặc "realized",
   "headline": "<tiêu đề ngắn gọn tiếng Việt>",
@@ -130,7 +137,7 @@ Sau khi tìm kiếm xong, trả về DUY NHẤT một mảng JSON trong một kh
   "reasoning": "<1-2 câu giải thích vì sao chấm điểm như vậy>"
 }}
 
-Nếu không tìm thấy catalyst nào hợp lệ, trả về mảng rỗng: ```json
+Nếu không có catalyst hợp lệ, trả về mảng rỗng: ```json
 []
 ```"""
 
@@ -157,16 +164,28 @@ def _extract_json_array(text: str) -> list:
 
 
 def _request_params(symbol: str, exchange: str, cfg: dict) -> dict:
-    """Messages-API params for one symbol (used as a batch request body)."""
+    """Messages-API params for one symbol (used as a batch request body).
+
+    web_search (broad query) + web_fetch (open & read the top articles) mirror a
+    human on Google; user_location biases results to Vietnamese sources.
+    """
     return {
         "model": cfg["model"],
         "max_tokens": MAX_TOKENS,
         "messages": [{"role": "user", "content": _build_prompt(symbol, exchange, cfg)}],
-        "tools": [{
-            "type": WEB_SEARCH_TOOL_VERSION,
-            "name": "web_search",
-            "max_uses": cfg["max_searches_per_symbol"],
-        }],
+        "tools": [
+            {
+                "type": WEB_SEARCH_TOOL_VERSION,
+                "name": "web_search",
+                "max_uses": cfg["max_searches_per_symbol"],
+                "user_location": {"type": "approximate", "country": "VN", "timezone": "Asia/Ho_Chi_Minh"},
+            },
+            {
+                "type": WEB_FETCH_TOOL_VERSION,
+                "name": "web_fetch",
+                "max_uses": cfg.get("max_fetches_per_symbol", 3),
+            },
+        ],
     }
 
 

@@ -117,20 +117,3 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: python refresh_implied_risk.py
-
-      # Auxiliary: CAN SLIM "N" catalyst scoring for the final-grade A/A+
-      # shortlist (Claude + web search). Runs after final_score has set the
-      # grades. Non-fatal, and skipped when ANTHROPIC_API_KEY is absent.
-      - name: Refresh catalyst scores (A/A+ shortlist)
-        working-directory: scripts
-        continue-on-error: true
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "::notice::ANTHROPIC_API_KEY not set — skipping catalyst refresh."
-            exit 0
-          fi
-          python refresh_catalysts.py

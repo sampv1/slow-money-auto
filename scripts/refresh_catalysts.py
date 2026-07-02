@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from ta.catalyst import compute_catalysts
+from sentiment.catalyst import compute_catalysts
 from ta.common import get_supabase_client
 
 
