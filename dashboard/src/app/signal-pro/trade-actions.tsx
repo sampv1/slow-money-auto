@@ -15,10 +15,21 @@ export function TradeActions({
   symbol,
   isActive,
   locale,
+  sellOnly = false,
+  recId,
+  entryPrice = null,
 }: {
   symbol: string;
   isActive: boolean;
   locale: Locale;
+  // When true, render only the SELL control (used on the Active page, where
+  // every row is already an open position).
+  sellOnly?: boolean;
+  // When set, SELL closes ONLY this recommendation (single-close, Active page)
+  // instead of every open position for the symbol. `entryPrice` is that row's
+  // own entry, used for the P/L preview.
+  recId?: string;
+  entryPrice?: number | null;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<"BUY" | "SELL" | null>(null);
@@ -70,6 +81,17 @@ export function TradeActions({
     reset();
     setMode("SELL");
     setLoading(true);
+    // Single-close (Active page): only this recommendation, entry passed in — no
+    // need to aggregate the symbol's other open positions.
+    if (recId) {
+      const c = await latestClose();
+      setClose(c);
+      setPrice(c ? String(c.price) : "");
+      setPosCount(1);
+      setEntry(entryPrice);
+      setLoading(false);
+      return;
+    }
     const [c, pos] = await Promise.all([
       latestClose(),
       supabase
@@ -107,7 +129,7 @@ export function TradeActions({
         body: JSON.stringify(
           mode === "BUY"
             ? { symbol, action: "BUY", price, stop_loss: sl, tp1, tp2, holding, win_rate_est: winRate, sharpe, note }
-            : { symbol, action: "SELL", price, note },
+            : { symbol, action: "SELL", price, note, ...(recId ? { id: recId } : {}) },
         ),
       });
       const json = await res.json();
@@ -133,13 +155,15 @@ export function TradeActions({
   return (
     <>
       <div className="flex items-center gap-1.5 whitespace-nowrap">
-        <button
-          type="button"
-          onClick={openBuy}
-          className="px-2 py-0.5 text-xs rounded bg-green-600 text-white hover:bg-green-700"
-        >
-          {t(locale, "spBuy")}
-        </button>
+        {!sellOnly && (
+          <button
+            type="button"
+            onClick={openBuy}
+            className="px-2 py-0.5 text-xs rounded bg-green-600 text-white hover:bg-green-700"
+          >
+            {t(locale, "spBuy")}
+          </button>
+        )}
         <button
           type="button"
           onClick={openSell}

@@ -4,6 +4,7 @@ import { formatPrice, formatPnl, pnlColor, statusBadge } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole, isStaff } from "@/lib/supabase-server";
 import type { Recommendation } from "@/lib/types";
+import { TradeActions } from "../signal-pro/trade-actions";
 
 export const revalidate = 0;
 
@@ -12,6 +13,8 @@ export default async function ActivePage() {
   if (!isStaff(role)) {
     redirect("/login");
   }
+  // SELL closes a position (admin-only — the manual endpoint requires admin).
+  const isAdmin = role === "admin";
   const locale = await getLocale();
 
   const { data: recs, error } = await supabase
@@ -59,6 +62,7 @@ export default async function ActivePage() {
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "winRateEst")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "sharpe")}</th>
                 <th className="px-4 py-3 font-medium">{t(locale, "status")}</th>
+                {isAdmin && <th className="px-4 py-3 font-medium text-right">{t(locale, "actionCol")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -114,6 +118,18 @@ export default async function ActivePage() {
                         {badge.label}
                       </span>
                     </td>
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-right">
+                        <TradeActions
+                          symbol={rec.symbol}
+                          isActive
+                          locale={locale}
+                          sellOnly
+                          recId={rec.id}
+                          entryPrice={rec.entry_price}
+                        />
+                      </td>
+                    )}
                   </tr>
                 );
               })}

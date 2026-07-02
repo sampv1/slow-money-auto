@@ -6,6 +6,7 @@ const ACTIVE_STATUSES = ["OPEN", "TP1_HIT"];
 interface ManualInput {
   symbol?: string;
   action?: string;
+  id?: string; // SELL only: close just this one recommendation (else all for the symbol)
   price?: number | null; // entry (BUY) / exit (SELL); defaults to latest close
   stop_loss?: number | null;
   tp1?: number | null;
@@ -157,16 +158,24 @@ async function sell(
   close: { price: number; date: string },
   body: ManualInput,
 ) {
-  // Finalize ALL open positions for the symbol (any source — AI or manual).
-  // Each stays an independent transaction on the Active/History pages: it closes
-  // at the same exit price but keeps its own entry, so its own P/L is computed.
-  const { data: positions } = await supabase
+  // Finalize open positions for the symbol. By default ALL of them (any source —
+  // AI or manual); when `id` is supplied (Active page single-close), just that
+  // one. Each stays an independent transaction on the Active/History pages: it
+  // closes at the same exit price but keeps its own entry, so its own P/L is
+  // computed.
+  const id = (body.id ?? "").toString().trim();
+  let query = supabase
     .from("recommendations")
     .select("id,entry_price,trading_date,note")
     .eq("symbol", symbol)
     .in("status", ACTIVE_STATUSES);
+  if (id) query = query.eq("id", id);
+  const { data: positions } = await query;
   if (!positions || positions.length === 0) {
-    return Response.json({ error: `No active position for ${symbol}` }, { status: 404 });
+    return Response.json(
+      { error: id ? "Position not found or already closed" : `No active position for ${symbol}` },
+      { status: 404 },
+    );
   }
 
   // Exit defaults to the latest close but the admin can override it.
