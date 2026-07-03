@@ -60,10 +60,12 @@ WEB_FETCH_TOOL_VERSION = "web_fetch_20260209"
 MAX_TOKENS = 4000
 _DEFAULT_HALF_LIFE = 90
 
-# Per-request wall-clock cap + at most one retry, so a single slow/hung call
-# can't eat the whole scheduled-job budget (sync runs 13 calls sequentially).
-REQUEST_TIMEOUT = 300.0
-MAX_RETRIES = 1
+# Per-request wall-clock cap so a single slow/hung call can't eat the whole
+# scheduled-job budget. With thinking disabled a web_search request is ~1-3 min;
+# 600s is generous headroom. No retry: a timeout retry just doubles the wasted
+# time on a genuinely slow call (the per-symbol try/except keeps the run going).
+REQUEST_TIMEOUT = 600.0
+MAX_RETRIES = 0
 
 
 # --------------------------------------------------------------------------- #
@@ -211,6 +213,11 @@ def _request_params(symbol: str, exchange: str, cfg: dict) -> dict:
     return {
         "model": cfg["model"],
         "max_tokens": MAX_TOKENS,
+        # Disable thinking: on Sonnet 5 omitting `thinking` runs ADAPTIVE thinking
+        # by default, which deep-thinks at every turn of the web-search loop —
+        # minutes-long requests + big token bills. News extraction doesn't need
+        # it. (Valid on Sonnet 5 / Opus 4.8/4.7; would 400 on Fable 5.)
+        "thinking": {"type": "disabled"},
         "messages": [{"role": "user", "content": _build_prompt(symbol, exchange, cfg)}],
         "tools": tools,
     }
@@ -472,7 +479,7 @@ def compute_catalysts(client, api_key: str, dry_run: bool = False,
     mode = "batch" if use_batch else "sync"
     fetches = cfg.get("max_fetches_per_symbol", 0)
     print(f"Catalyst refresh · {as_of.isoformat()} · mode={mode} · "
-          f"model={cfg['model']} · searches/sym={cfg['max_searches_per_symbol']} · "
+          f"model={cfg['model']} · thinking=off · searches/sym={cfg['max_searches_per_symbol']} · "
           f"web_fetch={'ON x' + str(fetches) if fetches else 'off'} · "
           f"lookback={cfg['search_lookback_days']}d · min_vol={int(min_vol):,}", flush=True)
     if fetches:
