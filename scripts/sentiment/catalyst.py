@@ -413,7 +413,7 @@ def _persist_symbol(client, symbol: str, rows: list[dict]) -> float | None:
 
 def compute_catalysts(client, api_key: str, dry_run: bool = False,
                       symbols: list[str] | None = None, limit: int | None = None,
-                      use_batch: bool = True) -> dict:
+                      use_batch: bool = False) -> dict:
     """Refresh catalyst scores for the A-group (or an explicit symbol list).
 
     Errored symbols are logged, counted, and left UNTOUCHED (keep yesterday's

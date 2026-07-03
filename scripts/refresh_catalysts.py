@@ -9,10 +9,16 @@ upcoming vs realized. This script then decays each catalyst by age + market
 absorption and writes the average effective score to ta_universe.catalyst_score
 (+ per-catalyst rows to symbol_catalysts for the click-to-open modal).
 
-See scripts/ta/catalyst.py for the model + decay logic.
+See scripts/sentiment/catalyst.py for the model + decay logic.
+
+Runs synchronously by default (per-symbol, ~10-20 min for the shortlist) so it
+reliably finishes inside one workflow run. --batch uses the Message Batches API
+(50% cheaper) but batch latency is unpredictable (minutes to 24h), so it may not
+finish in a single scheduled job.
 
 Usage:
-  python3 refresh_catalysts.py                      # A/A+ shortlist, full run
+  python3 refresh_catalysts.py                      # A/A+ shortlist, sync (default)
+  python3 refresh_catalysts.py --batch              # cheaper, but may not finish in-run
   python3 refresh_catalysts.py --dry-run            # fetch + compute, don't write
   python3 refresh_catalysts.py --symbols FPT,HPG    # override the shortlist
   python3 refresh_catalysts.py --limit 3            # cap symbols (cost control / testing)
@@ -39,8 +45,9 @@ def main():
                         help="Comma-separated symbols to score instead of the A/A+ shortlist")
     parser.add_argument("--limit", type=int, default=None,
                         help="Cap the number of symbols scored (cost control / testing)")
-    parser.add_argument("--sync", action="store_true",
-                        help="Call per-symbol synchronously (no Batch API) — surfaces API errors immediately for debugging")
+    parser.add_argument("--batch", action="store_true",
+                        help="Use the Message Batches API (50%% cheaper) instead of synchronous calls. "
+                             "Batch latency is unpredictable — may not finish inside a scheduled run.")
     args = parser.parse_args()
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -52,7 +59,7 @@ def main():
 
     client = get_supabase_client()
     stats = compute_catalysts(client, api_key, dry_run=args.dry_run, symbols=symbols,
-                              limit=args.limit, use_batch=not args.sync)
+                              limit=args.limit, use_batch=args.batch)
 
     print(f"\nDone ({stats['as_of']}): {stats['evaluated']}/{stats['candidates']} evaluated, "
           f"{stats['with_catalysts']} with catalysts, {stats['catalysts']} catalyst rows, "
