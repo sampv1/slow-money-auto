@@ -73,6 +73,7 @@ insert into scoring_config (key, config) values ('catalyst_score', '{
   "status_factor": {"upcoming": 1.0, "realized": 0.3},
   "priced_in": {"ref_move_pct": 20.0, "max_discount": 1.0},
   "search_lookback_days": 90,
+  "min_avg_volume_20d": 100000,
   "model": "claude-sonnet-5",
   "max_searches_per_symbol": 4,
   "max_fetches_per_symbol": 0,

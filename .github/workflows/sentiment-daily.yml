@@ -41,6 +41,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PYTHONUNBUFFERED: "1"  # stream Python stdout live to the Actions log
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
             echo "::error::SUPABASE_URL / SUPABASE_ANON_KEY not set."
@@ -50,4 +51,7 @@ jobs:
             echo "::notice::ANTHROPIC_API_KEY not set — skipping catalyst refresh."
             exit 0
           fi
-          python refresh_catalysts.py
+          echo "▶ started $(date -u '+%H:%M:%S') UTC — live per-symbol progress + ETA below"
+          # -u also forces unbuffered, belt-and-suspenders with PYTHONUNBUFFERED.
+          python -u refresh_catalysts.py
+          echo "■ finished $(date -u '+%H:%M:%S') UTC"

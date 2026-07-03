@@ -42,6 +42,9 @@ CATALYST_DEFAULTS = {
     "status_factor": {"upcoming": 1.0, "realized": 0.3},
     "priced_in": {"ref_move_pct": 20.0, "max_discount": 1.0},
     "search_lookback_days": 90,
+    # Only score A/A+ symbols whose 20-session avg volume is at least this many
+    # shares (drops illiquid names). 0 = no liquidity filter.
+    "min_avg_volume_20d": 100000,
     "model": "claude-sonnet-5",
     "max_searches_per_symbol": 4,
     # web_fetch downloads FULL article pages into a growing agentic-loop context
@@ -66,8 +69,9 @@ MAX_RETRIES = 1
 # --------------------------------------------------------------------------- #
 # A-group selection
 # --------------------------------------------------------------------------- #
-def get_agroup_symbols(client) -> list[dict]:
-    """Symbols with final_grade A/A+ in the latest FA period, with exchange.
+def get_agroup_symbols(client, min_avg_volume: float = 0) -> list[dict]:
+    """Symbols with final_grade A/A+ in the latest FA period, with exchange,
+    filtered to those whose 20-session avg volume >= `min_avg_volume`.
 
     Returns [{'symbol', 'exchange', 'final_grade'}], highest final_score first.
     """
@@ -90,19 +94,28 @@ def get_agroup_symbols(client) -> list[dict]:
     if not syms:
         return []
 
-    exch: dict[str, str] = {}
+    # exchange + 20d avg volume from ta_universe (for the liquidity filter).
+    uni: dict[str, tuple[str, float | None]] = {}
     for i in range(0, len(syms), 200):
         er = safe_execute(
-            client.table("ta_universe").select("symbol,exchange").in_("symbol", syms[i:i + 200]),
-            label="catalyst exchange",
+            client.table("ta_universe").select("symbol,exchange,avg_volume_20d").in_("symbol", syms[i:i + 200]),
+            label="catalyst universe",
         ).data or []
         for r in er:
-            exch[r["symbol"]] = r.get("exchange") or "HOSE"
+            uni[r["symbol"]] = (r.get("exchange") or "HOSE", r.get("avg_volume_20d"))
 
-    return [
-        {"symbol": r["symbol"], "exchange": exch.get(r["symbol"], "HOSE"), "final_grade": r["final_grade"]}
-        for r in rows
-    ]
+    out: list[dict] = []
+    dropped = 0
+    for r in rows:
+        exch, avg_vol = uni.get(r["symbol"], ("HOSE", None))
+        if min_avg_volume and (avg_vol is None or avg_vol < min_avg_volume):
+            dropped += 1
+            continue
+        out.append({"symbol": r["symbol"], "exchange": exch, "final_grade": r["final_grade"]})
+    if dropped:
+        print(f"  liquidity filter: dropped {dropped} A/A+ symbol(s) below "
+              f"{int(min_avg_volume):,} avg 20d volume", flush=True)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -237,15 +250,19 @@ def fetch_catalysts_batch(agroup: list[dict], cfg: dict, api_key: str,
         print(f"  batch submit failed — {str(e)[:240]}")
         return None
 
-    print(f"  batch {batch.id} submitted ({len(requests)} requests); polling…")
+    print(f"  batch {batch.id} submitted ({len(requests)} requests); polling…", flush=True)
     waited = 0.0
     while True:
         b = client.messages.batches.retrieve(batch.id)
+        c = b.request_counts  # live progress: succeeded/errored/processing/…
+        done = c.succeeded + c.errored + c.canceled + c.expired
+        print(f"  batch {b.processing_status}: {done}/{len(requests)} done "
+              f"(ok={c.succeeded} err={c.errored} proc={c.processing}) · elapsed {waited / 60:.1f}m", flush=True)
         if b.processing_status == "ended":
             break
         if waited >= max_wait:
             print(f"  batch not finished after {int(max_wait)}s (status={b.processing_status}); "
-                  f"keeping existing scores.")
+                  f"keeping existing scores.", flush=True)
             return None
         time.sleep(poll_interval)
         waited += poll_interval
@@ -263,19 +280,30 @@ def fetch_catalysts_batch(agroup: list[dict], cfg: dict, api_key: str,
 
 def fetch_catalysts_sync(agroup: list[dict], cfg: dict, api_key: str) -> dict[str, list | None]:
     """Synchronous per-symbol calls (no batch): slower and no 50% discount, but
-    surfaces API errors immediately (for debugging via --sync)."""
+    reliable and — with the live progress + ETA below — observable in the CI log.
+    """
     import anthropic
 
     client = anthropic.Anthropic(api_key=api_key, timeout=REQUEST_TIMEOUT, max_retries=MAX_RETRIES)
     out: dict[str, list | None] = {}
-    for a in agroup:
+    n = len(agroup)
+    t0 = time.monotonic()
+    for i, a in enumerate(agroup, 1):
         sym = a["symbol"]
+        print(f"  [{i}/{n}] {sym}: searching…", flush=True)
+        started = time.monotonic()
         try:
             msg = client.messages.create(**_request_params(sym, a["exchange"], cfg))
             out[sym] = _extract_json_array(_text_of(msg))
+            status = f"{len(out[sym])} found"
         except Exception as e:  # noqa: BLE001
-            print(f"  {sym}: request failed — {str(e)[:300]}")
             out[sym] = None
+            status = f"ERROR {str(e)[:160]}"
+        dt = time.monotonic() - started
+        elapsed = time.monotonic() - t0
+        eta = (elapsed / i) * (n - i)  # simple running-average ETA
+        print(f"  [{i}/{n}] {sym}: {status} ({dt:.0f}s) · elapsed {elapsed / 60:.1f}m · "
+              f"eta ~{eta / 60:.1f}m", flush=True)
     return out
 
 
@@ -427,10 +455,11 @@ def compute_catalysts(client, api_key: str, dry_run: bool = False,
     cfg = load_scoring_config(client, "catalyst_score", CATALYST_DEFAULTS)
     as_of = today_vn()
 
-    if symbols:
+    min_vol = cfg.get("min_avg_volume_20d", 0)
+    if symbols:  # explicit override skips the A-group + liquidity filter
         agroup = [{"symbol": s.upper(), "exchange": "HOSE"} for s in symbols]
     else:
-        agroup = get_agroup_symbols(client)
+        agroup = get_agroup_symbols(client, min_vol)
     if limit:
         agroup = agroup[:limit]
 
@@ -440,8 +469,16 @@ def compute_catalysts(client, api_key: str, dry_run: bool = False,
         print("No A-group symbols — nothing to do.")
         return stats
 
-    print(f"Catalyst refresh for {len(agroup)} symbol(s): "
-          f"{', '.join(a['symbol'] for a in agroup)}")
+    mode = "batch" if use_batch else "sync"
+    fetches = cfg.get("max_fetches_per_symbol", 0)
+    print(f"Catalyst refresh · {as_of.isoformat()} · mode={mode} · "
+          f"model={cfg['model']} · searches/sym={cfg['max_searches_per_symbol']} · "
+          f"web_fetch={'ON x' + str(fetches) if fetches else 'off'} · "
+          f"lookback={cfg['search_lookback_days']}d · min_vol={int(min_vol):,}", flush=True)
+    if fetches:
+        print("  ⚠️ web_fetch is ON — full-page reads are slow and costly. "
+              "Set scoring_config.catalyst_score max_fetches_per_symbol=0 to disable.", flush=True)
+    print(f"{len(agroup)} symbol(s): {', '.join(a['symbol'] for a in agroup)}", flush=True)
 
     fetch = fetch_catalysts_batch if use_batch else fetch_catalysts_sync
     raw_by_symbol = fetch(agroup, cfg, api_key)
@@ -467,7 +504,7 @@ def compute_catalysts(client, api_key: str, dry_run: bool = False,
             effs = [r["effective"] for r in rows if r.get("effective") is not None]
             score = round(sum(effs) / len(effs), 3) if effs else None
         results.append((sym, rows, score))
-        print(f"  {sym}: {len(rows)} catalyst(s), score={score}")
+        print(f"  scored {sym}: {len(rows)} catalyst(s), score={score}", flush=True)
 
     if not results:
         print(f"No successful results ({stats['errors']} errored) — no writes; existing scores kept.")
