@@ -57,6 +57,11 @@ WEB_FETCH_TOOL_VERSION = "web_fetch_20260209"
 MAX_TOKENS = 4000
 _DEFAULT_HALF_LIFE = 90
 
+# Per-request wall-clock cap + at most one retry, so a single slow/hung call
+# can't eat the whole scheduled-job budget (sync runs 13 calls sequentially).
+REQUEST_TIMEOUT = 300.0
+MAX_RETRIES = 1
+
 
 # --------------------------------------------------------------------------- #
 # A-group selection
@@ -221,7 +226,7 @@ def fetch_catalysts_batch(agroup: list[dict], cfg: dict, api_key: str,
     """
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, timeout=REQUEST_TIMEOUT, max_retries=MAX_RETRIES)
     requests = [
         {"custom_id": a["symbol"], "params": _request_params(a["symbol"], a["exchange"], cfg)}
         for a in agroup
@@ -261,7 +266,7 @@ def fetch_catalysts_sync(agroup: list[dict], cfg: dict, api_key: str) -> dict[st
     surfaces API errors immediately (for debugging via --sync)."""
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, timeout=REQUEST_TIMEOUT, max_retries=MAX_RETRIES)
     out: dict[str, list | None] = {}
     for a in agroup:
         sym = a["symbol"]
