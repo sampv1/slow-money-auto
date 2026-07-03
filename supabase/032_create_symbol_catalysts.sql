@@ -75,7 +75,7 @@ insert into scoring_config (key, config) values ('catalyst_score', '{
   "search_lookback_days": 90,
   "min_avg_volume_20d": 100000,
   "model": "claude-sonnet-5",
-  "max_searches_per_symbol": 4,
+  "max_searches_per_symbol": 2,
   "max_fetches_per_symbol": 0,
   "web_fetch_max_content_tokens": 4000
 }'::jsonb)

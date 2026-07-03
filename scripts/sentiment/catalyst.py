@@ -46,7 +46,10 @@ CATALYST_DEFAULTS = {
     # shares (drops illiquid names). 0 = no liquidity filter.
     "min_avg_volume_20d": 100000,
     "model": "claude-sonnet-5",
-    "max_searches_per_symbol": 4,
+    # Each web_search_20260209 call runs a server-side search + dynamic-filter
+    # loop (~2-4 min). 2 = one broad query (covers all 5 dimensions) + one
+    # follow-up; higher values multiply runtime. Kept low so requests finish.
+    "max_searches_per_symbol": 2,
     # web_fetch downloads FULL article pages into a growing agentic-loop context
     # that is re-billed each turn — it 3-4x'd cost in testing. Off by default
     # (web_search_20260209 already returns filtered page content). Set > 0 to
@@ -55,7 +58,11 @@ CATALYST_DEFAULTS = {
     "web_fetch_max_content_tokens": 4000,
 }
 
-WEB_SEARCH_TOOL_VERSION = "web_search_20260209"
+# BASIC web search. The _20260209 "dynamic filtering" variant runs code-execution
+# under the hood — one query spawns many slow server-tool calls (observed 18+ in
+# 5 min, NOT capped by max_uses), which is the runtime + cost blow-up. The basic
+# variant just returns search results and respects max_uses.
+WEB_SEARCH_TOOL_VERSION = "web_search_20250305"
 WEB_FETCH_TOOL_VERSION = "web_fetch_20260209"
 MAX_TOKENS = 4000
 _DEFAULT_HALF_LIFE = 90
@@ -286,8 +293,11 @@ def fetch_catalysts_batch(agroup: list[dict], cfg: dict, api_key: str,
 
 
 def fetch_catalysts_sync(agroup: list[dict], cfg: dict, api_key: str) -> dict[str, list | None]:
-    """Synchronous per-symbol calls (no batch): slower and no 50% discount, but
-    reliable and — with the live progress + ETA below — observable in the CI log.
+    """Per-symbol calls, STREAMED. web_search runs a long server-side loop; a
+    non-streaming request trips the total-request timeout (~10 min) and errors.
+    Streaming keeps the connection alive — the timeout becomes idle-based (time
+    between events), so a slow-but-progressing request completes instead of
+    dying. Live progress + ETA go to the CI log.
     """
     import anthropic
 
@@ -300,9 +310,20 @@ def fetch_catalysts_sync(agroup: list[dict], cfg: dict, api_key: str) -> dict[st
         print(f"  [{i}/{n}] {sym}: searching…", flush=True)
         started = time.monotonic()
         try:
-            msg = client.messages.create(**_request_params(sym, a["exchange"], cfg))
+            searches = 0
+            with client.messages.stream(**_request_params(sym, a["exchange"], cfg)) as stream:
+                for event in stream:  # live heartbeat: see each server-tool call (progress vs hang)
+                    try:
+                        if (event.type == "content_block_start"
+                                and getattr(event.content_block, "type", "") == "server_tool_use"):
+                            searches += 1
+                            tool = getattr(event.content_block, "name", "tool")
+                            print(f"      · {tool} #{searches} at {time.monotonic() - started:.0f}s", flush=True)
+                    except Exception:  # noqa: BLE001 — logging must never break the fetch
+                        pass
+                msg = stream.get_final_message()
             out[sym] = _extract_json_array(_text_of(msg))
-            status = f"{len(out[sym])} found"
+            status = f"{len(out[sym])} found (stop={msg.stop_reason})"
         except Exception as e:  # noqa: BLE001
             out[sym] = None
             status = f"ERROR {str(e)[:160]}"
