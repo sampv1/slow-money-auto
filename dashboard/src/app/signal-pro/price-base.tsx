@@ -130,6 +130,7 @@ export function PriceBaseChart({
 }
 
 export const GRADE_CLASS: Record<string, string> = {
+  "A+": "bg-emerald-100 text-emerald-800",
   A: "bg-green-100 text-green-800",
   B: "bg-blue-100 text-blue-800",
   C: "bg-amber-100 text-amber-800",
@@ -142,11 +143,23 @@ export function baseTypeLabel(type: string | null, locale: Locale): string {
   return "—";
 }
 
+// BQS V8 4-state base status (Trang_thai_nen). Colors follow the spec:
+// watch = gray, wait_buy = yellow, ready_buy = green, breakout_fail = red.
+const BASE_STATUS: Record<string, { vi: string; en: string; cls: string }> = {
+  watch: { vi: "Theo dõi", en: "Watch", cls: "text-gray-500" },
+  wait_buy: { vi: "Chờ mua", en: "Wait to buy", cls: "text-amber-600" },
+  ready_buy: { vi: "Sẵn sàng mua", en: "Ready to buy", cls: "text-green-600" },
+  breakout_fail: { vi: "Breakout thất bại", en: "Breakout failed", cls: "text-red-600" },
+};
+
 export function baseStatusLabel(status: string | null, locale: Locale): string {
-  if (status === "breakout") return "Breakout";
-  if (status === "fail") return "Fail";
-  if (status === "watchlist") return locale === "vi" ? "Theo dõi" : "Watch";
-  return "—";
+  const s = status ? BASE_STATUS[status] : null;
+  if (!s) return "—";
+  return locale === "vi" ? s.vi : s.en;
+}
+
+export function baseStatusClass(status: string | null): string {
+  return (status && BASE_STATUS[status]?.cls) || "text-gray-500";
 }
 
 export function PriceBaseBadge({
@@ -169,7 +182,8 @@ export function PriceBaseBadge({
         {grade} {score}
       </span>
       <span className="text-xs text-gray-500 whitespace-nowrap">
-        {baseTypeLabel(type, locale)} · {baseStatusLabel(status, locale)}
+        {baseTypeLabel(type, locale)} ·{" "}
+        <span className={baseStatusClass(status)}>{baseStatusLabel(status, locale)}</span>
       </span>
     </span>
   );
@@ -181,11 +195,11 @@ type Detail = {
   base_end?: string;
   duration_weeks?: number;
   depth_pct?: number;
-  tightness20_pct?: number;
   vol_dry_ratio_pct?: number | null;
-  dist52w_pct?: number;
   drawdown_pre_pct?: number;
   runup_pre_pct?: number;
+  tight_area?: { len?: number; range_pct?: number; vol_ratio_pct?: number | null; valid?: boolean };
+  contraction?: { ratio?: number | null; r1_pct?: number | null; r2_pct?: number | null; r3_pct?: number | null };
   raw?: number;
   max?: number;
   breakdown?: { key: string; label_en: string; label_vi: string; value: number | string | null; points: number; max: number }[];
@@ -199,13 +213,21 @@ function fmtVal(v: number | string | null): string {
 
 export function PriceBaseBreakdown({ detail, locale }: { detail: Detail; locale: Locale }) {
   const rows = detail.breakdown ?? [];
+  const ta = detail.tight_area;
+  const con = detail.contraction;
   const summary: [string, string][] = [
     [locale === "vi" ? "Khoảng" : "Window", `${detail.base_start ?? "?"} → ${detail.base_end ?? "?"}`],
     [locale === "vi" ? "Độ dài" : "Duration", `${detail.duration_weeks ?? "?"}w`],
     [locale === "vi" ? "Độ sâu" : "Depth", `${detail.depth_pct ?? "?"}%`],
-    ["Tightness20", `${detail.tightness20_pct ?? "?"}%`],
-    ["Vol dry", detail.vol_dry_ratio_pct != null ? `${detail.vol_dry_ratio_pct}%` : "—"],
-    ["Dist 52W", `${detail.dist52w_pct ?? "?"}%`],
+    [
+      locale === "vi" ? "Vùng cuối nền" : "Tight Area",
+      ta ? `${ta.len ?? "?"}${locale === "vi" ? " phiên" : " bars"} · ${ta.range_pct ?? "?"}%${ta.valid === false ? " ⚠" : ""}` : "—",
+    ],
+    [locale === "vi" ? "Vol khô cạn" : "Vol dry", detail.vol_dry_ratio_pct != null ? `${detail.vol_dry_ratio_pct}%` : "—"],
+    [
+      locale === "vi" ? "Co hẹp (R3/R1)" : "Contraction (R3/R1)",
+      con && con.ratio != null ? `${con.r1_pct ?? "?"}%→${con.r3_pct ?? "?"}% · ${con.ratio}` : "—",
+    ],
   ];
   return (
     <div>
