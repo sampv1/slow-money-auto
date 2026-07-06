@@ -531,14 +531,13 @@ def compute_price_bases(client, dry_run: bool = False) -> dict:
     if dry_run:
         return stats
 
-    # Clear stale, then write the fresh snapshot.
-    safe_execute(
-        client.table("ta_universe").update({
-            "base_score": None, "base_grade": None, "base_type": None,
-            "base_status": None, "base_detail": None, "base_chart": None, "base_date": None,
-        }).eq("is_active", True),
-        label="base clear",
-    )
+    # No bases detected at all almost always means a data/detection failure
+    # (OHLCV not loaded), not that every symbol genuinely lost its base. Bail
+    # WITHOUT clearing so we never wipe the previous snapshot to NULL.
+    if not payload:
+        print("  price bases: 0 detected — skipping write to preserve prior snapshot.")
+        return stats
+
     # Need exchange for the upsert INSERT path (NOT NULL).
     exch = {}
     off = 0
@@ -551,7 +550,25 @@ def compute_price_bases(client, dry_run: bool = False) -> dict:
         off += 1000
     for p in payload:
         p["exchange"] = exch.get(p["symbol"], "HOSE")
+
+    # Write the fresh snapshot FIRST, then clear stale rows. Order matters: if a
+    # write fails, safe_execute raises before anything is cleared, so the prior
+    # snapshot survives instead of every base column being left NULL (which is
+    # what a clear-then-write ordering does on any mid-run hiccup).
     for i in range(0, len(payload), 300):
         safe_execute(client.table("ta_universe").upsert(payload[i:i + 300], on_conflict="symbol"), label="base upsert")
+
+    # Clear only the active symbols that no longer have a detected base (lost it
+    # this run, or never had one) — chunked by symbol so we never blanket-null.
+    based = {p["symbol"] for p in payload}
+    stale = [s for s in active if s not in based]
+    for i in range(0, len(stale), 200):
+        safe_execute(
+            client.table("ta_universe").update({
+                "base_score": None, "base_grade": None, "base_type": None,
+                "base_status": None, "base_detail": None, "base_chart": None, "base_date": None,
+            }).in_("symbol", stale[i:i + 200]),
+            label="base clear",
+        )
 
     return stats
