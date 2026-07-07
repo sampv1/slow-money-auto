@@ -82,6 +82,14 @@ export function ExchangeRateChart({ rows, locale }: { rows: FxRow[]; locale: Loc
   // Tight (near ceiling) = high pressure → red; comfortable headroom → emerald.
   const latestTight = latest ? latest.pct < 0.5 : false;
 
+  // Tooltip anchoring: the label is wide, so flip its text-anchor near the edges
+  // (end-anchored on the right, start-anchored on the left) rather than centering
+  // — otherwise the last dates clip past the SVG's right edge.
+  const hx = hover !== null ? xAt(hover) : 0;
+  const tipAnchor: "start" | "middle" | "end" =
+    hx > W - mR - 140 ? "end" : hx < mL + 140 ? "start" : "middle";
+  const tipX = tipAnchor === "end" ? W - mR : tipAnchor === "start" ? mL : hx;
+
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
@@ -160,9 +168,9 @@ export function ExchangeRateChart({ rows, locale }: { rows: FxRow[]; locale: Loc
             <line x1={xAt(hover)} y1={mT} x2={xAt(hover)} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="3 3" />
             <circle cx={xAt(hover)} cy={yAt(hv.pct)} r={3} fill="#4f46e5" />
             <text
-              x={Math.min(Math.max(xAt(hover), mL + 70), W - mR - 70)}
+              x={tipX}
               y={mT + 12}
-              textAnchor="middle"
+              textAnchor={tipAnchor}
               fontSize={11}
               fill="#0f172a"
               fontFamily="monospace"
