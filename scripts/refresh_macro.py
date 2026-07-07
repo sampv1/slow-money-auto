@@ -7,7 +7,7 @@ Two metrics, stored raw (nothing derived):
                     today-only); history = Vietstock NormID 499.
   fx_vcb_sell     — Vietcombank USD selling rate, by-date from the VCB API.
 
-The /vi-mo dashboard derives percent_to_ceiling = (ceiling - vcb_sell) / ceiling,
+The /macro dashboard derives percent_to_ceiling = (ceiling - vcb_sell) / ceiling,
 ceiling = central * (1 + band), band from scoring_config['macro'] (effective-dated,
 so a band change never rewrites history — see supabase/035_seed_macro_band.sql).
 

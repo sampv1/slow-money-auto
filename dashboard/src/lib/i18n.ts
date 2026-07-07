@@ -39,7 +39,7 @@ export const translations = {
     frUp: "Up",
     frDown: "Down",
 
-    // Macro page (/vi-mo) — USD/VND now; interest rates + CPI later
+    // Macro page (/macro) — USD/VND now; interest rates + CPI later
     macroTitle: "Macro",
     macroSubtitle: "Vietnam macro dashboard — USD/VND, interest rates, inflation",
     macroFxTitle: "USD/VND — headroom to the SBV ceiling",
@@ -464,7 +464,7 @@ export const translations = {
     frUp: "Tăng",
     frDown: "Giảm",
 
-    // Macro page (/vi-mo) — USD/VND now; interest rates + CPI later
+    // Macro page (/macro) — USD/VND now; interest rates + CPI later
     macroTitle: "Vĩ mô",
     macroSubtitle: "Bảng vĩ mô Việt Nam — tỷ giá USD/VND, lãi suất, lạm phát",
     macroFxTitle: "USD/VND — khoảng cách tới trần NHNN",

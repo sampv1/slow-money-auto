@@ -1,7 +1,7 @@
 -- ============================================================
 -- Migration: seed the USD/VND trading band into scoring_config (key = 'macro').
 --
--- The exchange-rate chart on /vi-mo plots percent_to_ceiling, computed at read
+-- The exchange-rate chart on /macro plots percent_to_ceiling, computed at read
 -- time from the raw macro_series inputs:
 --     ceiling = fx_central_rate * (1 + band)
 --     percent_to_ceiling = (ceiling - fx_vcb_sell) / ceiling
