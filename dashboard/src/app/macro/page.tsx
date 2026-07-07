@@ -81,6 +81,20 @@ export default async function MacroPage() {
       fetchMetric("fx_vcb_sell"),
       loadBands(),
     ]);
+    // central_rate_chg_5d = central(t) − central(t−5 sessions). Computed over the
+    // business-day central series (SBV publishes on weekdays; Vietstock carries a
+    // value onto Sat/Sun, so those are excluded here to keep "5 sessions" = 5
+    // trading days). Attached by date; null for the first 5 sessions.
+    const isWeekday = (d: string) => {
+      const wd = new Date(d + "T00:00:00Z").getUTCDay();
+      return wd !== 0 && wd !== 6;
+    };
+    const sessions = [...central.keys()].filter(isWeekday).sort();
+    const chg5dByDate = new Map<string, number>();
+    for (let i = 5; i < sessions.length; i++) {
+      chg5dByDate.set(sessions[i], central.get(sessions[i])! - central.get(sessions[i - 5])!);
+    }
+
     // Inner-join on dates present in both series (weekday overlap).
     rows = [...central.keys()]
       .filter((d) => vcb.has(d))
@@ -91,6 +105,7 @@ export default async function MacroPage() {
         const band = bandFor(date, bands);
         const ceiling = c * (1 + band);
         const pct = ((ceiling - s) / ceiling) * 100;
+        const chg = chg5dByDate.get(date);
         return {
           date,
           central: c,
@@ -98,6 +113,7 @@ export default async function MacroPage() {
           ceiling: Math.round(ceiling * 100) / 100,
           band,
           pct: Math.round(pct * 1000) / 1000,
+          chg5d: chg === undefined ? null : Math.round(chg * 100) / 100,
         };
       });
   } catch (e) {

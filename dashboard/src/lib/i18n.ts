@@ -58,6 +58,9 @@ export const translations = {
     macroInterestTitle: "Interest rates",
     macroCpiTitle: "CPI (inflation)",
     macroComingSoon: "Coming soon",
+    macroChg5d: "Central Δ 5s",
+    macroLegendPct: "% to ceiling (left axis)",
+    macroLegendChg: "Central Δ 5 sessions · VND (right axis)",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
@@ -483,6 +486,9 @@ export const translations = {
     macroInterestTitle: "Lãi suất",
     macroCpiTitle: "CPI (lạm phát)",
     macroComingSoon: "Sắp có",
+    macroChg5d: "Δ TT 5 phiên",
+    macroLegendPct: "% tới trần (trục trái)",
+    macroLegendChg: "Δ tỷ giá TT 5 phiên · VND (trục phải)",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",
