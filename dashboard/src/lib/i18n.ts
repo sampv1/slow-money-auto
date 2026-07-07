@@ -16,6 +16,7 @@ export const translations = {
     navSignalPro: "Signal Pro",
     navRealtime: "Real-time",
     navImpliedRisk: "Implied Risk",
+    navMacro: "Macro",
 
     // Implied Risk page (VN30 futures implied carry / basis)
     irTitle: "Implied Risk",
@@ -37,6 +38,26 @@ export const translations = {
     frUnit: "log return",
     frUp: "Up",
     frDown: "Down",
+
+    // Macro page (/vi-mo) — USD/VND now; interest rates + CPI later
+    macroTitle: "Macro",
+    macroSubtitle: "Vietnam macro dashboard — USD/VND, interest rates, inflation",
+    macroFxTitle: "USD/VND — headroom to the SBV ceiling",
+    macroFxSubtitle:
+      "(ceiling − VCB sell) / ceiling, where ceiling = SBV central rate × (1 + band). Lower = VND nearer the ceiling.",
+    macroFxLatest: "Latest",
+    macroFxHeadroom: "to ceiling",
+    macroFxTight: "At the ceiling",
+    macroFxComfortable: "Headroom",
+    macroCentral: "Central",
+    macroCeiling: "Ceiling",
+    macroVcbSell: "VCB sell",
+    macroBand: "Band",
+    macroNoData:
+      "No exchange-rate data yet. Run the Macro Daily workflow with backfill=true (or refresh_macro.py --backfill).",
+    macroInterestTitle: "Interest rates",
+    macroCpiTitle: "CPI (inflation)",
+    macroComingSoon: "Coming soon",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
@@ -420,6 +441,7 @@ export const translations = {
     navSignalPro: "Tín hiệu Pro",
     navRealtime: "Thời gian thực",
     navImpliedRisk: "Rủi ro hàm ý",
+    navMacro: "Vĩ mô",
 
     // Implied Risk page (VN30 futures implied carry / basis)
     irTitle: "Rủi ro hàm ý",
@@ -441,6 +463,26 @@ export const translations = {
     frUnit: "log return",
     frUp: "Tăng",
     frDown: "Giảm",
+
+    // Macro page (/vi-mo) — USD/VND now; interest rates + CPI later
+    macroTitle: "Vĩ mô",
+    macroSubtitle: "Bảng vĩ mô Việt Nam — tỷ giá USD/VND, lãi suất, lạm phát",
+    macroFxTitle: "USD/VND — khoảng cách tới trần NHNN",
+    macroFxSubtitle:
+      "(trần − giá bán VCB) / trần, với trần = tỷ giá trung tâm × (1 + biên độ). Càng thấp = VND càng sát trần.",
+    macroFxLatest: "Mới nhất",
+    macroFxHeadroom: "tới trần",
+    macroFxTight: "Sát trần",
+    macroFxComfortable: "Còn dư địa",
+    macroCentral: "Trung tâm",
+    macroCeiling: "Trần",
+    macroVcbSell: "VCB bán",
+    macroBand: "Biên độ",
+    macroNoData:
+      "Chưa có dữ liệu tỷ giá. Chạy workflow Macro Daily với backfill=true (hoặc refresh_macro.py --backfill).",
+    macroInterestTitle: "Lãi suất",
+    macroCpiTitle: "CPI (lạm phát)",
+    macroComingSoon: "Sắp có",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",

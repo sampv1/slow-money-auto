@@ -1,0 +1,59 @@
+name: Macro Daily (USD/VND)
+
+on:
+  schedule:
+    # 10:40 UTC (17:40 ICT) — after the SBV central rate is published and VCB's
+    # board has settled for the day. Weekdays only.
+    - cron: "40 10 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "One-time history backfill (central via Vietstock 499 + VCB sell per business day since 2022-10-17)"
+        type: boolean
+        default: false
+
+# Serialize runs so a manual trigger never clobbers a scheduled one.
+concurrency:
+  group: macro-daily
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    environment: supabase
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Verify secrets are set
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then echo "::error::SUPABASE_URL secret not set"; exit 1; fi
+          if [ -z "$SUPABASE_ANON_KEY" ]; then echo "::error::SUPABASE_ANON_KEY secret not set"; exit 1; fi
+          echo "Secrets OK."
+
+      # fx_central_rate (SBV portal, today) + fx_vcb_sell (VCB API, recent days).
+      # Manual runs can pass backfill=true to load full history in one shot.
+      - name: Refresh macro (USD/VND)
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ "${{ inputs.backfill }}" = "true" ]; then
+            python refresh_macro.py --backfill
+          else
+            python refresh_macro.py
+          fi
