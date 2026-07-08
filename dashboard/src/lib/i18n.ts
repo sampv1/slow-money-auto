@@ -61,6 +61,14 @@ export const translations = {
     macroChg5d: "Central Δ 5s",
     macroLegendPct: "% to ceiling (left axis)",
     macroLegendChg: "Central Δ 5 sessions · VND (right axis)",
+    macroPanelPct: "% to ceiling (pressure)",
+    macroPanelChg: "Central Δ 5 sessions (VND)",
+    macroPanelRegime: "Regime",
+    macroNearCeiling: "near ceiling",
+    macroRegimeStable: "Stable",
+    macroRegimeLeading: "Leading (SBV early)",
+    macroRegimeCompressed: "Compressed",
+    macroRegimeRelease: "Release",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
@@ -489,6 +497,14 @@ export const translations = {
     macroChg5d: "Δ TT 5 phiên",
     macroLegendPct: "% tới trần (trục trái)",
     macroLegendChg: "Δ tỷ giá TT 5 phiên · VND (trục phải)",
+    macroPanelPct: "% tới trần (áp lực)",
+    macroPanelChg: "Δ tỷ giá TT 5 phiên (đồng)",
+    macroPanelRegime: "Trạng thái",
+    macroNearCeiling: "sát trần",
+    macroRegimeStable: "Ổn định",
+    macroRegimeLeading: "Đi trước",
+    macroRegimeCompressed: "Nén áp lực",
+    macroRegimeRelease: "Nhả áp lực",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",

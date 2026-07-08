@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { getLocale, t } from "@/lib/i18n";
-import { ExchangeRateChart, type FxRow } from "./exchange-rate-chart";
+import { ExchangeRateChart, type FxRow, type Regime } from "./exchange-rate-chart";
 
 export const revalidate = 0;
 
@@ -41,15 +41,44 @@ function bandFor(date: string, bands: BandEntry[]): number {
   return v;
 }
 
-async function loadBands(): Promise<BandEntry[]> {
+type RegimeCfg = { pct_near_ceiling: number; chg5d_fast: number; hysteresis_min_days: number };
+const DEFAULT_REGIME: RegimeCfg = { pct_near_ceiling: 0.15, chg5d_fast: 25, hysteresis_min_days: 3 };
+
+async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCfg }> {
   const { data } = await supabase
     .from("scoring_config")
     .select("config")
     .eq("key", "macro")
     .maybeSingle();
-  const raw = (data?.config as { usdvnd_band?: BandEntry[] } | null)?.usdvnd_band;
-  const bands = Array.isArray(raw) && raw.length ? raw : DEFAULT_BANDS;
-  return [...bands].sort((a, b) => a.from.localeCompare(b.from));
+  const cfg = (data?.config ?? null) as { usdvnd_band?: BandEntry[]; regime?: Partial<RegimeCfg> } | null;
+  const rawBands = cfg?.usdvnd_band;
+  const bands = Array.isArray(rawBands) && rawBands.length ? rawBands : DEFAULT_BANDS;
+  return {
+    bands: [...bands].sort((a, b) => a.from.localeCompare(b.from)),
+    regime: { ...DEFAULT_REGIME, ...(cfg?.regime ?? {}) },
+  };
+}
+
+// Absorb regime runs shorter than `k` days into the preceding run, so the ribbon
+// doesn't flicker at the Nén↔Nhả boundary. The first run is never absorbed.
+function applyHysteresis(seq: Regime[], k: number): Regime[] {
+  if (k <= 1) return seq;
+  const out = [...seq];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    let i = 0;
+    while (i < out.length) {
+      let j = i;
+      while (j < out.length && out[j] === out[i]) j++;
+      if (j - i < k && i > 0) {
+        for (let m = i; m < j; m++) out[m] = out[i - 1];
+        changed = true;
+      }
+      i = j;
+    }
+  }
+  return out;
 }
 
 function StubCard({ title, note }: { title: string; note: string }) {
@@ -75,12 +104,17 @@ export default async function MacroPage() {
 
   let rows: FxRow[] = [];
   let error: string | null = null;
+  let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
+  let chg5dFast = DEFAULT_REGIME.chg5d_fast;
   try {
-    const [central, vcb, bands] = await Promise.all([
+    const [central, vcb, cfg] = await Promise.all([
       fetchMetric("fx_central_rate"),
       fetchMetric("fx_vcb_sell"),
-      loadBands(),
+      loadMacroConfig(),
     ]);
+    const { bands, regime: regimeCfg } = cfg;
+    pctNearCeiling = regimeCfg.pct_near_ceiling;
+    chg5dFast = regimeCfg.chg5d_fast;
     // central_rate_chg_5d = central(t) − central(t−5 sessions). Computed over the
     // business-day central series (SBV publishes on weekdays; Vietstock carries a
     // value onto Sat/Sun, so those are excluded here to keep "5 sessions" = 5
@@ -96,7 +130,7 @@ export default async function MacroPage() {
     }
 
     // Inner-join on dates present in both series (weekday overlap).
-    rows = [...central.keys()]
+    const base = [...central.keys()]
       .filter((d) => vcb.has(d))
       .sort()
       .map((date) => {
@@ -116,6 +150,15 @@ export default async function MacroPage() {
           chg5d: chg === undefined ? null : Math.round(chg * 100) / 100,
         };
       });
+
+    // 2×2 regime per day (pressure × velocity), then hysteresis-smooth the run.
+    const rawRegime: Regime[] = base.map((r) => {
+      const pressure = r.pct < regimeCfg.pct_near_ceiling;
+      const fast = r.chg5d !== null && r.chg5d > regimeCfg.chg5d_fast;
+      return pressure ? (fast ? "release" : "compressed") : fast ? "leading" : "stable";
+    });
+    const smoothed = applyHysteresis(rawRegime, regimeCfg.hysteresis_min_days);
+    rows = base.map((r, i) => ({ ...r, regime: smoothed[i] }));
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -136,7 +179,7 @@ export default async function MacroPage() {
             {t(locale, "macroNoData")}
           </div>
         ) : (
-          <ExchangeRateChart rows={rows} locale={locale} />
+          <ExchangeRateChart rows={rows} locale={locale} pctNearCeiling={pctNearCeiling} chg5dFast={chg5dFast} />
         )}
       </section>
 
