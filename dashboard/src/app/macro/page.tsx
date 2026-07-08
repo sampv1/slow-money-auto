@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { getLocale, t } from "@/lib/i18n";
 import { ExchangeRateChart, type FxRow, type Regime } from "./exchange-rate-chart";
+import { CpiChart, type CpiRow } from "./cpi-chart";
 
 export const revalidate = 0;
 
@@ -44,19 +45,85 @@ function bandFor(date: string, bands: BandEntry[]): number {
 type RegimeCfg = { pct_near_ceiling: number; chg5d_fast: number; hysteresis_min_days: number };
 const DEFAULT_REGIME: RegimeCfg = { pct_near_ceiling: 0.15, chg5d_fast: 25, hysteresis_min_days: 3 };
 
-async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCfg }> {
+// Annual CPI target (average full-year YoY), effective-dated like the band.
+const DEFAULT_CPI_TARGETS: BandEntry[] = [
+  { from: "2015-01-01", value: 5.0 },
+  { from: "2017-01-01", value: 4.0 },
+  { from: "2023-01-01", value: 4.5 },
+];
+
+async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCfg; cpiTargets: BandEntry[] }> {
   const { data } = await supabase
     .from("scoring_config")
     .select("config")
     .eq("key", "macro")
     .maybeSingle();
-  const cfg = (data?.config ?? null) as { usdvnd_band?: BandEntry[]; regime?: Partial<RegimeCfg> } | null;
+  const cfg = (data?.config ?? null) as
+    | { usdvnd_band?: BandEntry[]; regime?: Partial<RegimeCfg>; cpi_target?: BandEntry[] }
+    | null;
   const rawBands = cfg?.usdvnd_band;
   const bands = Array.isArray(rawBands) && rawBands.length ? rawBands : DEFAULT_BANDS;
+  const rawTargets = cfg?.cpi_target;
+  const cpiTargets = Array.isArray(rawTargets) && rawTargets.length ? rawTargets : DEFAULT_CPI_TARGETS;
   return {
     bands: [...bands].sort((a, b) => a.from.localeCompare(b.from)),
     regime: { ...DEFAULT_REGIME, ...(cfg?.regime ?? {}) },
+    cpiTargets: [...cpiTargets].sort((a, b) => a.from.localeCompare(b.from)),
   };
+}
+
+// CPI: monthly MoM index (prev month=100) → YoY (chained), running YTD-avg YoY,
+// and inflation-budget headroom vs the annual target. Everything derived here so
+// only the raw index is stored. Returns rows ascending by month.
+function buildCpiRows(cpiMom: Map<string, number>, targets: BandEntry[]): CpiRow[] {
+  const months = [...cpiMom.keys()].sort();
+  // Fixed-base level by chaining MoM indices; YoY = level[t]/level[t−12mo] − 1.
+  let lvl = 100;
+  const level = new Map<string, number>();
+  for (const d of months) {
+    lvl *= cpiMom.get(d)! / 100;
+    level.set(d, lvl);
+  }
+  const prevYearMonth = (d: string) => `${(Number(d.slice(0, 4)) - 1).toString().padStart(4, "0")}${d.slice(4)}`;
+  const yoyOf = (d: string): number | null => {
+    const p = prevYearMonth(d);
+    return level.has(p) ? (level.get(d)! / level.get(p)! - 1) * 100 : null;
+  };
+
+  const out: CpiRow[] = [];
+  let curYear = "";
+  let sumYoY = 0; // Σ YoY of elapsed months this calendar year (incl. current)
+  let cntYoY = 0; // count of those months (for the running average)
+  for (const d of months) {
+    const year = d.slice(0, 4);
+    const mm = Number(d.slice(5, 7));
+    if (year !== curYear) {
+      curYear = year;
+      sumYoY = 0;
+      cntYoY = 0;
+    }
+    const yoy = yoyOf(d);
+    if (yoy !== null) {
+      sumYoY += yoy;
+      cntYoY += 1;
+    }
+    const target = bandFor(d, targets);
+    // Running YTD average of this year's YoY (the "CPI bình quân").
+    const ytdAvg = cntYoY > 0 ? sumYoY / cntYoY : null;
+    // headroom = (target×12 − Σ YoY elapsed) / months_remaining − YoY(t).
+    // Undefined in December (no remaining months).
+    const monthsRemaining = 12 - mm;
+    const headroom = yoy !== null && monthsRemaining > 0 ? (target * 12 - sumYoY) / monthsRemaining - yoy : null;
+    out.push({
+      date: d,
+      mom: Math.round((cpiMom.get(d)! - 100) * 100) / 100,
+      yoy: yoy === null ? null : Math.round(yoy * 100) / 100,
+      ytdAvg: ytdAvg === null ? null : Math.round(ytdAvg * 100) / 100,
+      target,
+      headroom: headroom === null ? null : Math.round(headroom * 100) / 100,
+    });
+  }
+  return out;
 }
 
 // Absorb regime runs shorter than `k` days into the preceding run, so the ribbon
@@ -103,17 +170,20 @@ export default async function MacroPage() {
   );
 
   let rows: FxRow[] = [];
+  let cpiRows: CpiRow[] = [];
   let error: string | null = null;
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
   try {
-    const [central, vcb, vn, cfg] = await Promise.all([
+    const [central, vcb, vn, cpiMom, cfg] = await Promise.all([
       fetchMetric("fx_central_rate"),
       fetchMetric("fx_vcb_sell"),
       fetchMetric("vnindex"),
+      fetchMetric("cpi_mom_index"),
       loadMacroConfig(),
     ]);
-    const { bands, regime: regimeCfg } = cfg;
+    const { bands, regime: regimeCfg, cpiTargets } = cfg;
+    cpiRows = buildCpiRows(cpiMom, cpiTargets);
     pctNearCeiling = regimeCfg.pct_near_ceiling;
     chg5dFast = regimeCfg.chg5d_fast;
     // central_rate_chg_5d = central(t) − central(t−5 sessions). Computed over the
@@ -185,16 +255,24 @@ export default async function MacroPage() {
         )}
       </section>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <section>
-          <h2 className="text-base font-semibold mb-2">{t(locale, "macroInterestTitle")}</h2>
-          <StubCard title={t(locale, "macroInterestTitle")} note={t(locale, "macroComingSoon")} />
-        </section>
-        <section>
-          <h2 className="text-base font-semibold mb-2">{t(locale, "macroCpiTitle")}</h2>
-          <StubCard title={t(locale, "macroCpiTitle")} note={t(locale, "macroComingSoon")} />
-        </section>
-      </div>
+      <section className="mb-6">
+        <div className="mb-2">
+          <h2 className="text-base font-semibold">{t(locale, "macroCpiTitle")}</h2>
+          <p className="text-xs text-gray-500">{t(locale, "macroCpiSubtitle")}</p>
+        </div>
+        {error ? (
+          <p className="text-red-600 text-sm">Error loading CPI data: {error}</p>
+        ) : cpiRows.length < 2 ? (
+          <StubCard title={t(locale, "macroCpiTitle")} note={t(locale, "cpiNoData")} />
+        ) : (
+          <CpiChart rows={cpiRows} locale={locale} />
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-base font-semibold mb-2">{t(locale, "macroInterestTitle")}</h2>
+        <StubCard title={t(locale, "macroInterestTitle")} note={t(locale, "macroComingSoon")} />
+      </section>
     </div>
   );
 }

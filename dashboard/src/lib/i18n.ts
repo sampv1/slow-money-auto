@@ -70,6 +70,18 @@ export const translations = {
     macroRegimeCompressed: "Compressed",
     macroRegimeRelease: "Release",
     macroPanelVnindex: "VN-Index (context)",
+    // CPI (inflation) chart
+    macroCpiSubtitle: "Headline CPI vs the annual target — how much easing room the SBV has left",
+    cpiPanelYoy: "CPI YoY (inflation)",
+    cpiPanelHeadroom: "Inflation-budget headroom (% pts)",
+    cpiYoy: "YoY",
+    cpiYtdAvg: "YTD avg",
+    cpiTarget: "Target",
+    cpiHeadroom: "Headroom",
+    cpiMom: "MoM",
+    cpiRoomYes: "Room to ease",
+    cpiRoomNo: "No room",
+    cpiNoData: "No CPI data yet. Run the Macro Daily workflow with backfill=true (or refresh_macro.py --backfill).",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
@@ -507,6 +519,18 @@ export const translations = {
     macroRegimeCompressed: "Nén áp lực",
     macroRegimeRelease: "Nhả áp lực",
     macroPanelVnindex: "VN-Index (bối cảnh)",
+    // Biểu đồ CPI (lạm phát)
+    macroCpiSubtitle: "CPI so với mục tiêu năm — NHNN còn bao nhiêu dư địa nới lỏng",
+    cpiPanelYoy: "CPI so cùng kỳ (lạm phát)",
+    cpiPanelHeadroom: "Dư địa ngân sách lạm phát (điểm %)",
+    cpiYoy: "So cùng kỳ",
+    cpiYtdAvg: "BQ lũy kế",
+    cpiTarget: "Mục tiêu",
+    cpiHeadroom: "Dư địa",
+    cpiMom: "So tháng trước",
+    cpiRoomYes: "Còn dư địa",
+    cpiRoomNo: "Hết dư địa",
+    cpiNoData: "Chưa có dữ liệu CPI. Chạy workflow Macro Daily với backfill=true (hoặc refresh_macro.py --backfill).",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",

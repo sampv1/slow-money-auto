@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-refresh_macro.py — Fetch USD/VND macro inputs into `macro_series`.
+refresh_macro.py — Fetch macro inputs into `macro_series`.
 
-Two metrics, stored raw (nothing derived):
+Metrics, stored raw (nothing derived):
   fx_central_rate — SBV "tỷ giá trung tâm". Daily = SBV portal (authoritative,
                     today-only); history = Vietstock NormID 499.
   fx_vcb_sell     — Vietcombank USD selling rate, by-date from the VCB API.
+  vnindex         — VN-Index close (context panel), via vnstock.
+  cpi_mom_index   — headline CPI MoM index (prev month=100), Vietstock NormID 395
+                    (monthly). See macro/cpi.py.
 
 The /macro dashboard derives percent_to_ceiling = (ceiling - vcb_sell) / ceiling,
 ceiling = central * (1 + band), band from scoring_config['macro'] (effective-dated,
-so a band change never rewrites history — see supabase/035_seed_macro_band.sql).
+so a band change never rewrites history — see supabase/035_seed_macro_band.sql), and
+CPI YoY / inflation-budget headroom vs cpi_target (037).
 
 Usage:
   python3 refresh_macro.py                 # daily: SBV central (today) + VCB sell (recent)
@@ -42,6 +46,7 @@ from macro.exchange_rate import (
     series_rows,
     upsert_macro,
 )
+from macro.cpi import CPI_HISTORY_START, METRIC_CPI_MOM, fetch_cpi_mom_history
 
 
 def collect_vnindex(start: dt.date, end: dt.date) -> list[dict]:
@@ -64,6 +69,22 @@ def collect_vnindex(start: dt.date, end: dt.date) -> list[dict]:
     print(f"  VN-Index: {len(pts)} closes"
           + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:,.1f})" if pts else ""))
     return series_rows(METRIC_VNINDEX, pts, "index", "vnstock")
+
+
+def collect_cpi(start: dt.date, end: dt.date) -> list[dict]:
+    """Headline CPI MoM index (Vietstock 395) over [start, end], as macro_series rows.
+
+    CPI is monthly, so a failure must never block the FX metrics — any error
+    returns [] with a note.
+    """
+    try:
+        hist = fetch_cpi_mom_history(start, end)
+    except Exception as e:  # noqa: BLE001
+        print(f"  CPI fetch failed: {str(e)[:100]}")
+        return []
+    print(f"  CPI: {len(hist)} monthly points"
+          + (f" ({hist[0][0]} .. {hist[-1][0]}, last MoM {hist[-1][1] - 100:+.2f}%)" if hist else ""))
+    return series_rows(METRIC_CPI_MOM, hist, "index", "vietstock")
 
 
 def _business_days(start: dt.date, end: dt.date):
@@ -136,6 +157,7 @@ def main():
     central_rows: list[dict] = []
     vcb_rows: list[dict] = []
     vnindex_rows: list[dict] = []
+    cpi_rows: list[dict] = []
 
     if args.backfill:
         print(f"=== Backfill central rate (Vietstock {CENTRAL_NORMID}): {HISTORY_START} -> {end} ===")
@@ -152,6 +174,9 @@ def main():
 
         print(f"=== Backfill VN-Index (vnstock): {HISTORY_START} -> {end} ===")
         vnindex_rows = collect_vnindex(HISTORY_START, end)
+
+        print(f"=== Backfill CPI (Vietstock {395}): {CPI_HISTORY_START} -> {end} ===")
+        cpi_rows = collect_cpi(CPI_HISTORY_START, end)
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
@@ -160,11 +185,15 @@ def main():
         vcb_rows = series_rows(METRIC_VCB_SELL, vcb, "USD/VND", "vietcombank")
         print("VN-Index (recent):")
         vnindex_rows = collect_vnindex(end - dt.timedelta(days=10), end)
+        # CPI is monthly — re-upsert the latest few months (idempotent; picks up a
+        # new release whenever GSO/Vietstock publishes it).
+        print("CPI (recent months):")
+        cpi_rows = collect_cpi(end - dt.timedelta(days=130), end)
 
-    rows = central_rows + vcb_rows + vnindex_rows
+    rows = central_rows + vcb_rows + vnindex_rows + cpi_rows
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
-              f"+ {len(vnindex_rows)} vnindex = {len(rows)} rows into macro_series.")
+              f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi = {len(rows)} rows into macro_series.")
         return
     if not rows:
         print("Nothing to write.")
@@ -173,7 +202,8 @@ def main():
     client = get_supabase_client()
     n = upsert_macro(client, rows)
     print(f"Upserted {n} rows into macro_series "
-          f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex).")
+          f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex, "
+          f"{len(cpi_rows)} cpi).")
 
 
 if __name__ == "__main__":
