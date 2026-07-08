@@ -107,9 +107,10 @@ export default async function MacroPage() {
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
   try {
-    const [central, vcb, cfg] = await Promise.all([
+    const [central, vcb, vn, cfg] = await Promise.all([
       fetchMetric("fx_central_rate"),
       fetchMetric("fx_vcb_sell"),
+      fetchMetric("vnindex"),
       loadMacroConfig(),
     ]);
     const { bands, regime: regimeCfg } = cfg;
@@ -148,6 +149,7 @@ export default async function MacroPage() {
           band,
           pct: Math.round(pct * 1000) / 1000,
           chg5d: chg === undefined ? null : Math.round(chg * 100) / 100,
+          vnindex: vn.get(date) ?? null,
         };
       });
 

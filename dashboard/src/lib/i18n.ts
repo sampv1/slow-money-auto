@@ -69,6 +69,7 @@ export const translations = {
     macroRegimeLeading: "Leading (SBV early)",
     macroRegimeCompressed: "Compressed",
     macroRegimeRelease: "Release",
+    macroPanelVnindex: "VN-Index (context)",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
@@ -505,6 +506,7 @@ export const translations = {
     macroRegimeLeading: "Đi trước",
     macroRegimeCompressed: "Nén áp lực",
     macroRegimeRelease: "Nhả áp lực",
+    macroPanelVnindex: "VN-Index (bối cảnh)",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",

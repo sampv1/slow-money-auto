@@ -35,12 +35,35 @@ from macro.exchange_rate import (
     HISTORY_START,
     METRIC_CENTRAL,
     METRIC_VCB_SELL,
+    METRIC_VNINDEX,
     fetch_central_rate_history,
     fetch_central_rate_sbv,
     fetch_vcb_sell,
     series_rows,
     upsert_macro,
 )
+
+
+def collect_vnindex(start: dt.date, end: dt.date) -> list[dict]:
+    """VN-Index daily closes via vnstock (ta.benchmark), as macro_series rows.
+
+    VN-Index is a context panel — a fetch failure must never block the FX metrics,
+    so any error returns [] with a note. The ta.benchmark import is lazy (it pulls
+    pandas/vnstock) to keep the FX-only path free of those deps.
+    """
+    try:
+        from ta.benchmark import fetch_vnindex_closes
+        series = fetch_vnindex_closes(start, end)
+    except Exception as e:  # noqa: BLE001
+        print(f"  VN-Index fetch failed: {str(e)[:100]}")
+        return []
+    if series is None or series.empty:
+        print("  VN-Index: no data returned.")
+        return []
+    pts = sorted((d, float(v)) for d, v in series.items() if start <= d <= end)
+    print(f"  VN-Index: {len(pts)} closes"
+          + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:,.1f})" if pts else ""))
+    return series_rows(METRIC_VNINDEX, pts, "index", "vnstock")
 
 
 def _business_days(start: dt.date, end: dt.date):
@@ -112,6 +135,7 @@ def main():
     end = today_vn()
     central_rows: list[dict] = []
     vcb_rows: list[dict] = []
+    vnindex_rows: list[dict] = []
 
     if args.backfill:
         print(f"=== Backfill central rate (Vietstock {CENTRAL_NORMID}): {HISTORY_START} -> {end} ===")
@@ -125,17 +149,22 @@ def main():
         print(f"  {len(vcb)} VCB sell points"
               + (f" (last {vcb[-1][0]} = {vcb[-1][1]:,.0f})" if vcb else ""))
         vcb_rows = series_rows(METRIC_VCB_SELL, vcb, "USD/VND", "vietcombank")
+
+        print(f"=== Backfill VN-Index (vnstock): {HISTORY_START} -> {end} ===")
+        vnindex_rows = collect_vnindex(HISTORY_START, end)
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
         print(f"VCB sell: {len(vcb)} points"
               + (f" (last {vcb[-1][0]} = {vcb[-1][1]:,.0f})" if vcb else ""))
         vcb_rows = series_rows(METRIC_VCB_SELL, vcb, "USD/VND", "vietcombank")
+        print("VN-Index (recent):")
+        vnindex_rows = collect_vnindex(end - dt.timedelta(days=10), end)
 
-    rows = central_rows + vcb_rows
+    rows = central_rows + vcb_rows + vnindex_rows
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
-              f"= {len(rows)} rows into macro_series.")
+              f"+ {len(vnindex_rows)} vnindex = {len(rows)} rows into macro_series.")
         return
     if not rows:
         print("Nothing to write.")
@@ -143,7 +172,8 @@ def main():
 
     client = get_supabase_client()
     n = upsert_macro(client, rows)
-    print(f"Upserted {n} rows into macro_series ({len(central_rows)} central, {len(vcb_rows)} vcb).")
+    print(f"Upserted {n} rows into macro_series "
+          f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex).")
 
 
 if __name__ == "__main__":

@@ -6,9 +6,9 @@ import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 // 2×2 SBV regime: pressure (pct_to_ceiling) × policy velocity (central Δ5).
 export type Regime = "stable" | "leading" | "compressed" | "release";
 
-// One daily point. pct = percent_to_ceiling (%); chg5d = central(t) − central(t−5
-// sessions) (VND, null for the first 5 sessions); regime is precomputed +
-// hysteresis-smoothed server-side.
+// One daily point. vnindex = VN-Index close (context, null if missing);
+// pct = percent_to_ceiling (%); chg5d = central(t) − central(t−5 sessions) (VND,
+// null for the first 5 sessions); regime is precomputed + hysteresis-smoothed.
 export type FxRow = {
   date: string;
   central: number;
@@ -17,12 +17,14 @@ export type FxRow = {
   band: number;
   pct: number;
   chg5d: number | null;
+  vnindex: number | null;
   regime: Regime;
 };
 
 type Range = "6m" | "1y" | "3y" | "all";
 const RANGE_DAYS: Record<Range, number> = { "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
 
+const VN_COLOR = "#2563eb"; // blue  — VN-Index (context)
 const PCT_COLOR = "#4f46e5"; // indigo — pct line
 const CHG_FAST = "#d97706"; // amber  — Δ5 bar above threshold
 const CHG_SLOW = "#cbd5e1"; // slate  — Δ5 bar normal
@@ -64,24 +66,25 @@ export function ExchangeRateChart({
 
   const latest = rows.length ? rows[rows.length - 1] : null;
   const n = view.length;
+  const hasVn = useMemo(() => view.some((r) => r.vnindex !== null), [view]);
 
-  // --- layout: two stacked plot panels + a regime ribbon, shared x-axis ---
-  const W = 900, mL = 54, mR = 16;
-  const iw = W - mL - mR;
-  const pctTop = 22, pctH = 130;
-  const chgTop = 188, chgH = 82;
-  const ribTop = 300, ribH = 16;
-  const xLabelY = ribTop + ribH + 15;
-  const H = xLabelY + 6;
+  // VN-Index panel domain (context, min→max).
+  const vnDom = useMemo(() => {
+    const vals = view.map((r) => r.vnindex).filter((v): v is number => v !== null);
+    if (!vals.length) return { lo: 0, hi: 1 };
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = (hi - lo) * 0.08 || 1;
+    return { lo: lo - pad, hi: hi + pad };
+  }, [view]);
 
-  // pct panel domain: 0 → clamp at p95 so the near-ceiling zone stays legible
-  // (pct saturates at 0 most days, with rare 3%+ spikes).
+  // pct panel: 0 → clamp at p95 so the near-ceiling zone stays legible (pct
+  // saturates at 0 most days, with rare 3%+ spikes).
   const pctHi = useMemo(() => {
     const vals = view.map((r) => r.pct).sort((a, b) => a - b);
     return Math.max(0.5, quantile(vals, 0.95));
   }, [view]);
 
-  // Δ5 panel domain: signed, always includes 0.
+  // Δ5 panel: signed, always includes 0.
   const chgDom = useMemo(() => {
     const vals = view.map((r) => r.chg5d).filter((v): v is number => v !== null);
     if (vals.length === 0) return { lo: -1, hi: 1 };
@@ -94,9 +97,34 @@ export function ExchangeRateChart({
     return <p className="text-sm text-gray-500">{t(locale, "macroNoData")}</p>;
   }
 
+  // --- layout: VN-Index (optional) + pct + Δ5 panels + regime ribbon, shared x ---
+  const W = 900, mL = 54, mR = 16;
+  const iw = W - mL - mR;
+  const vnTop = 20, vnH = 84;
+  const vnBlock = hasVn ? vnH + 32 : 0;
+  const pctTop = 22 + vnBlock, pctH = hasVn ? 112 : 130;
+  const chgTop = pctTop + pctH + 24, chgH = hasVn ? 76 : 82;
+  const ribTop = chgTop + chgH + 22, ribH = 16;
+  const xLabelY = ribTop + ribH + 15;
+  const H = xLabelY + 6;
+
   const xAt = (i: number) => mL + (n <= 1 ? 0 : (i / (n - 1)) * iw);
+  const yVn = (v: number) => vnTop + (1 - (v - vnDom.lo) / (vnDom.hi - vnDom.lo)) * vnH;
   const yPct = (v: number) => pctTop + (1 - Math.min(Math.max(v, 0), pctHi) / pctHi) * pctH;
   const yChg = (v: number) => chgTop + (1 - (v - chgDom.lo) / (chgDom.hi - chgDom.lo)) * chgH;
+
+  // VN-Index line, broken at null gaps.
+  const vnSegs: string[] = [];
+  if (hasVn) {
+    let cur: string[] = [];
+    view.forEach((r, i) => {
+      if (r.vnindex === null) {
+        if (cur.length > 1) vnSegs.push(cur.join(" "));
+        cur = [];
+      } else cur.push(`${xAt(i).toFixed(1)},${yVn(r.vnindex).toFixed(1)}`);
+    });
+    if (cur.length > 1) vnSegs.push(cur.join(" "));
+  }
 
   const pctPoints = view.map((r, i) => `${xAt(i).toFixed(1)},${yPct(r.pct).toFixed(1)}`).join(" ");
   const barW = Math.max(1, (iw / Math.max(n, 1)) * 0.7);
@@ -112,6 +140,7 @@ export function ExchangeRateChart({
     i = j;
   }
 
+  const vnTicks = [vnDom.hi, (vnDom.lo + vnDom.hi) / 2, vnDom.lo];
   const pctTicks = [0, pctHi / 2, pctHi];
   const chgTicks = [chgDom.lo, 0, chgDom.hi];
   const xTickIdx = Array.from(
@@ -119,7 +148,7 @@ export function ExchangeRateChart({
   ).filter((i) => i >= 0 && i < n);
 
   const fmtPct = (v: number) => `${v.toFixed(2)}%`;
-  const fmtVnd = (v: number) => Math.round(v).toLocaleString("en-US");
+  const fmtInt = (v: number) => Math.round(v).toLocaleString("en-US");
   const fmtSigned = (v: number) => `${v > 0 ? "+" : v < 0 ? "-" : ""}${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
   const fmtDay = (d: string) => d.slice(2);
 
@@ -133,7 +162,7 @@ export function ExchangeRateChart({
   const hv = hover !== null ? view[hover] : null;
   const hx = hover !== null ? xAt(hover) : 0;
   const tipAnchor: "start" | "middle" | "end" =
-    hx > W - mR - 150 ? "end" : hx < mL + 150 ? "start" : "middle";
+    hx > W - mR - 170 ? "end" : hx < mL + 170 ? "start" : "middle";
   const tipX = tipAnchor === "end" ? W - mR : tipAnchor === "start" ? mL : hx;
 
   const nearCeilY = yPct(pctNearCeiling);
@@ -151,16 +180,13 @@ export function ExchangeRateChart({
                 {fmtPct(latest.pct)}
               </span>
               <span className="text-xs text-gray-500">{t(locale, "macroFxHeadroom")}</span>
-              <span
-                className="text-xs font-medium px-1.5 py-0.5 rounded text-white"
-                style={{ backgroundColor: REGIME[latest.regime].color }}
-              >
+              <span className="text-xs font-medium px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: REGIME[latest.regime].color }}>
                 {t(locale, REGIME[latest.regime].label)}
               </span>
             </div>
             <div className="text-xs text-gray-400 mt-0.5 font-mono">
-              {t(locale, "macroCentral")} {fmtVnd(latest.central)} · {t(locale, "macroCeiling")} {fmtVnd(latest.ceiling)} ·{" "}
-              {t(locale, "macroVcbSell")} {fmtVnd(latest.vcbSell)} · {t(locale, "macroBand")} {(latest.band * 100).toFixed(1)}%
+              {t(locale, "macroCentral")} {fmtInt(latest.central)} · {t(locale, "macroCeiling")} {fmtInt(latest.ceiling)} ·{" "}
+              {t(locale, "macroVcbSell")} {fmtInt(latest.vcbSell)} · {t(locale, "macroBand")} {(latest.band * 100).toFixed(1)}%
               {latest.chg5d !== null && <> · {t(locale, "macroChg5d")} {fmtSigned(latest.chg5d)} VND</>}
             </div>
           </div>
@@ -192,25 +218,40 @@ export function ExchangeRateChart({
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img">
         {/* ---- panel titles ---- */}
-        <text x={mL} y={12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelPct")}</text>
+        {hasVn && <text x={mL} y={12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
+        <text x={mL} y={pctTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelPct")}</text>
         <text x={mL} y={chgTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelChg")}</text>
         <text x={mL} y={ribTop - 6} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelRegime")}</text>
 
-        {/* ---- panel A: pct_to_ceiling ---- */}
+        {/* ---- panel: VN-Index (context) ---- */}
+        {hasVn && (
+          <g>
+            {vnTicks.map((v, k) => (
+              <g key={`vt${k}`}>
+                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />
+                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+              </g>
+            ))}
+            {vnSegs.map((pts, k) => (
+              <polyline key={`vn${k}`} points={pts} fill="none" stroke={VN_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+            ))}
+          </g>
+        )}
+
+        {/* ---- panel: pct_to_ceiling ---- */}
         {pctTicks.map((v, k) => (
           <g key={`pt${k}`}>
             <line x1={mL} y1={yPct(v)} x2={W - mR} y2={yPct(v)} stroke="#f1f5f9" strokeWidth={1} />
             <text x={mL - 6} y={yPct(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtPct(v)}</text>
           </g>
         ))}
-        {/* near-ceiling threshold */}
         <line x1={mL} y1={nearCeilY} x2={W - mR} y2={nearCeilY} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" />
         <text x={W - mR} y={nearCeilY - 3} textAnchor="end" fontSize={9} fill="#ef4444" fontFamily="monospace">
           {t(locale, "macroNearCeiling")} {pctNearCeiling}%
         </text>
         <polyline points={pctPoints} fill="none" stroke={PCT_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
 
-        {/* ---- panel B: central Δ5 bars ---- */}
+        {/* ---- panel: central Δ5 bars ---- */}
         {chgTicks.map((v, k) => (
           <g key={`ct${k}`}>
             <line x1={mL} y1={yChg(v)} x2={W - mR} y2={yChg(v)} stroke="#f1f5f9" strokeWidth={1} />
@@ -229,7 +270,6 @@ export function ExchangeRateChart({
             />
           ),
         )}
-        {/* Δ5 fast threshold */}
         <line x1={mL} y1={chgThrY} x2={W - mR} y2={chgThrY} stroke={CHG_FAST} strokeWidth={1} strokeDasharray="3 3" />
         <text x={W - mR} y={chgThrY - 3} textAnchor="end" fontSize={9} fill={CHG_FAST} fontFamily="monospace">+{chg5dFast}</text>
 
@@ -238,21 +278,24 @@ export function ExchangeRateChart({
           <rect key={`rib${k}`} x={seg.x} y={ribTop} width={seg.w} height={ribH} fill={REGIME[seg.regime].color} />
         ))}
 
-        {/* ---- x-axis labels (shared) ---- */}
+        {/* ---- shared x-axis labels ---- */}
         {xTickIdx.map((i) => (
           <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">
             {fmtDay(view[i]?.date ?? "")}
           </text>
         ))}
 
-        {/* ---- hover crosshair spanning both panels + ribbon ---- */}
+        {/* ---- hover crosshair spanning all panels + ribbon ---- */}
         {hover !== null && hv && (
           <g>
-            <line x1={hx} y1={pctTop} x2={hx} y2={ribTop + ribH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <line x1={hx} y1={hasVn ? vnTop : pctTop} x2={hx} y2={ribTop + ribH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
             <circle cx={hx} cy={yPct(hv.pct)} r={3} fill={PCT_COLOR} />
             {hv.chg5d !== null && <circle cx={hx} cy={yChg(hv.chg5d)} r={3} fill={hv.chg5d > chg5dFast ? CHG_FAST : "#64748b"} />}
             <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill="#0f172a" fontFamily="monospace">
-              {hv.date} · {fmtPct(hv.pct)}
+              {hv.date}
+              {hasVn && hv.vnindex !== null && ` · VNI ${fmtInt(hv.vnindex)}`}
+              {" · "}{fmtPct(hv.pct)}
               {hv.chg5d !== null && ` · Δ ${fmtSigned(hv.chg5d)}`} · {t(locale, REGIME[hv.regime].label)}
             </text>
           </g>

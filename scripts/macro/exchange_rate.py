@@ -31,6 +31,7 @@ import requests
 # --------------------------------------------------------------------------- #
 METRIC_CENTRAL = "fx_central_rate"
 METRIC_VCB_SELL = "fx_vcb_sell"
+METRIC_VNINDEX = "vnindex"  # VN-Index close (context panel on /macro)
 
 # The ±5% band era (and this chart) starts here.
 HISTORY_START = dt.date(2022, 10, 17)
