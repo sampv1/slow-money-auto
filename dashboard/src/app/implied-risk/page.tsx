@@ -1,7 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { getLocale, t } from "@/lib/i18n";
-import { ImpliedRiskChart, type IrRow } from "./ir-chart";
-import { FuturesReturnChart } from "./futures-return-chart";
+import { ImpliedRiskStack, type IrRow } from "./ir-stack";
 
 export const revalidate = 0;
 
@@ -9,10 +8,31 @@ export const revalidate = 0;
 // through .range() past the PostgREST 1000-row cap, ascending by date.
 const PAGE_SIZE = 1000;
 
+// VN-Index context lives in macro_series (populated by refresh_macro). It's
+// optional here — if it's missing the stacked chart simply omits the top panel.
+async function fetchVnindex(): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("macro_series")
+      .select("date,value")
+      .eq("metric", "vnindex")
+      .order("date", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) break;
+    const rows = (data ?? []) as { date: string; value: number }[];
+    for (const r of rows) out.set(r.date, Number(r.value));
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return out;
+}
+
 export default async function ImpliedRiskPage() {
   const locale = await getLocale();
 
-  const all: IrRow[] = [];
+  const base: Omit<IrRow, "vnindex">[] = [];
   let offset = 0;
   let error: { message: string } | null = null;
   while (true) {
@@ -25,11 +45,14 @@ export default async function ImpliedRiskPage() {
       error = err;
       break;
     }
-    const rows = (data ?? []) as IrRow[];
-    all.push(...rows);
+    const rows = (data ?? []) as Omit<IrRow, "vnindex">[];
+    base.push(...rows);
     if (rows.length < PAGE_SIZE) break;
     offset += PAGE_SIZE;
   }
+
+  const vn = error ? new Map<string, number>() : await fetchVnindex();
+  const all: IrRow[] = base.map((r) => ({ ...r, vnindex: vn.get(r.date) ?? null }));
 
   const header = (
     <div className="mb-4">
@@ -61,10 +84,7 @@ export default async function ImpliedRiskPage() {
   return (
     <div>
       {header}
-      <ImpliedRiskChart rows={all} locale={locale} />
-      <div className="mt-6">
-        <FuturesReturnChart rows={all} locale={locale} />
-      </div>
+      <ImpliedRiskStack rows={all} locale={locale} />
     </div>
   );
 }
