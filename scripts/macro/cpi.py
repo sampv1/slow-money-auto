@@ -15,8 +15,14 @@ prior years). See dashboard/src/app/macro.
 
 Why store MoM and derive YoY? Vietstock exposes CPI *only* as the MoM index;
 YoY chained from it matches GSO's official year-end YoY (NormID 154) to ~0.02pp.
-CPI is monthly, so the "daily" refresh just re-upserts the latest published
-month (idempotent) — a new point appears when GSO/Vietstock publishes (~monthly).
+
+CURRENCY CAVEAT: Vietstock's CPI feed FROZE at 2025-08 (every CPI norm stops there
+while its other series stay current), and every free cloud-reachable source lags
+more (IMF 2025-03) or omits Vietnam. The only current source is GSO, which geo-gates
+foreign/cloud IPs behind a GlobalProtect VPN portal. So newer months come from a
+hand-maintained overlay — `data/cpi_manual.csv`, read by `load_cpi_manual` and
+upserted (source='gso-manual') on top of the Vietstock history by refresh_macro.py.
+Vietstock is still fetched (cheap; resumes automatically if it ever un-freezes).
 
 Verified reachable from a cloud IP (GitHub Actions-safe): the CPI page + the
 /Macro/GetReportDataByIDs endpoint (needs an anti-forgery token).
@@ -26,6 +32,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from pathlib import Path
 
 import requests
 
@@ -100,4 +107,36 @@ def fetch_cpi_mom_history(start: dt.date, end: dt.date) -> list[tuple[dt.date, f
         d = dt.date(int(m.group(2)), int(m.group(1)), 1)
         if start <= d <= end:
             by_month[d] = value
+    return sorted(by_month.items())
+
+
+def load_cpi_manual(path: str | Path) -> list[tuple[dt.date, float]]:
+    """Read hand-entered CPI MoM index values from a `month,mom_index` CSV.
+
+    Lines starting with '#', blank lines, and the header row are skipped; `month`
+    is 'YYYY-MM' (or 'YYYY-MM-DD'), keyed to the first of the month. Rows without a
+    parseable numeric value are ignored, so pre-listed-but-unfilled months are
+    harmless. Returns [(first_of_month, value)] ascending, de-duplicated (last wins).
+    Missing file → []. This is the overlay that keeps CPI current past Vietstock's
+    2025-08 freeze (see module docstring).
+    """
+    p = Path(path)
+    if not p.exists():
+        return []
+    by_month: dict[dt.date, float] = {}
+    for raw in p.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [c.strip() for c in line.split(",")]
+        if len(parts) < 2 or parts[0].lower() in ("month", "date"):
+            continue
+        m = re.match(r"(\d{4})-(\d{1,2})", parts[0])
+        if not m:
+            continue
+        try:
+            value = float(parts[1])
+        except ValueError:
+            continue
+        by_month[dt.date(int(m.group(1)), int(m.group(2)), 1)] = value
     return sorted(by_month.items())

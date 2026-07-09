@@ -1,4 +1,4 @@
-name: Macro Daily (USD/VND)
+name: Macro Daily
 
 on:
   schedule:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       backfill:
-        description: "One-time history backfill (central via Vietstock 499 + VCB sell per business day since 2022-10-17)"
+        description: "One-time history backfill (USD/VND: central via Vietstock 499 + VCB sell since 2022-10-17; CPI: CafeF 2025-09 -> now)"
         type: boolean
         default: false
 
@@ -44,9 +44,10 @@ jobs:
           if [ -z "$SUPABASE_ANON_KEY" ]; then echo "::error::SUPABASE_ANON_KEY secret not set"; exit 1; fi
           echo "Secrets OK."
 
-      # fx_central_rate (SBV portal, today) + fx_vcb_sell (VCB API, recent days).
+      # fx_central_rate (SBV portal, today) + fx_vcb_sell (VCB API, recent days) +
+      # cpi_mom_index (Vietstock 395 through 2025-08 + data/cpi_manual.csv overlay).
       # Manual runs can pass backfill=true to load full history in one shot.
-      - name: Refresh macro (USD/VND)
+      - name: Refresh macro (USD/VND + CPI)
         working-directory: scripts
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -56,4 +57,22 @@ jobs:
             python refresh_macro.py --backfill
           else
             python refresh_macro.py
+          fi
+
+      # CPI (current months) from CafeF news — Vietstock's CPI feed froze at 2025-08
+      # and GSO geo-gates cloud IPs, so this is how newer months stay current.
+      # --upsert writes cpi_mom_index straight to macro_series (source='gso-cafef').
+      # Non-fatal: a CafeF hiccup / a not-yet-published month must never fail the
+      # FX pipeline, and unresolved months fall back to data/cpi_manual.csv.
+      - name: Fetch CPI (CafeF)
+        continue-on-error: true
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ "${{ inputs.backfill }}" = "true" ]; then
+            python fetch_cpi.py --backfill --upsert
+          else
+            python fetch_cpi.py --upsert
           fi

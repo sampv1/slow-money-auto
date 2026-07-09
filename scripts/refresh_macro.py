@@ -8,7 +8,8 @@ Metrics, stored raw (nothing derived):
   fx_vcb_sell     — Vietcombank USD selling rate, by-date from the VCB API.
   vnindex         — VN-Index close (context panel), via vnstock.
   cpi_mom_index   — headline CPI MoM index (prev month=100), Vietstock NormID 395
-                    (monthly). See macro/cpi.py.
+                    (monthly), overlaid with hand-entered months from
+                    data/cpi_manual.csv (Vietstock froze at 2025-08). See macro/cpi.py.
 
 The /macro dashboard derives percent_to_ceiling = (ceiling - vcb_sell) / ceiling,
 ceiling = central * (1 + band), band from scoring_config['macro'] (effective-dated,
@@ -46,7 +47,11 @@ from macro.exchange_rate import (
     series_rows,
     upsert_macro,
 )
-from macro.cpi import CPI_HISTORY_START, METRIC_CPI_MOM, fetch_cpi_mom_history
+from macro.cpi import CPI_HISTORY_START, METRIC_CPI_MOM, fetch_cpi_mom_history, load_cpi_manual
+
+# Manual CPI overlay (Vietstock CPI froze at 2025-08; GSO is VPN-gated to cloud IPs,
+# so newer months are hand-entered here — see data/cpi_manual.csv).
+MANUAL_CPI_CSV = Path(__file__).resolve().parent.parent / "data" / "cpi_manual.csv"
 
 
 def collect_vnindex(start: dt.date, end: dt.date) -> list[dict]:
@@ -85,6 +90,28 @@ def collect_cpi(start: dt.date, end: dt.date) -> list[dict]:
     print(f"  CPI: {len(hist)} monthly points"
           + (f" ({hist[0][0]} .. {hist[-1][0]}, last MoM {hist[-1][1] - 100:+.2f}%)" if hist else ""))
     return series_rows(METRIC_CPI_MOM, hist, "index", "vietstock")
+
+
+def overlay_manual_cpi(vietstock_rows: list[dict]) -> list[dict]:
+    """Overlay hand-entered CPI months (data/cpi_manual.csv) on the Vietstock rows.
+
+    Manual entries win for any overlapping month — that's how CPI stays current past
+    Vietstock's 2025-08 freeze. Returns one row per month, ascending. All manual
+    months are always included (independent of the Vietstock window), so a daily run
+    re-asserts them even when Vietstock returns nothing new.
+    """
+    manual = load_cpi_manual(MANUAL_CPI_CSV)
+    if not manual:
+        return vietstock_rows
+    by_date = {r["date"]: r for r in vietstock_rows}
+    for d, v in manual:
+        by_date[d.isoformat()] = {
+            "metric": METRIC_CPI_MOM, "date": d.isoformat(),
+            "value": v, "unit": "index", "source": "gso-manual",
+        }
+    print(f"  CPI manual overlay: {len(manual)} month(s) from {MANUAL_CPI_CSV.name}"
+          + (f" ({manual[0][0]} .. {manual[-1][0]}, last MoM {manual[-1][1] - 100:+.2f}%)" if manual else ""))
+    return sorted(by_date.values(), key=lambda r: r["date"])
 
 
 def _business_days(start: dt.date, end: dt.date):
@@ -176,7 +203,7 @@ def main():
         vnindex_rows = collect_vnindex(HISTORY_START, end)
 
         print(f"=== Backfill CPI (Vietstock {395}): {CPI_HISTORY_START} -> {end} ===")
-        cpi_rows = collect_cpi(CPI_HISTORY_START, end)
+        cpi_rows = overlay_manual_cpi(collect_cpi(CPI_HISTORY_START, end))
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
@@ -188,7 +215,7 @@ def main():
         # CPI is monthly — re-upsert the latest few months (idempotent; picks up a
         # new release whenever GSO/Vietstock publishes it).
         print("CPI (recent months):")
-        cpi_rows = collect_cpi(end - dt.timedelta(days=130), end)
+        cpi_rows = overlay_manual_cpi(collect_cpi(end - dt.timedelta(days=130), end))
 
     rows = central_rows + vcb_rows + vnindex_rows + cpi_rows
     if args.dry_run:
