@@ -80,11 +80,11 @@ export default async function RootLayout({
                 Signal Flow
               </Link>
               <div className="flex items-center gap-2">
-                <NavLinks links={navLinks} />
                 <AuthButton email={user?.email ?? null} locale={locale} />
                 <LocaleSwitcher locale={locale} />
               </div>
             </div>
+            <NavLinks links={navLinks} />
           </div>
         </header>
         <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
