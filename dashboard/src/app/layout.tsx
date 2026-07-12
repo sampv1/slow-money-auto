@@ -46,11 +46,11 @@ export default async function RootLayout({
   // All pages are open to anonymous visitors except Input (admin-only) and the
   // BUY/SELL controls (admin-only, gated inside the pages that render them).
   const navLinks = [
+    { href: "/macro", label: t(locale, "navMacro") },
     { href: "/scanner", label: t(locale, "navScanner") },
     { href: "/fa-scanner", label: t(locale, "navFAScanner") },
     { href: "/signal-pro", label: t(locale, "navSignalPro") },
     { href: "/implied-risk", label: t(locale, "navImpliedRisk") },
-    { href: "/macro", label: t(locale, "navMacro") },
     { href: "/analysis", label: t(locale, "navStockAnalysis") },
     { href: "/active", label: t(locale, "navActive") },
     { href: "/history", label: t(locale, "navHistory") },
