@@ -70,25 +70,27 @@ def get_supabase_client():
     return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 
-def fetch_latest_price(symbol: str) -> dict | None:
-    """Fetch the latest OHLCV from vnstock for a symbol.
+def fetch_price_history(symbol: str, start: date, end: date) -> dict[str, dict] | None:
+    """Fetch adjusted daily OHLCV from vnstock KBS over [start, end].
 
-    Returns dict with keys: date, open, high, low, close, volume — or None.
+    Returns {date_iso: {date, open, high, low, close, volume}} in raw VND
+    (vnstock returns thousands; ×1000), or None on error / no data.
+
+    NOTE: KBS history() is BACK-ADJUSTED — a corporate action (dividend / bonus
+    / rights / split) re-scales the pre-ex bars downward. A recommendation's
+    entry/SL/TP are the NOMINAL levels captured at rec time, so comparing them
+    against adjusted prices would false-trigger a stop on the ex-date drop. See
+    adjustment_factor() / _rebase_price(), which reconcile the two.
     """
     from vnstock import Vnstock
 
-    # Fetch last 5 calendar days to ensure we get the latest trading session
-    today = today_vn()
-    start = (today - timedelta(days=5)).isoformat()
-    end = today.isoformat()
-
     try:
         stock = Vnstock().stock(symbol=symbol, source=VNSTOCK_SOURCE)
-        df = stock.quote.history(start=start, end=end, interval="1D")
+        df = stock.quote.history(start=start.isoformat(), end=end.isoformat(), interval="1D")
     except Exception as e:
         error_msg = str(e)
         if "Dữ liệu trống" in error_msg or "empty" in error_msg.lower():
-            print(f"  {symbol}: no recent data")
+            print(f"  {symbol}: no data")
             return None
         print(f"  {symbol}: error fetching — {error_msg}")
         return None
@@ -97,25 +99,69 @@ def fetch_latest_price(symbol: str) -> dict | None:
         print(f"  {symbol}: no data returned")
         return None
 
-    # Take the last row (most recent trading day)
-    row = df.iloc[-1]
-    price_date = str(row["time"])[:10]
+    out: dict[str, dict] = {}
+    for _, row in df.iterrows():
+        d = str(row["time"])[:10]
+        # vnstock returns thousands VND (28.05 = 28,050); DB stores raw VND.
+        out[d] = {
+            "date": d,
+            "open": float(row["open"]) * 1000,
+            "high": float(row["high"]) * 1000,
+            "low": float(row["low"]) * 1000,
+            "close": float(row["close"]) * 1000,
+            "volume": int(row["volume"]),
+        }
+    return out
 
-    # Only return if the price is from today — skip if stale
-    if price_date != today.isoformat():
-        print(f"  {symbol}: latest data is {price_date}, not today — skipping")
+
+def _latest_today_bar(hist: dict | None, today_iso: str) -> dict | None:
+    """Most recent bar, but only if it is from today (staleness guard)."""
+    if not hist:
         return None
+    d = max(hist)
+    return hist[d] if d == today_iso else None
 
-    # vnstock returns prices in thousands VND (e.g. 28.05 = 28,050 VND).
-    # Our DB stores prices in raw VND, so multiply by 1000.
-    return {
-        "date": price_date,
-        "open": float(row["open"]) * 1000,
-        "high": float(row["high"]) * 1000,
-        "low": float(row["low"]) * 1000,
-        "close": float(row["close"]) * 1000,
-        "volume": int(row["volume"]),
-    }
+
+def _close_on_or_before(hist: dict, date_iso: str) -> float | None:
+    """Adjusted close on `date_iso`, or the nearest prior trading day."""
+    cands = [d for d in hist if d <= date_iso]
+    return hist[max(cands)]["close"] if cands else None
+
+
+def adjustment_factor(hist: dict | None, rec: dict, tol: float = 0.01) -> float:
+    """Corporate-action factor k = adjusted_close(ref_date) / nominal_close(ref_date).
+
+    The recommendation stores `last_close` (the NOMINAL close at `last_close_date`,
+    captured at rec time). KBS now returns those bars BACK-ADJUSTED, so if a
+    dividend/bonus/split happened since, adjusted < nominal and k < 1. Dividing
+    the fetched (adjusted) prices by k rebases them into the recommendation's
+    original nominal terms, so the existing SL/TP/P&L logic stays correct and an
+    ex-date drop can't false-trigger a stop. Returns 1.0 when there is no usable
+    reference or no material adjustment (|k−1| ≤ tol).
+    """
+    ref_date = rec.get("last_close_date")
+    ref_nominal = rec.get("last_close")
+    if not hist or not ref_date or ref_nominal is None:
+        return 1.0
+    try:
+        ref_nominal = float(ref_nominal)
+    except (TypeError, ValueError):
+        return 1.0
+    if ref_nominal <= 0:
+        return 1.0
+    adj = _close_on_or_before(hist, ref_date)
+    if not adj or adj <= 0:
+        return 1.0
+    k = adj / ref_nominal
+    return k if abs(k - 1.0) > tol else 1.0
+
+
+def _rebase_price(bar: dict | None, k: float) -> dict | None:
+    """Express an adjusted price bar in the recommendation's nominal basis
+    (divide OHLC by the corporate-action factor k). No-op when k == 1.0."""
+    if not bar or k == 1.0:
+        return bar
+    return {**bar, **{f: bar[f] / k for f in ("open", "high", "low", "close")}}
 
 
 def count_business_days(since_date: str) -> int:
@@ -269,14 +315,35 @@ def main():
     symbols = list(set(r["symbol"] for r in recs))
     print(f"Evaluating {len(recs)} recommendation(s) across {len(symbols)} symbol(s)")
 
-    # Step 1: Fetch latest price for each symbol (one vnstock call per symbol)
-    print("\nFetching latest prices...")
-    prices_by_symbol: dict[str, dict | None] = {}
+    today_iso = today_vn().isoformat()
+
+    # Earliest reference date per symbol (a rec's last_close_date, falling back
+    # to trading_date) — we fetch history back to there so a corporate action
+    # anywhere in the holding period is detectable via adjustment_factor().
+    earliest_ref: dict[str, str] = {}
+    for rec in recs:
+        ref = rec.get("last_close_date") or rec.get("trading_date")
+        if ref:
+            cur = earliest_ref.get(rec["symbol"])
+            if cur is None or ref < cur:
+                earliest_ref[rec["symbol"]] = ref
+
+    # Step 1: Fetch adjusted price history per symbol (one vnstock call each),
+    # covering the holding period so we can rebase for corporate actions.
+    print("\nFetching prices (adjusted; rebased to nominal per recommendation)...")
+    hist_by_symbol: dict[str, dict | None] = {}
+    latest_by_symbol: dict[str, dict | None] = {}
     for i, symbol in enumerate(sorted(symbols)):
-        price = fetch_latest_price(symbol)
-        prices_by_symbol[symbol] = price
-        if price:
-            print(f"  {symbol}: {price['date']} C={price['close']:,.0f} H={price['high']:,.0f} L={price['low']:,.0f}")
+        ref = earliest_ref.get(symbol, today_iso)
+        start = date.fromisoformat(ref) - timedelta(days=7)
+        hist = fetch_price_history(symbol, start, today_vn())
+        hist_by_symbol[symbol] = hist
+        latest = _latest_today_bar(hist, today_iso)
+        latest_by_symbol[symbol] = latest
+        if latest:
+            print(f"  {symbol}: {latest['date']} C={latest['close']:,.0f} H={latest['high']:,.0f} L={latest['low']:,.0f}")
+        elif hist:
+            print(f"  {symbol}: latest bar {max(hist)} != {today_iso} — no fresh price today")
         if i < len(symbols) - 1:
             time.sleep(REQUEST_DELAY)
 
@@ -286,7 +353,15 @@ def main():
 
     updates_count = 0
     for rec in recs:
-        price = prices_by_symbol.get(rec["symbol"])
+        hist = hist_by_symbol.get(rec["symbol"])
+        # Rebase today's adjusted bar into this recommendation's nominal basis
+        # so a corporate action during the holding period can't false-trigger a
+        # stop and P&L stays on the entry/SL/TP scale.
+        k = adjustment_factor(hist, rec)
+        price = _rebase_price(latest_by_symbol.get(rec["symbol"]), k)
+        if k != 1.0:
+            print(f"  {rec['symbol']} (id {rec['id']}): corporate-action factor k={k:.4f} "
+                  f"applied — entry/SL/TP evaluated on nominal basis")
         days_held = count_business_days(rec["trading_date"])
 
         # Evaluate TP/SL (respects T+2.5 settlement)

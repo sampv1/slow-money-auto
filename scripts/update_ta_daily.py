@@ -118,6 +118,39 @@ def main():
         failed_first_pass = [s for s in symbols if s not in written_syms]
         final_failed = failed_first_pass
 
+    # Step 1b: corporate-action adjustment repair. ta_ohlcv is append-only, so a
+    # symbol that just went ex-dividend / ex-rights / bonus / split keeps stale
+    # unadjusted history and a discontinuity at the ex-date — which corrupts
+    # trailing returns and RS. Detect just-adjusted symbols (cheap: last ~15
+    # sessions of stored closes + one bulk price_board pass) and re-backfill ONLY
+    # those with adjusted history, BEFORE signals/RS so scores use fixed prices.
+    # Non-fatal, and capped so a bad detection can't stall the daily run.
+    adj_repaired = 0
+    MAX_DAILY_REPAIRS = 120
+    if not args.dry_run:
+        try:
+            print("\n--- Step 1b: corporate-action adjustment repair ---")
+            from ta.adjustments import detect_adjusted_symbols, repair_symbols
+            flagged = detect_adjusted_symbols(client, scan_days=15, use_ref=True)
+            targets = [f["symbol"] for f in flagged]
+            if len(targets) > MAX_DAILY_REPAIRS:
+                print(f"  {len(targets)} symbols flagged (> cap {MAX_DAILY_REPAIRS}); "
+                      f"re-backfilling the first {MAX_DAILY_REPAIRS}. Run "
+                      f"refresh_adjustments.py --scan-days 450 for a full sweep.")
+                targets = targets[:MAX_DAILY_REPAIRS]
+            if targets:
+                for f in flagged[:MAX_DAILY_REPAIRS][:30]:
+                    print(f"    {f['symbol']}: {'; '.join(f['reasons'])}")
+                res = repair_symbols(client, targets)
+                adj_repaired = sum(1 for r in res.values() if r["changed"])
+                print(f"  Re-adjusted {adj_repaired} symbol(s) "
+                      f"({len(targets) - adj_repaired} genuine gaps, no change).")
+                client = get_supabase_client()  # fresh HTTP/2 conn after the fetches
+            else:
+                print("  No adjustments detected.")
+        except Exception as e:  # noqa: BLE001
+            print(f"  adjustment repair failed (non-fatal): {str(e)[:160]}")
+
     # Step 2: compute signals (latest date only) and log to ta_runs
     print(f"\n--- Step 2: compute signals (latest date) ---")
     run_id = None
@@ -240,6 +273,7 @@ def main():
             f"- **Universe size**: {len(symbols)}",
             f"- **OHLCV snapshot**: {ohlcv_ok}/{len(symbols)} symbols ({ohlcv_total:,} rows)",
         ]
+        summary_lines.append(f"- **Adjustments repaired**: {adj_repaired}")
         summary_lines.append(f"- **Signals written**: {total_signals:,} ({triggered_total} triggered)")
         summary_lines.append(f"- **RS scored**: {rs_stats['scored']} liquid (rs_date {rs_stats['rs_date']})")
         summary_lines.append(f"- **Price bases**: {base_stats['based']} detected")

@@ -44,6 +44,7 @@ python3 run_prompt.py                               # run trading prompt via Cla
 python3 update_ta_daily.py                          # DAILY ORCHESTRATOR: OHLCV → signals → RS → bases → TA Score → Final Score (--dry-run, --ohlcv-days N)
 python3 compute_ta_signals.py                       # signals only (--all-dates backfill, --since, --symbols, --inspect SYM DATE)
 python3 backfill_ta_ohlcv.py --days 90              # backfill OHLCV history via vnstock history()
+python3 refresh_adjustments.py --scan-days 450      # detect corporate-action price adjustments → re-backfill only affected symbols (--dry-run, --symbols, --scan-days 15 for a daily-style pass)
 python3 refresh_ta_universe.py --source fa          # align TA universe to the FA universe (see below)
 python3 refresh_rs.py                               # RS ratings (--min-volume, --dry-run)
 python3 refresh_base.py                             # price-base (BQS) detection + score (--dry-run)
@@ -107,6 +108,8 @@ The composite score is built bottom-up; each formula lives in the code, not just
 
 **Daily OHLCV:** `update_ta_daily.py` Step 1 fetches today's full bar for the whole universe via vnstock `Trading.price_board` (bulk, ~seconds, with a today-only staleness guard). `history()` is the **backfill / gap-fill** path only (`backfill_ta_ohlcv.py`), not the daily run. Signals must never use data past the target date (lookahead bias — critical for backfill correctness).
 
+**Price adjustments (unadjusted-history bug):** `ta_ohlcv` is **append-only and stores RAW, UNADJUSTED prices** — price_board appends today's raw bar and never re-adjusts older ones, while `history()` returns a **back-adjusted** series. So a corporate action (dividend/rights/bonus/split) leaves a discontinuity at the ex-date that corrupts trailing returns and RS (it was the main cause of RS3M divergence vs adjusted sources like Fialda). `update_ta_daily.py` **Step 1b** (`ta/adjustments.py`) detects just-adjusted symbols — impossible day-over-day gap beyond the exchange limit (any exchange) + `ref_price` ≠ stored prior close (HOSE/HNX only; UPCOM's reference is an average) — and re-backfills **only those** with adjusted `history()` (verify-and-skip, so genuine crashes are no-ops). The daily pass (scan_days=15) self-heals new actions; clean up existing/older corruption once with `refresh_adjustments.py --scan-days 450` then `refresh_rs.py`.
+
 ## Data flow (recommendation tracking)
 
 **Manual:** run a trading prompt (`prompts/prompt-trading-vietnam-*.md`, latest is v7.3) in Claude with web search → Claude outputs full analysis + a `json` code block → copy JSON → `push_recommendation.py` → Supabase. Prompts are versioned in `prompts/`; both a `-complete` (analysis) and `-json` (with output block) variant exist per version.
@@ -131,6 +134,7 @@ Core: `daily_logs` (one row per trading day) + `recommendations` (individual pic
 - Stock data via vnstock (KBS/VCI sources; free tier ~20 req/min guest, 60 registered). Sequential fetches use a 3.5s delay; the daily OHLCV path uses bulk `price_board` instead.
 - P&L: when both TP1 and TP2 exist, assume 50% exits at each; blended P&L = average of both gains. After TP1 hit, SL moves to entry (breakeven).
 - Vietnam T+2.5 settlement: SL/TP checks apply only from T+3 onward; before that, price is updated but no exit triggers.
+- Corporate-action rebase (`update_prices.py`): vnstock KBS returns BACK-ADJUSTED prices, but a recommendation's entry/SL/TP are the NOMINAL levels captured at rec time. Each eval computes `k = adjusted_close(last_close_date) / last_close` and divides today's fetched OHLC by `k` (rebasing it to the rec's nominal basis) so a dividend/bonus ex-date drop can't false-trigger a stop. `k=1` (no rebase) when there's no reference or `|k−1| ≤ 1%`.
 - Expiry: recommendations auto-expire after 1.5× their `holding_period_sessions`.
 - Excel imports (FA) are **additive per-row UPSERTs of only the rows present** — partial files, re-importable, never truncate. FA growth is **YoY**; inputs are single-quarter except ROE (TTM).
 - Dashboard is bilingual (en/vi) via `dashboard/src/lib/i18n.ts`; TA indicator specs are mirrored between Python (`scripts/ta/registry.py`) and TS (`dashboard/src/lib/ta-indicators.ts`) — keep them in sync when adding indicators.
