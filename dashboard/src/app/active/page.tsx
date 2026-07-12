@@ -1,19 +1,17 @@
-import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { formatPrice, formatPnl, pnlColor, statusBadge } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
-import { getUserRole, isStaff } from "@/lib/supabase-server";
+import { getUserRole } from "@/lib/supabase-server";
 import type { Recommendation } from "@/lib/types";
 import { TradeActions } from "../signal-pro/trade-actions";
 
 export const revalidate = 0;
 
 export default async function ActivePage() {
+  // Page is public (anonymous-readable). SELL closes a position and stays
+  // admin-only — the manual endpoint requires admin — so isAdmin still gates
+  // the BUY/SELL controls below.
   const role = await getUserRole();
-  if (!isStaff(role)) {
-    redirect("/login");
-  }
-  // SELL closes a position (admin-only — the manual endpoint requires admin).
   const isAdmin = role === "admin";
   const locale = await getLocale();
 

@@ -7,7 +7,7 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 import { AuthButton } from "@/components/auth-button";
 import { NavLinks } from "@/components/nav-links";
 import { GAUserIdentify } from "@/components/ga-user-identify";
-import { getUserRole, isStaff } from "@/lib/supabase-server";
+import { getUserRole } from "@/lib/supabase-server";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
@@ -41,29 +41,23 @@ export default async function RootLayout({
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
 
+  // Market (/) and Daily Logs (/logs) are on hold — hidden for everyone
+  // (including admin). The homepage now serves Macro (/ redirects to /macro).
+  // All pages are open to anonymous visitors except Input (admin-only) and the
+  // BUY/SELL controls (admin-only, gated inside the pages that render them).
   const navLinks = [
-    // Market analysis is for logged-in users only; anonymous visitors are
-    // redirected from / to the scanner.
-    ...(user ? [{ href: "/", label: t(locale, "navAnalysis") }] : []),
     { href: "/scanner", label: t(locale, "navScanner") },
     { href: "/fa-scanner", label: t(locale, "navFAScanner") },
     { href: "/signal-pro", label: t(locale, "navSignalPro") },
     { href: "/implied-risk", label: t(locale, "navImpliedRisk") },
     { href: "/macro", label: t(locale, "navMacro") },
     { href: "/analysis", label: t(locale, "navStockAnalysis") },
+    { href: "/active", label: t(locale, "navActive") },
+    { href: "/history", label: t(locale, "navHistory") },
+    { href: "/stats", label: t(locale, "navStats") },
+    ...(role === "admin" ? [{ href: "/input", label: t(locale, "navInput") }] : []),
     { href: "/realtime", label: t(locale, "navRealtime") },
-    // Staff (admin + viewer) see the internal dashboards. Only admin
-    // additionally sees Input (the data-creation page).
-    ...(isStaff(role)
-      ? [
-          { href: "/active", label: t(locale, "navActive") },
-          { href: "/history", label: t(locale, "navHistory") },
-          { href: "/logs", label: t(locale, "navLogs") },
-          { href: "/stats", label: t(locale, "navStats") },
-          ...(role === "admin" ? [{ href: "/input", label: t(locale, "navInput") }] : []),
-          { href: "/feedbacks", label: t(locale, "navFeedbacks") },
-        ]
-      : []),
+    { href: "/feedbacks", label: t(locale, "navFeedbacks") },
     { href: "/contact", label: t(locale, "contact") },
   ];
 

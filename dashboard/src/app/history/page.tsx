@@ -1,8 +1,6 @@
-import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { formatPrice, formatPnl, pnlColor, statusBadge } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
-import { getUserRole, isStaff } from "@/lib/supabase-server";
 import type { Recommendation } from "@/lib/types";
 import { CLOSED_STATUSES } from "@/lib/types";
 
@@ -13,10 +11,7 @@ export default async function HistoryPage({
 }: {
   searchParams: Promise<{ [key: string]: string | undefined }>;
 }) {
-  const role = await getUserRole();
-  if (!isStaff(role)) {
-    redirect("/login");
-  }
+  // Public page (anonymous-readable).
   const locale = await getLocale();
   const params = await searchParams;
   const symbolFilter = params.symbol?.toUpperCase();
