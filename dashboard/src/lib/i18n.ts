@@ -72,6 +72,9 @@ export const translations = {
     macroPanelVnindex: "VN-Index (context)",
     // CPI (inflation) chart
     macroCpiSubtitle: "Headline CPI vs the annual target — how much easing room the SBV has left",
+    macroInterestSubtitle: "Overnight interbank rate (VNIBOR) — the market's real-time read on VND liquidity",
+    macroInterestNoData: "No interbank-rate data yet. Run refresh_macro.py --backfill.",
+    irOvernight: "Overnight interbank",
     cpiPanelYoy: "CPI YoY (inflation)",
     cpiPanelHeadroom: "Inflation-budget headroom (% pts)",
     cpiYoy: "YoY",
@@ -521,6 +524,9 @@ export const translations = {
     macroPanelVnindex: "VN-Index (bối cảnh)",
     // Biểu đồ CPI (lạm phát)
     macroCpiSubtitle: "CPI so với mục tiêu năm — NHNN còn bao nhiêu dư địa nới lỏng",
+    macroInterestSubtitle: "Lãi suất liên ngân hàng qua đêm (VNIBOR) — thước đo thanh khoản VND theo thời gian thực",
+    macroInterestNoData: "Chưa có dữ liệu lãi suất liên ngân hàng. Chạy refresh_macro.py --backfill.",
+    irOvernight: "LNH qua đêm",
     cpiPanelYoy: "CPI so cùng kỳ (lạm phát)",
     cpiPanelHeadroom: "Dư địa ngân sách lạm phát (điểm %)",
     cpiYoy: "So cùng kỳ",

@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { getLocale, t } from "@/lib/i18n";
 import { ExchangeRateChart, type FxRow, type Regime } from "./exchange-rate-chart";
 import { CpiChart, type CpiRow } from "./cpi-chart";
+import { InterestRateChart, type IrRow } from "./interest-rate-chart";
 
 export const revalidate = 0;
 
@@ -171,19 +172,25 @@ export default async function MacroPage() {
 
   let rows: FxRow[] = [];
   let cpiRows: CpiRow[] = [];
+  let irRows: IrRow[] = [];
   let error: string | null = null;
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
   try {
-    const [central, vcb, vn, cpiMom, cfg] = await Promise.all([
+    const [central, vcb, vn, cpiMom, interbankOn, cfg] = await Promise.all([
       fetchMetric("fx_central_rate"),
       fetchMetric("fx_vcb_sell"),
       fetchMetric("vnindex"),
       fetchMetric("cpi_mom_index"),
+      fetchMetric("interbank_overnight"),
       loadMacroConfig(),
     ]);
     const { bands, regime: regimeCfg, cpiTargets } = cfg;
     cpiRows = buildCpiRows(cpiMom, cpiTargets);
+    // Overnight interbank rate (%/year): stored raw, plotted directly.
+    irRows = [...interbankOn.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, rate]) => ({ date, rate }));
     pctNearCeiling = regimeCfg.pct_near_ceiling;
     chg5dFast = regimeCfg.chg5d_fast;
     // central_rate_chg_5d = central(t) − central(t−5 sessions). Computed over the
@@ -270,8 +277,17 @@ export default async function MacroPage() {
       </section>
 
       <section>
-        <h2 className="text-base font-semibold mb-2">{t(locale, "macroInterestTitle")}</h2>
-        <StubCard title={t(locale, "macroInterestTitle")} note={t(locale, "macroComingSoon")} />
+        <div className="mb-2">
+          <h2 className="text-base font-semibold">{t(locale, "macroInterestTitle")}</h2>
+          <p className="text-xs text-gray-500">{t(locale, "macroInterestSubtitle")}</p>
+        </div>
+        {error ? (
+          <p className="text-red-600 text-sm">Error loading interest-rate data: {error}</p>
+        ) : irRows.length < 2 ? (
+          <StubCard title={t(locale, "macroInterestTitle")} note={t(locale, "macroInterestNoData")} />
+        ) : (
+          <InterestRateChart rows={irRows} locale={locale} />
+        )}
       </section>
     </div>
   );

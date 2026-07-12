@@ -10,6 +10,8 @@ Metrics, stored raw (nothing derived):
   cpi_mom_index   — headline CPI MoM index (prev month=100), Vietstock NormID 395
                     (monthly), overlaid with hand-entered months from
                     data/cpi_manual.csv (Vietstock froze at 2025-08). See macro/cpi.py.
+  interbank_overnight — SBV overnight interbank average rate (%/năm), daily,
+                    Vietstock NormID 293. See macro/interest_rate.py.
 
 The /macro dashboard derives percent_to_ceiling = (ceiling - vcb_sell) / ceiling,
 ceiling = central * (1 + band), band from scoring_config['macro'] (effective-dated,
@@ -48,6 +50,11 @@ from macro.exchange_rate import (
     upsert_macro,
 )
 from macro.cpi import CPI_HISTORY_START, METRIC_CPI_MOM, fetch_cpi_mom_history, load_cpi_manual
+from macro.interest_rate import (
+    INTERBANK_HISTORY_START,
+    METRIC_INTERBANK_ON,
+    fetch_interbank_overnight_history,
+)
 
 # Manual CPI overlay (Vietstock CPI froze at 2025-08; GSO is VPN-gated to cloud IPs,
 # so newer months are hand-entered here — see data/cpi_manual.csv).
@@ -90,6 +97,22 @@ def collect_cpi(start: dt.date, end: dt.date) -> list[dict]:
     print(f"  CPI: {len(hist)} monthly points"
           + (f" ({hist[0][0]} .. {hist[-1][0]}, last MoM {hist[-1][1] - 100:+.2f}%)" if hist else ""))
     return series_rows(METRIC_CPI_MOM, hist, "index", "vietstock")
+
+
+def collect_interbank(start: dt.date, end: dt.date) -> list[dict]:
+    """Overnight interbank average rate (Vietstock NormID 293) over [start, end],
+    as macro_series rows (daily, %/year).
+
+    A failure must never block the FX metrics — any error returns [] with a note.
+    """
+    try:
+        hist = fetch_interbank_overnight_history(start, end)
+    except Exception as e:  # noqa: BLE001
+        print(f"  Interbank overnight fetch failed: {str(e)[:100]}")
+        return []
+    print(f"  Interbank overnight: {len(hist)} daily points"
+          + (f" ({hist[0][0]} .. {hist[-1][0]}, last {hist[-1][1]:.2f}%)" if hist else ""))
+    return series_rows(METRIC_INTERBANK_ON, hist, "%", "vietstock")
 
 
 def overlay_manual_cpi(vietstock_rows: list[dict]) -> list[dict]:
@@ -185,6 +208,7 @@ def main():
     vcb_rows: list[dict] = []
     vnindex_rows: list[dict] = []
     cpi_rows: list[dict] = []
+    interbank_rows: list[dict] = []
 
     if args.backfill:
         print(f"=== Backfill central rate (Vietstock {CENTRAL_NORMID}): {HISTORY_START} -> {end} ===")
@@ -204,6 +228,9 @@ def main():
 
         print(f"=== Backfill CPI (Vietstock {395}): {CPI_HISTORY_START} -> {end} ===")
         cpi_rows = overlay_manual_cpi(collect_cpi(CPI_HISTORY_START, end))
+
+        print(f"=== Backfill interbank overnight (Vietstock 293): {INTERBANK_HISTORY_START} -> {end} ===")
+        interbank_rows = collect_interbank(INTERBANK_HISTORY_START, end)
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
@@ -216,11 +243,16 @@ def main():
         # new release whenever GSO/Vietstock publishes it).
         print("CPI (recent months):")
         cpi_rows = overlay_manual_cpi(collect_cpi(end - dt.timedelta(days=130), end))
+        # Interbank overnight is daily — re-fetch the last few weeks (idempotent;
+        # picks up the latest publication, which lags the market by a few days).
+        print("Interbank overnight (recent):")
+        interbank_rows = collect_interbank(end - dt.timedelta(days=21), end)
 
-    rows = central_rows + vcb_rows + vnindex_rows + cpi_rows
+    rows = central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
-              f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi = {len(rows)} rows into macro_series.")
+              f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi + {len(interbank_rows)} interbank "
+              f"= {len(rows)} rows into macro_series.")
         return
     if not rows:
         print("Nothing to write.")
@@ -230,7 +262,7 @@ def main():
     n = upsert_macro(client, rows)
     print(f"Upserted {n} rows into macro_series "
           f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex, "
-          f"{len(cpi_rows)} cpi).")
+          f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank).")
 
 
 if __name__ == "__main__":

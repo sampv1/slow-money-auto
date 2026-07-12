@@ -1,0 +1,145 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { t, type Locale } from "@/lib/i18n";
+
+// One daily point: SBV overnight interbank average rate (VNIBOR), %/year.
+export type IrRow = { date: string; rate: number };
+
+type Range = "1y" | "3y" | "all";
+const RANGE_DAYS: Record<Range, number> = { "1y": 365, "3y": 1095, all: Infinity };
+
+const LINE = "#0d9488"; // teal — overnight interbank rate
+const AREA = "#0d9488";
+
+export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Locale }) {
+  const [range, setRange] = useState<Range>("3y");
+  const [hover, setHover] = useState<number | null>(null);
+
+  const view = useMemo(() => {
+    const days = RANGE_DAYS[range];
+    if (!Number.isFinite(days) || rows.length === 0) return rows;
+    const last = new Date(rows[rows.length - 1].date).getTime();
+    const cutoff = last - days * 86400000;
+    return rows.filter((r) => new Date(r.date).getTime() >= cutoff);
+  }, [rows, range]);
+
+  const latest = rows.length ? rows[rows.length - 1] : null;
+  const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+  const n = view.length;
+
+  const dom = useMemo(() => {
+    const vals = view.map((r) => r.rate);
+    if (vals.length === 0) return { lo: 0, hi: 1 };
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = (hi - lo) * 0.1 || 0.5;
+    return { lo: Math.max(0, lo - pad), hi: hi + pad };
+  }, [view]);
+
+  if (rows.length < 2) {
+    return <p className="text-sm text-gray-500">{t(locale, "macroInterestNoData")}</p>;
+  }
+
+  const W = 900, mL = 40, mR = 16;
+  const iw = W - mL - mR;
+  const top = 18, h = 200;
+  const xLabelY = top + h + 16;
+  const H = xLabelY + 6;
+
+  const xAt = (i: number) => mL + (n <= 1 ? 0 : (i / (n - 1)) * iw);
+  const yAt = (v: number) => top + (1 - (v - dom.lo) / (dom.hi - dom.lo)) * h;
+
+  const linePts = view.map((r, i) => `${xAt(i).toFixed(1)},${yAt(r.rate).toFixed(1)}`).join(" ");
+  const areaPts =
+    n > 0 ? `${xAt(0).toFixed(1)},${yAt(dom.lo).toFixed(1)} ${linePts} ${xAt(n - 1).toFixed(1)},${yAt(dom.lo).toFixed(1)}` : "";
+
+  const yTicks = [dom.hi, (dom.lo + dom.hi) / 2, dom.lo];
+  const xTickIdx = Array.from(
+    new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
+  ).filter((i) => i >= 0 && i < n);
+
+  const fmtPct = (v: number) => `${v.toFixed(2)}%`;
+  const fmtSigned = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
+  const fmtDay = (d: string) => d.slice(2); // YY-MM-DD
+
+  function onMove(e: React.MouseEvent<SVGSVGElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - rect.left) / rect.width) * W;
+    const i = Math.round(((px - mL) / iw) * (n - 1));
+    setHover(i >= 0 && i < n ? i : null);
+  }
+
+  const hv = hover !== null ? view[hover] : null;
+  const hx = hover !== null ? xAt(hover) : 0;
+  const chg = latest && prev ? latest.rate - prev.rate : null;
+  const tipAnchor: "start" | "middle" | "end" = hx > W - mR - 150 ? "end" : hx < mL + 150 ? "start" : "middle";
+  const tipX = tipAnchor === "end" ? W - mR : tipAnchor === "start" ? mL : hx;
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4">
+      {/* header: latest reading + day change + range toggle */}
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
+        {latest && (
+          <div>
+            <div className="text-xs text-gray-500">
+              {t(locale, "irOvernight")} · {t(locale, "macroFxLatest")} · {latest.date}
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-semibold font-mono" style={{ color: LINE }}>{fmtPct(latest.rate)}</span>
+              {chg !== null && Math.abs(chg) >= 0.005 && (
+                <span className={`text-xs font-mono ${chg > 0 ? "text-red-600" : "text-emerald-600"}`}>
+                  {fmtSigned(chg)}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+        <div className="flex gap-1">
+          {(["1y", "3y", "all"] as Range[]).map((r) => (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              className={`text-xs px-2 py-1 rounded font-medium ${
+                range === r ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {t(locale, r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img">
+        {/* y grid + labels */}
+        {yTicks.map((v, k) => (
+          <g key={`y${k}`}>
+            <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke="#f1f5f9" strokeWidth={1} />
+            <text x={mL - 6} y={yAt(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtPct(v)}</text>
+          </g>
+        ))}
+
+        {/* area + line */}
+        {areaPts && <polygon points={areaPts} fill={AREA} opacity={0.08} />}
+        <polyline points={linePts} fill="none" stroke={LINE} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
+
+        {/* x labels */}
+        {xTickIdx.map((i) => (
+          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">
+            {fmtDay(view[i]?.date ?? "")}
+          </text>
+        ))}
+
+        {/* hover crosshair */}
+        {hover !== null && hv && (
+          <g>
+            <line x1={hx} y1={top} x2={hx} y2={top + h} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <circle cx={hx} cy={yAt(hv.rate)} r={3} fill={LINE} />
+            <text x={tipX} y={12} textAnchor={tipAnchor} fontSize={11} fill="#0f172a" fontFamily="monospace">
+              {hv.date} · {fmtPct(hv.rate)}
+            </text>
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+}
