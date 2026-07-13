@@ -142,6 +142,42 @@ def overlay_sbv_interbank(vietstock_rows: list[dict]) -> list[dict]:
     return sorted(by_date.values(), key=lambda r: r["date"])
 
 
+def protect_stored_sbv_interbank(client, rows: list[dict]) -> list[dict]:
+    """Enforce SBV priority across runs: SBV is authoritative, Vietstock only fills.
+
+    SBV's portal exposes only the latest point, so we store one SBV point per day
+    and fill the rest from Vietstock. Without a guard, a later Vietstock fetch (the
+    daily window, or a --backfill) would overwrite those stored SBV dates with its
+    own copy — a silent downgrade. This drops any NON-SBV interbank row in the
+    batch whose date is already stored from SBV, so SBV points persist and Vietstock
+    only ever fills dates SBV hasn't covered. (Same-run collisions are resolved in
+    overlay_sbv_interbank, where the fresh SBV point wins.) Non-fatal: a lookup
+    failure leaves the batch unchanged.
+    """
+    ib_dates = sorted({r["date"] for r in rows if r["metric"] == METRIC_INTERBANK_ON})
+    if not ib_dates:
+        return rows
+    try:
+        resp = (client.table("macro_series").select("date")
+                .eq("metric", METRIC_INTERBANK_ON).eq("source", "sbv")
+                .gte("date", ib_dates[0]).lte("date", ib_dates[-1])
+                .range(0, 4999).execute())
+        sbv_dates = {r["date"] for r in (resp.data or [])}
+    except Exception as e:  # noqa: BLE001
+        print(f"  SBV-priority guard skipped (lookup failed): {str(e)[:80]}")
+        return rows
+    if not sbv_dates:
+        return rows
+    kept = [
+        r for r in rows
+        if not (r["metric"] == METRIC_INTERBANK_ON and r.get("source") != "sbv" and r["date"] in sbv_dates)
+    ]
+    n = len(rows) - len(kept)
+    if n:
+        print(f"  SBV priority: preserved {n} stored SBV interbank date(s) over Vietstock.")
+    return kept
+
+
 def overlay_manual_cpi(vietstock_rows: list[dict]) -> list[dict]:
     """Overlay hand-entered CPI months (data/cpi_manual.csv) on the Vietstock rows.
 
@@ -256,8 +292,8 @@ def main():
         print(f"=== Backfill CPI (Vietstock {395}): {CPI_HISTORY_START} -> {end} ===")
         cpi_rows = overlay_manual_cpi(collect_cpi(CPI_HISTORY_START, end))
 
-        print(f"=== Backfill interbank overnight (Vietstock 293): {INTERBANK_HISTORY_START} -> {end} ===")
-        interbank_rows = collect_interbank(INTERBANK_HISTORY_START, end)
+        print(f"=== Backfill interbank overnight (Vietstock 293 + SBV latest): {INTERBANK_HISTORY_START} -> {end} ===")
+        interbank_rows = overlay_sbv_interbank(collect_interbank(INTERBANK_HISTORY_START, end))
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
@@ -270,9 +306,11 @@ def main():
         # new release whenever GSO/Vietstock publishes it).
         print("CPI (recent months):")
         cpi_rows = overlay_manual_cpi(collect_cpi(end - dt.timedelta(days=130), end))
-        # Interbank overnight is daily — re-fetch the last few weeks from Vietstock
-        # (idempotent; its feed lags a few days) and overlay the SBV portal's
-        # latest point (published 1-2 business days earlier than Vietstock).
+        # Interbank overnight: SBV portal is the PRIMARY (authoritative, freshest)
+        # source; Vietstock (NormID 293, last few weeks) is the FALLBACK that fills
+        # the history SBV's single-point page doesn't expose. overlay_sbv_interbank
+        # lets the SBV point win its date; protect_stored_sbv_interbank (below, at
+        # upsert) keeps past SBV points from being downgraded by Vietstock.
         print("Interbank overnight (recent):")
         interbank_rows = overlay_sbv_interbank(collect_interbank(end - dt.timedelta(days=21), end))
 
@@ -287,6 +325,7 @@ def main():
         return
 
     client = get_supabase_client()
+    rows = protect_stored_sbv_interbank(client, rows)  # SBV priority across runs
     n = upsert_macro(client, rows)
     print(f"Upserted {n} rows into macro_series "
           f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex, "
