@@ -8,8 +8,8 @@ import { t, type Locale } from "@/lib/i18n";
 // the SAME shared series overlaid on the FX and CPI charts (see page.tsx).
 export type IrRow = { date: string; rate: number; vnindex: number | null };
 
-type Range = "1y" | "3y" | "all";
-const RANGE_DAYS: Record<Range, number> = { "1y": 365, "3y": 1095, all: Infinity };
+type Range = "6m" | "1y" | "3y" | "all";
+const RANGE_DAYS: Record<Range, number> = { "6m": 180, "1y": 365, "3y": 1095, all: Infinity };
 
 const LINE = "#0d9488"; // teal — overnight interbank rate
 const VN_COLOR = "#2563eb"; // blue — VN-Index (context), matches the FX chart
@@ -123,7 +123,7 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
           </div>
         )}
         <div className="flex gap-1">
-          {(["1y", "3y", "all"] as Range[]).map((r) => (
+          {(["6m", "1y", "3y", "all"] as Range[]).map((r) => (
             <button
               key={r}
               onClick={() => setRange(r)}
@@ -131,7 +131,7 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
                 range === r ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              {t(locale, r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
+              {t(locale, r === "6m" ? "irRange6m" : r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
             </button>
           ))}
         </div>
@@ -147,7 +147,7 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
         {/* ---- VN-Index panel (context) ---- */}
         {hasVn && (
           <>
-            <text x={mL} y={vnTop - 6} fontSize={11} fill="#475569" fontFamily="monospace">VN-Index</text>
+            <text x={mL + 4} y={vnTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">VN-Index</text>
             {vnTicks.map((v, k) => (
               <g key={`vt${k}`}>
                 <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />

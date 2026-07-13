@@ -218,7 +218,7 @@ export function ExchangeRateChart({
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img">
         {/* ---- panel titles ---- */}
-        {hasVn && <text x={mL} y={12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
+        {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
         <text x={mL} y={pctTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelPct")}</text>
         <text x={mL} y={chgTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelChg")}</text>
         <text x={mL} y={ribTop - 6} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelRegime")}</text>

@@ -76,7 +76,7 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
     const vals = view.map((r) => r.vnindex).filter((v): v is number => v !== null);
     if (!vals.length) return { lo: 0, hi: 1 };
     const lo = Math.min(...vals), hi = Math.max(...vals);
-    const pad = (hi - lo) * 0.08 || 1;
+    const pad = (hi - lo) * 0.04 || 1;
     return { lo: lo - pad, hi: hi + pad };
   }, [view]);
 
@@ -109,7 +109,7 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
   // --- layout: VN-Index (optional) + Implied Risk + Futures Return, shared x ---
   const W = 900, mL = 54, mR = 16;
   const iw = W - mL - mR;
-  const vnTop = 20, vnH = 84;
+  const vnTop = 20, vnH = 140;
   const vnBlock = hasVn ? vnH + 34 : 0;
   const irTop = 24 + vnBlock, irH = hasVn ? 118 : 150;
   const frTop = irTop + irH + 30, frH = hasVn ? 108 : 130;
@@ -202,7 +202,7 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img">
         {/* ---- panel titles ---- */}
-        {hasVn && <text x={mL} y={12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
+        {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
         <text x={mL} y={irTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "irTitle")}</text>
         <text x={mL} y={frTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "frTitle")}</text>
 

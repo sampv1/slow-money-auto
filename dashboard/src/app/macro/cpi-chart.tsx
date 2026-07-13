@@ -213,7 +213,7 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img">
         {/* ---- panel titles ---- */}
-        {hasVn && <text x={mL} y={vnTop - 6} fontSize={11} fill="#475569" fontFamily="monospace">VN-Index</text>}
+        {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">VN-Index</text>}
         <text x={mL} y={yoyTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "cpiPanelYoy")}</text>
         <text x={mL} y={hrTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "cpiPanelHeadroom")}</text>
 
