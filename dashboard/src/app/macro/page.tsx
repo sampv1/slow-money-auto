@@ -122,6 +122,7 @@ function buildCpiRows(cpiMom: Map<string, number>, targets: BandEntry[]): CpiRow
       ytdAvg: ytdAvg === null ? null : Math.round(ytdAvg * 100) / 100,
       target,
       headroom: headroom === null ? null : Math.round(headroom * 100) / 100,
+      vnindex: null, // overlaid in MacroPage from the shared vnindex series
     });
   }
   return out;
@@ -186,11 +187,31 @@ export default async function MacroPage() {
       loadMacroConfig(),
     ]);
     const { bands, regime: regimeCfg, cpiTargets } = cfg;
-    cpiRows = buildCpiRows(cpiMom, cpiTargets);
-    // Overnight interbank rate (%/year): stored raw, plotted directly.
+
+    // Shared VN-Index overlay: ONE source series (the `vnindex` metric), sampled
+    // by as-of (last close on or before each point) so the FX, interest-rate and
+    // CPI charts all show the SAME VN-Index time series on their own date grids.
+    const vnSorted = [...vn.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const vnAsof = (dateStr: string): number | null => {
+      let lo = 0, hi = vnSorted.length - 1, res: number | null = null;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (vnSorted[mid][0] <= dateStr) { res = vnSorted[mid][1]; lo = mid + 1; }
+        else hi = mid - 1;
+      }
+      return res;
+    };
+    const monthEnd = (d: string) => {
+      const [yy, mm] = d.split("-").map(Number);
+      return new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10); // last day of month
+    };
+
+    // Overnight interbank rate (%/year): plotted directly, VN-Index aligned by day.
     irRows = [...interbankOn.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, rate]) => ({ date, rate }));
+      .map(([date, rate]) => ({ date, rate, vnindex: vnAsof(date) }));
+    // CPI (monthly): VN-Index sampled at each month-end from the same series.
+    cpiRows = buildCpiRows(cpiMom, cpiTargets).map((r) => ({ ...r, vnindex: vnAsof(monthEnd(r.date)) }));
     pctNearCeiling = regimeCfg.pct_near_ceiling;
     chg5dFast = regimeCfg.chg5d_fast;
     // central_rate_chg_5d = central(t) − central(t−5 sessions). Computed over the
@@ -248,6 +269,20 @@ export default async function MacroPage() {
 
       <section className="mb-6">
         <div className="mb-2">
+          <h2 className="text-base font-semibold">{t(locale, "macroInterestTitle")}</h2>
+          <p className="text-xs text-gray-500">{t(locale, "macroInterestSubtitle")}</p>
+        </div>
+        {error ? (
+          <p className="text-red-600 text-sm">Error loading interest-rate data: {error}</p>
+        ) : irRows.length < 2 ? (
+          <StubCard title={t(locale, "macroInterestTitle")} note={t(locale, "macroInterestNoData")} />
+        ) : (
+          <InterestRateChart rows={irRows} locale={locale} />
+        )}
+      </section>
+
+      <section className="mb-6">
+        <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroFxTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "macroFxSubtitle")}</p>
         </div>
@@ -262,7 +297,7 @@ export default async function MacroPage() {
         )}
       </section>
 
-      <section className="mb-6">
+      <section>
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroCpiTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "macroCpiSubtitle")}</p>
@@ -273,20 +308,6 @@ export default async function MacroPage() {
           <StubCard title={t(locale, "macroCpiTitle")} note={t(locale, "cpiNoData")} />
         ) : (
           <CpiChart rows={cpiRows} locale={locale} />
-        )}
-      </section>
-
-      <section>
-        <div className="mb-2">
-          <h2 className="text-base font-semibold">{t(locale, "macroInterestTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "macroInterestSubtitle")}</p>
-        </div>
-        {error ? (
-          <p className="text-red-600 text-sm">Error loading interest-rate data: {error}</p>
-        ) : irRows.length < 2 ? (
-          <StubCard title={t(locale, "macroInterestTitle")} note={t(locale, "macroInterestNoData")} />
-        ) : (
-          <InterestRateChart rows={irRows} locale={locale} />
         )}
       </section>
     </div>
