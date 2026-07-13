@@ -43,7 +43,7 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
     const vals = view.map((r) => r.vnindex).filter((v): v is number => v !== null);
     if (vals.length === 0) return { lo: 0, hi: 1 };
     const lo = Math.min(...vals), hi = Math.max(...vals);
-    const pad = (hi - lo) * 0.1 || 1;
+    const pad = (hi - lo) * 0.04 || 1;
     return { lo: lo - pad, hi: hi + pad };
   }, [view]);
 
@@ -54,7 +54,7 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
   // --- layout: VN-Index (optional) on top + rate panel, shared x-axis ---
   const W = 900, mL = 48, mR = 16;
   const iw = W - mL - mR;
-  const vnTop = 18, vnH = 72;
+  const vnTop = 18, vnH = 150;
   const vnBlock = hasVn ? vnH + 30 : 0;
   const top = 20 + vnBlock, h = hasVn ? 150 : 200;
   const xLabelY = top + h + 16;

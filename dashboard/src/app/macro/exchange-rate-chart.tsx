@@ -73,7 +73,7 @@ export function ExchangeRateChart({
     const vals = view.map((r) => r.vnindex).filter((v): v is number => v !== null);
     if (!vals.length) return { lo: 0, hi: 1 };
     const lo = Math.min(...vals), hi = Math.max(...vals);
-    const pad = (hi - lo) * 0.08 || 1;
+    const pad = (hi - lo) * 0.04 || 1;
     return { lo: lo - pad, hi: hi + pad };
   }, [view]);
 
@@ -100,7 +100,7 @@ export function ExchangeRateChart({
   // --- layout: VN-Index (optional) + pct + Δ5 panels + regime ribbon, shared x ---
   const W = 900, mL = 54, mR = 16;
   const iw = W - mL - mR;
-  const vnTop = 20, vnH = 84;
+  const vnTop = 20, vnH = 140;
   const vnBlock = hasVn ? vnH + 32 : 0;
   const pctTop = 22 + vnBlock, pctH = hasVn ? 112 : 130;
   const chgTop = pctTop + pctH + 24, chgH = hasVn ? 76 : 82;

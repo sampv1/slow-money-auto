@@ -71,7 +71,7 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
     const vals = view.map((r) => r.vnindex).filter((v): v is number => v !== null);
     if (vals.length === 0) return { lo: 0, hi: 1 };
     const lo = Math.min(...vals), hi = Math.max(...vals);
-    const pad = (hi - lo) * 0.1 || 1;
+    const pad = (hi - lo) * 0.04 || 1;
     return { lo: lo - pad, hi: hi + pad };
   }, [view]);
 
@@ -82,7 +82,7 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
   // --- layout: VN-Index (optional) on top + YoY panel + headroom panel, shared x ---
   const W = 900, mL = 46, mR = 16;
   const iw = W - mL - mR;
-  const vnTop = 18, vnH = 68;
+  const vnTop = 18, vnH = 130;
   const vnBlock = hasVn ? vnH + 30 : 0;
   const yoyTop = 22 + vnBlock, yoyH = 132;
   const hrTop = yoyTop + yoyH + 42, hrH = 92;

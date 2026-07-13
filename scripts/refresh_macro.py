@@ -62,6 +62,12 @@ from macro.interest_rate import (
 # so newer months are hand-entered here — see data/cpi_manual.csv).
 MANUAL_CPI_CSV = Path(__file__).resolve().parent.parent / "data" / "cpi_manual.csv"
 
+# VN-Index is a context overlay on every macro chart, so its history must reach
+# back at least as far as the oldest primary series (interbank since 2015). We
+# backfill the full range vnstock offers (~2004-01) — independent of the FX
+# HISTORY_START (2022) — so the "All" view doesn't clip the VN-Index line short.
+VNINDEX_HISTORY_START = dt.date(2004, 1, 1)
+
 
 def collect_vnindex(start: dt.date, end: dt.date) -> list[dict]:
     """VN-Index daily closes via vnstock (ta.benchmark), as macro_series rows.
@@ -286,8 +292,8 @@ def main():
               + (f" (last {vcb[-1][0]} = {vcb[-1][1]:,.0f})" if vcb else ""))
         vcb_rows = series_rows(METRIC_VCB_SELL, vcb, "USD/VND", "vietcombank")
 
-        print(f"=== Backfill VN-Index (vnstock): {HISTORY_START} -> {end} ===")
-        vnindex_rows = collect_vnindex(HISTORY_START, end)
+        print(f"=== Backfill VN-Index (vnstock): {VNINDEX_HISTORY_START} -> {end} ===")
+        vnindex_rows = collect_vnindex(VNINDEX_HISTORY_START, end)
 
         print(f"=== Backfill CPI (Vietstock {395}): {CPI_HISTORY_START} -> {end} ===")
         cpi_rows = overlay_manual_cpi(collect_cpi(CPI_HISTORY_START, end))
