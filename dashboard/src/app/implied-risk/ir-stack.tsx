@@ -85,7 +85,7 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
     const vals = view.map((r) => r.irV).filter((v): v is number => v !== null).sort((a, b) => a - b);
     if (!vals.length) return { lo: -1, hi: 1 };
     const lo = Math.min(0, quantile(vals, 0.02)), hi = Math.max(0, quantile(vals, 0.98));
-    const pad = (hi - lo) * 0.06 || 1;
+    const pad = (hi - lo) * 0.04 || 1;
     return { lo: lo - pad, hi: hi + pad };
   }, [view]);
 
@@ -94,7 +94,7 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
     const vals = view.map((r) => r.frV).filter((v): v is number => v !== null).sort((a, b) => a - b);
     if (!vals.length) return { lo: -1, hi: 1 };
     const mag = Math.max(Math.abs(quantile(vals, 0.02)), Math.abs(quantile(vals, 0.98))) || 1;
-    return { lo: -mag * 1.06, hi: mag * 1.06 };
+    return { lo: -mag * 1.03, hi: mag * 1.03 };
   }, [view]);
 
   const latestIr = useMemo(() => {
@@ -111,8 +111,8 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
   const iw = W - mL - mR;
   const vnTop = 20, vnH = 140;
   const vnBlock = hasVn ? vnH + 34 : 0;
-  const irTop = 24 + vnBlock, irH = hasVn ? 118 : 150;
-  const frTop = irTop + irH + 30, frH = hasVn ? 108 : 130;
+  const irTop = 24 + vnBlock, irH = hasVn ? 150 : 175;
+  const frTop = irTop + irH + 30, frH = hasVn ? 140 : 160;
   const xLabelY = frTop + frH + 20;
   const H = xLabelY + 6;
 
