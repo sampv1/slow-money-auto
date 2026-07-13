@@ -10,8 +10,9 @@ Metrics, stored raw (nothing derived):
   cpi_mom_index   — headline CPI MoM index (prev month=100), Vietstock NormID 395
                     (monthly), overlaid with hand-entered months from
                     data/cpi_manual.csv (Vietstock froze at 2025-08). See macro/cpi.py.
-  interbank_overnight — SBV overnight interbank average rate (%/năm), daily,
-                    Vietstock NormID 293. See macro/interest_rate.py.
+  interbank_overnight — SBV overnight interbank average rate (%/năm), daily.
+                    Daily latest = SBV portal "lãi suất" page (1-2 days ahead);
+                    history/gap-fill = Vietstock NormID 293. See macro/interest_rate.py.
 
 The /macro dashboard derives percent_to_ceiling = (ceiling - vcb_sell) / ceiling,
 ceiling = central * (1 + band), band from scoring_config['macro'] (effective-dated,
@@ -54,6 +55,7 @@ from macro.interest_rate import (
     INTERBANK_HISTORY_START,
     METRIC_INTERBANK_ON,
     fetch_interbank_overnight_history,
+    fetch_interbank_overnight_sbv,
 )
 
 # Manual CPI overlay (Vietstock CPI froze at 2025-08; GSO is VPN-gated to cloud IPs,
@@ -113,6 +115,31 @@ def collect_interbank(start: dt.date, end: dt.date) -> list[dict]:
     print(f"  Interbank overnight: {len(hist)} daily points"
           + (f" ({hist[0][0]} .. {hist[-1][0]}, last {hist[-1][1]:.2f}%)" if hist else ""))
     return series_rows(METRIC_INTERBANK_ON, hist, "%", "vietstock")
+
+
+def overlay_sbv_interbank(vietstock_rows: list[dict]) -> list[dict]:
+    """Overlay today's SBV-portal overnight point on the Vietstock rows.
+
+    The SBV portal publishes 1-2 business days ahead of Vietstock's feed, so the
+    daily run adds its latest point (source='sbv', winning any date collision —
+    it's the authoritative origin). De-duplicated by date so one upsert batch
+    never carries the same (metric, date) twice. A fetch failure is non-fatal.
+    """
+    try:
+        d, v = fetch_interbank_overnight_sbv()
+    except Exception as e:  # noqa: BLE001
+        print(f"  SBV interbank portal error: {str(e)[:100]}")
+        return vietstock_rows
+    if not d or v is None:
+        print("  SBV interbank portal returned no parseable value.")
+        return vietstock_rows
+    print(f"  SBV portal overnight: {d} = {v:.2f}%")
+    by_date = {r["date"]: r for r in vietstock_rows}
+    by_date[d.isoformat()] = {
+        "metric": METRIC_INTERBANK_ON, "date": d.isoformat(),
+        "value": v, "unit": "%", "source": "sbv",
+    }
+    return sorted(by_date.values(), key=lambda r: r["date"])
 
 
 def overlay_manual_cpi(vietstock_rows: list[dict]) -> list[dict]:
@@ -243,10 +270,11 @@ def main():
         # new release whenever GSO/Vietstock publishes it).
         print("CPI (recent months):")
         cpi_rows = overlay_manual_cpi(collect_cpi(end - dt.timedelta(days=130), end))
-        # Interbank overnight is daily — re-fetch the last few weeks (idempotent;
-        # picks up the latest publication, which lags the market by a few days).
+        # Interbank overnight is daily — re-fetch the last few weeks from Vietstock
+        # (idempotent; its feed lags a few days) and overlay the SBV portal's
+        # latest point (published 1-2 business days earlier than Vietstock).
         print("Interbank overnight (recent):")
-        interbank_rows = collect_interbank(end - dt.timedelta(days=21), end)
+        interbank_rows = overlay_sbv_interbank(collect_interbank(end - dt.timedelta(days=21), end))
 
     rows = central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows
     if args.dry_run:
