@@ -8,6 +8,16 @@ RSI_PERIOD = 14
 RSI_OVERSOLD = 30
 RSI_OVERBOUGHT = 70
 
+# --- MCDX (Multi Color Dragon Extended) — Banker "hand" ---
+# Standard Mango2Juice formula (see data/MCDX.md). The Banker line tracks
+# institutional / smart-money accumulation: banker = sensitivity × (RSI(period) − base),
+# capped to the 0..BASE display scale. We express it as a percentage of that scale
+# (0..100) so the "exceeds 25/50/75%" thresholds map to accumulation phases.
+MCDX_BANKER_PERIOD = 50
+MCDX_BANKER_SENSITIVITY = 1.5
+MCDX_BANKER_BASE = 50
+MCDX_DISPLAY_BASE = 20  # banker line is capped to [0, 20]
+
 
 def _rsi_signal(df: pd.DataFrame, oversold: bool) -> pd.DataFrame:
     rsi_series = rsi(df["close"], period=RSI_PERIOD)
@@ -55,9 +65,44 @@ def compute_macd_bearish_cross(df: pd.DataFrame) -> pd.DataFrame:
     return _macd_cross(df, bullish=False)
 
 
+def _mcdx_banker_pct(df: pd.DataFrame) -> pd.Series:
+    """MCDX Banker line expressed as % of its 0..BASE display scale (0..100)."""
+    rsi_series = rsi(df["close"], period=MCDX_BANKER_PERIOD)
+    banker = (MCDX_BANKER_SENSITIVITY * (rsi_series - MCDX_BANKER_BASE)).clip(
+        lower=0, upper=MCDX_DISPLAY_BASE
+    )
+    return banker / MCDX_DISPLAY_BASE * 100.0
+
+
+def _mcdx_banker_signal(df: pd.DataFrame, threshold: float) -> pd.DataFrame:
+    pct = _mcdx_banker_pct(df)
+    return pd.DataFrame(
+        {
+            "triggered": (pct > threshold).fillna(False),
+            "value": pct,  # banker strength, 0..100
+        },
+        index=df.index,
+    )
+
+
+def compute_mcdx_banker_25(df: pd.DataFrame) -> pd.DataFrame:
+    return _mcdx_banker_signal(df, 25.0)
+
+
+def compute_mcdx_banker_50(df: pd.DataFrame) -> pd.DataFrame:
+    return _mcdx_banker_signal(df, 50.0)
+
+
+def compute_mcdx_banker_75(df: pd.DataFrame) -> pd.DataFrame:
+    return _mcdx_banker_signal(df, 75.0)
+
+
 INDICATORS = {
     "rsi_oversold": compute_rsi_oversold,
     "rsi_overbought": compute_rsi_overbought,
     "macd_bullish_cross": compute_macd_bullish_cross,
     "macd_bearish_cross": compute_macd_bearish_cross,
+    "mcdx_banker_25": compute_mcdx_banker_25,
+    "mcdx_banker_50": compute_mcdx_banker_50,
+    "mcdx_banker_75": compute_mcdx_banker_75,
 }

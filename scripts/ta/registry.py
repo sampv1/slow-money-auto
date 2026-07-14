@@ -57,6 +57,18 @@ INDICATOR_SPECS: list[IndicatorSpec] = [
     IndicatorSpec("macd_bearish_cross", "momentum", "bearish",
                   "MACD bearish cross", "MACD cắt xuống",
                   momentum.compute_macd_bearish_cross),
+    IndicatorSpec("mcdx_banker_25", "momentum", "bullish",
+                  "MCDX Banker > 25% (accumulation)",
+                  "MCDX Banker > 25% (tích lũy)",
+                  momentum.compute_mcdx_banker_25),
+    IndicatorSpec("mcdx_banker_50", "momentum", "bullish",
+                  "MCDX Banker > 50% (markup)",
+                  "MCDX Banker > 50% (đẩy giá)",
+                  momentum.compute_mcdx_banker_50),
+    IndicatorSpec("mcdx_banker_75", "momentum", "bullish",
+                  "MCDX Banker > 75% (parabolic)",
+                  "MCDX Banker > 75% (tăng dốc đứng)",
+                  momentum.compute_mcdx_banker_75),
 
     # --- Trend ---
     IndicatorSpec("ma20_50_golden_cross", "trend", "bullish",
