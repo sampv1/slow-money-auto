@@ -247,7 +247,7 @@ def show_stats(args):
     total_days = len(logs)
 
     print(f"\n{'═' * 50}")
-    print(f"  Signal Flow — Performance Summary")
+    print(f"  Lọc tín hiệu — Performance Summary")
     print(f"{'═' * 50}")
 
     print(f"\n  Trading Days:       {total_days}")

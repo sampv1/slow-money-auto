@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Signal Flow is a Vietnamese stock analysis platform (paper trading only — no real trades). It started as a tracker for AI-generated daily buy/sell recommendations and has grown into a full scoring + screening system for the HOSE/HNX/UPCOM universe (~1,500+ symbols):
+Lọc tín hiệu is a Vietnamese stock analysis platform (paper trading only — no real trades). It started as a tracker for AI-generated daily buy/sell recommendations and has grown into a full scoring + screening system for the HOSE/HNX/UPCOM universe (~1,500+ symbols):
 
 - **Recommendation tracking** — an AI prompt (Claude, with web search) generates daily picks; the pipeline stores them, tracks market prices, and evaluates accuracy/P&L over time.
 - **Technical Analysis (TA)** — nightly compute of ~57 indicators + a TA scanner, per-stock charts, RS ratings, price-base (BQS) detection, S/R + trendlines.

@@ -1,6 +1,6 @@
 # Technical Analysis Scanner — Feature Plan
 
-A TA-based stock screener layered on top of the existing Signal Flow pipeline. Nightly job computes a fixed set of signals across VN100 stocks; users multi-select indicators on the dashboard (AND logic + scoring) and drill down into per-stock charts.
+A TA-based stock screener layered on top of the existing Lọc tín hiệu pipeline. Nightly job computes a fixed set of signals across VN100 stocks; users multi-select indicators on the dashboard (AND logic + scoring) and drill down into per-stock charts.
 
 > Scope of this document: MVP (~14 working days). v2 items are listed but not detailed.
 

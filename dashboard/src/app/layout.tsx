@@ -25,7 +25,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Signal Flow",
+  title: "Lọc tín hiệu",
   description: "Vietnamese stock recommendation tracker",
 };
 
@@ -57,7 +57,7 @@ export default async function RootLayout({
     { href: "/stats", label: t(locale, "navStats") },
     ...(role === "admin" ? [{ href: "/input", label: t(locale, "navInput") }] : []),
     { href: "/realtime", label: t(locale, "navRealtime") },
-    { href: "/feedbacks", label: t(locale, "navFeedbacks") },
+    ...(role !== null ? [{ href: "/feedbacks", label: t(locale, "navFeedbacks") }] : []),
     { href: "/contact", label: t(locale, "contact") },
   ];
 
@@ -71,7 +71,7 @@ export default async function RootLayout({
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-14">
               <Link href="/" className="font-semibold text-lg">
-                Signal Flow
+                Lọc tín hiệu
               </Link>
               <div className="flex items-center gap-2">
                 <AuthButton email={user?.email ?? null} locale={locale} />

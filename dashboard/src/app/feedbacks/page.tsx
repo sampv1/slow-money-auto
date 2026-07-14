@@ -1,4 +1,5 @@
-import { createSupabaseServer } from "@/lib/supabase-server";
+import { redirect } from "next/navigation";
+import { createSupabaseServer, getUserRole } from "@/lib/supabase-server";
 import { getLocale, t } from "@/lib/i18n";
 
 export const revalidate = 0;
@@ -11,7 +12,12 @@ interface Feedback {
 }
 
 export default async function FeedbacksPage() {
-  // Public page (anonymous-readable).
+  // Logged-in users only — hidden from anonymous visitors.
+  const role = await getUserRole();
+  if (role === null) {
+    redirect("/login");
+  }
+
   const locale = await getLocale();
   const supabase = await createSupabaseServer();
 

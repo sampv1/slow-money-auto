@@ -1,4 +1,4 @@
-# Signal Flow — Project Plan
+# Lọc tín hiệu — Project Plan
 
 Vietnamese stock recommendation tracker. Stores AI-generated trading recommendations and evaluates their accuracy over time (paper trading).
 
