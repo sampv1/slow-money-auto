@@ -17,6 +17,7 @@ const VN_COLOR = "#2563eb"; // blue — VN-Index (context), matches the FX chart
 export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Locale }) {
   const [range, setRange] = useState<Range>("3y");
   const [hover, setHover] = useState<number | null>(null);
+  const [hoverY, setHoverY] = useState<number | null>(null);
 
   const view = useMemo(() => {
     const days = RANGE_DAYS[range];
@@ -97,6 +98,7 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
     const px = ((e.clientX - rect.left) / rect.width) * W;
     const i = Math.round(((px - mL) / iw) * (n - 1));
     setHover(i >= 0 && i < n ? i : null);
+    setHoverY(((e.clientY - rect.top) / rect.height) * H);
   }
 
   const hv = hover !== null ? view[hover] : null;
@@ -143,7 +145,7 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
         {hasVn && <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: VN_COLOR }} />VN-Index</span>}
       </div>
 
-      <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img">
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => { setHover(null); setHoverY(null); }} role="img">
         {/* ---- VN-Index panel (context) ---- */}
         {hasVn && (
           <>
@@ -190,6 +192,26 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
             </text>
           </g>
         )}
+
+        {/* ---- horizontal crosshair: y-axis value of the hovered panel ---- */}
+        {hoverY !== null && (() => {
+          const inv = (pTop: number, pH: number, lo: number, hi: number) =>
+            hi - ((hoverY - pTop) / pH) * (hi - lo);
+          let label: string | null = null;
+          if (hasVn && hoverY >= vnTop && hoverY <= vnTop + vnH) {
+            label = fmtInt(inv(vnTop, vnH, vnDom.lo, vnDom.hi));
+          } else if (hoverY >= top && hoverY <= top + h) {
+            label = fmtPct(inv(top, h, dom.lo, dom.hi));
+          }
+          if (label === null) return null;
+          return (
+            <g>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+            </g>
+          );
+        })()}
       </svg>
     </div>
   );

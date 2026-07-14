@@ -58,6 +58,7 @@ export function ExchangeRateChart({
 }) {
   const [range, setRange] = useState<Range>("1y");
   const [hover, setHover] = useState<number | null>(null);
+  const [hoverY, setHoverY] = useState<number | null>(null);
 
   const view = useMemo(() => {
     const days = RANGE_DAYS[range];
@@ -177,6 +178,7 @@ export function ExchangeRateChart({
     const px = ((e.clientX - rect.left) / rect.width) * W;
     const i = Math.round(((px - mL) / iw) * (n - 1));
     setHover(i >= 0 && i < n ? i : null);
+    setHoverY(((e.clientY - rect.top) / rect.height) * H);
   }
 
   const hv = hover !== null ? view[hover] : null;
@@ -240,7 +242,7 @@ export function ExchangeRateChart({
         ))}
       </div>
 
-      <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img">
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => { setHover(null); setHoverY(null); }} role="img">
         {/* ---- panel titles ---- */}
         {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
         <text x={mL} y={fxTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelFx")}</text>
@@ -340,6 +342,30 @@ export function ExchangeRateChart({
             </text>
           </g>
         )}
+
+        {/* ---- horizontal crosshair: y-axis value of the hovered panel ---- */}
+        {hoverY !== null && (() => {
+          const inv = (pTop: number, pH: number, lo: number, hi: number) =>
+            hi - ((hoverY - pTop) / pH) * (hi - lo);
+          let label: string | null = null;
+          if (hasVn && hoverY >= vnTop && hoverY <= vnTop + vnH) {
+            label = fmtInt(inv(vnTop, vnH, vnDom.lo, vnDom.hi));
+          } else if (hoverY >= fxTop && hoverY <= fxTop + fxH) {
+            label = fmtInt(inv(fxTop, fxH, fxDom.lo, fxDom.hi));
+          } else if (hoverY >= pctTop && hoverY <= pctTop + pctH) {
+            label = fmtPct(inv(pctTop, pctH, 0, pctHi));
+          } else if (hoverY >= chgTop && hoverY <= chgTop + chgH) {
+            label = fmtSigned(inv(chgTop, chgH, chgDom.lo, chgDom.hi));
+          }
+          if (label === null) return null;
+          return (
+            <g>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+            </g>
+          );
+        })()}
       </svg>
     </div>
   );
