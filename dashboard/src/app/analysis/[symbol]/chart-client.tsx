@@ -622,10 +622,30 @@ export function ChartClient({
     if (features.showMACD && allPanes[panes.macd]) allPanes[panes.macd].setStretchFactor(1.2);
 
     // === Markers routed to the correct pane ======================
+    // Two de-noising passes keep persistent (state-based) signals — Stage
+    // alignment, MA200 trend, near S/R, BB squeeze, … — from painting an
+    // arrow on every candle for months:
+    //  1. run-compression: a signal only gets a marker on the FIRST bar of
+    //     each contiguous stretch it fires on ("condition started here");
+    //     event signals (crosses, breakouts, candles) are naturally sparse
+    //     and unaffected.
+    //  2. per-bar dedupe: several same-direction signals on one bar collapse
+    //     into a single marker (the chips below list what's selected).
+    const dateIdx = new Map(candles.map((c, i) => [c.date, i]));
+    const firedAt = new Map<string, Set<number>>();
+    for (const sig of chartSignals) {
+      const di = dateIdx.get(sig.date);
+      if (di === undefined) continue;
+      let s = firedAt.get(sig.indicator);
+      if (!s) firedAt.set(sig.indicator, (s = new Set()));
+      s.add(di);
+    }
+
     type MarkerArr = SeriesMarker<Time>[];
     const buckets: Record<number, MarkerArr> = { 0: [], 1: [] };
     if (panes.rsi !== -1) buckets[panes.rsi] = [];
     if (panes.macd !== -1) buckets[panes.macd] = [];
+    const seen = new Set<string>();
 
     for (const sig of chartSignals) {
       if (CHART_HIDDEN_KEYS.has(sig.indicator)) continue;
@@ -633,6 +653,12 @@ export function ChartClient({
       const direction = spec?.direction ?? "neutral";
       const paneIdx = paneForIndicator(sig.indicator, panes);
       if (!(paneIdx in buckets)) continue;
+      const di = dateIdx.get(sig.date);
+      // Mid-run bar (same signal fired the previous session) → no marker.
+      if (di !== undefined && di > 0 && firedAt.get(sig.indicator)?.has(di - 1)) continue;
+      const dupKey = `${paneIdx}|${sig.date}|${direction}`;
+      if (seen.has(dupKey)) continue;
+      seen.add(dupKey);
       buckets[paneIdx].push({
         time: sig.date as Time,
         position:
