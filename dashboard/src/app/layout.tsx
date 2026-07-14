@@ -7,8 +7,7 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 import { AuthButton } from "@/components/auth-button";
 import { NavLinks } from "@/components/nav-links";
 import { GAUserIdentify } from "@/components/ga-user-identify";
-import { getUserRole } from "@/lib/supabase-server";
-import { createSupabaseServer } from "@/lib/supabase-server";
+import { getUserAndRole } from "@/lib/supabase-server";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 
@@ -37,9 +36,9 @@ export default async function RootLayout({
   const cookieStore = await cookies();
   const locale = getLocaleFromCookie(cookieStore.get("locale")?.value ?? null);
 
-  const role = await getUserRole();
-  const supabase = await createSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
+  // One auth pass for both the role (nav gating) and the user (email in the
+  // auth button) — previously two separate getUser() round trips.
+  const { user, role } = await getUserAndRole();
 
   // Market (/) and Daily Logs (/logs) are on hold — hidden for everyone
   // (including admin). The homepage now serves Macro (/ redirects to /macro).

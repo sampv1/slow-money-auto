@@ -1,30 +1,56 @@
+import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
+import { CACHE_TTL_SECONDS, TAG_TA, fetchAllPaged, getFaQuarters, getFaRows } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
-import type { FaScore } from "@/lib/fa";
 import { SignalProClient } from "./signal-pro-client";
 
 export const revalidate = 0;
 
-// PostgREST caps rows per request (default 1000); the FA universe is ~1500, so
-// page through .range() like the FA/TA scanners do.
-const PAGE_SIZE = 1000;
+type UniverseRow = {
+  symbol: string;
+  avg_volume_20d: number | null;
+  rs_3m: number | null;
+  rs_composite: number | null;
+  rs_line_full: number[] | null;
+  rs_line_score: number | null;
+  rs_line_grade: string | null;
+  base_score: number | null;
+  base_grade: string | null;
+  base_type: string | null;
+  base_status: string | null;
+  base_chart: { o: number[]; h: number[]; l: number[]; c: number[]; lo: number; hi: number; s: number } | null;
+  ta_score: number | null;
+  catalyst_score: number | null;
+};
 
-async function fetchAllPaged<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
-): Promise<{ data: T[]; error: { message: string } | null }> {
-  const all: T[] = [];
-  let offset = 0;
-  while (true) {
-    const { data, error } = await build(offset, offset + PAGE_SIZE - 1);
-    if (error) return { data: all, error };
-    const rows = (data ?? []) as T[];
-    all.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-  }
-  return { data: all, error: null };
-}
+// The row sparkline only needs the recent tail of the RS line. The full
+// 250-point series × ~1,568 symbols was the dominant payload of this page
+// (~2 MB document); the expanded RS-line view re-fetches the full series
+// client-side on demand (see signal-pro-client), so shipping it up front is
+// pure waste. ~90 points ≈ one quarter of sessions.
+const SPARKLINE_POINTS = 90;
+
+const getSignalProUniverse = unstable_cache(
+  async (): Promise<UniverseRow[]> => {
+    const rows = await fetchAllPaged<UniverseRow>((from, to, withCount) =>
+      supabase
+        .from("ta_universe")
+        .select(
+          "symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_full,rs_line_score,rs_line_grade,base_score,base_grade,base_type,base_status,base_chart,ta_score,catalyst_score",
+          withCount ? { count: "exact" } : undefined,
+        )
+        .order("symbol", { ascending: true })
+        .range(from, to),
+    );
+    return rows.map((r) => ({
+      ...r,
+      rs_line_full: r.rs_line_full ? r.rs_line_full.slice(-SPARKLINE_POINTS) : null,
+    }));
+  },
+  ["signal-pro-universe"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
+);
 
 export default async function SignalProPage({
   searchParams,
@@ -36,36 +62,36 @@ export default async function SignalProPage({
   const role = await getUserRole();
   const isAdmin = role === "admin";
 
-  // Symbols that already hold an active position (any source) → the per-row
-  // control shows SELL (finalize) instead of BUY (admin only).
+  // Fetch inside try (data errors), render outside (lint: JSX in try/catch
+  // wouldn't catch render errors anyway).
+  let quarters: string[] = [];
+  let selected: string | undefined;
+  let universe: UniverseRow[] = [];
   let activeSymbols: string[] = [];
-  if (isAdmin) {
-    const { data: active } = await supabase
-      .from("recommendations")
-      .select("symbol")
-      .in("status", ["OPEN", "TP1_HIT"]);
-    activeSymbols = Array.from(new Set((active ?? []).map((r) => r.symbol as string)));
+  let rows: Awaited<ReturnType<typeof getFaRows>> = [];
+  let loadError: string | null = null;
+  try {
+    // Quarters + universe are independent → parallel. Both come from the data
+    // cache when warm. activeSymbols is admin-only trade state, so it stays
+    // uncached (must reflect a BUY/SELL immediately).
+    [quarters, universe, activeSymbols] = await Promise.all([
+      getFaQuarters(),
+      getSignalProUniverse(),
+      (async (): Promise<string[]> => {
+        if (!isAdmin) return [];
+        const { data: active } = await supabase
+          .from("recommendations")
+          .select("symbol")
+          .in("status", ["OPEN", "TP1_HIT"]);
+        return Array.from(new Set((active ?? []).map((r) => r.symbol as string)));
+      })(),
+    ]);
+
+    selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
+    if (selected) rows = await getFaRows(selected);
+  } catch (e) {
+    loadError = e instanceof Error ? e.message : String(e);
   }
-
-  // Distinct quarters (newest first) → dropdown options. Default = latest.
-  // Must page: there are >1000 rows per quarter, so a single un-paged query
-  // (capped at 1000) would only ever see the newest quarter.
-  const { data: periodRows, error: periodErr } = await fetchAllPaged<{ as_of_period: string }>(
-    (from, to) =>
-      supabase
-        .from("fa_scores")
-        .select("as_of_period")
-        .order("as_of_period", { ascending: false })
-        .range(from, to),
-  );
-
-  if (periodErr) {
-    return <p className="text-red-600">Error loading Signal Pro: {periodErr.message}</p>;
-  }
-
-  // Paged in descending order, so Set insertion order is already newest-first.
-  const quarters = Array.from(new Set((periodRows ?? []).map((r) => r.as_of_period)));
-  const selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
 
   const header = (
     <div className="mb-4">
@@ -73,6 +99,15 @@ export default async function SignalProPage({
       <p className="text-sm text-gray-500">{t(locale, "signalProSubtitle")}</p>
     </div>
   );
+
+  if (loadError) {
+    return (
+      <div>
+        {header}
+        <p className="text-red-600">Error loading Signal Pro: {loadError}</p>
+      </div>
+    );
+  }
 
   if (!selected) {
     return (
@@ -84,43 +119,6 @@ export default async function SignalProPage({
       </div>
     );
   }
-
-  const { data: rows, error } = await fetchAllPaged<FaScore>((from, to) =>
-    supabase
-      .from("fa_scores")
-      .select("*")
-      .eq("as_of_period", selected)
-      .order("total_score", { ascending: false })
-      .range(from, to),
-  );
-
-  if (error) {
-    return <p className="text-red-600">Error loading Signal Pro: {error.message}</p>;
-  }
-
-  // 20-session avg volume (liquidity filter) + latest RS composite per symbol.
-  const { data: universe } = await fetchAllPaged<{
-    symbol: string;
-    avg_volume_20d: number | null;
-    rs_3m: number | null;
-    rs_composite: number | null;
-    rs_line_full: number[] | null;
-    rs_line_score: number | null;
-    rs_line_grade: string | null;
-    base_score: number | null;
-    base_grade: string | null;
-    base_type: string | null;
-    base_status: string | null;
-    base_chart: { o: number[]; h: number[]; l: number[]; c: number[]; lo: number; hi: number; s: number } | null;
-    ta_score: number | null;
-    catalyst_score: number | null;
-  }>(
-    (from, to) =>
-      supabase
-        .from("ta_universe")
-        .select("symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_full,rs_line_score,rs_line_grade,base_score,base_grade,base_type,base_status,base_chart,ta_score,catalyst_score")
-        .range(from, to),
-  );
 
   return (
     <div>

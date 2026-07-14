@@ -38,9 +38,21 @@ export type UserRole = "admin" | "viewer" | "pro" | null;
  * Uses Supabase Auth getUser() (verified server-side) + profiles table.
  */
 export async function getUserRole(): Promise<UserRole> {
+  const { role } = await getUserAndRole();
+  return role;
+}
+
+/**
+ * User + role in one pass — use when both are needed (e.g. the root layout)
+ * so auth costs a single getUser() + profiles lookup instead of two.
+ */
+export async function getUserAndRole(): Promise<{
+  user: { id: string; email?: string } | null;
+  role: UserRole;
+}> {
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  if (!user) return { user: null, role: null };
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -48,7 +60,7 @@ export async function getUserRole(): Promise<UserRole> {
     .eq("id", user.id)
     .single();
 
-  return (profile?.role as UserRole) ?? "pro";
+  return { user, role: (profile?.role as UserRole) ?? "pro" };
 }
 
 /**

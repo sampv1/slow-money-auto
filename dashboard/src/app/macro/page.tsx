@@ -1,4 +1,6 @@
+import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
+import { CACHE_TTL_SECONDS, TAG_MACRO, fetchAllPaged } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { ExchangeRateChart, type FxRow, type Regime } from "./exchange-rate-chart";
 import { CpiChart, type CpiRow } from "./cpi-chart";
@@ -6,30 +8,23 @@ import { InterestRateChart, type IrRow } from "./interest-rate-chart";
 
 export const revalidate = 0;
 
-// macro_series holds > 1000 rows per metric (daily since 2022), so page through
-// .range() past the PostgREST 1000-row cap, ascending by date.
-const PAGE_SIZE = 1000;
-
 type BandEntry = { from: string; value: number };
 const DEFAULT_BANDS: BandEntry[] = [{ from: "2022-10-17", value: 0.05 }];
 
-async function fetchMetric(metric: string): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase
+// One metric's full daily series, as [date, value] entries (JSON-serializable
+// for the data cache — the page rebuilds Maps from them). macro_series holds
+// >1000 rows per metric (VN-Index alone is 5,600+), and fetchAllPaged pulls the
+// pages in parallel instead of the old serial walk.
+async function fetchMetricEntries(metric: string): Promise<[string, number][]> {
+  const rows = await fetchAllPaged<{ date: string; value: number }>((from, to, withCount) =>
+    supabase
       .from("macro_series")
-      .select("date,value")
+      .select("date,value", withCount ? { count: "exact" } : undefined)
       .eq("metric", metric)
       .order("date", { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) throw new Error(error.message);
-    const rows = (data ?? []) as { date: string; value: number }[];
-    for (const r of rows) out.set(r.date, Number(r.value));
-    if (rows.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-  }
-  return out;
+      .range(from, to),
+  );
+  return rows.map((r) => [r.date, Number(r.value)]);
 }
 
 // Effective-dated band: the entry with the greatest `from` <= date (step / as-of
@@ -72,6 +67,24 @@ async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCf
     cpiTargets: [...cpiTargets].sort((a, b) => a.from.localeCompare(b.from)),
   };
 }
+
+// Every series + config the page needs, in one cached unit. Invalidated by the
+// macro pipeline via /api/revalidate (tag macro-data); TTL is a safety net.
+const getMacroData = unstable_cache(
+  async () => {
+    const [central, vcb, vn, cpiMom, interbankOn, cfg] = await Promise.all([
+      fetchMetricEntries("fx_central_rate"),
+      fetchMetricEntries("fx_vcb_sell"),
+      fetchMetricEntries("vnindex"),
+      fetchMetricEntries("cpi_mom_index"),
+      fetchMetricEntries("interbank_overnight"),
+      loadMacroConfig(),
+    ]);
+    return { central, vcb, vn, cpiMom, interbankOn, cfg };
+  },
+  ["macro-data"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
+);
 
 // CPI: monthly MoM index (prev month=100) → YoY (chained), running YTD-avg YoY,
 // and inflation-budget headroom vs the annual target. Everything derived here so
@@ -178,15 +191,13 @@ export default async function MacroPage() {
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
   try {
-    const [central, vcb, vn, cpiMom, interbankOn, cfg] = await Promise.all([
-      fetchMetric("fx_central_rate"),
-      fetchMetric("fx_vcb_sell"),
-      fetchMetric("vnindex"),
-      fetchMetric("cpi_mom_index"),
-      fetchMetric("interbank_overnight"),
-      loadMacroConfig(),
-    ]);
-    const { bands, regime: regimeCfg, cpiTargets } = cfg;
+    const d = await getMacroData();
+    const central = new Map(d.central);
+    const vcb = new Map(d.vcb);
+    const vn = new Map(d.vn);
+    const cpiMom = new Map(d.cpiMom);
+    const interbankOn = new Map(d.interbankOn);
+    const { bands, regime: regimeCfg, cpiTargets } = d.cfg;
 
     // Shared VN-Index overlay: ONE source series (the `vnindex` metric), sampled
     // by as-of (last close on or before each point) so the FX, interest-rate and

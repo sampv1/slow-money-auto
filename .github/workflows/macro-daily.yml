@@ -76,3 +76,18 @@ jobs:
           else
             python fetch_cpi.py --upsert
           fi
+
+      # Expire the dashboard's server-side data cache so the next page view
+      # shows today's series immediately (see dashboard /api/revalidate).
+      # Non-fatal: if it fails, the cache TTL still refreshes within the hour.
+      - name: Revalidate dashboard cache
+        continue-on-error: true
+        env:
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          if [ -z "$REVALIDATE_SECRET" ]; then
+            echo "::warning::REVALIDATE_SECRET not set — skipping cache revalidation."
+            exit 0
+          fi
+          curl -fsS -X POST "https://loctinhieu.com/api/revalidate?secret=${REVALIDATE_SECRET}&tags=macro-data" \
+            || echo "::warning::Dashboard revalidate call failed (cache will expire via TTL)."
