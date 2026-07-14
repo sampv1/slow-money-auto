@@ -41,12 +41,12 @@ export const INDICATORS: IndicatorSpec[] = [
     label_en: "MACD bullish cross", label_vi: "MACD cắt lên" },
   { key: "macd_bearish_cross", category: "momentum", direction: "bearish",
     label_en: "MACD bearish cross", label_vi: "MACD cắt xuống" },
-  { key: "mcdx_banker_25", category: "momentum", direction: "bullish",
-    label_en: "MCDX Banker > 25% (accumulation)", label_vi: "MCDX Banker > 25% (tích lũy)" },
-  { key: "mcdx_banker_50", category: "momentum", direction: "bullish",
-    label_en: "MCDX Banker > 50% (markup)", label_vi: "MCDX Banker > 50% (đẩy giá)" },
-  { key: "mcdx_banker_75", category: "momentum", direction: "bullish",
-    label_en: "MCDX Banker > 75% (parabolic)", label_vi: "MCDX Banker > 75% (tăng dốc đứng)" },
+  { key: "mcdx_banker_25_50", category: "momentum", direction: "bullish",
+    label_en: "MCDX Banker 25%–50% (accumulation)", label_vi: "MCDX Banker 25%–50% (tích lũy)" },
+  { key: "mcdx_banker_50_75", category: "momentum", direction: "bullish",
+    label_en: "MCDX Banker 50%–75% (markup)", label_vi: "MCDX Banker 50%–75% (đẩy giá)" },
+  { key: "mcdx_banker_70", category: "momentum", direction: "bullish",
+    label_en: "MCDX Banker > 70% (parabolic)", label_vi: "MCDX Banker > 70% (tăng dốc đứng)" },
 
   // Trend
   { key: "ma20_50_golden_cross", category: "trend", direction: "bullish",

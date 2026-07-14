@@ -74,7 +74,20 @@ def _mcdx_banker_pct(df: pd.DataFrame) -> pd.Series:
     return banker / MCDX_DISPLAY_BASE * 100.0
 
 
-def _mcdx_banker_signal(df: pd.DataFrame, threshold: float) -> pd.DataFrame:
+def _mcdx_banker_band(df: pd.DataFrame, lo: float, hi: float) -> pd.DataFrame:
+    """Triggered when banker strength falls in the [lo, hi) band."""
+    pct = _mcdx_banker_pct(df)
+    return pd.DataFrame(
+        {
+            "triggered": ((pct >= lo) & (pct < hi)).fillna(False),
+            "value": pct,  # banker strength, 0..100
+        },
+        index=df.index,
+    )
+
+
+def _mcdx_banker_above(df: pd.DataFrame, threshold: float) -> pd.DataFrame:
+    """Triggered when banker strength exceeds `threshold`."""
     pct = _mcdx_banker_pct(df)
     return pd.DataFrame(
         {
@@ -85,16 +98,16 @@ def _mcdx_banker_signal(df: pd.DataFrame, threshold: float) -> pd.DataFrame:
     )
 
 
-def compute_mcdx_banker_25(df: pd.DataFrame) -> pd.DataFrame:
-    return _mcdx_banker_signal(df, 25.0)
+def compute_mcdx_banker_25_50(df: pd.DataFrame) -> pd.DataFrame:
+    return _mcdx_banker_band(df, 25.0, 50.0)
 
 
-def compute_mcdx_banker_50(df: pd.DataFrame) -> pd.DataFrame:
-    return _mcdx_banker_signal(df, 50.0)
+def compute_mcdx_banker_50_75(df: pd.DataFrame) -> pd.DataFrame:
+    return _mcdx_banker_band(df, 50.0, 75.0)
 
 
-def compute_mcdx_banker_75(df: pd.DataFrame) -> pd.DataFrame:
-    return _mcdx_banker_signal(df, 75.0)
+def compute_mcdx_banker_70(df: pd.DataFrame) -> pd.DataFrame:
+    return _mcdx_banker_above(df, 70.0)
 
 
 INDICATORS = {
@@ -102,7 +115,7 @@ INDICATORS = {
     "rsi_overbought": compute_rsi_overbought,
     "macd_bullish_cross": compute_macd_bullish_cross,
     "macd_bearish_cross": compute_macd_bearish_cross,
-    "mcdx_banker_25": compute_mcdx_banker_25,
-    "mcdx_banker_50": compute_mcdx_banker_50,
-    "mcdx_banker_75": compute_mcdx_banker_75,
+    "mcdx_banker_25_50": compute_mcdx_banker_25_50,
+    "mcdx_banker_50_75": compute_mcdx_banker_50_75,
+    "mcdx_banker_70": compute_mcdx_banker_70,
 }
