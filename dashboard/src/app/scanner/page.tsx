@@ -45,6 +45,7 @@ export type UniverseLiquidity = {
   rs_9m: number | null;
   rs_12m: number | null;
   rs_composite: number | null;
+  ta_score: number | null;
 };
 
 export default async function ScannerPage() {
@@ -110,7 +111,7 @@ export default async function ScannerPage() {
     (from, to) =>
       supabase
         .from("ta_universe")
-        .select("symbol,avg_volume_20d,rs_3m,rs_6m,rs_9m,rs_12m,rs_composite")
+        .select("symbol,avg_volume_20d,rs_3m,rs_6m,rs_9m,rs_12m,rs_composite,ta_score")
         .eq("is_active", true)
         .order("symbol", { ascending: true })
         .range(from, to),

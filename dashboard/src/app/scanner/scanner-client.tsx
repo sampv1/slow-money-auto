@@ -130,6 +130,7 @@ type ResultRow = {
   volume: number | null;
   avgVolume20d: number | null;
   rsComposite: number | null;
+  taScore: number | null;
 };
 
 export function ScannerClient({
@@ -274,6 +275,12 @@ export function ScannerClient({
     return m;
   }, [universe]);
 
+  const taScoreBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const u of universe) m.set(u.symbol, u.ta_score);
+    return m;
+  }, [universe]);
+
   const grouped = useMemo(() => indicatorsByCategory(), []);
 
   // Compute ranked results: stocks with at least one matching selected indicator
@@ -312,11 +319,21 @@ export function ScannerClient({
         volume: close?.volume ?? null,
         avgVolume20d: avgVol ?? null,
         rsComposite,
+        taScore: taScoreBySymbol.get(symbol) ?? null,
       });
     }
-    rows.sort((a, b) => a.symbol.localeCompare(b.symbol));
+    // Rank by TA Score (best first); unscored symbols sink to the bottom,
+    // tie-broken alphabetically.
+    rows.sort((a, b) => {
+      const sa = a.taScore, sb = b.taScore;
+      if (sa === null && sb === null) return a.symbol.localeCompare(b.symbol);
+      if (sa === null) return 1;
+      if (sb === null) return -1;
+      if (sb !== sa) return sb - sa;
+      return a.symbol.localeCompare(b.symbol);
+    });
     return rows;
-  }, [selected, signalsBySymbol, closeBySymbol, avgVolBySymbol, minAvgVolume, rsBySymbol, minCompositeRs]);
+  }, [selected, signalsBySymbol, closeBySymbol, avgVolBySymbol, minAvgVolume, rsBySymbol, minCompositeRs, taScoreBySymbol]);
 
   function toggle(key: string) {
     setSelected((prev) => {
@@ -652,7 +669,12 @@ export function ScannerClient({
                 <thead>
                   <tr className="border-b border-gray-200 text-left text-gray-500">
                     <th className="px-4 py-3 font-medium">{t(locale, "symbol")}</th>
-                    <th className="px-4 py-3 font-medium">{t(locale, "taScore")}</th>
+                    <th
+                      className="px-4 py-3 font-medium text-right"
+                      title="TA Score = RS3M·20% + RS Composite·25% + RS Line·20% + BQS·35%"
+                    >
+                      {t(locale, "spTaScore")}
+                    </th>
                     <th className="px-4 py-3 font-medium text-right">{t(locale, "taCompositeRs")}</th>
                     <th className="px-4 py-3 font-medium text-right">{t(locale, "taClose")}</th>
                     <th className="px-4 py-3 font-medium">{t(locale, "taSignalsFired")}</th>
@@ -669,8 +691,8 @@ export function ScannerClient({
                           {row.symbol}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-gray-700 font-mono whitespace-nowrap">
-                        {row.matched.length} / {selected.size}
+                      <td className="px-4 py-3 text-right font-mono">
+                        {row.taScore ?? "—"}
                       </td>
                       <td className="px-4 py-3 text-right font-mono">
                         {row.rsComposite ?? "—"}
