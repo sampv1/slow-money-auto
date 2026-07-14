@@ -7,9 +7,11 @@ import { formatPrice } from "@/lib/format";
 import {
   CATEGORIES,
   INDICATORS_BY_KEY,
+  MCDX_BANKER_KEYS,
   type IndicatorCategory,
   type IndicatorSpec,
   directionColor,
+  formatMcdxBanker,
   indicatorLabel,
   indicatorsByCategory,
 } from "@/lib/ta-indicators";
@@ -238,6 +240,18 @@ export function ScannerClient({
     for (const s of signals) {
       if (!m.has(s.symbol)) m.set(s.symbol, new Set());
       m.get(s.symbol)!.add(s.indicator);
+    }
+    return m;
+  }, [signals]);
+
+  // Exact MCDX Banker strength (0..100) per symbol — the three bands share one
+  // value, so we display the number instead of the band label in the chips.
+  const mcdxBankerBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const s of signals) {
+      if (MCDX_BANKER_KEYS.has(s.indicator) && !m.has(s.symbol)) {
+        m.set(s.symbol, s.value);
+      }
     }
     return m;
   }, [signals]);
@@ -664,20 +678,35 @@ export function ScannerClient({
                       <td className="px-4 py-3 text-right font-mono">{formatPrice(row.close)}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
-                          {row.matched.map((spec) => (
-                            <span
-                              key={spec.key}
-                              title={indicatorLabel(spec, locale)}
-                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded ${spec.direction === "bullish"
-                                  ? "bg-green-50 text-green-700"
-                                  : spec.direction === "bearish"
-                                    ? "bg-red-50 text-red-700"
-                                    : "bg-gray-100 text-gray-600"
-                                }`}
-                            >
-                              {indicatorLabel(spec, locale)}
-                            </span>
-                          ))}
+                          {(() => {
+                            // Collapse MCDX Banker bands into a single chip that
+                            // shows the exact banker strength for this symbol.
+                            let mcdxShown = false;
+                            return row.matched.map((spec) => {
+                              const isMcdx = MCDX_BANKER_KEYS.has(spec.key);
+                              if (isMcdx) {
+                                if (mcdxShown) return null;
+                                mcdxShown = true;
+                              }
+                              const label = isMcdx
+                                ? formatMcdxBanker(mcdxBankerBySymbol.get(row.symbol))
+                                : indicatorLabel(spec, locale);
+                              return (
+                                <span
+                                  key={isMcdx ? "mcdx_banker" : spec.key}
+                                  title={label}
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded ${spec.direction === "bullish"
+                                      ? "bg-green-50 text-green-700"
+                                      : spec.direction === "bearish"
+                                        ? "bg-red-50 text-red-700"
+                                        : "bg-gray-100 text-gray-600"
+                                    }`}
+                                >
+                                  {label}
+                                </span>
+                              );
+                            });
+                          })()}
                         </div>
                       </td>
                     </tr>

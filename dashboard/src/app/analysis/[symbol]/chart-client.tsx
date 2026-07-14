@@ -13,7 +13,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import type { Candle } from "./page";
-import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, indicatorLabel } from "@/lib/ta-indicators";
+import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import type { Locale } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
 
@@ -313,6 +313,19 @@ export function ChartClient({
 
   const features = useMemo(() => featuresFor(selected), [selected]);
   const panes = useMemo(() => paneIndices(features), [features]);
+
+  // Current MCDX Banker strength (0..100), from the latest bar. Mirrors
+  // scripts/ta/indicators/momentum.py: banker = clip(1.5·(RSI(50)−50), 0, 20),
+  // shown as a % of that 0..20 display scale.
+  const mcdxBankerPct = useMemo(() => {
+    const closes = candles.map((c) => c.close);
+    const r = rsi(closes, 50);
+    for (let i = r.length - 1; i >= 0; i--) {
+      const v = r[i];
+      if (v !== null) return (Math.min(Math.max(1.5 * (v - 50), 0), 20) / 20) * 100;
+    }
+    return null;
+  }, [candles]);
 
   // Chart height grows with the number of subplots.
   const baseHeight = 380; // price + volume
@@ -693,25 +706,35 @@ export function ChartClient({
         {/* Selected-indicator chips so the user can read what the markers mean */}
         {selected.length > 0 && (
           <div className="flex items-center flex-wrap gap-1">
-            {selected.map((key) => {
-              if (CHART_HIDDEN_KEYS.has(key)) return null;
-              const spec = INDICATORS_BY_KEY[key];
-              if (!spec) return null;
-              return (
-                <span
-                  key={key}
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${spec.direction === "bullish"
-                      ? "bg-green-50 text-green-700"
-                      : spec.direction === "bearish"
-                        ? "bg-red-50 text-red-700"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                >
-                  {spec.direction === "bullish" ? "▲" : spec.direction === "bearish" ? "▼" : "●"}
-                  {indicatorLabel(spec, locale)}
-                </span>
-              );
-            })}
+            {(() => {
+              // Collapse the (up to three) MCDX Banker bands into a single chip
+              // that shows the exact current banker strength, not the band range.
+              let mcdxShown = false;
+              return selected.map((key) => {
+                if (CHART_HIDDEN_KEYS.has(key)) return null;
+                const spec = INDICATORS_BY_KEY[key];
+                if (!spec) return null;
+                const isMcdx = MCDX_BANKER_KEYS.has(key);
+                if (isMcdx) {
+                  if (mcdxShown) return null;
+                  mcdxShown = true;
+                }
+                return (
+                  <span
+                    key={isMcdx ? "mcdx_banker" : key}
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${spec.direction === "bullish"
+                        ? "bg-green-50 text-green-700"
+                        : spec.direction === "bearish"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                  >
+                    {spec.direction === "bullish" ? "▲" : spec.direction === "bearish" ? "▼" : "●"}
+                    {isMcdx ? formatMcdxBanker(mcdxBankerPct) : indicatorLabel(spec, locale)}
+                  </span>
+                );
+              });
+            })()}
           </div>
         )}
       </div>

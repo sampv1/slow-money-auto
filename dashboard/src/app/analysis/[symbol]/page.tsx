@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { getLocale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
-import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, directionColor, indicatorLabel } from "@/lib/ta-indicators";
+import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import type { FaScore } from "@/lib/fa";
 import { ChartClient } from "./chart-client";
 import { FaSummary } from "./fa-summary";
@@ -241,7 +241,9 @@ export default async function SymbolDrillDown({
                               <span className={directionColor(spec.direction)}>
                                 {spec.direction === "bullish" ? "▲" : spec.direction === "bearish" ? "▼" : "●"}
                               </span>
-                              {indicatorLabel(spec, locale)}
+                              {MCDX_BANKER_KEYS.has(s.indicator)
+                                ? formatMcdxBanker(s.value)
+                                : indicatorLabel(spec, locale)}
                             </span>
                           );
                         })}

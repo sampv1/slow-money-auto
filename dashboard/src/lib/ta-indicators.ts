@@ -228,6 +228,23 @@ export function directionColor(direction: IndicatorDirection): string {
   return "text-gray-500";
 }
 
+// MCDX Banker band indicators — all three read off the same underlying banker
+// strength (0..100). On the Analysis page we show that exact percentage instead
+// of the band label, so callers detect these keys and format the stored value.
+export const MCDX_BANKER_KEYS = new Set([
+  "mcdx_banker_25_50",
+  "mcdx_banker_50_75",
+  "mcdx_banker_70",
+]);
+
+export function formatMcdxBanker(value: number | null | undefined): string {
+  const pct =
+    value === null || value === undefined || Number.isNaN(value)
+      ? "—"
+      : `${Math.round(value)}%`;
+  return `MCDX Banker: ${pct}`;
+}
+
 // State-based indicators — they fire on every bar the condition holds (often
 // months in a row), so showing them as chart markers, chips, or auto-selecting
 // them on the drill-down is noise. The underlying MA / metric still renders.
