@@ -33,6 +33,13 @@ const UNIVERSE_COLS =
 // signal-pro-client), so shipping it up front is pure waste. ~90 points ≈ one
 // quarter of sessions, rounded to 2dp (RS line is 0–100; more precision than
 // that is invisible in a 60px sparkline but ~20% of the bytes).
+//
+// INVARIANT: this must stay a TAIL SLICE at full daily resolution — the most
+// recent sessions are what the user reads the current trend from, so never
+// decimate (every-Nth-point) or smooth. Shrinking the payload further means
+// lowering SPARKLINE_POINTS (dropping the OLDEST days), never thinning recent
+// ones. Note RsSparkline colours the line via trendOf() = last vs FIRST of this
+// window, so this constant also defines what "trend" means on the row.
 const SPARKLINE_POINTS = 90;
 
 // Vercel's Data Cache rejects entries over 2 MB — an oversized entry is
