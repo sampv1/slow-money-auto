@@ -72,15 +72,18 @@ async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCf
 // macro pipeline via /api/revalidate (tag macro-data); TTL is a safety net.
 const getMacroData = unstable_cache(
   async () => {
-    const [central, vcb, vn, cpiMom, interbankOn, cfg] = await Promise.all([
+    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, cfg] = await Promise.all([
       fetchMetricEntries("fx_central_rate"),
       fetchMetricEntries("fx_vcb_sell"),
       fetchMetricEntries("vnindex"),
       fetchMetricEntries("cpi_mom_index"),
       fetchMetricEntries("interbank_overnight"),
+      fetchMetricEntries("omo_net_injection"),
+      fetchMetricEntries("omo_pump"),
+      fetchMetricEntries("omo_withdraw"),
       loadMacroConfig(),
     ]);
-    return { central, vcb, vn, cpiMom, interbankOn, cfg };
+    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, cfg };
   },
   ["macro-data"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
@@ -197,6 +200,9 @@ export default async function MacroPage() {
     const vn = new Map(d.vn);
     const cpiMom = new Map(d.cpiMom);
     const interbankOn = new Map(d.interbankOn);
+    const omoNet = new Map(d.omoNet);
+    const omoPump = new Map(d.omoPump);
+    const omoWithdraw = new Map(d.omoWithdraw);
     const { bands, regime: regimeCfg, cpiTargets } = d.cfg;
 
     // Shared VN-Index overlay: ONE source series (the `vnindex` metric), sampled
@@ -217,10 +223,19 @@ export default async function MacroPage() {
       return new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10); // last day of month
     };
 
-    // Overnight interbank rate (%/year): plotted directly, VN-Index aligned by day.
-    irRows = [...interbankOn.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, rate]) => ({ date, rate, vnindex: vnAsof(date) }));
+    // Interest + OMO chart: date grid = UNION of the two series (OMO is
+    // same-day fresh while the interbank rate lags a day, so keying on the
+    // rate alone would drop the newest OMO bar). Rate is null on OMO-only days
+    // (the chart breaks the line there); VN-Index aligned as-of by day.
+    const irDates = Array.from(new Set([...interbankOn.keys(), ...omoNet.keys()])).sort();
+    irRows = irDates.map((date) => ({
+      date,
+      rate: interbankOn.get(date) ?? null,
+      vnindex: vnAsof(date),
+      omoNet: omoNet.get(date) ?? null,
+      omoPump: omoPump.get(date) ?? null,
+      omoWithdraw: omoWithdraw.get(date) ?? null,
+    }));
     // CPI (monthly): VN-Index sampled at each month-end from the same series.
     cpiRows = buildCpiRows(cpiMom, cpiTargets).map((r) => ({ ...r, vnindex: vnAsof(monthEnd(r.date)) }));
     pctNearCeiling = regimeCfg.pct_near_ceiling;

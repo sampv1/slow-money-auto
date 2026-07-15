@@ -57,6 +57,7 @@ from macro.interest_rate import (
     fetch_interbank_overnight_history,
     fetch_interbank_overnight_sbv,
 )
+from macro.omo import OMO_HISTORY_START, fetch_omo_history
 
 # Manual CPI overlay (Vietstock CPI froze at 2025-08; GSO is VPN-gated to cloud IPs,
 # so newer months are hand-entered here — see data/cpi_manual.csv).
@@ -121,6 +122,26 @@ def collect_interbank(start: dt.date, end: dt.date) -> list[dict]:
     print(f"  Interbank overnight: {len(hist)} daily points"
           + (f" ({hist[0][0]} .. {hist[-1][0]}, last {hist[-1][1]:.2f}%)" if hist else ""))
     return series_rows(METRIC_INTERBANK_ON, hist, "%", "vietstock")
+
+
+def collect_omo(start: dt.date, end: dt.date) -> list[dict]:
+    """SBV OMO net/pump/withdraw (Vietstock NormIDs 523/521/522) over
+    [start, end], as macro_series rows (daily, billion VND). Same-day fresh.
+
+    A failure must never block the other metrics — any error returns [] with a
+    note.
+    """
+    try:
+        per_metric = fetch_omo_history(start, end)
+    except Exception as e:  # noqa: BLE001
+        print(f"  OMO fetch failed: {str(e)[:100]}")
+        return []
+    rows: list[dict] = []
+    for metric, pts in per_metric.items():
+        print(f"  OMO {metric}: {len(pts)} daily points"
+              + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:,.0f} bn)" if pts else ""))
+        rows += series_rows(metric, pts, "billion VND", "vietstock")
+    return rows
 
 
 def overlay_sbv_interbank(vietstock_rows: list[dict]) -> list[dict]:
@@ -300,6 +321,9 @@ def main():
 
         print(f"=== Backfill interbank overnight (Vietstock 293 + SBV latest): {INTERBANK_HISTORY_START} -> {end} ===")
         interbank_rows = overlay_sbv_interbank(collect_interbank(INTERBANK_HISTORY_START, end))
+
+        print(f"=== Backfill OMO (Vietstock 523/521/522): {OMO_HISTORY_START} -> {end} ===")
+        omo_rows = collect_omo(OMO_HISTORY_START, end)
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
@@ -319,12 +343,16 @@ def main():
         # upsert) keeps past SBV points from being downgraded by Vietstock.
         print("Interbank overnight (recent):")
         interbank_rows = overlay_sbv_interbank(collect_interbank(end - dt.timedelta(days=21), end))
+        # OMO is same-day fresh on Vietstock — a short window keeps the daily
+        # run cheap while healing any missed days.
+        print("OMO (recent):")
+        omo_rows = collect_omo(end - dt.timedelta(days=21), end)
 
-    rows = central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows
+    rows = central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows + omo_rows
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
               f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi + {len(interbank_rows)} interbank "
-              f"= {len(rows)} rows into macro_series.")
+              f"+ {len(omo_rows)} omo = {len(rows)} rows into macro_series.")
         return
     if not rows:
         print("Nothing to write.")
@@ -335,7 +363,7 @@ def main():
     n = upsert_macro(client, rows)
     print(f"Upserted {n} rows into macro_series "
           f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex, "
-          f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank).")
+          f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank, {len(omo_rows)} omo).")
 
 
 if __name__ == "__main__":
