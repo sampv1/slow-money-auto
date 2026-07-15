@@ -211,7 +211,11 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
         {/* ---- VN-Index panel (context) ---- */}
         {hasVn && (
           <g>
-            <text x={mL + 4} y={vnTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>
+            {/* y offset larger than the other macro charts: this chart's hover
+                tooltip always has a second line (VNIBOR/SOFR/DXY detail) down
+                to y=24, so the label needs more clearance to avoid sitting
+                under it. */}
+            <text x={mL + 4} y={vnTop + 30} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>
             {vnTicks.map((v, k) => (
               <g key={`vt${k}`}>
                 <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />
