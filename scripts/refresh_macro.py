@@ -58,6 +58,14 @@ from macro.interest_rate import (
     fetch_interbank_overnight_sbv,
 )
 from macro.omo import OMO_HISTORY_START, fetch_omo_history
+from macro.external import (
+    DXY_HISTORY_START,
+    METRIC_DXY,
+    METRIC_SOFR,
+    SOFR_HISTORY_START,
+    fetch_dxy_history,
+    fetch_sofr_history,
+)
 
 # Manual CPI overlay (Vietstock CPI froze at 2025-08; GSO is VPN-gated to cloud IPs,
 # so newer months are hand-entered here — see data/cpi_manual.csv).
@@ -142,6 +150,33 @@ def collect_omo(start: dt.date, end: dt.date) -> list[dict]:
               + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:,.0f} bn)" if pts else ""))
         rows += series_rows(metric, pts, "billion VND", "vietstock")
     return rows
+
+
+def collect_sofr(start: dt.date, end: dt.date) -> list[dict]:
+    """SOFR (FRED, %/year) over [start, end] as macro_series rows — the USD leg
+    of the External-Pressure spread. A failure never blocks other metrics."""
+    try:
+        pts = fetch_sofr_history(start, end)
+    except Exception as e:  # noqa: BLE001
+        print(f"  SOFR fetch failed: {str(e)[:100]}")
+        return []
+    print(f"  SOFR: {len(pts)} daily points"
+          + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:.2f}%)" if pts else ""))
+    return series_rows(METRIC_SOFR, pts, "%", "fred")
+
+
+def collect_dxy(start: dt.date, end: dt.date) -> list[dict]:
+    """ICE DXY (Yahoo) over [start, end] as macro_series rows — contextual
+    backdrop for the External-Pressure block. A failure never blocks other
+    metrics (unofficial API; the daily 21-day window self-heals gaps)."""
+    try:
+        pts = fetch_dxy_history(start, end)
+    except Exception as e:  # noqa: BLE001
+        print(f"  DXY fetch failed: {str(e)[:100]}")
+        return []
+    print(f"  DXY: {len(pts)} daily points"
+          + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:.2f})" if pts else ""))
+    return series_rows(METRIC_DXY, pts, "index", "yahoo")
 
 
 def overlay_sbv_interbank(vietstock_rows: list[dict]) -> list[dict]:
@@ -324,6 +359,12 @@ def main():
 
         print(f"=== Backfill OMO (Vietstock 523/521/522): {OMO_HISTORY_START} -> {end} ===")
         omo_rows = collect_omo(OMO_HISTORY_START, end)
+
+        print(f"=== Backfill SOFR (FRED): {SOFR_HISTORY_START} -> {end} ===")
+        sofr_rows = collect_sofr(SOFR_HISTORY_START, end)
+
+        print(f"=== Backfill DXY (Yahoo DX-Y.NYB): {DXY_HISTORY_START} -> {end} ===")
+        dxy_rows = collect_dxy(DXY_HISTORY_START, end)
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
@@ -347,12 +388,18 @@ def main():
         # run cheap while healing any missed days.
         print("OMO (recent):")
         omo_rows = collect_omo(end - dt.timedelta(days=21), end)
+        print("SOFR (recent):")
+        sofr_rows = collect_sofr(end - dt.timedelta(days=21), end)
+        print("DXY (recent):")
+        dxy_rows = collect_dxy(end - dt.timedelta(days=21), end)
 
-    rows = central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows + omo_rows
+    rows = (central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows
+            + omo_rows + sofr_rows + dxy_rows)
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
               f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi + {len(interbank_rows)} interbank "
-              f"+ {len(omo_rows)} omo = {len(rows)} rows into macro_series.")
+              f"+ {len(omo_rows)} omo + {len(sofr_rows)} sofr + {len(dxy_rows)} dxy "
+              f"= {len(rows)} rows into macro_series.")
         return
     if not rows:
         print("Nothing to write.")
@@ -363,7 +410,8 @@ def main():
     n = upsert_macro(client, rows)
     print(f"Upserted {n} rows into macro_series "
           f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex, "
-          f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank, {len(omo_rows)} omo).")
+          f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank, {len(omo_rows)} omo, "
+          f"{len(sofr_rows)} sofr, {len(dxy_rows)} dxy).")
 
 
 if __name__ == "__main__":

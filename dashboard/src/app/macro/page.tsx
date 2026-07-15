@@ -5,6 +5,7 @@ import { getLocale, t } from "@/lib/i18n";
 import { ExchangeRateChart, type FxRow, type Regime } from "./exchange-rate-chart";
 import { CpiChart, type CpiRow } from "./cpi-chart";
 import { InterestRateChart, type IrRow } from "./interest-rate-chart";
+import { ExternalPressureChart, type EpRegime, type EpRow } from "./external-pressure-chart";
 
 export const revalidate = 0;
 
@@ -72,7 +73,7 @@ async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCf
 // macro pipeline via /api/revalidate (tag macro-data); TTL is a safety net.
 const getMacroData = unstable_cache(
   async () => {
-    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, cfg] = await Promise.all([
+    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, cfg] = await Promise.all([
       fetchMetricEntries("fx_central_rate"),
       fetchMetricEntries("fx_vcb_sell"),
       fetchMetricEntries("vnindex"),
@@ -81,9 +82,11 @@ const getMacroData = unstable_cache(
       fetchMetricEntries("omo_net_injection"),
       fetchMetricEntries("omo_pump"),
       fetchMetricEntries("omo_withdraw"),
+      fetchMetricEntries("sofr"),
+      fetchMetricEntries("dxy"),
       loadMacroConfig(),
     ]);
-    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, cfg };
+    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, cfg };
   },
   ["macro-data"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
@@ -190,6 +193,7 @@ export default async function MacroPage() {
   let rows: FxRow[] = [];
   let cpiRows: CpiRow[] = [];
   let irRows: IrRow[] = [];
+  let epRows: EpRow[] = [];
   let error: string | null = null;
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
@@ -203,21 +207,26 @@ export default async function MacroPage() {
     const omoNet = new Map(d.omoNet);
     const omoPump = new Map(d.omoPump);
     const omoWithdraw = new Map(d.omoWithdraw);
+    const sofr = new Map(d.sofr);
+    const dxy = new Map(d.dxy);
     const { bands, regime: regimeCfg, cpiTargets } = d.cfg;
 
     // Shared VN-Index overlay: ONE source series (the `vnindex` metric), sampled
     // by as-of (last close on or before each point) so the FX, interest-rate and
     // CPI charts all show the SAME VN-Index time series on their own date grids.
-    const vnSorted = [...vn.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    const vnAsof = (dateStr: string): number | null => {
-      let lo = 0, hi = vnSorted.length - 1, res: number | null = null;
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        if (vnSorted[mid][0] <= dateStr) { res = vnSorted[mid][1]; lo = mid + 1; }
-        else hi = mid - 1;
-      }
-      return res;
+    const asofSampler = (series: Map<string, number>) => {
+      const sorted = [...series.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      return (dateStr: string): number | null => {
+        let lo = 0, hi = sorted.length - 1, res: number | null = null;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (sorted[mid][0] <= dateStr) { res = sorted[mid][1]; lo = mid + 1; }
+          else hi = mid - 1;
+        }
+        return res;
+      };
     };
+    const vnAsof = asofSampler(vn);
     const monthEnd = (d: string) => {
       const [yy, mm] = d.split("-").map(Number);
       return new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10); // last day of month
@@ -238,6 +247,23 @@ export default async function MacroPage() {
     }));
     // CPI (monthly): VN-Index sampled at each month-end from the same series.
     cpiRows = buildCpiRows(cpiMom, cpiTargets).map((r) => ({ ...r, vnindex: vnAsof(monthEnd(r.date)) }));
+
+    // External pressure: overnight VND–SOFR spread on the VNIBOR date grid.
+    // SOFR (T+1, US calendar) and DXY are as-of joined — the last US print on
+    // or before each VN date — which absorbs the US/VN holiday mismatch.
+    // Regime thresholds fixed by spec: >=0 positive, >=-1.5 mildly negative,
+    // below -1.5 deeply negative (the zone where SBV historically intervenes).
+    const sofrAsof = asofSampler(sofr);
+    const dxyAsof = asofSampler(dxy);
+    epRows = [...interbankOn.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .flatMap(([date, vnibor]) => {
+        const s = sofrAsof(date);
+        if (s === null) return []; // before SOFR history begins (2018-04)
+        const spread = Math.round((vnibor - s) * 100) / 100;
+        const regime: EpRegime = spread >= 0 ? "positive" : spread >= -1.5 ? "mild" : "deep";
+        return [{ date, spread, vnibor, sofr: s, dxy: dxyAsof(date), vnindex: vnAsof(date), regime }];
+      });
     pctNearCeiling = regimeCfg.pct_near_ceiling;
     chg5dFast = regimeCfg.chg5d_fast;
     // central_rate_chg_5d = central(t) − central(t−5 sessions). Computed over the
@@ -304,6 +330,22 @@ export default async function MacroPage() {
           <StubCard title={t(locale, "macroInterestTitle")} note={t(locale, "macroInterestNoData")} />
         ) : (
           <InterestRateChart rows={irRows} locale={locale} />
+        )}
+      </section>
+
+      <section className="mb-6">
+        <div className="mb-2">
+          <h2 className="text-base font-semibold">{t(locale, "epTitle")}</h2>
+          <p className="text-xs text-gray-500">{t(locale, "epSubtitle")}</p>
+        </div>
+        {error ? (
+          <p className="text-red-600 text-sm">Error loading external-pressure data: {error}</p>
+        ) : epRows.length < 2 ? (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+            {t(locale, "macroNoData")}
+          </div>
+        ) : (
+          <ExternalPressureChart rows={epRows} locale={locale} />
         )}
       </section>
 
