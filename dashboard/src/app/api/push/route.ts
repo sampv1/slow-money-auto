@@ -1,4 +1,6 @@
+import { revalidateTag } from "next/cache";
 import { supabase } from "@/lib/supabase";
+import { TAG_REC } from "@/lib/cached-data";
 import { getUserRole } from "@/lib/supabase-server";
 
 interface MarketContext {
@@ -339,6 +341,9 @@ export async function POST(request: Request) {
       }
       insertedCount = recResult?.length ?? 0;
     }
+
+    // New daily log + recommendations → drop the cached Active/History/Stats data.
+    revalidateTag(TAG_REC, { expire: 0 });
 
     return Response.json({
       success: true,

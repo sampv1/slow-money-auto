@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getRecommendations } from "@/lib/cached-data";
 import { formatPrice, formatPnl, pnlColor, statusBadge } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
 import type { Recommendation } from "@/lib/types";
@@ -19,38 +19,40 @@ export default async function HistoryPage({
   const fromDate = params.from;
   const toDate = params.to;
 
-  let query = supabase
-    .from("recommendations")
-    .select("*")
-    .order("closed_at", { ascending: false, nullsFirst: false })
-    .order("trading_date", { ascending: false });
-
-  // Default: show only closed. "all" shows everything.
-  if (statusFilter === "all") {
-    // no status filter
-  } else if (statusFilter && CLOSED_STATUSES.includes(statusFilter as Recommendation["status"])) {
-    query = query.eq("status", statusFilter);
-  } else {
-    query = query.in("status", [...CLOSED_STATUSES]);
+  // Cached (tag rec-data) — the filters below are user-driven, so caching per
+  // query would fragment the cache; instead one entry holds every row and the
+  // same filtering/ordering is applied in-memory.
+  let recommendations: Recommendation[];
+  try {
+    const all = await getRecommendations();
+    recommendations = all
+      .filter((r) => {
+        // Default: show only closed. "all" shows everything.
+        if (statusFilter === "all") {
+          // no status filter
+        } else if (statusFilter && CLOSED_STATUSES.includes(statusFilter as Recommendation["status"])) {
+          if (r.status !== statusFilter) return false;
+        } else if (!CLOSED_STATUSES.includes(r.status)) {
+          return false;
+        }
+        if (symbolFilter && r.symbol !== symbolFilter) return false;
+        if (fromDate && r.trading_date < fromDate) return false;
+        if (toDate && r.trading_date > toDate) return false;
+        return true;
+      })
+      // closed_at DESC (nulls last), then trading_date DESC — matches the
+      // previous PostgREST ordering.
+      .sort((a, b) => {
+        if (a.closed_at !== b.closed_at) {
+          if (!a.closed_at) return 1;
+          if (!b.closed_at) return -1;
+          return b.closed_at.localeCompare(a.closed_at);
+        }
+        return b.trading_date.localeCompare(a.trading_date);
+      });
+  } catch (e) {
+    return <p className="text-red-600">Error loading history: {e instanceof Error ? e.message : String(e)}</p>;
   }
-
-  if (symbolFilter) {
-    query = query.eq("symbol", symbolFilter);
-  }
-  if (fromDate) {
-    query = query.gte("trading_date", fromDate);
-  }
-  if (toDate) {
-    query = query.lte("trading_date", toDate);
-  }
-
-  const { data: recs, error } = await query;
-
-  if (error) {
-    return <p className="text-red-600">Error loading history: {error.message}</p>;
-  }
-
-  const recommendations = (recs ?? []) as Recommendation[];
 
   // Summary stats
   const withPnl = recommendations.filter((r) => r.actual_pnl_pct !== null);

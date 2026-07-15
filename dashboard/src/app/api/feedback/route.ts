@@ -1,4 +1,6 @@
+import { revalidateTag } from "next/cache";
 import { supabase } from "@/lib/supabase";
+import { TAG_FEEDBACK } from "@/lib/cached-data";
 
 const MAX_MESSAGE_LEN = 5000;
 const MAX_CONTACT_LEN = 200;
@@ -29,6 +31,9 @@ export async function POST(request: Request) {
     if (error) {
       return Response.json({ error: `Failed to save: ${error.message}` }, { status: 500 });
     }
+
+    // Drop the cached feedbacks list so the new message shows immediately.
+    revalidateTag(TAG_FEEDBACK, { expire: 0 });
 
     return Response.json({ success: true });
   } catch (err) {

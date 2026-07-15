@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getRecommendations } from "@/lib/cached-data";
 import { formatPrice, formatPnl, pnlColor, statusBadge } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
@@ -15,18 +15,21 @@ export default async function ActivePage() {
   const isAdmin = role === "admin";
   const locale = await getLocale();
 
-  const { data: recs, error } = await supabase
-    .from("recommendations")
-    .select("*")
-    .in("status", ["OPEN", "TP1_HIT"])
-    .order("trading_date", { ascending: false })
-    .order("rank", { ascending: true });
-
-  if (error) {
-    return <p className="text-red-600">Error loading recommendations: {error.message}</p>;
+  // Cached (tag rec-data); BUY/SELL and the daily evaluation invalidate it, so
+  // a trade is reflected immediately. Filter/sort here rather than in SQL — one
+  // cache entry then serves Active, History and Stats alike.
+  let recommendations: Recommendation[];
+  try {
+    const all = await getRecommendations();
+    recommendations = all
+      .filter((r) => r.status === "OPEN" || r.status === "TP1_HIT")
+      .sort(
+        (a, b) =>
+          b.trading_date.localeCompare(a.trading_date) || (a.rank ?? 0) - (b.rank ?? 0),
+      );
+  } catch (e) {
+    return <p className="text-red-600">Error loading recommendations: {e instanceof Error ? e.message : String(e)}</p>;
   }
-
-  const recommendations = (recs ?? []) as Recommendation[];
 
   return (
     <div>

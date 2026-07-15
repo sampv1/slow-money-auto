@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "./supabase";
 import type { FaScore } from "./fa";
+import type { DailyLog, Recommendation } from "./types";
 
 // ---------------------------------------------------------------------------
 // Server-side data cache (Next.js Data Cache via unstable_cache).
@@ -15,7 +16,14 @@ import type { FaScore } from "./fa";
 export const TAG_TA = "ta-data"; // ta_signals / ta_ohlcv / ta_universe / implied_risk
 export const TAG_FA = "fa-data"; // fa_scores
 export const TAG_MACRO = "macro-data"; // macro_series / scoring_config('macro')
-export const ALL_TAGS = [TAG_TA, TAG_FA, TAG_MACRO];
+// recommendations + daily_logs (Active / History / Stats). Unlike the others
+// these are also written from the app itself (admin BUY/SELL, /api/push), so
+// those routes call revalidateTag(TAG_REC) directly — see api/recommendations.
+export const TAG_REC = "rec-data";
+// feedbacks — written by any visitor via /api/feedback, which revalidates it,
+// so a new message still shows up immediately.
+export const TAG_FEEDBACK = "feedback-data";
+export const ALL_TAGS = [TAG_TA, TAG_FA, TAG_MACRO, TAG_REC, TAG_FEEDBACK];
 
 export const CACHE_TTL_SECONDS = 3600;
 
@@ -117,4 +125,74 @@ export const getUniverseLiquidity = unstable_cache(
     ),
   ["universe-liquidity"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
+);
+
+// --- Active symbol list (Analysis search box) -------------------------------
+
+export const getActiveSymbols = unstable_cache(
+  async (): Promise<string[]> => {
+    const rows = await fetchAllPaged<{ symbol: string }>((from, to, withCount) =>
+      supabase
+        .from("ta_universe")
+        .select("symbol", withCount ? { count: "exact" } : undefined)
+        .eq("is_active", true)
+        .order("symbol", { ascending: true })
+        .range(from, to),
+    );
+    return rows.map((r) => r.symbol);
+  },
+  ["active-symbols"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
+);
+
+// --- Recommendations / daily logs (Active, History, Stats) ------------------
+//
+// Written by the daily evaluation pipeline AND by the app (admin BUY/SELL via
+// /api/recommendations/manual, /api/push) — both invalidate TAG_REC, so the
+// pages never show a stale position after a trade.
+
+// The whole table in ONE cache entry, filtered/sorted in-memory by the pages.
+// Active/History/Stats each want a different slice (and History's filters are
+// user-driven), so caching per-query would fragment the cache for no gain —
+// these rows are small and few.
+export const getRecommendations = unstable_cache(
+  async (): Promise<Recommendation[]> =>
+    fetchAllPaged<Recommendation>((from, to, withCount) =>
+      supabase
+        .from("recommendations")
+        .select("*", withCount ? { count: "exact" } : undefined)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+  ["recommendations-all"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_REC] },
+);
+
+export const getDailyLogs = unstable_cache(
+  async (): Promise<DailyLog[]> =>
+    fetchAllPaged<DailyLog>((from, to, withCount) =>
+      supabase
+        .from("daily_logs")
+        .select("*", withCount ? { count: "exact" } : undefined)
+        .order("trading_date", { ascending: true })
+        .range(from, to),
+    ),
+  ["daily-logs-all"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_REC] },
+);
+
+// --- Feedbacks --------------------------------------------------------------
+
+export const getFeedbacks = unstable_cache(
+  async (): Promise<Record<string, unknown>[]> =>
+    fetchAllPaged((from, to, withCount) =>
+      supabase
+        .from("feedbacks")
+        .select("*", withCount ? { count: "exact" } : undefined)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true }) // tie-break → deterministic paging
+        .range(from, to),
+    ),
+  ["feedbacks-all"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FEEDBACK] },
 );

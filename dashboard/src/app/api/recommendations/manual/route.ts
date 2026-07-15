@@ -1,4 +1,6 @@
+import { revalidateTag } from "next/cache";
 import { supabase } from "@/lib/supabase";
+import { TAG_REC } from "@/lib/cached-data";
 import { getUserRole } from "@/lib/supabase-server";
 
 const ACTIVE_STATUSES = ["OPEN", "TP1_HIT"];
@@ -150,6 +152,9 @@ async function buy(
   if (error || !inserted) {
     return Response.json({ error: `Failed to add position: ${error?.message}` }, { status: 500 });
   }
+  // Drop the cached recommendations so Active/History/Stats show the new
+  // position on the very next view.
+  revalidateTag(TAG_REC, { expire: 0 });
   return Response.json({ success: true, action: "BUY", id: inserted.id, symbol, entry, date: close.date });
 }
 
@@ -213,6 +218,10 @@ async function sell(
   if (failed?.error) {
     return Response.json({ error: `Failed to finalize position: ${failed.error.message}` }, { status: 500 });
   }
+
+  // Drop the cached recommendations so the closed position leaves Active and
+  // lands in History/Stats on the very next view.
+  revalidateTag(TAG_REC, { expire: 0 });
 
   // Equal-weight average entry (same volume per position) for the summary.
   const avgEntry = Number((totalEntry / positions.length).toFixed(2));

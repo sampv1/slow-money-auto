@@ -1,32 +1,17 @@
-import { supabase } from "@/lib/supabase";
+import { getActiveSymbols } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { TaSearch } from "./ta-search";
 
 export const revalidate = 0;
 
-const PAGE_SIZE = 1000;
-
-async function fetchAllSymbols(): Promise<string[]> {
-  const all: string[] = [];
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from("ta_universe")
-      .select("symbol")
-      .eq("is_active", true)
-      .order("symbol", { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error || !data) break;
-    for (const row of data) all.push((row as { symbol: string }).symbol);
-    if (data.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-  }
-  return all;
-}
-
 export default async function TAPage() {
   const locale = await getLocale();
-  const symbols = await fetchAllSymbols();
+  let symbols: string[] = [];
+  try {
+    symbols = await getActiveSymbols();
+  } catch {
+    symbols = []; // search box just renders empty; matches the previous behaviour
+  }
 
   return (
     <div className="max-w-xl mx-auto">

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { createSupabaseServer, getUserRole } from "@/lib/supabase-server";
+import { getFeedbacks } from "@/lib/cached-data";
+import { getUserRole } from "@/lib/supabase-server";
 import { getLocale, t } from "@/lib/i18n";
 
 export const revalidate = 0;
@@ -19,20 +20,17 @@ export default async function FeedbacksPage() {
   }
 
   const locale = await getLocale();
-  const supabase = await createSupabaseServer();
 
-  const { data, error } = await supabase
-    .from("feedbacks")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
+  // Cached (tag feedback-data); /api/feedback invalidates it on submit, so a
+  // new message still appears immediately.
+  let feedbacks: Feedback[];
+  try {
+    feedbacks = (await getFeedbacks()) as unknown as Feedback[];
+  } catch (e) {
     return (
-      <p className="text-red-600">Error loading feedbacks: {error.message}</p>
+      <p className="text-red-600">Error loading feedbacks: {e instanceof Error ? e.message : String(e)}</p>
     );
   }
-
-  const feedbacks = (data ?? []) as Feedback[];
 
   return (
     <div>

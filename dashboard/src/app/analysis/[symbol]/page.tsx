@@ -1,4 +1,6 @@
+import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
+import { CACHE_TTL_SECONDS, TAG_FA, TAG_TA, fetchAllPaged } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
@@ -17,6 +19,74 @@ export type Candle = {
   volume: number;
 };
 
+type SrLevel = { price: number; level_type: "support" | "resistance"; touches: number };
+type Trendline = {
+  trend_type: "uptrend" | "downtrend";
+  start_date: string;
+  start_price: number;
+  end_date: string;
+  end_price: number;
+  touches: number;
+};
+type Signal = { date: string; indicator: string; value: number | null };
+
+// Everything this page reads for one symbol, in a single cached unit (~0.2 MB —
+// well under Vercel's 2 MB entry limit). The ?ind= / ?fq= params only choose
+// which slice to SHOW, so they're applied in-memory below rather than baked
+// into the cache key, which would fragment the cache per URL.
+const getSymbolData = unstable_cache(
+  async (symbol: string) => {
+    const [candles, signals, srLevels, trendlines, faRows] = await Promise.all([
+      // Both MUST be paged: a symbol has >1000 triggered signals (and can grow
+      // past 1000 bars), and PostgREST silently truncates at 1000 — which would
+      // drop the NEWEST rows and quietly break the default indicator selection.
+      fetchAllPaged<Candle>((from, to, withCount) =>
+        supabase
+          .from("ta_ohlcv")
+          .select("date,open,high,low,close,volume", withCount ? { count: "exact" } : undefined)
+          .eq("symbol", symbol)
+          .order("date", { ascending: true })
+          .range(from, to),
+      ),
+      fetchAllPaged<Signal>((from, to, withCount) =>
+        supabase
+          .from("ta_signals")
+          .select("date,indicator,value", withCount ? { count: "exact" } : undefined)
+          .eq("symbol", symbol)
+          .eq("triggered", true)
+          .order("date", { ascending: true })
+          .order("indicator", { ascending: true }) // tie-break → deterministic paging
+          .range(from, to),
+      ),
+      (async (): Promise<SrLevel[]> => {
+        const { data } = await supabase
+          .from("ta_sr_levels")
+          .select("price,level_type,touches")
+          .eq("symbol", symbol);
+        return (data ?? []) as SrLevel[];
+      })(),
+      (async (): Promise<Trendline[]> => {
+        const { data } = await supabase
+          .from("ta_trendlines")
+          .select("trend_type,start_date,start_price,end_date,end_price,touches")
+          .eq("symbol", symbol);
+        return (data ?? []) as Trendline[];
+      })(),
+      (async (): Promise<FaScore[]> => {
+        const { data } = await supabase
+          .from("fa_scores")
+          .select("*")
+          .eq("symbol", symbol)
+          .order("as_of_period", { ascending: false });
+        return (data ?? []) as FaScore[];
+      })(),
+    ]);
+    return { candles, signals, srLevels, trendlines, faRows };
+  },
+  ["symbol-data"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA, TAG_FA] },
+);
+
 export default async function SymbolDrillDown({
   params,
   searchParams,
@@ -34,42 +104,23 @@ export default async function SymbolDrillDown({
     .map((s) => s.trim())
     .filter(Boolean);
 
+  let data: Awaited<ReturnType<typeof getSymbolData>>;
+  try {
+    data = await getSymbolData(symbol);
+  } catch (e) {
+    return <p className="text-red-600">Error: {e instanceof Error ? e.message : String(e)}</p>;
+  }
+  const { candles, signals: allSignals, srLevels: allSrLevels, trendlines: allTrendlines, faRows } = data;
+
   // When no ?ind= is supplied, default to whatever indicators most recently
   // fired for this symbol — gives the visitor an immediately useful chart.
-  if (!explicitSelection) {
-    const { data: latestSignalRow } = await supabase
-      .from("ta_signals")
-      .select("date")
-      .eq("symbol", symbol)
-      .eq("triggered", true)
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (latestSignalRow?.date) {
-      const { data: latestIndsRaw } = await supabase
-        .from("ta_signals")
-        .select("indicator")
-        .eq("symbol", symbol)
-        .eq("triggered", true)
-        .eq("date", latestSignalRow.date);
-      selected = (latestIndsRaw ?? [])
-        .map((r) => (r as { indicator: string }).indicator)
-        .filter((k) => k in INDICATORS_BY_KEY && !CHART_HIDDEN_KEYS.has(k));
-    }
+  if (!explicitSelection && allSignals.length > 0) {
+    const latestDate = allSignals[allSignals.length - 1].date; // ASC → last = newest
+    selected = allSignals
+      .filter((s) => s.date === latestDate)
+      .map((s) => s.indicator)
+      .filter((k) => k in INDICATORS_BY_KEY && !CHART_HIDDEN_KEYS.has(k));
   }
-
-  // Fetch full OHLCV history (~264 rows = trivial; ASC for the chart).
-  const { data: ohlcvRaw, error: ohlcvErr } = await supabase
-    .from("ta_ohlcv")
-    .select("date,open,high,low,close,volume")
-    .eq("symbol", symbol)
-    .order("date", { ascending: true });
-
-  if (ohlcvErr) {
-    return <p className="text-red-600">Error: {ohlcvErr.message}</p>;
-  }
-
-  const candles = (ohlcvRaw ?? []) as Candle[];
 
   if (candles.length === 0) {
     return (
@@ -82,92 +133,47 @@ export default async function SymbolDrillDown({
     );
   }
 
-  // Fetch triggered signals for the last 30 days.
+  // Triggered signals for the last 30 days (DESC for the table below).
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - 30);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-
-  const { data: signalsRaw } = await supabase
-    .from("ta_signals")
-    .select("date,indicator,value")
-    .eq("symbol", symbol)
-    .eq("triggered", true)
-    .gte("date", cutoffStr)
-    .order("date", { ascending: false });
-
-  const signals = (signalsRaw ?? []) as { date: string; indicator: string; value: number | null }[];
+  const signals = allSignals
+    .filter((s) => s.date >= cutoffStr)
+    .slice()
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   // Chart markers: triggered signals for *selected* indicators across the
   // entire visible chart range, sorted ASC (lightweight-charts requirement).
-  let chartSignals: { date: string; indicator: string }[] = [];
-  if (selected.length > 0 && candles.length > 0) {
-    const earliestDate = candles[0].date;
-    const { data: chartSignalsRaw } = await supabase
-      .from("ta_signals")
-      .select("date,indicator")
-      .eq("symbol", symbol)
-      .in("indicator", selected)
-      .eq("triggered", true)
-      .gte("date", earliestDate)
-      .order("date", { ascending: true });
-    chartSignals = (chartSignalsRaw ?? []) as { date: string; indicator: string }[];
-  }
+  const selectedSet = new Set(selected);
+  const chartSignals: { date: string; indicator: string }[] =
+    selected.length > 0
+      ? allSignals
+          .filter((s) => selectedSet.has(s.indicator) && s.date >= candles[0].date)
+          .map((s) => ({ date: s.date, indicator: s.indicator }))
+      : [];
 
-  // S/R levels (only fetched when an S/R indicator is in the selection).
+  // S/R levels (only shown when an S/R indicator is in the selection).
   const SR_KEYS = new Set([
     "bounces_off_support", "rejects_at_resistance",
     "breaks_resistance", "breaks_support",
     "near_support", "near_resistance",
   ]);
-  let srLevels: { price: number; level_type: "support" | "resistance"; touches: number }[] = [];
-  if (selected.some((k) => SR_KEYS.has(k))) {
-    const { data: srRaw } = await supabase
-      .from("ta_sr_levels")
-      .select("price,level_type,touches")
-      .eq("symbol", symbol);
-    srLevels = (srRaw ?? []) as typeof srLevels;
-  }
+  const srLevels = selected.some((k) => SR_KEYS.has(k)) ? allSrLevels : [];
 
-  // Trendlines (only fetched when a trendline indicator is in the selection).
+  // Trendlines (only shown when a trendline indicator is in the selection).
   const TL_KEYS = new Set([
     "at_uptrend_support", "at_downtrend_resistance",
     "uptrend_break", "downtrend_break",
   ]);
-  let trendlines: {
-    trend_type: "uptrend" | "downtrend";
-    start_date: string;
-    start_price: number;
-    end_date: string;
-    end_price: number;
-    touches: number;
-  }[] = [];
-  if (selected.some((k) => TL_KEYS.has(k))) {
-    const { data: tlRaw } = await supabase
-      .from("ta_trendlines")
-      .select("trend_type,start_date,start_price,end_date,end_price,touches")
-      .eq("symbol", symbol);
-    trendlines = (tlRaw ?? []) as typeof trendlines;
-  }
+  const trendlines = selected.some((k) => TL_KEYS.has(k)) ? allTrendlines : [];
 
   // Fundamental-analysis snapshots — fa_scores has one row per quarter.
   // List the quarters for the dropdown and show the selected one (default = latest).
-  const { data: faPeriodRows } = await supabase
-    .from("fa_scores")
-    .select("as_of_period")
-    .eq("symbol", symbol)
-    .order("as_of_period", { ascending: false });
-  const faQuarters = (faPeriodRows ?? []).map((r) => r.as_of_period as string);
+  const faQuarters = faRows.map((r) => r.as_of_period);
   const selectedFq = fq && faQuarters.includes(fq) ? fq : faQuarters[0];
-  let faRow: FaScore | null = null;
-  if (selectedFq) {
-    const { data } = await supabase
-      .from("fa_scores")
-      .select("*")
-      .eq("symbol", symbol)
-      .eq("as_of_period", selectedFq)
-      .maybeSingle();
-    faRow = (data as FaScore | null) ?? null;
-  }
+  const faRow: FaScore | null = selectedFq
+    ? faRows.find((r) => r.as_of_period === selectedFq) ?? null
+    : null;
 
   const latest = candles[candles.length - 1];
   const prev = candles.length > 1 ? candles[candles.length - 2] : null;

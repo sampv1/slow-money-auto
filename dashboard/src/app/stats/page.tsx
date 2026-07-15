@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getDailyLogs, getRecommendations } from "@/lib/cached-data";
 import { formatPnl, pnlColor, regimeLabel } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
@@ -13,13 +13,16 @@ export default async function StatsPage() {
   // Public page (anonymous-readable).
   const locale = await getLocale();
 
-  const [{ data: recsData }, { data: logsData }] = await Promise.all([
-    supabase.from("recommendations").select("*"),
-    supabase.from("daily_logs").select("*").order("trading_date", { ascending: true }),
-  ]);
-
-  const allRecs = (recsData ?? []) as Recommendation[];
-  const allLogs = (logsData ?? []) as DailyLog[];
+  // Both cached under tag rec-data (invalidated by BUY/SELL, /api/push and the
+  // daily evaluation), so repeat views cost nothing.
+  let allRecs: Recommendation[] = [];
+  let allLogs: DailyLog[] = [];
+  try {
+    [allRecs, allLogs] = await Promise.all([getRecommendations(), getDailyLogs()]);
+  } catch {
+    // Fall through with empty data — the page renders its zero state, matching
+    // the previous behaviour (these queries ignored errors).
+  }
 
   // Split recs
   const closed = allRecs.filter((r) => CLOSED_STATUSES.includes(r.status));

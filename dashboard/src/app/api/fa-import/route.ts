@@ -1,4 +1,6 @@
+import { revalidateTag } from "next/cache";
 import { supabase } from "@/lib/supabase";
+import { TAG_FA } from "@/lib/cached-data";
 import { getUserRole } from "@/lib/supabase-server";
 import { parseWorkbook, type ParseResult } from "@/lib/fa-import";
 
@@ -70,6 +72,10 @@ export async function POST(request: Request) {
     }
 
     const upserted = await upsertAll(parsed);
+    // Fresh quarterly financials → drop cached FA reads. (Scores themselves are
+    // recomputed by refresh_fa.py, whose workflow revalidates fa-data too.)
+    revalidateTag(TAG_FA, { expire: 0 });
+
     return Response.json({ success: true, upserted, summary: summarize(parsed) });
   } catch (err) {
     return Response.json({ error: `Server error: ${err}` }, { status: 500 });

@@ -51,3 +51,18 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: python update_prices.py
+
+      # Expire the dashboard's server-side data cache so today's P&L / status
+      # changes show immediately (see dashboard /api/revalidate).
+      # Non-fatal: if it fails, the cache TTL still refreshes within the hour.
+      - name: Revalidate dashboard cache
+        continue-on-error: true
+        env:
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          if [ -z "$REVALIDATE_SECRET" ]; then
+            echo "::warning::REVALIDATE_SECRET not set — skipping cache revalidation."
+            exit 0
+          fi
+          curl -fsSL -X POST "https://www.loctinhieu.com/api/revalidate?secret=${REVALIDATE_SECRET}&tags=rec-data" \
+            || echo "::warning::Dashboard revalidate call failed (cache will expire via TTL)."
