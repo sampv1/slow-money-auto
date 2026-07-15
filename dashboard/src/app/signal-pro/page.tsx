@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { CACHE_TTL_SECONDS, TAG_TA, fetchAllPaged, getFaQuarters, getFaRows } from "@/lib/cached-data";
+import { CACHE_TTL_SECONDS, TAG_TA, getFaQuarters, getFaRows } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import { SignalProClient } from "./signal-pro-client";
@@ -24,33 +24,66 @@ type UniverseRow = {
   catalyst_score: number | null;
 };
 
+const UNIVERSE_COLS =
+  "symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_full,rs_line_score,rs_line_grade,base_score,base_grade,base_type,base_status,base_chart,ta_score,catalyst_score";
+
 // The row sparkline only needs the recent tail of the RS line. The full
-// 250-point series × ~1,568 symbols was the dominant payload of this page
-// (~2 MB document); the expanded RS-line view re-fetches the full series
-// client-side on demand (see signal-pro-client), so shipping it up front is
-// pure waste. ~90 points ≈ one quarter of sessions.
+// 250-point series × ~1,600 symbols was the dominant payload of this page; the
+// expanded RS-line view re-fetches the full series client-side on demand (see
+// signal-pro-client), so shipping it up front is pure waste. ~90 points ≈ one
+// quarter of sessions, rounded to 2dp (RS line is 0–100; more precision than
+// that is invisible in a 60px sparkline but ~20% of the bytes).
 const SPARKLINE_POINTS = 90;
 
-const getSignalProUniverse = unstable_cache(
-  async (): Promise<UniverseRow[]> => {
-    const rows = await fetchAllPaged<UniverseRow>((from, to, withCount) =>
-      supabase
-        .from("ta_universe")
-        .select(
-          "symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_full,rs_line_score,rs_line_grade,base_score,base_grade,base_type,base_status,base_chart,ta_score,catalyst_score",
-          withCount ? { count: "exact" } : undefined,
-        )
-        .order("symbol", { ascending: true })
-        .range(from, to),
-    );
-    return rows.map((r) => ({
-      ...r,
-      rs_line_full: r.rs_line_full ? r.rs_line_full.slice(-SPARKLINE_POINTS) : null,
-    }));
+// Vercel's Data Cache rejects entries over 2 MB — an oversized entry is
+// silently NOT cached, so the page refetches the whole universe from Supabase
+// on every request (this cost ~20 s/request in production). The universe is
+// therefore cached in fixed-size chunks: each entry stays ~0.7 MB no matter how
+// large the universe grows, and the chunks are fetched in parallel.
+const UNIVERSE_CHUNK = 400;
+
+function slimRow(r: UniverseRow): UniverseRow {
+  return {
+    ...r,
+    rs_line_full: r.rs_line_full
+      ? r.rs_line_full.slice(-SPARKLINE_POINTS).map((v) => Math.round(v * 100) / 100)
+      : null,
+  };
+}
+
+const getUniverseCount = unstable_cache(
+  async (): Promise<number> => {
+    const { count, error } = await supabase
+      .from("ta_universe")
+      .select("symbol", { count: "exact", head: true });
+    if (error) throw new Error(error.message);
+    return count ?? 0;
   },
-  ["signal-pro-universe"],
+  ["signal-pro-universe-count"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
 );
+
+const getUniverseChunk = unstable_cache(
+  async (chunk: number): Promise<UniverseRow[]> => {
+    const { data, error } = await supabase
+      .from("ta_universe")
+      .select(UNIVERSE_COLS)
+      .order("symbol", { ascending: true })
+      .range(chunk * UNIVERSE_CHUNK, chunk * UNIVERSE_CHUNK + UNIVERSE_CHUNK - 1);
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as unknown as UniverseRow[]).map(slimRow);
+  },
+  ["signal-pro-universe-chunk"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
+);
+
+async function getSignalProUniverse(): Promise<UniverseRow[]> {
+  const total = await getUniverseCount();
+  const chunks = await Promise.all(
+    Array.from({ length: Math.ceil(total / UNIVERSE_CHUNK) }, (_, i) => getUniverseChunk(i)),
+  );
+  return chunks.flat();
+}
 
 export default async function SignalProPage({
   searchParams,
