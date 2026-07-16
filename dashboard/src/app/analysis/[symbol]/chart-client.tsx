@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   HistogramSeries,
@@ -13,7 +13,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import type { Candle } from "./page";
-import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
+import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import type { Locale } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
 
@@ -311,8 +311,54 @@ export function ChartClient({
     track("stock_viewed", { symbol });
   }, [symbol]);
 
-  const features = useMemo(() => featuresFor(selected), [selected]);
+  // Which of the `selected` indicators are currently shown on the chart. The
+  // chips below toggle membership; everything the chart draws (MA/RSI/MACD
+  // panes, markers, S/R lines, trendlines) is derived from `active`, so a
+  // toggle adds/removes that indicator's overlays live. Reset to the full
+  // selection whenever the server hands down a different set (new symbol /
+  // ?ind) — done during render (React's adjust-state-on-prop-change pattern),
+  // which is why prevSelectedKey is tracked rather than a reset effect.
+  const selectedKey = selected.join(",");
+  const [active, setActive] = useState<string[]>(selected);
+  const [prevSelectedKey, setPrevSelectedKey] = useState(selectedKey);
+  if (prevSelectedKey !== selectedKey) {
+    setPrevSelectedKey(selectedKey);
+    setActive(selected);
+  }
+
+  const activeSet = useMemo(() => new Set(active), [active]);
+  const toggleKeys = useCallback(
+    (keys: string[]) => {
+      setActive((prev) => {
+        const s = new Set(prev);
+        const anyOn = keys.some((k) => s.has(k));
+        for (const k of keys) {
+          if (anyOn) s.delete(k);
+          else s.add(k);
+        }
+        return selected.filter((k) => s.has(k)); // keep active an ordered subset
+      });
+    },
+    [selected],
+  );
+
+  const features = useMemo(() => featuresFor(active), [active]);
   const panes = useMemo(() => paneIndices(features), [features]);
+
+  // Overlays gated on the active set (server sends them whenever ANY S/R or
+  // trendline indicator is selected; the client hides them when that chip is off).
+  const activeSignals = useMemo(
+    () => chartSignals.filter((s) => activeSet.has(s.indicator)),
+    [chartSignals, activeSet],
+  );
+  const activeSr = useMemo(
+    () => (active.some((k) => SR_KEYS.has(k)) ? srLevels : []),
+    [srLevels, active],
+  );
+  const activeTl = useMemo(
+    () => (active.some((k) => TL_KEYS.has(k)) ? trendlines : []),
+    [trendlines, active],
+  );
 
   // Current MCDX Banker strength (0..100), from the latest bar. Mirrors
   // scripts/ta/indicators/momentum.py: banker = clip(1.5·(RSI(50)−50), 0, 20),
@@ -398,8 +444,8 @@ export function ChartClient({
       line.setData(linePointsFrom(sma(closes, period)));
     }
 
-    // S/R horizontal lines on price pane (only when S/R indicators selected).
-    for (const lvl of srLevels) {
+    // S/R horizontal lines on price pane (only when an S/R indicator is active).
+    for (const lvl of activeSr) {
       const isSupport = lvl.level_type === "support";
       candleSeries.createPriceLine({
         price: lvl.price,
@@ -411,9 +457,9 @@ export function ChartClient({
       });
     }
 
-    // Trendlines on price pane (only when trendline indicators selected).
+    // Trendlines on price pane (only when a trendline indicator is active).
     // Each line is drawn as a 2-point LineSeries from start_date to end_date.
-    for (const tl of trendlines) {
+    for (const tl of activeTl) {
       const isUp = tl.trend_type === "uptrend";
       const tlSeries = chart.addSeries(LineSeries, {
         color: isUp ? UP_COLOR : DOWN_COLOR,
@@ -633,7 +679,7 @@ export function ChartClient({
     //     into a single marker (the chips below list what's selected).
     const dateIdx = new Map(candles.map((c, i) => [c.date, i]));
     const firedAt = new Map<string, Set<number>>();
-    for (const sig of chartSignals) {
+    for (const sig of activeSignals) {
       const di = dateIdx.get(sig.date);
       if (di === undefined) continue;
       let s = firedAt.get(sig.indicator);
@@ -647,7 +693,7 @@ export function ChartClient({
     if (panes.macd !== -1) buckets[panes.macd] = [];
     const seen = new Set<string>();
 
-    for (const sig of chartSignals) {
+    for (const sig of activeSignals) {
       if (CHART_HIDDEN_KEYS.has(sig.indicator)) continue;
       const spec = INDICATORS_BY_KEY[sig.indicator];
       const direction = spec?.direction ?? "neutral";
@@ -691,7 +737,7 @@ export function ChartClient({
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, features, panes, chartSignals, srLevels, trendlines]);
+  }, [candles, features, panes, activeSignals, activeSr, activeTl]);
 
   return (
     <div className="space-y-2">
@@ -729,12 +775,16 @@ export function ChartClient({
           )}
         </div>
 
-        {/* Selected-indicator chips so the user can read what the markers mean */}
+        {/* Indicator chips — click to toggle that indicator's markers/overlays
+            on the chart. An "off" chip is muted with a dashed outline; its
+            markers, reference lines, and any RSI/MACD pane are removed. */}
         {selected.length > 0 && (
           <div className="flex items-center flex-wrap gap-1">
             {(() => {
               // Collapse the (up to three) MCDX Banker bands into a single chip
-              // that shows the exact current banker strength, not the band range.
+              // that shows the exact current banker strength, not the band range;
+              // toggling it flips all selected MCDX bands together.
+              const selectedMcdx = selected.filter((k) => MCDX_BANKER_KEYS.has(k));
               let mcdxShown = false;
               return selected.map((key) => {
                 if (CHART_HIDDEN_KEYS.has(key)) return null;
@@ -745,19 +795,26 @@ export function ChartClient({
                   if (mcdxShown) return null;
                   mcdxShown = true;
                 }
+                const keys = isMcdx ? selectedMcdx : [key];
+                const on = keys.some((k) => activeSet.has(k));
+                const onClasses =
+                  spec.direction === "bullish"
+                    ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                    : spec.direction === "bearish"
+                      ? "bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
+                      : "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200";
                 return (
-                  <span
+                  <button
+                    type="button"
                     key={isMcdx ? "mcdx_banker" : key}
-                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${spec.direction === "bullish"
-                        ? "bg-green-50 text-green-700"
-                        : spec.direction === "bearish"
-                          ? "bg-red-50 text-red-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
+                    onClick={() => toggleKeys(keys)}
+                    aria-pressed={on}
+                    title={on ? "Click to hide on chart" : "Click to show on chart"}
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${on ? onClasses : "bg-transparent text-gray-400 border-dashed border-gray-300 hover:text-gray-600"}`}
                   >
                     {spec.direction === "bullish" ? "▲" : spec.direction === "bearish" ? "▼" : "●"}
                     {isMcdx ? formatMcdxBanker(mcdxBankerPct) : indicatorLabel(spec, locale)}
-                  </span>
+                  </button>
                 );
               });
             })()}

@@ -259,3 +259,18 @@ export const CHART_HIDDEN_KEYS = new Set([
   "rs_vs_vnindex_strong",
   "rs_vs_vnindex_weak",
 ]);
+
+// Indicators whose markers are backed by drawn overlays: S/R horizontal lines
+// and trendlines. The chart shows those overlays only while one of these keys
+// is active, so both the server (initial gating) and the client (chip toggles)
+// reference the same sets.
+export const SR_KEYS = new Set([
+  "bounces_off_support", "rejects_at_resistance",
+  "breaks_resistance", "breaks_support",
+  "near_support", "near_resistance",
+]);
+
+export const TL_KEYS = new Set([
+  "at_uptrend_support", "at_downtrend_resistance",
+  "uptrend_break", "downtrend_break",
+]);

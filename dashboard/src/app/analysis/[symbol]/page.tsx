@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { CACHE_TTL_SECONDS, TAG_FA, TAG_TA, fetchAllPaged } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
-import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
+import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import type { FaScore } from "@/lib/fa";
 import { ChartClient } from "./chart-client";
 import { FaSummary } from "./fa-summary";
@@ -152,19 +152,9 @@ export default async function SymbolDrillDown({
           .map((s) => ({ date: s.date, indicator: s.indicator }))
       : [];
 
-  // S/R levels (only shown when an S/R indicator is in the selection).
-  const SR_KEYS = new Set([
-    "bounces_off_support", "rejects_at_resistance",
-    "breaks_resistance", "breaks_support",
-    "near_support", "near_resistance",
-  ]);
+  // S/R levels + trendlines are passed whenever an S/R / trendline indicator is
+  // in the selection; the client re-gates them per chip toggle (same key sets).
   const srLevels = selected.some((k) => SR_KEYS.has(k)) ? allSrLevels : [];
-
-  // Trendlines (only shown when a trendline indicator is in the selection).
-  const TL_KEYS = new Set([
-    "at_uptrend_support", "at_downtrend_resistance",
-    "uptrend_break", "downtrend_break",
-  ]);
   const trendlines = selected.some((k) => TL_KEYS.has(k)) ? allTrendlines : [];
 
   // Fundamental-analysis snapshots — fa_scores has one row per quarter.
