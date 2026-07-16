@@ -141,6 +141,12 @@ export const translations = {
       "Below −0.5 means the macro channel is NOT the objection — it is permission, never a buy signal: shocks outside this channel (tariffs, global risk-off, news) are invisible to it, and drawdowns have happened at low readings. Always confirm with price action (the Implied Risk page is an independent fear gauge).",
     mcNoData: "No FCI data yet. Run refresh_macro.py (the daily Macro workflow computes it).",
 
+    // MCDX histogram legend (Analysis chart subplot)
+    mcdxLegendBanker: "Banker",
+    mcdxLegendWeak: "Weak",
+    mcdxLegendHot: "Hot money",
+    mcdxLegendRetail: "Retail",
+
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
     taSymbolLabel: "Symbol",
@@ -647,6 +653,12 @@ export const translations = {
     mcHowUseOn:
       "Dưới −0,5 nghĩa là kênh vĩ mô KHÔNG phải trở ngại — đây là điều kiện cho phép, không phải tín hiệu mua: các cú sốc ngoài kênh này (thuế quan, risk-off toàn cầu, tin tức) FCI không nhìn thấy, và thị trường từng giảm mạnh khi FCI đang thấp. Luôn xác nhận bằng diễn biến giá (trang Implied Risk là thước đo sợ hãi độc lập).",
     mcNoData: "Chưa có dữ liệu FCI. Chạy refresh_macro.py (workflow Macro hằng ngày sẽ tự tính).",
+
+    // MCDX histogram legend (Analysis chart subplot)
+    mcdxLegendBanker: "Tay to",
+    mcdxLegendWeak: "Yếu",
+    mcdxLegendHot: "Tiền nóng",
+    mcdxLegendRetail: "Nhỏ lẻ",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",

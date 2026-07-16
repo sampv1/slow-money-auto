@@ -15,7 +15,7 @@ import {
 } from "lightweight-charts";
 import type { Candle } from "./page";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
-import type { Locale } from "@/lib/i18n";
+import { t, type Locale } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
 
 const UP_COLOR = "#16a34a";
@@ -32,6 +32,14 @@ const RSI_COLOR = "#7c3aed";
 const MACD_LINE_COLOR = "#2563eb";
 const MACD_SIGNAL_COLOR = "#ea580c";
 const VOLUME_MA_COLOR = "#6b7280";
+
+// MCDX (Multi Color Dragon Extended) histogram colours — see data/MCDX.md.
+// These are convention colours fixed by the indicator (like status colours),
+// so they carry meaning rather than being a free categorical choice.
+const MCDX_RETAILER_COLOR = "#22c55e";    // green — retail investors
+const MCDX_HOTMONEY_COLOR = "#eab308";    // gold  — speculative / hot money
+const MCDX_BANKER_COLOR = "#ef4444";      // red   — market maker (banker), ≥25%
+const MCDX_BANKER_WEAK_COLOR = "#fca5a5"; // light red (pink) — weak banker flow (<25%)
 
 // ---------- Indicator math (mirrors scripts/ta/indicators/helpers.py) ----------
 
@@ -93,6 +101,28 @@ function rsi(closes: number[], period = 14): (number | null)[] {
     out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
   }
   return out;
+}
+
+// MCDX (data/MCDX.md — the Mango2Juice standard). Two RSI "hands" rescaled to a
+// 0..BASE display range; the retailer band is the remainder that fills to BASE.
+// Uses the same Wilder rsi() above (the spec's smoothing), so values match
+// TradingView. banker → red (market maker), hotmoney → gold (speculative),
+// retailer → green (retail).
+const MCDX_BASE = 20;
+const MCDX_BANKER_ACCUM_PCT = 25; // spec: banker ≥ 25% = accumulation ("strong")
+
+function mcdx(closes: number[]): {
+  banker: (number | null)[];
+  hotmoney: (number | null)[];
+  retailer: (number | null)[];
+} {
+  const clip = (v: number) => Math.min(Math.max(v, 0), MCDX_BASE);
+  const rBanker = rsi(closes, 50);
+  const rHot = rsi(closes, 40);
+  const banker = rBanker.map((v) => (v === null ? null : clip(1.5 * (v - 50))));
+  const hotmoney = rHot.map((v) => (v === null ? null : clip(0.7 * (v - 30))));
+  const retailer = hotmoney.map((v) => (v === null ? null : MCDX_BASE - v));
+  return { banker, hotmoney, retailer };
 }
 
 function macd(
@@ -157,6 +187,7 @@ type Features = {
   show52wLow: boolean;
   showRSI: boolean;
   showMACD: boolean;
+  showMcdx: boolean;
 };
 
 function featuresFor(selected: string[]): Features {
@@ -168,8 +199,13 @@ function featuresFor(selected: string[]): Features {
   let show52wLow = false;
   let showRSI = false;
   let showMACD = false;
+  let showMcdx = false;
 
   for (const key of selected) {
+    if (MCDX_BANKER_KEYS.has(key)) {
+      showMcdx = true;
+      continue;
+    }
     // MA20+MA50 cross indicators
     if (key === "ma20_50_golden_cross" || key === "ma20_50_death_cross") {
       maPeriods.add(20);
@@ -243,15 +279,20 @@ function featuresFor(selected: string[]): Features {
     show52wLow,
     showRSI,
     showMACD,
+    showMcdx,
   };
 }
 
-function paneIndices(features: Features): { volume: number; rsi: number; macd: number } {
-  // Pane 0 is always price. Volume always at pane 1.
+type Panes = { volume: number; rsi: number; macd: number; mcdx: number };
+
+function paneIndices(features: Features): Panes {
+  // Pane 0 is always price. Volume always at pane 1. Subplots follow in a fixed
+  // order so their pane indices are stable regardless of which are shown.
   let next = 2;
   const rsi = features.showRSI ? next++ : -1;
   const macd = features.showMACD ? next++ : -1;
-  return { volume: 1, rsi, macd };
+  const mcdx = features.showMcdx ? next++ : -1;
+  return { volume: 1, rsi, macd, mcdx };
 }
 
 // Volume-pane indicators — those whose marker reads against the volume bar,
@@ -264,7 +305,7 @@ const VOLUME_PANE_KEYS = new Set([
   "pocket_pivot",
 ]);
 
-function paneForIndicator(key: string, panes: { volume: number; rsi: number; macd: number }): number {
+function paneForIndicator(key: string, panes: Panes): number {
   if (VOLUME_PANE_KEYS.has(key)) return panes.volume;
   if (key.startsWith("rsi_") && panes.rsi !== -1) return panes.rsi;
   if (key.startsWith("macd_") && panes.macd !== -1) return panes.macd;
@@ -382,10 +423,10 @@ export function ChartClient({
   // Fixed total height: always reserve both the RSI and MACD subplot slots so
   // toggling a chip (which adds/removes a subplot pane) never resizes the chart
   // and shifts the chip panel below it. Within this height the panes redistribute
-  // by their stretch factors (price 3 : volume 1 : RSI 1.2 : MACD 1.2), so fewer
-  // subplots just give the price pane more room.
+  // by their stretch factors (price 3 : volume 1 : RSI/MACD/MCDX 1.2 each), so
+  // fewer subplots just give the price pane more room.
   const baseHeight = 380; // price + volume
-  const heightPx = baseHeight + 100 + 2 * 130; // 2 = reserved RSI + MACD slots
+  const heightPx = baseHeight + 100 + 3 * 130; // 3 = reserved RSI + MACD + MCDX slots
 
   useEffect(() => {
     const container = containerRef.current;
@@ -668,6 +709,43 @@ export function ChartClient({
       );
     }
 
+    // === Pane 4 (optional): MCDX histogram =======================
+    // Three overlaid histogram columns per bar (data/MCDX.md): retailer (green,
+    // the BASE-hotmoney background) is drawn first, hot money (gold) over it,
+    // and the banker column (red when ≥25% = accumulation, pink when weaker)
+    // last so it sits on top — reproducing the standard MCDX stack.
+    let mcdxBankerSeries: ReturnType<typeof chart.addSeries<"Histogram">> | null = null;
+    if (features.showMcdx && panes.mcdx !== -1) {
+      const { banker, hotmoney, retailer } = mcdx(closes);
+      const histFrom = (arr: (number | null)[], colorOf: (v: number, i: number) => string) =>
+        candles
+          .map((c, i) => (arr[i] !== null ? { time: c.date as Time, value: arr[i] as number, color: colorOf(arr[i] as number, i) } : null))
+          .filter((x): x is { time: Time; value: number; color: string } => x !== null);
+      const histOpts = { priceFormat: { type: "volume" as const }, priceLineVisible: false, lastValueVisible: false };
+
+      chart
+        .addSeries(HistogramSeries, { ...histOpts, title: "Retail" }, panes.mcdx)
+        .setData(histFrom(retailer, () => MCDX_RETAILER_COLOR));
+      chart
+        .addSeries(HistogramSeries, { ...histOpts, title: "Hot money" }, panes.mcdx)
+        .setData(histFrom(hotmoney, () => MCDX_HOTMONEY_COLOR));
+      mcdxBankerSeries = chart.addSeries(HistogramSeries, { ...histOpts, title: "Banker" }, panes.mcdx);
+      mcdxBankerSeries.setData(
+        histFrom(banker, (v) => (v / MCDX_BASE * 100 >= MCDX_BANKER_ACCUM_PCT ? MCDX_BANKER_COLOR : MCDX_BANKER_WEAK_COLOR)),
+      );
+      // Banker threshold guides at 25% / 50% / 75% of the 0..BASE scale.
+      for (const pct of [25, 50, 75]) {
+        mcdxBankerSeries.createPriceLine({
+          price: (pct / 100) * MCDX_BASE,
+          color: "#9ca3af",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: `${pct}%`,
+        });
+      }
+    }
+
     // === Pane sizing =============================================
     const allPanes = chart.panes();
     // Price gets the most space; subplots are compact.
@@ -675,6 +753,7 @@ export function ChartClient({
     if (allPanes[1]) allPanes[1].setStretchFactor(1);
     if (features.showRSI && allPanes[panes.rsi]) allPanes[panes.rsi].setStretchFactor(1.2);
     if (features.showMACD && allPanes[panes.macd]) allPanes[panes.macd].setStretchFactor(1.2);
+    if (features.showMcdx && allPanes[panes.mcdx]) allPanes[panes.mcdx].setStretchFactor(1.2);
 
     // === Markers routed to the correct pane ======================
     // Two de-noising passes keep persistent (state-based) signals — Stage
@@ -704,6 +783,8 @@ export function ChartClient({
 
     for (const sig of activeSignals) {
       if (CHART_HIDDEN_KEYS.has(sig.indicator)) continue;
+      // MCDX is visualised by its histogram pane, not by arrow markers.
+      if (MCDX_BANKER_KEYS.has(sig.indicator)) continue;
       const spec = INDICATORS_BY_KEY[sig.indicator];
       const direction = spec?.direction ?? "neutral";
       const paneIdx = paneForIndicator(sig.indicator, panes);
@@ -794,6 +875,23 @@ export function ChartClient({
                 <span className="inline-block w-3 h-0.5" style={{ backgroundColor: MACD_SIGNAL_COLOR }} />
                 Signal
               </span>
+            </>
+          )}
+          {features.showMcdx && (
+            <>
+              {(
+                [
+                  [MCDX_BANKER_COLOR, t(locale, "mcdxLegendBanker")],
+                  [MCDX_BANKER_WEAK_COLOR, t(locale, "mcdxLegendWeak")],
+                  [MCDX_HOTMONEY_COLOR, t(locale, "mcdxLegendHot")],
+                  [MCDX_RETAILER_COLOR, t(locale, "mcdxLegendRetail")],
+                ] as const
+              ).map(([color, label]) => (
+                <span key={label} className="flex items-center gap-1">
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
+                  {label}
+                </span>
+              ))}
             </>
           )}
         </div>
