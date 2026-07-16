@@ -6,11 +6,15 @@ import { ExchangeRateChart, type FxRow, type Regime } from "./exchange-rate-char
 import { CpiChart, type CpiRow } from "./cpi-chart";
 import { InterestRateChart, type IrRow } from "./interest-rate-chart";
 import { ExternalPressureChart, type EpRegime, type EpRow } from "./external-pressure-chart";
+import { ForeignFlowChart, type FfRow } from "./foreign-flow-chart";
 
 export const revalidate = 0;
 
 type BandEntry = { from: string; value: number };
-const DEFAULT_BANDS: BandEntry[] = [{ from: "2022-10-17", value: 0.05 }];
+const DEFAULT_BANDS: BandEntry[] = [
+  { from: "2015-08-19", value: 0.03 },
+  { from: "2022-10-17", value: 0.05 },
+];
 
 // One metric's full daily series, as [date, value] entries (JSON-serializable
 // for the data cache — the page rebuilds Maps from them). macro_series holds
@@ -73,7 +77,7 @@ async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCf
 // macro pipeline via /api/revalidate (tag macro-data); TTL is a safety net.
 const getMacroData = unstable_cache(
   async () => {
-    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, cfg] = await Promise.all([
+    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, cfg] = await Promise.all([
       fetchMetricEntries("fx_central_rate"),
       fetchMetricEntries("fx_vcb_sell"),
       fetchMetricEntries("vnindex"),
@@ -84,9 +88,10 @@ const getMacroData = unstable_cache(
       fetchMetricEntries("omo_withdraw"),
       fetchMetricEntries("sofr"),
       fetchMetricEntries("dxy"),
+      fetchMetricEntries("foreign_net_value"),
       loadMacroConfig(),
-    ]);
-    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, cfg };
+    ] as const);
+    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, cfg };
   },
   ["macro-data"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
@@ -194,6 +199,7 @@ export default async function MacroPage() {
   let cpiRows: CpiRow[] = [];
   let irRows: IrRow[] = [];
   let epRows: EpRow[] = [];
+  let ffRows: FfRow[] = [];
   let error: string | null = null;
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
@@ -264,6 +270,22 @@ export default async function MacroPage() {
         const regime: EpRegime = spread >= 0 ? "positive" : spread >= -1.5 ? "mild" : "deep";
         return [{ date, spread, vnibor, sofr: s, dxy: dxyAsof(date), vnindex: vnAsof(date), regime }];
       });
+
+    // Foreign flows: daily net value + trailing 20-SESSION cumulative (rolling
+    // sum over the previous 20 rows, not calendar days — this is the pressure
+    // gauge the composite will consume). null until 20 sessions accumulate.
+    const foreignSorted = [...new Map(d.foreignNet).entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    let run = 0;
+    ffRows = foreignSorted.map(([date, net], i) => {
+      run += net;
+      if (i >= 20) run -= foreignSorted[i - 20][1];
+      return {
+        date,
+        net: Math.round(net * 10) / 10,
+        cum20: i >= 19 ? Math.round(run * 10) / 10 : null,
+        vnindex: vnAsof(date),
+      };
+    });
     pctNearCeiling = regimeCfg.pct_near_ceiling;
     chg5dFast = regimeCfg.chg5d_fast;
     // central_rate_chg_5d = central(t) − central(t−5 sessions). Computed over the
@@ -346,6 +368,22 @@ export default async function MacroPage() {
           </div>
         ) : (
           <ExternalPressureChart rows={epRows} locale={locale} />
+        )}
+      </section>
+
+      <section className="mb-6">
+        <div className="mb-2">
+          <h2 className="text-base font-semibold">{t(locale, "ffTitle")}</h2>
+          <p className="text-xs text-gray-500">{t(locale, "ffSubtitle")}</p>
+        </div>
+        {error ? (
+          <p className="text-red-600 text-sm">Error loading foreign-flow data: {error}</p>
+        ) : ffRows.length < 2 ? (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+            {t(locale, "macroNoData")}
+          </div>
+        ) : (
+          <ForeignFlowChart rows={ffRows} locale={locale} />
         )}
       </section>
 

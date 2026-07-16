@@ -33,8 +33,12 @@ METRIC_CENTRAL = "fx_central_rate"
 METRIC_VCB_SELL = "fx_vcb_sell"
 METRIC_VNINDEX = "vnindex"  # VN-Index close (context panel on /macro)
 
-# The ±5% band era (and this chart) starts here.
-HISTORY_START = dt.date(2022, 10, 17)
+# Earliest date the Vietcombank exchange-rate API serves (probed 2026-07:
+# 2020-02-03 onward has data, January 2020 and earlier is empty). Vietstock's
+# central-rate history goes deeper (2016), but %-to-ceiling needs BOTH legs.
+# NOTE: the SBV band was ±3% from 2015-08-19 until 2022-10-17 (±5% since) —
+# effective-dated in scoring_config('macro').usdvnd_band, see migration 039.
+HISTORY_START = dt.date(2020, 2, 3)
 
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")

@@ -66,6 +66,7 @@ from macro.external import (
     fetch_dxy_history,
     fetch_sofr_history,
 )
+from macro.foreign import FOREIGN_HISTORY_START, METRIC_FOREIGN_NET, fetch_foreign_net_history
 
 # Manual CPI overlay (Vietstock CPI froze at 2025-08; GSO is VPN-gated to cloud IPs,
 # so newer months are hand-entered here — see data/cpi_manual.csv).
@@ -177,6 +178,20 @@ def collect_dxy(start: dt.date, end: dt.date) -> list[dict]:
     print(f"  DXY: {len(pts)} daily points"
           + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:.2f})" if pts else ""))
     return series_rows(METRIC_DXY, pts, "index", "yahoo")
+
+
+def collect_foreign(start: dt.date, end: dt.date) -> list[dict]:
+    """Foreign net-buy value on HOSE (CafeF, billion VND) over [start, end] as
+    macro_series rows. Negative = net foreign selling. A failure never blocks
+    other metrics."""
+    try:
+        pts = fetch_foreign_net_history(start, end)
+    except Exception as e:  # noqa: BLE001
+        print(f"  Foreign flows fetch failed: {str(e)[:100]}")
+        return []
+    print(f"  Foreign net: {len(pts)} daily points"
+          + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:,.0f} bn)" if pts else ""))
+    return series_rows(METRIC_FOREIGN_NET, pts, "billion VND", "cafef")
 
 
 def overlay_sbv_interbank(vietstock_rows: list[dict]) -> list[dict]:
@@ -365,6 +380,9 @@ def main():
 
         print(f"=== Backfill DXY (Yahoo DX-Y.NYB): {DXY_HISTORY_START} -> {end} ===")
         dxy_rows = collect_dxy(DXY_HISTORY_START, end)
+
+        print(f"=== Backfill foreign flows (CafeF): {FOREIGN_HISTORY_START} -> {end} ===")
+        foreign_rows = collect_foreign(FOREIGN_HISTORY_START, end)
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
@@ -392,14 +410,16 @@ def main():
         sofr_rows = collect_sofr(end - dt.timedelta(days=21), end)
         print("DXY (recent):")
         dxy_rows = collect_dxy(end - dt.timedelta(days=21), end)
+        print("Foreign flows (recent):")
+        foreign_rows = collect_foreign(end - dt.timedelta(days=21), end)
 
     rows = (central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows
-            + omo_rows + sofr_rows + dxy_rows)
+            + omo_rows + sofr_rows + dxy_rows + foreign_rows)
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
               f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi + {len(interbank_rows)} interbank "
               f"+ {len(omo_rows)} omo + {len(sofr_rows)} sofr + {len(dxy_rows)} dxy "
-              f"= {len(rows)} rows into macro_series.")
+              f"+ {len(foreign_rows)} foreign = {len(rows)} rows into macro_series.")
         return
     if not rows:
         print("Nothing to write.")
@@ -411,7 +431,7 @@ def main():
     print(f"Upserted {n} rows into macro_series "
           f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex, "
           f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank, {len(omo_rows)} omo, "
-          f"{len(sofr_rows)} sofr, {len(dxy_rows)} dxy).")
+          f"{len(sofr_rows)} sofr, {len(dxy_rows)} dxy, {len(foreign_rows)} foreign).")
 
 
 if __name__ == "__main__":
