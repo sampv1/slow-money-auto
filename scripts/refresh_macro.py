@@ -78,22 +78,23 @@ MANUAL_CPI_CSV = Path(__file__).resolve().parent.parent / "data" / "cpi_manual.c
 # HISTORY_START (2022) — so the "All" view doesn't clip the VN-Index line short.
 VNINDEX_HISTORY_START = dt.date(2004, 1, 1)
 
-# Macro pressure composite (MACRO_COMPOSITE_DESIGN.md). The two §4 choices were
-# frozen 2026-07-16 after the dev/holdout protocol — do not change them here;
-# any revision requires a v2 design doc with a fresh out-of-sample period.
-FROZEN_COMPOSITE = {"window": 504, "dxy_mode": "level"}
-METRIC_COMPOSITE_CORE = "macro_composite_core"   # 5 components, history to 2019-04
-METRIC_COMPOSITE_FULL = "macro_composite_full"   # all 7 — the live headline
-CTB_METRICS = {"liq": "macro_ctb_liq", "fx": "macro_ctb_fx",
-               "ext": "macro_ctb_ext", "cpi": "macro_ctb_cpi"}
-COMPOSITE_REFRESH_DAYS = 45  # daily mode rewrites this trailing slice (idempotent)
+# Financial Conditions Index (FCI) — MACRO_COMPOSITE_DESIGN.md. The two §4
+# choices were frozen 2026-07-16 after the dev/holdout protocol — do not change
+# them here; any revision requires a v2 design doc with a fresh out-of-sample
+# period. (Formerly "macro composite"; renamed to FCI 2026-07-16.)
+FROZEN_FCI = {"window": 504, "dxy_mode": "level"}
+METRIC_FCI_CORE = "macro_fci_core"   # 5 components, history to 2019-04
+METRIC_FCI_FULL = "macro_fci_full"   # all 7 — the live headline
+FCI_CTB_METRICS = {"liq": "macro_fci_ctb_liq", "fx": "macro_fci_ctb_fx",
+                   "ext": "macro_fci_ctb_ext", "cpi": "macro_fci_ctb_cpi"}
+FCI_REFRESH_DAYS = 45  # daily mode rewrites this trailing slice (idempotent)
 
 
-def compute_composite_rows(client, since: dt.date | None) -> list[dict]:
-    """Final pipeline step (design doc §9): recompute the frozen composite from
-    the just-written raw series, as macro_series rows (source 'computed') —
-    both variants plus per-pillar contributions (which sum to composite_full,
-    for the dashboard's stacked attribution panel).
+def compute_fci_rows(client, since: dt.date | None) -> list[dict]:
+    """Final pipeline step (design doc §9): recompute the frozen FCI from the
+    just-written raw series, as macro_series rows (source 'computed') — both
+    variants plus per-pillar contributions (which sum to macro_fci_full, for
+    the dashboard's stacked attribution panel).
 
     Every value is a trailing-window function of the raw series, so rewriting
     only a recent slice (daily mode) is stable and idempotent; since=None
@@ -107,7 +108,7 @@ def compute_composite_rows(client, since: dt.date | None) -> list[dict]:
     )
     bundle = load_macro_bundle(client)
     grid = trading_grid(bundle)
-    scores = build_scores(bundle, FROZEN_COMPOSITE["window"], FROZEN_COMPOSITE["dxy_mode"], grid)
+    scores = build_scores(bundle, FROZEN_FCI["window"], FROZEN_FCI["dxy_mode"], grid)
     core, _ = combine_with_attribution(scores, CORE_MEMBERS)
     full, ctb = combine_with_attribution(scores, FULL_MEMBERS)
 
@@ -115,13 +116,13 @@ def compute_composite_rows(client, since: dt.date | None) -> list[dict]:
         return [(d.date(), round(float(v), 4)) for d, v in series.dropna().items()
                 if since is None or d.date() >= since]
 
-    rows = series_rows(METRIC_COMPOSITE_CORE, pts(core), "z", "computed")
-    rows += series_rows(METRIC_COMPOSITE_FULL, pts(full), "z", "computed")
-    for pillar, metric in CTB_METRICS.items():
+    rows = series_rows(METRIC_FCI_CORE, pts(core), "z", "computed")
+    rows += series_rows(METRIC_FCI_FULL, pts(full), "z", "computed")
+    for pillar, metric in FCI_CTB_METRICS.items():
         rows += series_rows(metric, pts(ctb[pillar]), "z", "computed")
     last = full.dropna()
     if not last.empty:
-        print(f"  Composite: latest {last.index[-1].date()} full={last.iloc[-1]:+.2f} "
+        print(f"  FCI: latest {last.index[-1].date()} full={last.iloc[-1]:+.2f} "
               f"(core={core.dropna().iloc[-1]:+.2f}), {len(rows)} rows to write.")
     return rows
 
@@ -467,7 +468,7 @@ def main():
               f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi + {len(interbank_rows)} interbank "
               f"+ {len(omo_rows)} omo + {len(sofr_rows)} sofr + {len(dxy_rows)} dxy "
               f"+ {len(foreign_rows)} foreign = {len(rows)} rows into macro_series, "
-              f"then recompute the composite (skipped: it reads the written rows).")
+              f"then recompute the FCI (skipped: it reads the written rows).")
         return
     if not rows:
         print("Nothing to write.")
@@ -481,11 +482,11 @@ def main():
           f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank, {len(omo_rows)} omo, "
           f"{len(sofr_rows)} sofr, {len(dxy_rows)} dxy, {len(foreign_rows)} foreign).")
 
-    since = None if args.backfill else end - dt.timedelta(days=COMPOSITE_REFRESH_DAYS)
-    print(f"=== Composite (frozen W={FROZEN_COMPOSITE['window']}/{FROZEN_COMPOSITE['dxy_mode']}): "
+    since = None if args.backfill else end - dt.timedelta(days=FCI_REFRESH_DAYS)
+    print(f"=== FCI (frozen W={FROZEN_FCI['window']}/{FROZEN_FCI['dxy_mode']}): "
           f"{'full history' if since is None else f'since {since}'} ===")
-    n = upsert_macro(client, compute_composite_rows(client, since))
-    print(f"Upserted {n} composite rows.")
+    n = upsert_macro(client, compute_fci_rows(client, since))
+    print(f"Upserted {n} FCI rows.")
 
 
 if __name__ == "__main__":

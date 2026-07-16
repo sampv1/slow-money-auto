@@ -112,19 +112,17 @@ export const translations = {
     cpiRoomNo: "No room",
     cpiNoData: "No CPI data yet. Run the Macro Daily workflow with backfill=true (or refresh_macro.py --backfill).",
 
-    // Macro pressure composite (MACRO_COMPOSITE_DESIGN.md)
-    mcTitle: "Macro pressure composite",
+    // Financial Conditions Index — FCI (MACRO_COMPOSITE_DESIGN.md)
+    mcTitle: "Financial Conditions Index (FCI)",
     mcSubtitle:
       "One daily score for liquidity/FX-driven market pressure — weighted z-scores of the indicators below; higher = tighter conditions",
-    mcLatestLabel: "Composite (full)",
-    mcFull: "Full (7 components, headline)",
-    mcCore: "Core (5 components, longer history)",
+    mcLatestLabel: "FCI",
+    mcFull: "FCI",
     mcRegimeRiskoff: "Risk-off",
     mcRegimeNeutral: "Neutral",
-    mcRegimeSupportive: "Macro supportive",
-    mcPanelComposite: "Composite z-score",
-    mcPanelPillars: "Pillar contributions (sum = composite)",
-    mcPanelIr: "Implied risk (independent confirmation)",
+    mcRegimeSupportive: "Supportive",
+    mcPanelComposite: "FCI z-score",
+    mcPanelPillars: "Pillar contributions (sum = FCI)",
     mcPillarLiq: "Liquidity & rates",
     mcPillarFx: "Exchange rate",
     mcPillarExt: "External",
@@ -133,14 +131,12 @@ export const translations = {
     mcZoneSupportive: "Supportive zone −0.5",
     mcHowSummary: "How is this calculated, and how do I use it?",
     mcHowCalc:
-      "Each input is turned into a z-score against its own trailing 2-year norm, sign-aligned so that higher always means worse (tighter money, less FX headroom, foreign selling, hotter inflation), then averaged with fixed weights: Liquidity & rates 40% (overnight interbank rate 15, VND–SOFR spread 15, cumulative OMO balance 10) · Exchange rate 30% (distance to the SBV ceiling) · External 20% (foreign flows 12, DXY 8) · Inflation 10% (CPI headroom vs the annual target).",
-    mcHowVariants:
-      "The bold line is the full 7-component composite (from 2021). The thin grey line is a 5-component core without the FX and foreign legs — same construction, longer history (from 2019), shown for context.",
+      "Each input is turned into a z-score against its own trailing 2-year norm, sign-aligned so that higher always means worse (tighter money, less FX headroom, foreign selling, hotter inflation), then averaged with fixed weights: Liquidity & rates 40% (overnight interbank rate 15, VND–SOFR spread 15, cumulative OMO balance 10) · Exchange rate 30% (distance to the SBV ceiling) · External 20% (foreign flows 12, DXY 8) · Inflation 10% (CPI headroom vs the annual target). History starts 2021, once all seven legs have enough data.",
     mcHowUseOff:
       "Risk-off: above +1 sustained (5 of the last 7 sessions) has historically preceded liquidity/FX-driven drawdowns by days-to-weeks (e.g. entered June 2022, three months before the September crash; April 2024, two weeks before SBV spot sales). Treat it as a caution / stand-aside (KB3) bias and check the pillar bars to see what is driving it.",
     mcHowUseOn:
-      "Below −0.5 means the macro channel is NOT the objection — it is permission, never a buy signal: shocks outside this channel (tariffs, global risk-off, news) are invisible to it, and drawdowns have happened at low readings. Always confirm with price action; the implied-risk panel below is an independent fear gauge.",
-    mcNoData: "No composite data yet. Run refresh_macro.py (the daily Macro workflow computes it).",
+      "Below −0.5 means the macro channel is NOT the objection — it is permission, never a buy signal: shocks outside this channel (tariffs, global risk-off, news) are invisible to it, and drawdowns have happened at low readings. Always confirm with price action (the Implied Risk page is an independent fear gauge).",
+    mcNoData: "No FCI data yet. Run refresh_macro.py (the daily Macro workflow computes it).",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
@@ -620,35 +616,31 @@ export const translations = {
     cpiRoomNo: "Hết dư địa",
     cpiNoData: "Chưa có dữ liệu CPI. Chạy workflow Macro Daily với backfill=true (hoặc refresh_macro.py --backfill).",
 
-    // Macro pressure composite (MACRO_COMPOSITE_DESIGN.md)
-    mcTitle: "Chỉ số tổng hợp áp lực vĩ mô",
+    // Financial Conditions Index — FCI (MACRO_COMPOSITE_DESIGN.md)
+    mcTitle: "Chỉ số điều kiện tài chính (FCI)",
     mcSubtitle:
       "Một điểm số mỗi ngày đo áp lực thanh khoản/tỷ giá lên thị trường — trung bình có trọng số các z-score của những chỉ báo bên dưới; càng cao = điều kiện càng căng",
-    mcLatestLabel: "Chỉ số tổng hợp (đầy đủ)",
-    mcFull: "Đầy đủ (7 cấu phần, chỉ số chính)",
-    mcCore: "Lõi (5 cấu phần, lịch sử dài hơn)",
+    mcLatestLabel: "FCI",
+    mcFull: "FCI",
     mcRegimeRiskoff: "Rủi ro cao",
     mcRegimeNeutral: "Trung tính",
-    mcRegimeSupportive: "Vĩ mô thuận lợi",
-    mcPanelComposite: "Z-score tổng hợp",
-    mcPanelPillars: "Đóng góp theo nhóm (tổng = chỉ số)",
-    mcPanelIr: "Implied risk (xác nhận độc lập)",
+    mcRegimeSupportive: "Thuận lợi",
+    mcPanelComposite: "FCI (z-score)",
+    mcPanelPillars: "Đóng góp theo nhóm (tổng = FCI)",
     mcPillarLiq: "Thanh khoản & lãi suất",
     mcPillarFx: "Tỷ giá",
     mcPillarExt: "Bên ngoài",
     mcPillarCpi: "Lạm phát",
     mcZoneRiskoff: "Vùng rủi ro cao +1",
     mcZoneSupportive: "Vùng thuận lợi −0,5",
-    mcHowSummary: "Chỉ số này được tính thế nào và dùng ra sao?",
+    mcHowSummary: "FCI được tính thế nào và dùng ra sao?",
     mcHowCalc:
-      "Mỗi chỉ báo được chuẩn hóa thành z-score so với chính nó trong 2 năm gần nhất, quy ước dấu sao cho càng cao càng xấu (tiền tệ càng căng, dư địa tỷ giá càng hẹp, khối ngoại bán ròng, lạm phát nóng), rồi lấy trung bình theo trọng số cố định: Thanh khoản & lãi suất 40% (lãi suất qua đêm 15, chênh lệch VND–SOFR 15, số dư OMO lũy kế 10) · Tỷ giá 30% (khoảng cách tới trần NHNN) · Bên ngoài 20% (khối ngoại 12, DXY 8) · Lạm phát 10% (dư địa CPI so với mục tiêu năm).",
-    mcHowVariants:
-      "Đường đậm là chỉ số đầy đủ 7 cấu phần (từ 2021). Đường xám mảnh là bản lõi 5 cấu phần không có tỷ giá và khối ngoại — cùng cách tính, lịch sử dài hơn (từ 2019), hiển thị để tham chiếu.",
+      "Mỗi chỉ báo được chuẩn hóa thành z-score so với chính nó trong 2 năm gần nhất, quy ước dấu sao cho càng cao càng xấu (tiền tệ càng căng, dư địa tỷ giá càng hẹp, khối ngoại bán ròng, lạm phát nóng), rồi lấy trung bình theo trọng số cố định: Thanh khoản & lãi suất 40% (lãi suất qua đêm 15, chênh lệch VND–SOFR 15, số dư OMO lũy kế 10) · Tỷ giá 30% (khoảng cách tới trần NHNN) · Bên ngoài 20% (khối ngoại 12, DXY 8) · Lạm phát 10% (dư địa CPI so với mục tiêu năm). Lịch sử bắt đầu từ 2021, khi cả 7 cấu phần đủ dữ liệu.",
     mcHowUseOff:
       "Rủi ro cao: trên +1 kéo dài (5 trong 7 phiên gần nhất) trong lịch sử thường đi trước các nhịp giảm do thanh khoản/tỷ giá vài ngày tới vài tuần (ví dụ: vào vùng này tháng 6/2022, ba tháng trước cú sập tháng 9; tháng 4/2024, hai tuần trước khi NHNN bán USD giao ngay). Hãy coi đây là tín hiệu thận trọng / đứng ngoài (KB3) và xem các cột đóng góp để biết nhóm nào đang gây áp lực.",
     mcHowUseOn:
-      "Dưới −0,5 nghĩa là kênh vĩ mô KHÔNG phải trở ngại — đây là điều kiện cho phép, không phải tín hiệu mua: các cú sốc ngoài kênh này (thuế quan, risk-off toàn cầu, tin tức) chỉ số không nhìn thấy, và thị trường từng giảm mạnh khi chỉ số đang thấp. Luôn xác nhận bằng diễn biến giá; panel implied risk bên dưới là thước đo sợ hãi độc lập.",
-    mcNoData: "Chưa có dữ liệu chỉ số tổng hợp. Chạy refresh_macro.py (workflow Macro hằng ngày sẽ tự tính).",
+      "Dưới −0,5 nghĩa là kênh vĩ mô KHÔNG phải trở ngại — đây là điều kiện cho phép, không phải tín hiệu mua: các cú sốc ngoài kênh này (thuế quan, risk-off toàn cầu, tin tức) FCI không nhìn thấy, và thị trường từng giảm mạnh khi FCI đang thấp. Luôn xác nhận bằng diễn biến giá (trang Implied Risk là thước đo sợ hãi độc lập).",
+    mcNoData: "Chưa có dữ liệu FCI. Chạy refresh_macro.py (workflow Macro hằng ngày sẽ tự tính).",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",

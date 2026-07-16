@@ -162,10 +162,10 @@ def save_response(response_text: str, trading_date: str):
 
 
 def macro_gate_context() -> str | None:
-    """KB gate (MACRO_COMPOSITE_DESIGN.md §6, stage 5): the latest macro
-    pressure composite as prompt context.
+    """KB gate (MACRO_COMPOSITE_DESIGN.md §6, stage 5): the latest Financial
+    Conditions Index (FCI) as prompt context.
 
-    The composite GATES the market-regime bias; it never overrides bottom-up
+    The FCI GATES the market-regime bias; it never overrides bottom-up
     analysis. Holdout finding (design doc §11): the risk-OFF side is rare and
     high-precision, but a low reading is permissive only — out-of-channel
     shocks (tariffs, global risk-off, news) are invisible to it, so it must
@@ -175,7 +175,7 @@ def macro_gate_context() -> str | None:
     try:
         client = get_supabase_client()
         resp = (client.table("macro_series").select("date,value")
-                .eq("metric", "macro_composite_full")
+                .eq("metric", "macro_fci_full")
                 .order("date", desc=True).limit(7).execute())
         rows = resp.data or []
         if not rows:
@@ -184,18 +184,18 @@ def macro_gate_context() -> str | None:
         vals = [float(r["value"]) for r in rows]
         risk_off = sum(v > 1.0 for v in vals) >= 5
         state = ("RỦI RO CAO (risk-off)" if risk_off
-                 else "vĩ mô thuận lợi" if vals[0] < -0.5 else "trung tính")
+                 else "điều kiện tài chính thuận lợi" if vals[0] < -0.5 else "trung tính")
         return (
-            f"Chỉ số tổng hợp áp lực vĩ mô (z-score, ngày {latest['date']}): "
+            f"Chỉ số điều kiện tài chính (FCI, z-score, ngày {latest['date']}): "
             f"{vals[0]:+.2f} — trạng thái: {state}.\n"
-            f"Cách dùng (bắt buộc): nếu chỉ số > +1 kéo dài (5/7 phiên gần nhất) → thiên về KB3 "
-            f"(đứng ngoài) trừ khi có bằng chứng giá rất mạnh ngược lại. Nếu chỉ số < −0.5 → kênh "
+            f"Cách dùng (bắt buộc): nếu FCI > +1 kéo dài (5/7 phiên gần nhất) → thiên về KB3 "
+            f"(đứng ngoài) trừ khi có bằng chứng giá rất mạnh ngược lại. Nếu FCI < −0.5 → kênh "
             f"vĩ mô KHÔNG phản đối việc giải ngân, nhưng đây CHỈ là điều kiện cho phép, KHÔNG phải "
             f"tín hiệu mua — các cú sốc ngoài kênh vĩ mô (thuế quan, risk-off toàn cầu, tin tức) "
-            f"chỉ số này không nhìn thấy. Chỉ số này bổ trợ, không thay thế phân tích của bạn."
+            f"FCI không nhìn thấy. FCI bổ trợ, không thay thế phân tích của bạn."
         )
     except Exception as e:  # noqa: BLE001
-        print(f"  Macro gate unavailable ({str(e)[:80]}) — running without it.")
+        print(f"  FCI gate unavailable ({str(e)[:80]}) — running without it.")
         return None
 
 
@@ -228,8 +228,8 @@ def main():
         help="Path to prompt file (default: prompt-trading-vietnam-v4-complete-json.md)"
     )
     parser.add_argument(
-        "--no-macro-gate", action="store_true",
-        help="Don't inject the macro pressure composite (KB gate) into the prompt context"
+        "--no-fci-gate", action="store_true",
+        help="Don't inject the Financial Conditions Index (KB gate) into the prompt context"
     )
     args = parser.parse_args()
 
@@ -258,14 +258,14 @@ def main():
 
     # Append extra context: the macro-composite KB gate (unless disabled),
     # then any user-provided context.
-    extra = [] if args.no_macro_gate else [macro_gate_context()]
+    extra = [] if args.no_fci_gate else [macro_gate_context()]
     if args.context:
         extra.append(args.context)
     extra = [c for c in extra if c]
     if extra:
         prompt_text += "\n\n--- CONTEXT BỔ SUNG ---\n" + "\n\n".join(extra) + "\n"
         print(f"Appended {len(extra)} context block(s)"
-              + ("" if args.no_macro_gate else " (incl. macro composite gate)"))
+              + ("" if args.no_fci_gate else " (incl. FCI gate)"))
 
     # Call Claude API with web search
     response_text = call_claude(prompt_text, args.model, args.max_searches)

@@ -12,7 +12,7 @@ Lọc tín hiệu is a Vietnamese stock analysis platform (paper trading only �
 - **Composite scoring** — TA Score + FA Score blended into a Final Score/grade per symbol per quarter.
 - **Auxiliary signals** — VN30 futures implied risk, news sentiment/catalyst scoring, macro series.
 
-Design docs (read these before touching a subsystem — they carry the settled decisions and formulas): `PROJECT_PLAN.md` (original phased roadmap), `TA_FEATURE_PLAN.md`, `FA_FEATURE_PLAN.md`, `PRICE_BASE_DESIGN.md`, `FA_GROUPS_DESIGN.md`, `MACRO_COMPOSITE_DESIGN.md` (macro pressure composite — FROZEN validation protocol; do not tune anything it freezes). Note these docs describe intended design and may lag the code — treat the code as source of truth when they disagree.
+Design docs (read these before touching a subsystem — they carry the settled decisions and formulas): `PROJECT_PLAN.md` (original phased roadmap), `TA_FEATURE_PLAN.md`, `FA_FEATURE_PLAN.md`, `PRICE_BASE_DESIGN.md`, `FA_GROUPS_DESIGN.md`, `MACRO_COMPOSITE_DESIGN.md` (the **Financial Conditions Index / FCI**, formerly "macro composite"; DB metrics `macro_fci_*` — FROZEN validation protocol, do not tune anything it freezes; the holdout was scored once and must not be re-scored). Note these docs describe intended design and may lag the code — treat the code as source of truth when they disagree.
 
 ## Architecture
 

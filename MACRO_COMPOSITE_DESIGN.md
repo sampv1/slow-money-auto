@@ -1,8 +1,15 @@
-# Macro Composite Indicator — Frozen Design (v1)
+# Financial Conditions Index (FCI) — Frozen Design (v1)
 
-Status: **DRAFT for sign-off** — once signed off, sections marked FROZEN may not
-be changed after any validation result has been seen. This document is the
-overfitting control: decisions live here, dated, before the data gets to vote.
+> Naming: this indicator is the **Financial Conditions Index (FCI)**. It was
+> designed and validated under the working name "macro composite"; the code,
+> DB metrics (`macro_fci_*`), and dashboard were renamed to FCI on 2026-07-16.
+> Some prose below still reads "composite" as a description of the *method*
+> (a fixed-weight composite of z-scores) — that is the same object as the FCI.
+> The design (components, weights, split, results) is unchanged by the rename.
+
+Status: **SIGNED OFF & SHIPPED** — sections marked FROZEN may not be changed
+after any validation result has been seen. This document is the overfitting
+control: decisions live here, dated, before the data gets to vote.
 
 Written 2026-07-16. All coverage figures below were verified against the live
 `macro_series` table on that date (not assumed).
@@ -166,16 +173,23 @@ sustained z > +1) vs the unconditional base rate, dev and holdout separately.
 
 - `scripts/macro/composite.py` — pure functions: component z-series, pillar
   aggregation, both variants; consumed by `refresh_macro.py` as a final step
-  (writes `macro_composite_core` / `macro_composite_full` back into
-  `macro_series`, source `computed`). Shipped note: the per-pillar series are
-  stored as CONTRIBUTIONS (`macro_ctb_liq` / `macro_ctb_fx` / `macro_ctb_ext`
-  / `macro_ctb_cpi`, which sum exactly to `macro_composite_full`) rather than
-  pillar-mean z's — that's what the stacked attribution panel needs.
+  (writes `macro_fci_core` / `macro_fci_full` back into `macro_series`, source
+  `computed`). Shipped note: the per-pillar series are stored as CONTRIBUTIONS
+  (`macro_fci_ctb_liq` / `macro_fci_ctb_fx` / `macro_fci_ctb_ext` /
+  `macro_fci_ctb_cpi`, which sum exactly to `macro_fci_full`) rather than
+  pillar-mean z's — that's what the stacked attribution panel needs. (The
+  Python module keeps the name `composite.py`; "composite" is the method.)
 - `scripts/analysis/validate_composite.py` — one-off protocol runner (§7),
   emits a markdown report; dev/holdout selected by flag.
-- Dashboard: composite chart at the top of /macro (headline z + regime bands at
-  −0.5/+1.0 + pillar stacked contribution + VN-Index context + implied-risk
-  confirmation overlay), cached under `macro-data` like the rest.
+- Dashboard: FCI chart at the top of /macro (`fci-chart.tsx` — headline z +
+  regime bands at −0.5/+1.0 + pillar stacked contribution + VN-Index context),
+  cached under `macro-data` like the rest. Implied risk was tried as an
+  in-chart confirmation panel but removed 2026-07-16 (mismatched scale made
+  "confirmation" unreadable); it keeps its own `/implied-risk` page as the
+  independent fear gauge. **Only `composite_full` is charted** (single FCI
+  line) — `composite_core` is still computed and stored (`macro_fci_core`) as a
+  validation artifact, but was dropped from the chart 2026-07-16 for user
+  simplicity (the two-line display added complexity without decision value).
 
 ## 10. Known limitations & backlog
 
