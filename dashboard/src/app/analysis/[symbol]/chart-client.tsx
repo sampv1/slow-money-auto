@@ -9,6 +9,7 @@ import {
   createChart,
   createSeriesMarkers,
   type IChartApi,
+  type LogicalRange,
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
@@ -306,6 +307,11 @@ export function ChartClient({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  // Visible time window carried across chart rebuilds (toggling a chip recreates
+  // the chart). Tagged with the candle set it was captured on, so a rebuild for
+  // the SAME symbol restores the user's zoom/scroll, while a new symbol (different
+  // candles) falls through to fitContent.
+  const savedRangeRef = useRef<{ range: LogicalRange | null; candles: Candle[] } | null>(null);
 
   useEffect(() => {
     track("stock_viewed", { symbol });
@@ -373,10 +379,13 @@ export function ChartClient({
     return null;
   }, [candles]);
 
-  // Chart height grows with the number of subplots.
+  // Fixed total height: always reserve both the RSI and MACD subplot slots so
+  // toggling a chip (which adds/removes a subplot pane) never resizes the chart
+  // and shifts the chip panel below it. Within this height the panes redistribute
+  // by their stretch factors (price 3 : volume 1 : RSI 1.2 : MACD 1.2), so fewer
+  // subplots just give the price pane more room.
   const baseHeight = 380; // price + volume
-  const subplotCount = (features.showRSI ? 1 : 0) + (features.showMACD ? 1 : 0);
-  const heightPx = baseHeight + 100 + subplotCount * 130;
+  const heightPx = baseHeight + 100 + 2 * 130; // 2 = reserved RSI + MACD slots
 
   useEffect(() => {
     const container = containerRef.current;
@@ -731,9 +740,23 @@ export function ChartClient({
       createSeriesMarkers(macdLineSeries, buckets[panes.macd]);
     }
 
-    chart.timeScale().fitContent();
+    // Restore the pre-rebuild window for the same candles (chip toggle); a
+    // different symbol's candles fall through to fitContent.
+    const saved = savedRangeRef.current;
+    if (saved && saved.candles === candles && saved.range) {
+      chart.timeScale().setVisibleLogicalRange(saved.range);
+    } else {
+      chart.timeScale().fitContent();
+    }
 
     return () => {
+      // Capture the current window BEFORE the chart is destroyed, tagged with
+      // the candles it belongs to (see savedRangeRef).
+      try {
+        savedRangeRef.current = { range: chart.timeScale().getVisibleLogicalRange(), candles };
+      } catch {
+        savedRangeRef.current = null;
+      }
       chart.remove();
       chartRef.current = null;
     };
