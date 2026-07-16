@@ -15,9 +15,13 @@ export type FciRegime = "riskoff" | "neutral" | "supportive";
 export type FciRow = {
   date: string;
   full: number | null; // fci_full — the 7-component headline (2021→)
-  ctbLiq: number | null; // pillar contributions; they sum to `full`
+  // Per-component contributions (wᵢ·zᵢ / Σ defined w); the seven sum to `full`.
+  ctbOn: number | null;
+  ctbSpread: number | null;
+  ctbOmo: number | null;
   ctbFx: number | null;
-  ctbExt: number | null;
+  ctbDxy: number | null;
+  ctbForeign: number | null;
   ctbCpi: number | null;
   vnindex: number | null;
   regime: FciRegime | null;
@@ -38,12 +42,19 @@ const REGIME: Record<FciRegime, { color: string; label: TranslationKey }> = {
   supportive: { color: ON_COLOR, label: "mcRegimeSupportive" },
 };
 
-// Pillar order fixes the stacking order of the contribution bars.
-const PILLARS = [
-  { key: "ctbLiq", color: "#6366f1", label: "mcPillarLiq" },
-  { key: "ctbFx", color: "#f59e0b", label: "mcPillarFx" },
-  { key: "ctbExt", color: "#0ea5e9", label: "mcPillarExt" },
-  { key: "ctbCpi", color: "#e11d48", label: "mcPillarCpi" },
+// The seven FCI components, in pillar-grouped stack order (liquidity legs,
+// then FX, then external, then inflation). Colors are the dataviz reference
+// categorical palette assigned in this order so adjacent stacked segments stay
+// CVD-distinct (validated: worst adjacent ΔE 9.1, normal-vision 19.6); the
+// legend labels satisfy the low-contrast relief rule for magenta/yellow/aqua.
+const COMPONENTS = [
+  { key: "ctbOn", color: "#2a78d6", label: "mcCompOn", short: "O/N" },        // blue
+  { key: "ctbSpread", color: "#008300", label: "mcCompSpread", short: "Sprd" }, // green
+  { key: "ctbOmo", color: "#e87ba4", label: "mcCompOmo", short: "OMO" },       // magenta
+  { key: "ctbFx", color: "#eda100", label: "mcCompFx", short: "FX" },         // yellow
+  { key: "ctbDxy", color: "#1baf7a", label: "mcCompDxy", short: "DXY" },       // aqua
+  { key: "ctbForeign", color: "#eb6834", label: "mcCompForeign", short: "Frgn" }, // orange
+  { key: "ctbCpi", color: "#4a3aa7", label: "mcCompCpi", short: "CPI" },       // violet
 ] as const;
 
 export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
@@ -81,12 +92,12 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
     return { lo: lo - pad, hi: hi + pad };
   }, [view]);
 
-  // Pillar panel domain from the stacked positive/negative extents.
+  // Component panel domain from the stacked positive/negative extents.
   const pDom = useMemo(() => {
     let lo = 0, hi = 0;
     for (const r of view) {
       let pos = 0, neg = 0;
-      for (const p of PILLARS) {
+      for (const p of COMPONENTS) {
         const v = r[p.key];
         if (v !== null && v >= 0) pos += v;
         else if (v !== null) neg += v;
@@ -102,7 +113,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
     return <p className="text-sm text-gray-500">{t(locale, "mcNoData")}</p>;
   }
 
-  // --- layout: VN-Index + FCI + pillar bars + ribbon, shared x ---
+  // --- layout: VN-Index + FCI + component bars + ribbon, shared x ---
   const W = 900, mL = 54, mR = 16;
   const iw = W - mL - mR;
   const vnTop = 18, vnH = 140;
@@ -134,7 +145,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
   const vnSegs = hasVn ? segsOf((r) => r.vnindex, yVn) : [];
   const fullSegs = segsOf((r) => r.full, yZ);
 
-  // Pillar contribution bars: positives stack up from 0, negatives stack down.
+  // Component contribution bars: positives stack up from 0, negatives stack down.
   const barW = Math.max(0.8, (iw / Math.max(n, 1)) * 0.8);
   const y0p = yP(0);
 
@@ -239,7 +250,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
           <span className="inline-block w-3 h-0.5" style={{ backgroundColor: FULL_COLOR }} />
           {t(locale, "mcFull")}
         </span>
-        {PILLARS.map((p) => (
+        {COMPONENTS.map((p) => (
           <span key={p.key} className="flex items-center gap-1.5">
             <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: p.color }} />
             {t(locale, p.label)}
@@ -290,7 +301,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
           <polyline key={`fu${k}`} points={pts} fill="none" stroke={FULL_COLOR} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
         ))}
 
-        {/* ---- pillar contribution bars ---- */}
+        {/* ---- component contribution bars ---- */}
         <text x={mL} y={pTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "mcPanelPillars")}</text>
         <line x1={mL} y1={y0p} x2={W - mR} y2={y0p} stroke="#cbd5e1" strokeWidth={1} />
         {view.map((r, i) => {
@@ -299,7 +310,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
           const x = xAt(i) - barW / 2;
           return (
             <g key={`pb${i}`}>
-              {PILLARS.map((p) => {
+              {COMPONENTS.map((p) => {
                 const v = r[p.key];
                 if (v === null || v === 0) return null;
                 const h = Math.abs(yP(0) - yP(v));
@@ -341,13 +352,14 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
               {hv.date}
               {hv.full !== null && <> · FCI {fmtS2(hv.full)}</>}
               {hv.regime !== null && <> · {t(locale, REGIME[hv.regime].label)}</>}
-            </text>
-            <text x={tipX} y={24} textAnchor={tipAnchor} fontSize={10} fill="#475569" fontFamily="monospace">
-              {hv.ctbLiq !== null && `${t(locale, "mcPillarLiq")} ${fmtS2(hv.ctbLiq)}`}
-              {hv.ctbFx !== null && ` · ${t(locale, "mcPillarFx")} ${fmtS2(hv.ctbFx)}`}
-              {hv.ctbExt !== null && ` · ${t(locale, "mcPillarExt")} ${fmtS2(hv.ctbExt)}`}
-              {hv.ctbCpi !== null && ` · ${t(locale, "mcPillarCpi")} ${fmtS2(hv.ctbCpi)}`}
               {hasVn && hv.vnindex !== null && ` · VNI ${fmtInt(hv.vnindex)}`}
+            </text>
+            {/* per-component contribution readout (short codes; the legend maps
+                each code's colour to its full name) */}
+            <text x={tipX} y={24} textAnchor={tipAnchor} fontSize={10} fill="#475569" fontFamily="monospace">
+              {COMPONENTS.filter((p) => hv[p.key] !== null)
+                .map((p) => `${p.short} ${fmtS2(hv[p.key]!)}`)
+                .join(" · ")}
             </text>
           </g>
         )}

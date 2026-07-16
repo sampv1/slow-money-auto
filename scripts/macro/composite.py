@@ -285,9 +285,10 @@ def combine_with_attribution(
     weight_override: dict[str, float] | None = None,
 ) -> tuple[pd.Series, pd.DataFrame]:
     """Weighted composite over `members` (§5 missing-data policy) plus per-
-    pillar contributions. Contribution_p = Σ_{i∈p, defined} wᵢ·scoreᵢ / Σ_defined wᵢ,
-    so the pillar columns sum exactly to the composite wherever it is defined
-    (that's what the dashboard's stacked attribution chart draws).
+    COMPONENT contributions. Contribution_i = wᵢ·scoreᵢ / Σ_defined wᵢ, so the
+    component columns sum exactly to the composite wherever it is defined
+    (that's what the dashboard's stacked attribution chart draws — one band per
+    component). ctb columns are `members`, in the given order.
 
     `weight_override` exists ONLY for the §3 robustness check (perturb pillar
     weights ±10pp and confirm conclusions hold) — never for tuning.
@@ -296,12 +297,11 @@ def combine_with_attribution(
     weights = np.array([w.get(n, COMPONENTS[n]["weight"]) for n in members], dtype=float)
     total = weights.sum()
     sub = scores[list(members)]
-    pillars = sorted({COMPONENTS[n]["pillar"] for n in members})
 
     starts = [sub[n].first_valid_index() for n in members]
     if any(s is None for s in starts):
         return (pd.Series(np.nan, index=scores.index),
-                pd.DataFrame(np.nan, index=scores.index, columns=pillars))
+                pd.DataFrame(np.nan, index=scores.index, columns=list(members)))
     start = max(starts)
     sub = sub.loc[sub.index >= start]
 
@@ -310,11 +310,10 @@ def combine_with_attribution(
     comp = weighted_sum / defined_w
     comp = comp.mask(defined_w < MIN_DEFINED_WEIGHT_FRAC * total)
 
-    ctb = pd.DataFrame(index=sub.index)
-    for p in pillars:
-        names = [n for n in members if COMPONENTS[n]["pillar"] == p]
-        pw = np.array([w.get(n, COMPONENTS[n]["weight"]) for n in names], dtype=float)
-        ctb[p] = sub[names].mul(pw, axis=1).sum(axis=1) / defined_w
+    # Per-component share: (wᵢ·scoreᵢ) / Σ_defined wᵢ. NaN where a component is
+    # undefined that day (that band is simply absent); the defined columns still
+    # sum to the composite.
+    ctb = sub.mul(weights, axis=1).div(defined_w, axis=0)
     ctb.loc[comp.isna().values, :] = np.nan
     return comp.reindex(scores.index), ctb.reindex(scores.index)
 

@@ -174,11 +174,13 @@ sustained z > +1) vs the unconditional base rate, dev and holdout separately.
 - `scripts/macro/composite.py` — pure functions: component z-series, pillar
   aggregation, both variants; consumed by `refresh_macro.py` as a final step
   (writes `macro_fci_core` / `macro_fci_full` back into `macro_series`, source
-  `computed`). Shipped note: the per-pillar series are stored as CONTRIBUTIONS
-  (`macro_fci_ctb_liq` / `macro_fci_ctb_fx` / `macro_fci_ctb_ext` /
-  `macro_fci_ctb_cpi`, which sum exactly to `macro_fci_full`) rather than
-  pillar-mean z's — that's what the stacked attribution panel needs. (The
-  Python module keeps the name `composite.py`; "composite" is the method.)
+  `computed`). Shipped note: attribution is stored per-COMPONENT as
+  CONTRIBUTIONS `wᵢ·zᵢ / Σ defined w` (`macro_fci_ctb_{on,spread,omo,fx,dxy,
+  foreign,cpi}`, which sum exactly to `macro_fci_full`) — one stacked band per
+  component. (Superseded the earlier 4-pillar contributions on 2026-07-16, at
+  user request, so users see all seven inputs individually; the pillar weights
+  40/30/20/10 are unchanged and still explained in the chart's how-to.) The
+  Python module keeps the name `composite.py`; "composite" is the method.
 - `scripts/analysis/validate_composite.py` — one-off protocol runner (§7),
   emits a markdown report; dev/holdout selected by flag.
 - Dashboard: FCI chart at the top of /macro (`fci-chart.tsx` — headline z +

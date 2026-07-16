@@ -85,8 +85,12 @@ VNINDEX_HISTORY_START = dt.date(2004, 1, 1)
 FROZEN_FCI = {"window": 504, "dxy_mode": "level"}
 METRIC_FCI_CORE = "macro_fci_core"   # 5 components, history to 2019-04
 METRIC_FCI_FULL = "macro_fci_full"   # all 7 — the live headline
-FCI_CTB_METRICS = {"liq": "macro_fci_ctb_liq", "fx": "macro_fci_ctb_fx",
-                   "ext": "macro_fci_ctb_ext", "cpi": "macro_fci_ctb_cpi"}
+# Per-COMPONENT contribution metrics (one band each on the chart). Keys are the
+# composite.py component names; the 7 columns sum exactly to macro_fci_full.
+FCI_CTB_METRICS = {"on": "macro_fci_ctb_on", "spread": "macro_fci_ctb_spread",
+                   "omo": "macro_fci_ctb_omo", "fx": "macro_fci_ctb_fx",
+                   "dxy": "macro_fci_ctb_dxy", "foreign": "macro_fci_ctb_foreign",
+                   "cpi": "macro_fci_ctb_cpi"}
 FCI_REFRESH_DAYS = 45  # daily mode rewrites this trailing slice (idempotent)
 
 
@@ -118,8 +122,8 @@ def compute_fci_rows(client, since: dt.date | None) -> list[dict]:
 
     rows = series_rows(METRIC_FCI_CORE, pts(core), "z", "computed")
     rows += series_rows(METRIC_FCI_FULL, pts(full), "z", "computed")
-    for pillar, metric in FCI_CTB_METRICS.items():
-        rows += series_rows(metric, pts(ctb[pillar]), "z", "computed")
+    for comp_name, metric in FCI_CTB_METRICS.items():
+        rows += series_rows(metric, pts(ctb[comp_name]), "z", "computed")
     last = full.dropna()
     if not last.empty:
         print(f"  FCI: latest {last.index[-1].date()} full={last.iloc[-1]:+.2f} "

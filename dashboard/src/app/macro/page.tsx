@@ -79,7 +79,7 @@ async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCf
 const getMacroData = unstable_cache(
   async () => {
     const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet,
-      fciFull, fciCtbLiq, fciCtbFx, fciCtbExt, fciCtbCpi, cfg] = await Promise.all([
+      fciFull, fciCtbOn, fciCtbSpread, fciCtbOmo, fciCtbFx, fciCtbDxy, fciCtbForeign, fciCtbCpi, cfg] = await Promise.all([
       fetchMetricEntries("fx_central_rate"),
       fetchMetricEntries("fx_vcb_sell"),
       fetchMetricEntries("vnindex"),
@@ -93,16 +93,20 @@ const getMacroData = unstable_cache(
       fetchMetricEntries("foreign_net_value"),
       // Financial Conditions Index (frozen design) — written by refresh_macro.py.
       // Only the `full` variant is charted; `macro_fci_core` is still computed
-      // and stored (validation artifact) but not fetched here.
+      // and stored (validation artifact) but not fetched here. The seven
+      // per-component contributions sum to `full` (stacked attribution panel).
       fetchMetricEntries("macro_fci_full"),
-      fetchMetricEntries("macro_fci_ctb_liq"),
+      fetchMetricEntries("macro_fci_ctb_on"),
+      fetchMetricEntries("macro_fci_ctb_spread"),
+      fetchMetricEntries("macro_fci_ctb_omo"),
       fetchMetricEntries("macro_fci_ctb_fx"),
-      fetchMetricEntries("macro_fci_ctb_ext"),
+      fetchMetricEntries("macro_fci_ctb_dxy"),
+      fetchMetricEntries("macro_fci_ctb_foreign"),
       fetchMetricEntries("macro_fci_ctb_cpi"),
       loadMacroConfig(),
     ] as const);
     return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet,
-      fciFull, fciCtbLiq, fciCtbFx, fciCtbExt, fciCtbCpi, cfg };
+      fciFull, fciCtbOn, fciCtbSpread, fciCtbOmo, fciCtbFx, fciCtbDxy, fciCtbForeign, fciCtbCpi, cfg };
   },
   ["macro-data"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
@@ -288,9 +292,12 @@ export default async function MacroPage() {
     // > +1 for >=5 of the last 7 sessions, exiting only when < +0.5 for 5 of 7
     // (hysteresis); otherwise supportive below −0.5, else neutral.
     const fciFull = new Map(d.fciFull);
-    const fciCtbLiq = new Map(d.fciCtbLiq);
+    const fciCtbOn = new Map(d.fciCtbOn);
+    const fciCtbSpread = new Map(d.fciCtbSpread);
+    const fciCtbOmo = new Map(d.fciCtbOmo);
     const fciCtbFx = new Map(d.fciCtbFx);
-    const fciCtbExt = new Map(d.fciCtbExt);
+    const fciCtbDxy = new Map(d.fciCtbDxy);
+    const fciCtbForeign = new Map(d.fciCtbForeign);
     const fciCtbCpi = new Map(d.fciCtbCpi);
     const fciDates = [...fciFull.keys()].sort();
     let fciOn = false;
@@ -308,9 +315,12 @@ export default async function MacroPage() {
       return {
         date,
         full,
-        ctbLiq: fciCtbLiq.get(date) ?? null,
+        ctbOn: fciCtbOn.get(date) ?? null,
+        ctbSpread: fciCtbSpread.get(date) ?? null,
+        ctbOmo: fciCtbOmo.get(date) ?? null,
         ctbFx: fciCtbFx.get(date) ?? null,
-        ctbExt: fciCtbExt.get(date) ?? null,
+        ctbDxy: fciCtbDxy.get(date) ?? null,
+        ctbForeign: fciCtbForeign.get(date) ?? null,
         ctbCpi: fciCtbCpi.get(date) ?? null,
         vnindex: vnAsof(date),
         regime,
