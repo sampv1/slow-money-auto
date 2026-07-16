@@ -130,5 +130,7 @@ jobs:
             echo "::warning::REVALIDATE_SECRET not set — skipping cache revalidation."
             exit 0
           fi
-          curl -fsSL -X POST "https://www.loctinhieu.com/api/revalidate?secret=${REVALIDATE_SECRET}&tags=ta-data" \
+          # macro-data too: this workflow writes implied_risk, which the /macro
+          # composite chart reads (its cache entry must not go stale).
+          curl -fsSL -X POST "https://www.loctinhieu.com/api/revalidate?secret=${REVALIDATE_SECRET}&tags=ta-data,macro-data" \
             || echo "::warning::Dashboard revalidate call failed (cache will expire via TTL)."

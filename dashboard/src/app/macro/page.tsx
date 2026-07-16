@@ -7,6 +7,7 @@ import { CpiChart, type CpiRow } from "./cpi-chart";
 import { InterestRateChart, type IrRow } from "./interest-rate-chart";
 import { ExternalPressureChart, type EpRegime, type EpRow } from "./external-pressure-chart";
 import { ForeignFlowChart, type FfRow } from "./foreign-flow-chart";
+import { CompositeChart, type McRegime, type McRow } from "./composite-chart";
 
 export const revalidate = 0;
 
@@ -30,6 +31,20 @@ async function fetchMetricEntries(metric: string): Promise<[string, number][]> {
       .range(from, to),
   );
   return rows.map((r) => [r.date, Number(r.value)]);
+}
+
+// Implied risk (VN30 futures) — the composite chart's independent confirmation
+// overlay. Written by the nightly TA pipeline, so ta-daily.yml also revalidates
+// the macro-data tag. One row per date (date is the PK); ir can be null early.
+async function fetchImpliedRiskEntries(): Promise<[string, number][]> {
+  const rows = await fetchAllPaged<{ date: string; ir: number | null }>((from, to, withCount) =>
+    supabase
+      .from("implied_risk")
+      .select("date,ir", withCount ? { count: "exact" } : undefined)
+      .order("date", { ascending: true })
+      .range(from, to),
+  );
+  return rows.filter((r) => r.ir !== null).map((r) => [r.date, Number(r.ir)]);
 }
 
 // Effective-dated band: the entry with the greatest `from` <= date (step / as-of
@@ -77,7 +92,8 @@ async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCf
 // macro pipeline via /api/revalidate (tag macro-data); TTL is a safety net.
 const getMacroData = unstable_cache(
   async () => {
-    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, cfg] = await Promise.all([
+    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet,
+      mcFull, mcCore, mcCtbLiq, mcCtbFx, mcCtbExt, mcCtbCpi, impliedRisk, cfg] = await Promise.all([
       fetchMetricEntries("fx_central_rate"),
       fetchMetricEntries("fx_vcb_sell"),
       fetchMetricEntries("vnindex"),
@@ -89,9 +105,18 @@ const getMacroData = unstable_cache(
       fetchMetricEntries("sofr"),
       fetchMetricEntries("dxy"),
       fetchMetricEntries("foreign_net_value"),
+      // Macro pressure composite (frozen design) — written by refresh_macro.py.
+      fetchMetricEntries("macro_composite_full"),
+      fetchMetricEntries("macro_composite_core"),
+      fetchMetricEntries("macro_ctb_liq"),
+      fetchMetricEntries("macro_ctb_fx"),
+      fetchMetricEntries("macro_ctb_ext"),
+      fetchMetricEntries("macro_ctb_cpi"),
+      fetchImpliedRiskEntries(),
       loadMacroConfig(),
     ] as const);
-    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, cfg };
+    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet,
+      mcFull, mcCore, mcCtbLiq, mcCtbFx, mcCtbExt, mcCtbCpi, impliedRisk, cfg };
   },
   ["macro-data"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
@@ -200,6 +225,7 @@ export default async function MacroPage() {
   let irRows: IrRow[] = [];
   let epRows: EpRow[] = [];
   let ffRows: FfRow[] = [];
+  let mcRows: McRow[] = [];
   let error: string | null = null;
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
@@ -271,6 +297,46 @@ export default async function MacroPage() {
         return [{ date, spread, vnibor, sofr: s, dxy: dxyAsof(date), vnindex: vnAsof(date), regime }];
       });
 
+    // Macro pressure composite: date grid = union of the two variants (core
+    // starts 2019, full 2021). Regime = the design's §6 state machine on the
+    // full (headline) variant: risk-off when > +1 for >=5 of the last 7
+    // defined sessions, exiting only when < +0.5 for 5 of 7 (hysteresis);
+    // otherwise supportive below −0.5, else neutral. Implied risk joins as-of
+    // (futures calendar) as the independent confirmation overlay.
+    const mcFull = new Map(d.mcFull);
+    const mcCore = new Map(d.mcCore);
+    const mcCtbLiq = new Map(d.mcCtbLiq);
+    const mcCtbFx = new Map(d.mcCtbFx);
+    const mcCtbExt = new Map(d.mcCtbExt);
+    const mcCtbCpi = new Map(d.mcCtbCpi);
+    const impliedAsof = asofSampler(new Map(d.impliedRisk));
+    const mcDates = Array.from(new Set([...mcCore.keys(), ...mcFull.keys()])).sort();
+    let mcOn = false;
+    const mcWin: number[] = [];
+    mcRows = mcDates.map((date) => {
+      const full = mcFull.get(date) ?? null;
+      let regime: McRegime | null = null;
+      if (full !== null) {
+        mcWin.push(full);
+        if (mcWin.length > 7) mcWin.shift();
+        if (!mcOn && mcWin.filter((v) => v > 1).length >= 5) mcOn = true;
+        else if (mcOn && mcWin.filter((v) => v < 0.5).length >= 5) mcOn = false;
+        regime = mcOn ? "riskoff" : full < -0.5 ? "supportive" : "neutral";
+      }
+      return {
+        date,
+        full,
+        core: mcCore.get(date) ?? null,
+        ctbLiq: mcCtbLiq.get(date) ?? null,
+        ctbFx: mcCtbFx.get(date) ?? null,
+        ctbExt: mcCtbExt.get(date) ?? null,
+        ctbCpi: mcCtbCpi.get(date) ?? null,
+        vnindex: vnAsof(date),
+        ir: impliedAsof(date),
+        regime,
+      };
+    });
+
     // Foreign flows: daily net value + trailing 20-SESSION cumulative (rolling
     // sum over the previous 20 rows, not calendar days — this is the pressure
     // gauge the composite will consume). null until 20 sessions accumulate.
@@ -340,6 +406,20 @@ export default async function MacroPage() {
   return (
     <div>
       {header}
+
+      <section className="mb-6">
+        <div className="mb-2">
+          <h2 className="text-base font-semibold">{t(locale, "mcTitle")}</h2>
+          <p className="text-xs text-gray-500">{t(locale, "mcSubtitle")}</p>
+        </div>
+        {error ? (
+          <p className="text-red-600 text-sm">Error loading composite data: {error}</p>
+        ) : mcRows.length < 2 ? (
+          <StubCard title={t(locale, "mcTitle")} note={t(locale, "mcNoData")} />
+        ) : (
+          <CompositeChart rows={mcRows} locale={locale} />
+        )}
+      </section>
 
       <section className="mb-6">
         <div className="mb-2">
