@@ -13,7 +13,7 @@ import {
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
-import type { Candle } from "./page";
+import type { Candle, RsHist } from "./page";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import { t, type Locale } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
@@ -40,6 +40,11 @@ const MCDX_RETAILER_COLOR = "#22c55e";    // green — retail investors
 const MCDX_HOTMONEY_COLOR = "#eab308";    // gold  — speculative / hot money
 const MCDX_BANKER_COLOR = "#ef4444";      // red   — market maker (banker), ≥25%
 const MCDX_BANKER_WEAK_COLOR = "#fca5a5"; // light red (pink) — weak banker flow (<25%)
+
+// RS-rating history lines (percentile 1..99). Each in its own subplot pane.
+const RS3M_COLOR = "#0ea5e9";  // sky
+const RS6M_COLOR = "#f59e0b";  // amber
+const RS52W_COLOR = "#8b5cf6"; // violet
 
 // ---------- Indicator math (mirrors scripts/ta/indicators/helpers.py) ----------
 
@@ -188,7 +193,15 @@ type Features = {
   showRSI: boolean;
   showMACD: boolean;
   showMcdx: boolean;
+  showRs: boolean;
 };
+
+// Display-overlay toggle group (separate from triggered-signal chips): always
+// available, ON by default. MA/MCDX toggle chart overlays; RS3M/6M/52W toggle
+// their lines in the RS pane. Keys are stable ids.
+const DISPLAY_KEYS = ["ma20", "ma50", "ma200", "mcdx", "rs3m", "rs6m", "rs52w"] as const;
+type DisplayKey = (typeof DISPLAY_KEYS)[number];
+const DISPLAY_MA: Record<string, number> = { ma20: 20, ma50: 50, ma200: 200 };
 
 function featuresFor(selected: string[]): Features {
   const maPeriods = new Set<number>();
@@ -280,10 +293,11 @@ function featuresFor(selected: string[]): Features {
     showRSI,
     showMACD,
     showMcdx,
+    showRs: false, // set by the merged features (depends on the display group + data)
   };
 }
 
-type Panes = { volume: number; rsi: number; macd: number; mcdx: number };
+type Panes = { volume: number; rsi: number; macd: number; mcdx: number; rs: number };
 
 function paneIndices(features: Features): Panes {
   // Pane 0 is always price. Volume always at pane 1. Subplots follow in a fixed
@@ -292,7 +306,8 @@ function paneIndices(features: Features): Panes {
   const rsi = features.showRSI ? next++ : -1;
   const macd = features.showMACD ? next++ : -1;
   const mcdx = features.showMcdx ? next++ : -1;
-  return { volume: 1, rsi, macd, mcdx };
+  const rs = features.showRs ? next++ : -1;
+  return { volume: 1, rsi, macd, mcdx, rs };
 }
 
 // Volume-pane indicators — those whose marker reads against the volume bar,
@@ -336,6 +351,7 @@ export function ChartClient({
   chartSignals,
   srLevels = [],
   trendlines = [],
+  rsHist = null,
   locale,
 }: {
   symbol: string;
@@ -344,6 +360,7 @@ export function ChartClient({
   chartSignals: { date: string; indicator: string }[];
   srLevels?: SRLevel[];
   trendlines?: Trendline[];
+  rsHist?: RsHist | null;
   locale: Locale;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -389,7 +406,54 @@ export function ChartClient({
     [selected],
   );
 
-  const features = useMemo(() => featuresFor(active), [active]);
+  // Display-overlay group (MA20/50/200, MCDX, RS3M/6M/52W): always available,
+  // ON by default, toggled independently of the triggered-signal chips. RS keys
+  // are only meaningful when the server actually shipped RS history.
+  const rsAvailable = useMemo(
+    () =>
+      !!rsHist &&
+      ((rsHist.rs3m?.some((v) => v !== null)) ||
+        (rsHist.rs6m?.some((v) => v !== null)) ||
+        (rsHist.rs52w?.some((v) => v !== null))),
+    [rsHist],
+  );
+  // Latest non-null RS percentile per period, shown on the RS chips.
+  const rsLatest = useMemo(() => {
+    const last = (arr?: (number | null)[]) => {
+      if (!arr) return null;
+      for (let i = arr.length - 1; i >= 0; i--) if (arr[i] !== null && arr[i] !== undefined) return arr[i];
+      return null;
+    };
+    return rsHist ? { rs3m: last(rsHist.rs3m), rs6m: last(rsHist.rs6m), rs52w: last(rsHist.rs52w) } : null;
+  }, [rsHist]);
+
+  const [displayOn, setDisplayOn] = useState<Set<string>>(new Set(DISPLAY_KEYS));
+  const toggleDisplay = useCallback((key: DisplayKey) => {
+    setDisplayOn((prev) => {
+      const s = new Set(prev);
+      if (s.has(key)) s.delete(key);
+      else s.add(key);
+      return s;
+    });
+  }, []);
+
+  // Signal-derived features, then merged with the display group: MA lines and
+  // the MCDX pane appear if EITHER a signal needs them OR their display toggle
+  // is on; the RS pane appears when any RS line is toggled on and data exists.
+  const sigFeatures = useMemo(() => featuresFor(active), [active]);
+  const features = useMemo<Features>(() => {
+    const ma = new Set(sigFeatures.maPeriods);
+    for (const [key, period] of Object.entries(DISPLAY_MA)) {
+      if (displayOn.has(key)) ma.add(period);
+    }
+    const rsOn = rsAvailable && (displayOn.has("rs3m") || displayOn.has("rs6m") || displayOn.has("rs52w"));
+    return {
+      ...sigFeatures,
+      maPeriods: [...ma].sort((a, b) => a - b),
+      showMcdx: sigFeatures.showMcdx || displayOn.has("mcdx"),
+      showRs: rsOn,
+    };
+  }, [sigFeatures, displayOn, rsAvailable]);
   const panes = useMemo(() => paneIndices(features), [features]);
 
   // Overlays gated on the active set (server sends them whenever ANY S/R or
@@ -423,10 +487,11 @@ export function ChartClient({
   // Fixed total height: always reserve both the RSI and MACD subplot slots so
   // toggling a chip (which adds/removes a subplot pane) never resizes the chart
   // and shifts the chip panel below it. Within this height the panes redistribute
-  // by their stretch factors (price 3 : volume 1 : RSI/MACD/MCDX 1.2 each), so
-  // fewer subplots just give the price pane more room.
+  // by their stretch factors (price 3 : volume 1 : each subplot 1.2), so fewer
+  // subplots give the price pane more room and more subplots (up to RSI + MACD +
+  // MCDX + RS) just make each a little thinner — the height itself never changes.
   const baseHeight = 380; // price + volume
-  const heightPx = baseHeight + 100 + 3 * 130; // 3 = reserved RSI + MACD + MCDX slots
+  const heightPx = baseHeight + 100 + 3 * 130; // fixed height (≈3 subplot slots)
 
   useEffect(() => {
     const container = containerRef.current;
@@ -746,6 +811,47 @@ export function ChartClient({
       }
     }
 
+    // === Pane 5 (optional): RS-rating lines ======================
+    // RS3M / RS6M / RS52W percentiles (1..99) over time, each toggled in the
+    // display group. Values live on their own trading-date grid (rsHist.dates);
+    // a line only appears where its percentile is non-null (RS52W is shallow —
+    // it needs a 12-month lookback, bounded by OHLCV depth).
+    if (features.showRs && panes.rs !== -1 && rsHist) {
+      const rsLineFrom = (arr: (number | null)[] | undefined) =>
+        (arr ?? [])
+          .map((v, i) => (v !== null && v !== undefined && rsHist.dates[i] ? { time: rsHist.dates[i] as Time, value: v } : null))
+          .filter((x): x is { time: Time; value: number } => x !== null);
+      const rsSeries: [boolean, (number | null)[] | undefined, string, string][] = [
+        [displayOn.has("rs3m"), rsHist.rs3m, RS3M_COLOR, "RS3M"],
+        [displayOn.has("rs6m"), rsHist.rs6m, RS6M_COLOR, "RS6M"],
+        [displayOn.has("rs52w"), rsHist.rs52w, RS52W_COLOR, "RS52W"],
+      ];
+      let rsAnchor: ReturnType<typeof chart.addSeries<"Line">> | null = null;
+      for (const [on, arr, color, title] of rsSeries) {
+        if (!on) continue;
+        const s = chart.addSeries(
+          LineSeries,
+          { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title },
+          panes.rs,
+        );
+        s.setData(rsLineFrom(arr));
+        rsAnchor = rsAnchor ?? s;
+      }
+      // Guide lines at the 20 / 50 / 80 percentile levels (weak / mid / strong).
+      if (rsAnchor) {
+        for (const lvl of [20, 50, 80]) {
+          rsAnchor.createPriceLine({
+            price: lvl,
+            color: "#d1d5db",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: String(lvl),
+          });
+        }
+      }
+    }
+
     // === Pane sizing =============================================
     const allPanes = chart.panes();
     // Price gets the most space; subplots are compact.
@@ -754,6 +860,7 @@ export function ChartClient({
     if (features.showRSI && allPanes[panes.rsi]) allPanes[panes.rsi].setStretchFactor(1.2);
     if (features.showMACD && allPanes[panes.macd]) allPanes[panes.macd].setStretchFactor(1.2);
     if (features.showMcdx && allPanes[panes.mcdx]) allPanes[panes.mcdx].setStretchFactor(1.2);
+    if (features.showRs && allPanes[panes.rs]) allPanes[panes.rs].setStretchFactor(1.2);
 
     // === Markers routed to the correct pane ======================
     // Two de-noising passes keep persistent (state-based) signals — Stage
@@ -841,7 +948,17 @@ export function ChartClient({
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, features, panes, activeSignals, activeSr, activeTl]);
+  }, [candles, features, panes, activeSignals, activeSr, activeTl, displayOn, rsHist]);
+
+  const displayChips: { key: DisplayKey; label: string; color: string; show: boolean }[] = [
+    { key: "ma20", label: "MA20", color: MA_COLOR[20], show: true },
+    { key: "ma50", label: "MA50", color: MA_COLOR[50], show: true },
+    { key: "ma200", label: "MA200", color: MA_COLOR[200], show: true },
+    { key: "mcdx", label: "MCDX", color: MCDX_BANKER_COLOR, show: true },
+    { key: "rs3m", label: `RS3M ${rsLatest?.rs3m ?? "—"}`, color: RS3M_COLOR, show: rsAvailable },
+    { key: "rs6m", label: `RS6M ${rsLatest?.rs6m ?? "—"}`, color: RS6M_COLOR, show: rsAvailable },
+    { key: "rs52w", label: `RS52W ${rsLatest?.rs52w ?? "—"}`, color: RS52W_COLOR, show: rsAvailable },
+  ];
 
   return (
     <div className="space-y-2">
@@ -850,6 +967,28 @@ export function ChartClient({
         className="w-full"
         style={{ height: `${heightPx}px` }}
       />
+      {/* Display-overlay group — always available, ON by default. Click to
+          toggle each overlay (MA/MCDX lines, RS-rating lines) on the chart. */}
+      <div className="flex items-center flex-wrap gap-1 px-2 text-xs">
+        {displayChips
+          .filter((c) => c.show)
+          .map((c) => {
+            const on = displayOn.has(c.key);
+            return (
+              <button
+                type="button"
+                key={c.key}
+                onClick={() => toggleDisplay(c.key)}
+                aria-pressed={on}
+                title={on ? "Click to hide on chart" : "Click to show on chart"}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${on ? "bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100" : "bg-transparent text-gray-400 border-dashed border-gray-300 hover:text-gray-600"}`}
+              >
+                <span className="inline-block w-3 h-0.5" style={{ backgroundColor: on ? c.color : "#cbd5e1" }} />
+                {c.label}
+              </button>
+            );
+          })}
+      </div>
       <div className="flex items-center justify-between flex-wrap gap-2 px-2 pb-2 text-xs">
         {/* Legend for whichever MAs are drawn */}
         <div className="flex items-center gap-4 text-gray-500 flex-wrap">
@@ -892,6 +1031,24 @@ export function ChartClient({
                   {label}
                 </span>
               ))}
+            </>
+          )}
+          {features.showRs && (
+            <>
+              {(
+                [
+                  ["rs3m", RS3M_COLOR, "RS3M"],
+                  ["rs6m", RS6M_COLOR, "RS6M"],
+                  ["rs52w", RS52W_COLOR, "RS52W"],
+                ] as const
+              )
+                .filter(([key]) => displayOn.has(key))
+                .map(([key, color, label]) => (
+                  <span key={key} className="flex items-center gap-1">
+                    <span className="inline-block w-3 h-0.5" style={{ backgroundColor: color }} />
+                    {label}
+                  </span>
+                ))}
             </>
           )}
         </div>

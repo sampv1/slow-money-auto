@@ -19,6 +19,13 @@ export type Candle = {
   volume: number;
 };
 
+export type RsHist = {
+  dates: string[];
+  rs3m: (number | null)[];
+  rs6m: (number | null)[];
+  rs52w: (number | null)[];
+};
+
 type SrLevel = { price: number; level_type: "support" | "resistance"; touches: number };
 type Trendline = {
   trend_type: "uptrend" | "downtrend";
@@ -36,7 +43,7 @@ type Signal = { date: string; indicator: string; value: number | null };
 // into the cache key, which would fragment the cache per URL.
 const getSymbolData = unstable_cache(
   async (symbol: string) => {
-    const [candles, signals, srLevels, trendlines, faRows] = await Promise.all([
+    const [candles, signals, srLevels, trendlines, faRows, rsHist] = await Promise.all([
       // Both MUST be paged: a symbol has >1000 triggered signals (and can grow
       // past 1000 bars), and PostgREST silently truncates at 1000 — which would
       // drop the NEWEST rows and quietly break the default indicator selection.
@@ -80,8 +87,31 @@ const getSymbolData = unstable_cache(
           .order("as_of_period", { ascending: false });
         return (data ?? []) as FaScore[];
       })(),
+      // RS-rating history arrays (rs_3m/6m/12m percentiles per day) for the
+      // RS3M/RS6M/RS52W chart lines. Defensive: the columns don't exist until
+      // migration 040 is applied and refresh_rs populates them — a query error
+      // (or any absence) simply yields null and the chart hides the RS group.
+      (async (): Promise<RsHist | null> => {
+        try {
+          const { data, error } = await supabase
+            .from("ta_universe")
+            .select("rs_3m_hist,rs_6m_hist,rs_12m_hist,rs_hist_dates")
+            .eq("symbol", symbol)
+            .maybeSingle();
+          const dates = data?.rs_hist_dates as string[] | null | undefined;
+          if (error || !dates || dates.length === 0) return null;
+          return {
+            dates,
+            rs3m: (data?.rs_3m_hist ?? []) as (number | null)[],
+            rs6m: (data?.rs_6m_hist ?? []) as (number | null)[],
+            rs52w: (data?.rs_12m_hist ?? []) as (number | null)[],
+          };
+        } catch {
+          return null;
+        }
+      })(),
     ]);
-    return { candles, signals, srLevels, trendlines, faRows };
+    return { candles, signals, srLevels, trendlines, faRows, rsHist };
   },
   ["symbol-data"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA, TAG_FA] },
@@ -110,7 +140,7 @@ export default async function SymbolDrillDown({
   } catch (e) {
     return <p className="text-red-600">Error: {e instanceof Error ? e.message : String(e)}</p>;
   }
-  const { candles, signals: allSignals, srLevels: allSrLevels, trendlines: allTrendlines, faRows } = data;
+  const { candles, signals: allSignals, srLevels: allSrLevels, trendlines: allTrendlines, faRows, rsHist } = data;
 
   // When no ?ind= is supplied, default to whatever indicators most recently
   // fired for this symbol — gives the visitor an immediately useful chart.
@@ -192,7 +222,7 @@ export default async function SymbolDrillDown({
       </h2>
 
       <div className="bg-white rounded-lg border border-gray-200 p-2">
-        <ChartClient symbol={symbol} candles={candles} selected={selected} chartSignals={chartSignals} srLevels={srLevels} trendlines={trendlines} locale={locale} />
+        <ChartClient symbol={symbol} candles={candles} selected={selected} chartSignals={chartSignals} srLevels={srLevels} trendlines={trendlines} rsHist={rsHist} locale={locale} />
       </div>
 
       <section className="mt-6">

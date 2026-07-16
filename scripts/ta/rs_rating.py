@@ -309,6 +309,100 @@ def score_rs_line(rs_line: list[float], price: list[float], cfg: dict) -> tuple[
     return total, _rs_grade(total, cfg["grades"])
 
 
+# History periods charted on the Analysis page (RS3M / RS6M / RS52W). RS52W is
+# rs_12m (12 months ≈ 52 weeks). 9m is intentionally excluded — not charted.
+RS_HIST_PERIODS = ("3m", "6m", "12m")
+RS_HIST_MAX_POINTS = 300  # cap the stored series length (chart depth)
+
+
+def _nearest_close(ords: list[int], vals: list[float], target: int, tol: int) -> float | None:
+    """Close of the bar nearest `target` (an ordinal), or None if the nearest is
+    more than `tol` days away. Mirrors _trailing_returns' selection rule, but via
+    bisect so the history sweep over many dates stays cheap."""
+    import bisect
+    i = bisect.bisect_left(ords, target)
+    best = None
+    best_diff = None
+    for j in (i - 1, i):
+        if 0 <= j < len(ords):
+            diff = abs(ords[j] - target)
+            if best_diff is None or diff < best_diff:
+                best_diff, best = diff, vals[j]
+    return best if (best is not None and best_diff is not None and best_diff <= tol) else None
+
+
+def compute_rs_history(closes_by_sym: dict, periods: dict, tol: int,
+                       max_points: int = RS_HIST_MAX_POINTS) -> dict:
+    """Per-symbol RS-rating *history* over the loaded close window.
+
+    For each trading date D (last `max_points` in the window) and each period,
+    compute every symbol's trailing return AS-OF D (same nearest-bar-within-tol
+    rule as the daily snapshot), percentile-rank across the symbols that have a
+    return that day → 1..99, and assemble parallel per-symbol arrays. Returns
+    {symbol: {"dates": [...], "3m": [...], "6m": [...], "12m": [...]}} where each
+    value is an int percentile or None (period's lookback not yet available).
+
+    Reuses the closes already loaded by compute_rs_ratings, so it costs compute
+    only — no extra DB reads.
+    """
+    import pandas as pd
+
+    sym_ords: dict[str, list[int]] = {}
+    sym_vals: dict[str, list[float]] = {}
+    all_ords: set[int] = set()
+    for sym, series in closes_by_sym.items():
+        parsed = sorted(
+            (_date_cls.fromisoformat(d).toordinal(), c) for d, c in series if c and c > 0
+        )
+        if len(parsed) < 2:
+            continue
+        sym_ords[sym] = [o for o, _ in parsed]
+        sym_vals[sym] = [v for _, v in parsed]
+        all_ords.update(sym_ords[sym])
+    if not all_ords:
+        return {}
+
+    target_ords = sorted(all_ords)[-max_points:]
+    hist_periods = {k: periods[k] for k in RS_HIST_PERIODS if k in periods}
+
+    # returns[period][ordinal] = {symbol: pct_return}
+    returns: dict[str, dict[int, dict[str, float]]] = {k: {} for k in hist_periods}
+    for key, days in hist_periods.items():
+        for d_ord in target_ords:
+            d_ret: dict[str, float] = {}
+            for sym in sym_ords:
+                ords, vals = sym_ords[sym], sym_vals[sym]
+                last = _nearest_close(ords, vals, d_ord, tol)
+                if last is None:
+                    continue
+                prior = _nearest_close(ords, vals, d_ord - days, tol)
+                if prior is None or prior <= 0:
+                    continue
+                d_ret[sym] = last / prior - 1.0
+            returns[key][d_ord] = d_ret
+
+    hist: dict[str, dict] = {
+        sym: {"dates": [], **{k: [] for k in RS_HIST_PERIODS}} for sym in sym_ords
+    }
+    for d_ord in target_ords:
+        d_iso = _date_cls.fromordinal(d_ord).isoformat()
+        ranked: dict[str, dict[str, int]] = {}
+        for key in hist_periods:
+            d_ret = returns[key].get(d_ord, {})
+            if d_ret:
+                s = pd.Series(d_ret)
+                pct = (s.rank(method="average", pct=True) * 99).round().clip(1, 99).astype(int)
+                ranked[key] = pct.to_dict()
+            else:
+                ranked[key] = {}
+        for sym in sym_ords:
+            hist[sym]["dates"].append(d_iso)
+            for key in RS_HIST_PERIODS:
+                v = ranked.get(key, {}).get(sym)
+                hist[sym][key].append(int(v) if v is not None else None)
+    return hist
+
+
 def compute_rs_ratings(client, liquidity_floor: int | None = None,
                        dry_run: bool = False) -> dict:
     """Compute + persist RS ratings for the liquid universe. Returns a stats dict
@@ -384,6 +478,15 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
             rs_scores[sym] = (s, g)
     stats["rs_scored"] = len(rs_scores)
 
+    # RS-rating history (RS3M/RS6M/RS52W lines on the Analysis chart). Reuses the
+    # loaded closes; failure-tolerant so it never blocks the main RS snapshot.
+    rs_hist: dict = {}
+    try:
+        rs_hist = compute_rs_history(closes_by_sym, periods, tol)
+    except Exception as e:  # noqa: BLE001
+        print(f"  RS history skipped ({str(e)[:100]})")
+    stats["rs_hist"] = sum(1 for s in rs_hist if s in set(df.index))
+
     if dry_run:
         return stats
 
@@ -424,5 +527,28 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
             client.table("ta_universe").upsert(payload[i:i + 500], on_conflict="symbol"),
             label="rs upsert",
         )
+
+    # RS-rating history arrays (Analysis-page RS3M/6M/52W lines) — written in a
+    # SEPARATE, guarded pass so a missing migration 040 (the rs_*_hist columns)
+    # can never break the main RS snapshot above. Nulls stale rows first, then
+    # writes the fresh series for every rated symbol.
+    if rs_hist:
+        try:
+            client.table("ta_universe").update(
+                {"rs_3m_hist": None, "rs_6m_hist": None, "rs_12m_hist": None, "rs_hist_dates": None}
+            ).eq("is_active", True).execute()
+            hist_payload = [
+                {
+                    "symbol": sym, "exchange": exch.get(sym, "HOSE"),
+                    "rs_3m_hist": rs_hist[sym]["3m"], "rs_6m_hist": rs_hist[sym]["6m"],
+                    "rs_12m_hist": rs_hist[sym]["12m"], "rs_hist_dates": rs_hist[sym]["dates"],
+                }
+                for sym in df.index if sym in rs_hist
+            ]
+            for i in range(0, len(hist_payload), 500):
+                client.table("ta_universe").upsert(hist_payload[i:i + 500], on_conflict="symbol").execute()
+            print(f"  RS history: wrote {len(hist_payload)} symbols.")
+        except Exception as e:  # noqa: BLE001 — most likely rs_*_hist columns absent
+            print(f"  RS history NOT written — apply migration 040? ({str(e)[:120]})")
 
     return stats
