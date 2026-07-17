@@ -180,9 +180,9 @@ export default async function SymbolDrillDown({
   if (candles.length === 0) {
     return (
       <div>
-        <div className="flex items-center justify-between gap-4 mb-4">
-          <h1 className="text-xl font-semibold">{symbol}</h1>
+        <div className="flex items-center gap-3 sm:gap-4 mb-4">
           <TaSearch symbols={universe} locale={locale} compact />
+          <h1 className="text-xl font-semibold">{symbol}</h1>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           {t(locale, "taSymbolNotFound")}
@@ -230,15 +230,16 @@ export default async function SymbolDrillDown({
 
   return (
     <div>
-      {/* Sticky header: the symbol title, a search box for jumping to another
-          symbol, and the latest price. Sticks to the top so the search box
-          stays in the same spot as the (long) analysis page scrolls. */}
+      {/* Sticky header: a search box (leftmost, same position as the analysis
+          landing page so it doesn't jump when you navigate here), the symbol
+          title, and the latest price. Sticks to the top so the box stays put
+          as the (long) analysis page scrolls. */}
       <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2 bg-gray-50/95 backdrop-blur border-b border-gray-200 flex items-baseline justify-between gap-4 mb-4">
         <div className="flex items-baseline gap-3 sm:gap-4 min-w-0">
-          <h1 className="text-2xl font-semibold shrink-0">{symbol}</h1>
           <div className="self-center">
             <TaSearch symbols={universe} locale={locale} compact />
           </div>
+          <h1 className="text-2xl font-semibold shrink-0">{symbol}</h1>
         </div>
         <div className="text-right shrink-0">
           <div className="text-xl font-mono">{formatPrice(latest.close)}</div>

@@ -10,13 +10,18 @@ export function TaSearch({
   symbols,
   locale,
   compact = false,
+  autoFocus = false,
 }: {
   symbols: string[];
   locale: Locale;
-  // Compact: a slim inline field for the per-symbol drill-down header (no card
-  // chrome, no autofocus so it can't hijack the page scroll, and the suggestion
-  // list floats as an absolute dropdown instead of pushing the layout).
+  // Compact: a slim inline field for the top-of-page header (no card chrome, and
+  // the suggestion list floats as an absolute dropdown instead of pushing the
+  // layout). Used on both the analysis landing page and the per-symbol
+  // drill-down so the box sits in the same spot before and after navigating.
   compact?: boolean;
+  // Autofocus the compact field (wanted on the landing page; NOT on the
+  // drill-down, where it would hijack the page scroll on load).
+  autoFocus?: boolean;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -66,6 +71,7 @@ export function TaSearch({
             }}
             onKeyDown={onKeyDown}
             placeholder={t(locale, "taSymbolPlaceholder")}
+            autoFocus={autoFocus}
             autoComplete="off"
             spellCheck={false}
             className="w-32 sm:w-40 min-w-0 rounded border border-gray-300 px-2.5 py-1.5 text-sm font-mono uppercase bg-white focus:outline-none focus:border-blue-500"

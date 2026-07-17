@@ -14,10 +14,16 @@ export default async function TAPage() {
   }
 
   return (
-    <div className="max-w-xl mx-auto">
+    <div>
+      {/* Same header shell as the per-symbol drill-down: the search box sits at
+          the same top-left spot on both, so entering a symbol doesn't move the
+          box — the user can keep typing symbols from the exact same place. */}
+      <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2 bg-gray-50/95 backdrop-blur border-b border-gray-200 flex items-baseline gap-4 mb-4">
+        <TaSearch symbols={symbols} locale={locale} compact autoFocus />
+      </div>
       <h1 className="text-2xl font-semibold mb-2">{t(locale, "navStockAnalysis")}</h1>
-      <p className="text-sm text-gray-500 mb-6">{t(locale, "taSearchSubtitle")}</p>
-      <TaSearch symbols={symbols} locale={locale} />
+      <p className="text-sm text-gray-500 mb-1">{t(locale, "taSearchSubtitle")}</p>
+      <p className="text-xs text-gray-400">{t(locale, "taSearchHint")}</p>
     </div>
   );
 }
