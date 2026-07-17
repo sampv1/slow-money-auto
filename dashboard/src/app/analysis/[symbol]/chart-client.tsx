@@ -437,9 +437,12 @@ export function ChartClient({
     });
   }, []);
 
-  // Signal-derived features, then merged with the display group: MA lines and
-  // the MCDX pane appear if EITHER a signal needs them OR their display toggle
-  // is on; the RS pane appears when any RS line is toggled on and data exists.
+  // Signal-derived features, then merged with the display group: MA lines
+  // appear if EITHER a signal needs them OR their display toggle is on; the RS
+  // pane appears when any RS line is toggled on and data exists. The MCDX pane
+  // is driven SOLELY by the shared displayOn("mcdx") toggle — its signal chip
+  // routes to that same state (below), so the two chips don't fight over the
+  // one histogram (MCDX signals have no arrow markers of their own).
   const sigFeatures = useMemo(() => featuresFor(active), [active]);
   const features = useMemo<Features>(() => {
     const ma = new Set(sigFeatures.maPeriods);
@@ -450,7 +453,7 @@ export function ChartClient({
     return {
       ...sigFeatures,
       maPeriods: [...ma].sort((a, b) => a - b),
-      showMcdx: sigFeatures.showMcdx || displayOn.has("mcdx"),
+      showMcdx: displayOn.has("mcdx"),
       showRs: rsOn,
     };
   }, [sigFeatures, displayOn, rsAvailable]);
@@ -1074,7 +1077,11 @@ export function ChartClient({
                   mcdxShown = true;
                 }
                 const keys = isMcdx ? selectedMcdx : [key];
-                const on = keys.some((k) => activeSet.has(k));
+                // MCDX draws no arrow markers, so its chip shares the single
+                // histogram pane with the "MCDX" display chip: both read and
+                // write displayOn("mcdx"), so clicking either one toggles the
+                // pane regardless of the other's state (no OR overlap).
+                const on = isMcdx ? displayOn.has("mcdx") : keys.some((k) => activeSet.has(k));
                 const onClasses =
                   spec.direction === "bullish"
                     ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
@@ -1085,7 +1092,7 @@ export function ChartClient({
                   <button
                     type="button"
                     key={isMcdx ? "mcdx_banker" : key}
-                    onClick={() => toggleKeys(keys)}
+                    onClick={() => (isMcdx ? toggleDisplay("mcdx") : toggleKeys(keys))}
                     aria-pressed={on}
                     title={on ? "Click to hide on chart" : "Click to show on chart"}
                     className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${on ? onClasses : "bg-transparent text-gray-400 border-dashed border-gray-300 hover:text-gray-600"}`}

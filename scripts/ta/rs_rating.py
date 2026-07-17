@@ -99,12 +99,19 @@ def _load_closes(client, symbols: list[str], cutoff_iso: str) -> dict[str, list[
 
 
 # DB-overridable defaults (see scoring_config key 'rs_rating').
+# window_days sizes the close-load window: it must cover the longest rating
+# lookback (12m ≈ 365d) PLUS however far back we want RS *history* to reach,
+# since compute_rs_history percentile-ranks as-of each past date over this same
+# loaded window. 780 ≈ 26 months → ~13.5 months of RS52W history (rs_12m needs a
+# 365d lookback) and ~18 months of RS3M/RS6M. Requires ta_ohlcv backfilled that
+# deep (backfill_ta_ohlcv.py --days 800); shallower OHLCV just yields a shorter
+# history, never an error.
 RS_DEFAULTS = {
     "periods": {"3m": 91, "6m": 182, "9m": 273, "12m": 365},
     "weights": {"3m": 0.4, "6m": 0.2, "9m": 0.2, "12m": 0.2},
     "tolerance_days": 25,
     "liquidity_floor": 0,
-    "window_days": 430,
+    "window_days": 780,
     "rs_line": {"window_days": 365, "spark_points": 48, "min_points": 20},
 }
 
@@ -312,7 +319,7 @@ def score_rs_line(rs_line: list[float], price: list[float], cfg: dict) -> tuple[
 # History periods charted on the Analysis page (RS3M / RS6M / RS52W). RS52W is
 # rs_12m (12 months ≈ 52 weeks). 9m is intentionally excluded — not charted.
 RS_HIST_PERIODS = ("3m", "6m", "12m")
-RS_HIST_MAX_POINTS = 300  # cap the stored series length (chart depth)
+RS_HIST_MAX_POINTS = 400  # cap the stored series length (~18 months of trading days)
 
 
 def _nearest_close(ords: list[int], vals: list[float], target: int, tol: int) -> float | None:
