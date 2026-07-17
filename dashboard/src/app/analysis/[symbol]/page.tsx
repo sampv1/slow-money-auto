@@ -1,12 +1,13 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { CACHE_TTL_SECONDS, TAG_FA, TAG_TA, fetchAllPaged } from "@/lib/cached-data";
+import { CACHE_TTL_SECONDS, TAG_FA, TAG_TA, fetchAllPaged, getActiveSymbols } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import type { FaScore } from "@/lib/fa";
 import { ChartClient } from "./chart-client";
 import { FaSummary } from "./fa-summary";
+import { TaSearch } from "../ta-search";
 
 export const revalidate = 0;
 
@@ -149,6 +150,15 @@ export default async function SymbolDrillDown({
     .map((s) => s.trim())
     .filter(Boolean);
 
+  // Active universe for the header search box's autocomplete (best-effort — an
+  // empty list just means no suggestions, the free-text field still works).
+  let universe: string[] = [];
+  try {
+    universe = await getActiveSymbols();
+  } catch {
+    universe = [];
+  }
+
   let data: Awaited<ReturnType<typeof getSymbolData>>;
   try {
     data = await getSymbolData(symbol);
@@ -170,7 +180,10 @@ export default async function SymbolDrillDown({
   if (candles.length === 0) {
     return (
       <div>
-        <h1 className="text-xl font-semibold mb-4">{symbol}</h1>
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <h1 className="text-xl font-semibold">{symbol}</h1>
+          <TaSearch symbols={universe} locale={locale} compact />
+        </div>
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           {t(locale, "taSymbolNotFound")}
         </div>
@@ -217,11 +230,17 @@ export default async function SymbolDrillDown({
 
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-semibold">{symbol}</h1>
+      {/* Sticky header: the symbol title, a search box for jumping to another
+          symbol, and the latest price. Sticks to the top so the search box
+          stays in the same spot as the (long) analysis page scrolls. */}
+      <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2 bg-gray-50/95 backdrop-blur border-b border-gray-200 flex items-baseline justify-between gap-4 mb-4">
+        <div className="flex items-baseline gap-3 sm:gap-4 min-w-0">
+          <h1 className="text-2xl font-semibold shrink-0">{symbol}</h1>
+          <div className="self-center">
+            <TaSearch symbols={universe} locale={locale} compact />
+          </div>
         </div>
-        <div className="text-right">
+        <div className="text-right shrink-0">
           <div className="text-xl font-mono">{formatPrice(latest.close)}</div>
           {dayChangePct !== null && (
             <div className={`text-sm font-mono ${dayChangeColor}`}>

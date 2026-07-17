@@ -9,9 +9,14 @@ const MAX_SUGGESTIONS = 8;
 export function TaSearch({
   symbols,
   locale,
+  compact = false,
 }: {
   symbols: string[];
   locale: Locale;
+  // Compact: a slim inline field for the per-symbol drill-down header (no card
+  // chrome, no autofocus so it can't hijack the page scroll, and the suggestion
+  // list floats as an absolute dropdown instead of pushing the layout).
+  compact?: boolean;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -46,6 +51,54 @@ export function TaSearch({
       e.preventDefault();
       setHighlight((h) => (h - 1 + suggestions.length) % suggestions.length);
     }
+  }
+
+  if (compact) {
+    return (
+      <form onSubmit={onSubmit} className="relative">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setHighlight(0);
+            }}
+            onKeyDown={onKeyDown}
+            placeholder={t(locale, "taSymbolPlaceholder")}
+            autoComplete="off"
+            spellCheck={false}
+            className="w-32 sm:w-40 min-w-0 rounded border border-gray-300 px-2.5 py-1.5 text-sm font-mono uppercase bg-white focus:outline-none focus:border-blue-500"
+          />
+          <button
+            type="submit"
+            disabled={!upper}
+            className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm disabled:bg-gray-300 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {t(locale, "taSearchButton")}
+          </button>
+        </div>
+
+        {suggestions.length > 0 && (
+          <ul className="absolute z-30 mt-1 w-full max-w-40 bg-white border border-gray-200 rounded divide-y divide-gray-100 shadow-lg">
+            {suggestions.map((sym, i) => (
+              <li key={sym}>
+                <button
+                  type="button"
+                  onMouseEnter={() => setHighlight(i)}
+                  onClick={() => go(sym)}
+                  className={`w-full text-left px-3 py-1.5 text-sm font-mono cursor-pointer ${
+                    i === highlight ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"
+                  }`}
+                >
+                  {sym}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </form>
+    );
   }
 
   return (
