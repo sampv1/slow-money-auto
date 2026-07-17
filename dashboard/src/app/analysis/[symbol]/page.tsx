@@ -87,25 +87,36 @@ const getSymbolData = unstable_cache(
           .order("as_of_period", { ascending: false });
         return (data ?? []) as FaScore[];
       })(),
-      // RS-rating history arrays (rs_3m/6m/12m percentiles per day) for the
-      // RS3M/RS6M/RS52W chart lines. Defensive: the columns don't exist until
-      // migration 040 is applied and refresh_rs populates them — a query error
-      // (or any absence) simply yields null and the chart hides the RS group.
+      // RS-rating history: the shared trading-date grid lives once in the
+      // ta_rs_hist_meta singleton row (see migration 041 — it used to be
+      // duplicated onto every ta_universe row, which blew the Supabase
+      // statement timeout on ~1,500 symbols); per-symbol percentiles are three
+      // arrays on ta_universe, parallel to that shared grid. Defensive: the
+      // table/columns don't exist until migrations 040+041 are applied and
+      // refresh_rs populates them — any error or length mismatch yields null
+      // and the chart hides the RS group.
       (async (): Promise<RsHist | null> => {
         try {
-          const { data, error } = await supabase
-            .from("ta_universe")
-            .select("rs_3m_hist,rs_6m_hist,rs_12m_hist,rs_hist_dates")
-            .eq("symbol", symbol)
-            .maybeSingle();
-          const dates = data?.rs_hist_dates as string[] | null | undefined;
-          if (error || !dates || dates.length === 0) return null;
-          return {
-            dates,
-            rs3m: (data?.rs_3m_hist ?? []) as (number | null)[],
-            rs6m: (data?.rs_6m_hist ?? []) as (number | null)[],
-            rs52w: (data?.rs_12m_hist ?? []) as (number | null)[],
-          };
+          const [{ data: meta, error: metaErr }, { data: row, error: rowErr }] = await Promise.all([
+            supabase.from("ta_rs_hist_meta").select("dates").eq("id", 1).maybeSingle(),
+            supabase
+              .from("ta_universe")
+              .select("rs_3m_hist,rs_6m_hist,rs_12m_hist")
+              .eq("symbol", symbol)
+              .maybeSingle(),
+          ]);
+          const dates = meta?.dates as string[] | null | undefined;
+          if (metaErr || rowErr || !dates || dates.length === 0) return null;
+          const rs3m = (row?.rs_3m_hist ?? []) as (number | null)[];
+          const rs6m = (row?.rs_6m_hist ?? []) as (number | null)[];
+          const rs52w = (row?.rs_12m_hist ?? []) as (number | null)[];
+          // A symbol's arrays are written in the same pass as the shared grid,
+          // so lengths should always match; if a partial write ever leaves ANY
+          // of them out of sync, drop RS rather than risk a misaligned chart.
+          if (rs3m.length !== dates.length || rs6m.length !== dates.length || rs52w.length !== dates.length) {
+            return null;
+          }
+          return { dates, rs3m, rs6m, rs52w };
         } catch {
           return null;
         }
@@ -113,7 +124,11 @@ const getSymbolData = unstable_cache(
     ]);
     return { candles, signals, srLevels, trendlines, faRows, rsHist };
   },
-  ["symbol-data"],
+  // v2: payload gained rsHist. The version bump matters — cached entries
+  // persist across deploys (Vercel Data Cache), so without it the new code
+  // could read old-shape entries (no rsHist) for up to the TTL and the RS
+  // lines would silently not show. Bump again on any payload-shape change.
+  ["symbol-data-v2"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA, TAG_FA] },
 );
 

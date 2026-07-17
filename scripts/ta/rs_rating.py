@@ -332,15 +332,23 @@ def _nearest_close(ords: list[int], vals: list[float], target: int, tol: int) ->
 
 
 def compute_rs_history(closes_by_sym: dict, periods: dict, tol: int,
-                       max_points: int = RS_HIST_MAX_POINTS) -> dict:
-    """Per-symbol RS-rating *history* over the loaded close window.
+                       max_points: int = RS_HIST_MAX_POINTS) -> tuple[list[str], dict]:
+    """RS-rating *history* over the loaded close window.
 
     For each trading date D (last `max_points` in the window) and each period,
     compute every symbol's trailing return AS-OF D (same nearest-bar-within-tol
     rule as the daily snapshot), percentile-rank across the symbols that have a
-    return that day → 1..99, and assemble parallel per-symbol arrays. Returns
-    {symbol: {"dates": [...], "3m": [...], "6m": [...], "12m": [...]}} where each
-    value is an int percentile or None (period's lookback not yet available).
+    return that day → 1..99, and assemble parallel per-symbol arrays.
+
+    Returns (dates, hist) where `dates` is the ONE shared trading-date grid
+    (identical for every symbol — it's a market-wide sweep, not per-symbol) and
+    hist = {symbol: {"3m": [...], "6m": [...], "12m": [...]}}, each array
+    parallel to `dates`, with None where that period's lookback isn't available
+    yet. Storing `dates` once (not duplicated per symbol) matters: duplicating
+    a ~300-element date array across ~1,500 symbol rows is what blew the
+    Supabase statement timeout on the first version of this write (see
+    migration 041) — the caller must persist `dates` separately (ta_rs_hist_meta)
+    and each symbol's three arrays on ta_universe.
 
     Reuses the closes already loaded by compute_rs_ratings, so it costs compute
     only — no extra DB reads.
@@ -360,7 +368,7 @@ def compute_rs_history(closes_by_sym: dict, periods: dict, tol: int,
         sym_vals[sym] = [v for _, v in parsed]
         all_ords.update(sym_ords[sym])
     if not all_ords:
-        return {}
+        return [], {}
 
     target_ords = sorted(all_ords)[-max_points:]
     hist_periods = {k: periods[k] for k in RS_HIST_PERIODS if k in periods}
@@ -381,11 +389,9 @@ def compute_rs_history(closes_by_sym: dict, periods: dict, tol: int,
                 d_ret[sym] = last / prior - 1.0
             returns[key][d_ord] = d_ret
 
-    hist: dict[str, dict] = {
-        sym: {"dates": [], **{k: [] for k in RS_HIST_PERIODS}} for sym in sym_ords
-    }
+    dates = [_date_cls.fromordinal(o).isoformat() for o in target_ords]
+    hist: dict[str, dict] = {sym: {k: [] for k in RS_HIST_PERIODS} for sym in sym_ords}
     for d_ord in target_ords:
-        d_iso = _date_cls.fromordinal(d_ord).isoformat()
         ranked: dict[str, dict[str, int]] = {}
         for key in hist_periods:
             d_ret = returns[key].get(d_ord, {})
@@ -396,11 +402,10 @@ def compute_rs_history(closes_by_sym: dict, periods: dict, tol: int,
             else:
                 ranked[key] = {}
         for sym in sym_ords:
-            hist[sym]["dates"].append(d_iso)
             for key in RS_HIST_PERIODS:
                 v = ranked.get(key, {}).get(sym)
                 hist[sym][key].append(int(v) if v is not None else None)
-    return hist
+    return dates, hist
 
 
 def compute_rs_ratings(client, liquidity_floor: int | None = None,
@@ -480,9 +485,10 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
 
     # RS-rating history (RS3M/RS6M/RS52W lines on the Analysis chart). Reuses the
     # loaded closes; failure-tolerant so it never blocks the main RS snapshot.
+    rs_hist_dates: list[str] = []
     rs_hist: dict = {}
     try:
-        rs_hist = compute_rs_history(closes_by_sym, periods, tol)
+        rs_hist_dates, rs_hist = compute_rs_history(closes_by_sym, periods, tol)
     except Exception as e:  # noqa: BLE001
         print(f"  RS history skipped ({str(e)[:100]})")
     stats["rs_hist"] = sum(1 for s in rs_hist if s in set(df.index))
@@ -529,26 +535,41 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
         )
 
     # RS-rating history arrays (Analysis-page RS3M/6M/52W lines) — written in a
-    # SEPARATE, guarded pass so a missing migration 040 (the rs_*_hist columns)
-    # can never break the main RS snapshot above. Nulls stale rows first, then
-    # writes the fresh series for every rated symbol.
+    # SEPARATE, guarded pass so a missing migration 040/041 can never break the
+    # main RS snapshot above. The date grid is identical for every symbol (one
+    # market-wide sweep — see compute_rs_history), so it is written ONCE to the
+    # ta_rs_hist_meta singleton row rather than duplicated onto ~1,500 ta_universe
+    # rows; that duplication is what blew the Supabase statement timeout on the
+    # first version of this write (migration 041 fixes the schema). No pre-clear
+    # here (unlike the main snapshot above): a symbol that drops out of the rated
+    # set simply keeps its last history until it's rated again — acceptable
+    # staleness for a secondary chart, and it avoids a second full-table UPDATE
+    # on top of the one the main snapshot just did.
     if rs_hist:
         try:
-            client.table("ta_universe").update(
-                {"rs_3m_hist": None, "rs_6m_hist": None, "rs_12m_hist": None, "rs_hist_dates": None}
-            ).eq("is_active", True).execute()
+            import datetime as _dt
+            client.table("ta_rs_hist_meta").upsert(
+                {"id": 1, "dates": rs_hist_dates,
+                 "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat()}
+            ).execute()
             hist_payload = [
                 {
                     "symbol": sym, "exchange": exch.get(sym, "HOSE"),
                     "rs_3m_hist": rs_hist[sym]["3m"], "rs_6m_hist": rs_hist[sym]["6m"],
-                    "rs_12m_hist": rs_hist[sym]["12m"], "rs_hist_dates": rs_hist[sym]["dates"],
+                    "rs_12m_hist": rs_hist[sym]["12m"],
                 }
                 for sym in df.index if sym in rs_hist
             ]
-            for i in range(0, len(hist_payload), 500):
-                client.table("ta_universe").upsert(hist_payload[i:i + 500], on_conflict="symbol").execute()
-            print(f"  RS history: wrote {len(hist_payload)} symbols.")
-        except Exception as e:  # noqa: BLE001 — most likely rs_*_hist columns absent
-            print(f"  RS history NOT written — apply migration 040? ({str(e)[:120]})")
+            # Smaller batch than the main RS upsert above (500): each row here
+            # still carries 3 arrays of ~300 ints (~4-5 KB/row even with the
+            # shared dates removed), and the original all-in-one write already
+            # hit a Supabase statement timeout once (see migration 041) — 150
+            # keeps each statement comfortably under a few hundred KB.
+            HIST_BATCH = 150
+            for i in range(0, len(hist_payload), HIST_BATCH):
+                client.table("ta_universe").upsert(hist_payload[i:i + HIST_BATCH], on_conflict="symbol").execute()
+            print(f"  RS history: wrote {len(hist_payload)} symbols ({len(rs_hist_dates)} dates).")
+        except Exception as e:  # noqa: BLE001 — most likely migration 040/041 not applied
+            print(f"  RS history NOT written — apply migrations 040+041? ({str(e)[:120]})")
 
     return stats
