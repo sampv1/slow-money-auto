@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
+import { ChartHowTo } from "./chart-how-to";
 
 // One trading day of foreign (khối ngoại) activity on HOSE:
 // - net: daily net buy value, billion VND (negative = net foreign selling)
@@ -178,6 +179,9 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
           ))}
         </div>
       </div>
+
+      {/* how-to explainer */}
+      <ChartHowTo summary={t(locale, "chartHowSummary")} items={[t(locale, "ffHowCalc"), t(locale, "ffHowUse")]} />
 
       {/* legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">

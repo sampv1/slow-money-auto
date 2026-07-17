@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
+import { ChartHowTo } from "./chart-how-to";
 
 // One daily point on the union grid of the two series:
 // - rate: SBV overnight interbank average (VNIBOR, %/year); null on days where
@@ -188,6 +189,9 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
           ))}
         </div>
       </div>
+
+      {/* how-to explainer */}
+      <ChartHowTo summary={t(locale, "chartHowSummary")} items={[t(locale, "irHowCalc"), t(locale, "irHowUse")]} />
 
       {/* legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">

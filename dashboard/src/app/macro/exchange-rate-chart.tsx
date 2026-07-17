@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
+import { ChartHowTo } from "./chart-how-to";
 
 // 2×2 SBV regime: pressure (pct_to_ceiling) × policy velocity (central Δ5).
 export type Regime = "stable" | "leading" | "compressed" | "release";
@@ -227,6 +228,19 @@ export function ExchangeRateChart({
           ))}
         </div>
       </div>
+
+      {/* how-to explainer — the "release" regime bullet carries its colour */}
+      <ChartHowTo
+        summary={t(locale, "chartHowSummary")}
+        items={[
+          t(locale, "macroFxHowCalc"),
+          <>
+            <span className="font-medium" style={{ color: REGIME.release.color }}>{t(locale, "macroRegimeRelease")}</span>
+            {" — "}
+            {t(locale, "macroFxHowUse")}
+          </>,
+        ]}
+      />
 
       {/* FX-line + regime legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">

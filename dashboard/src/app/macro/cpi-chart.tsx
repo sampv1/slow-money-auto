@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
+import { ChartHowTo } from "./chart-how-to";
 
 // One monthly point. yoy = headline CPI YoY (%, null before 12 months of history);
 // ytdAvg = running average of this year's YoY (the "CPI bình quân"); target =
@@ -204,6 +205,9 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
           ))}
         </div>
       </div>
+
+      {/* how-to explainer */}
+      <ChartHowTo summary={t(locale, "chartHowSummary")} items={[t(locale, "macroCpiHowCalc"), t(locale, "macroCpiHowUse")]} />
 
       {/* legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
+import { ChartHowTo } from "./chart-how-to";
 
 // Overnight VND–SOFR spread regime (thresholds fixed by spec):
 //   positive: spread >= 0        — VND funding pays more than USD
@@ -194,6 +195,24 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
           ))}
         </div>
       </div>
+
+      {/* how-to explainer — deep/positive bullets carry the regime colour */}
+      <ChartHowTo
+        summary={t(locale, "chartHowSummary")}
+        items={[
+          t(locale, "epHowCalc"),
+          <>
+            <span className="font-medium" style={{ color: REGIME.deep.color }}>{t(locale, "epRegimeDeep")}</span>
+            {" — "}
+            {t(locale, "epHowUseDeep")}
+          </>,
+          <>
+            <span className="font-medium" style={{ color: REGIME.positive.color }}>{t(locale, "epRegimePositive")}</span>
+            {" — "}
+            {t(locale, "epHowUsePositive")}
+          </>,
+        ]}
+      />
 
       {/* regime legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
