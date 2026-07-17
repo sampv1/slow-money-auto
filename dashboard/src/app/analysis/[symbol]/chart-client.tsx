@@ -487,14 +487,16 @@ export function ChartClient({
     return null;
   }, [candles]);
 
-  // Fixed total height: always reserve both the RSI and MACD subplot slots so
-  // toggling a chip (which adds/removes a subplot pane) never resizes the chart
-  // and shifts the chip panel below it. Within this height the panes redistribute
-  // by their stretch factors (price 3 : volume 1 : each subplot 1.2), so fewer
-  // subplots give the price pane more room and more subplots (up to RSI + MACD +
-  // MCDX + RS) just make each a little thinner — the height itself never changes.
-  const baseHeight = 380; // price + volume
-  const heightPx = baseHeight + 100 + 3 * 130; // fixed height (≈3 subplot slots)
+  // Chart height is sized to the viewport, NOT to the number of panes, for two
+  // reasons: (1) toggling a chip (which adds/removes a subplot pane) never
+  // resizes the chart or shifts the chip panel below it — the container height
+  // is constant, and the panes just redistribute by their stretch factors
+  // (price 3 : volume 1 : each subplot 1.2); (2) the chart plus its toggle chips
+  // fit within one screen, so clicking a chip shows the change immediately
+  // instead of forcing a scroll-up to a taller-than-viewport chart. clamp keeps
+  // it usable on short screens (min) and from getting absurd on large ones (max);
+  // the subtracted offset leaves room for the sticky header + the chip rows.
+  const chartHeight = "clamp(440px, calc(100vh - 170px), 860px)";
 
   useEffect(() => {
     const container = containerRef.current;
@@ -968,7 +970,7 @@ export function ChartClient({
       <div
         ref={containerRef}
         className="w-full"
-        style={{ height: `${heightPx}px` }}
+        style={{ height: chartHeight }}
       />
       {/* Display-overlay group — always available, ON by default. Click to
           toggle each overlay (MA/MCDX lines, RS-rating lines) on the chart. */}
