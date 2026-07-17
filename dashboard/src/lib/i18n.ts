@@ -134,42 +134,42 @@ export const translations = {
     mcZoneSupportive: "Supportive zone −0.5",
     mcHowSummary: "How is this calculated, and how do I use it?",
     mcHowCalc:
-      "Each input is turned into a z-score against its own trailing 2-year norm, sign-aligned so that higher always means worse (tighter money, less FX headroom, foreign selling, hotter inflation), then averaged with fixed weights: Liquidity & rates 40% (overnight interbank rate 15, VND–SOFR spread 15, cumulative OMO balance 10) · Exchange rate 30% (distance to the SBV ceiling) · External 20% (foreign flows 12, DXY 8) · Inflation 10% (CPI headroom vs the annual target). History starts 2021, once all seven legs have enough data.",
+      "It blends seven big-picture signals into one score. Each signal is compared with how it has normally behaved over the past 2 years, and flipped where needed so that a higher score always means tougher conditions for stocks (tighter money, less room on the exchange rate, foreign investors selling, higher inflation). The seven are combined with fixed weights: Money & interest rates 40% (overnight bank lending rate 15, gap between VND and USD rates 15, central-bank cash operations 10) · Exchange rate 30% (room left before the currency hits its cap) · Outside forces 20% (foreign buying/selling 12, US-dollar strength 8) · Inflation 10% (room left under the year's inflation target). The score starts in 2021, once all seven have enough history.",
     mcHowUseOff:
-      "Risk-off: above +1 sustained (5 of the last 7 sessions) has historically preceded liquidity/FX-driven drawdowns by days-to-weeks (e.g. entered June 2022, three months before the September crash; April 2024, two weeks before SBV spot sales). Treat it as a caution / stand-aside (KB3) bias and check the pillar bars to see what is driving it.",
+      "Risk-off: a score above +1 that holds (5 of the last 7 trading days) has, in the past, come days to weeks before market drops caused by money or currency stress — for example it turned risk-off in June 2022, three months before the September 2022 crash, and again in April 2024, two weeks before the central bank began selling dollars to defend the dong. Read it as a reason to be cautious or stand aside (KB3), and look at the bars below to see which factor is behind it.",
     mcHowUseOn:
-      "Below −0.5 means the macro channel is NOT the objection — it is permission, never a buy signal: shocks outside this channel (tariffs, global risk-off, news) are invisible to it, and drawdowns have happened at low readings. Always confirm with price action.",
+      "Below −0.5 means the big-picture backdrop is NOT the problem right now — it's a green light for conditions, not a buy signal on its own. Shocks this model can't see (tariffs, global sell-offs, surprise news) still happen, and the market has fallen even when this score was low. Always confirm with the actual price action.",
     mcNoData: "No FCI data yet. Run refresh_macro.py (the daily Macro workflow computes it).",
 
     // Shared "how-to" explainer summary, reused across every macro chart.
     chartHowSummary: "How is this calculated, and how do I use it?",
     // Interest rate + OMO
     irHowCalc:
-      "The line is the SBV overnight interbank lending rate (VNIBOR, % per year) — the price of very short-term money between banks. The bars are the central bank's daily open-market operations (OMO), in billion VND: green when it injects liquidity (bơm), red when it withdraws (hút). VN-Index is overlaid for context.",
+      "The line is the interest rate banks charge each other for overnight loans (Vietnam's interbank market, % per year) — a quick read on how expensive short-term cash is. The bars show the central bank adding cash to the banking system (green, \"bơm\") or draining it out (red, \"hút\"), in billion VND. VN-Index is drawn on top for context.",
     irHowUse:
-      "A rising overnight rate or sustained net withdrawals mean liquidity is tightening — historically a headwind for stocks. Falling rates and net injections mean easing, a more supportive backdrop for risk assets. Watch the trend, not a single day.",
+      "When the overnight rate climbs, or the central bank keeps draining cash, money is getting tighter — usually a headwind for stocks. Falling rates and cash being added mean easier conditions, which tends to help. Look at the overall trend, not a single day.",
     // External pressure (VND–SOFR spread)
     epHowCalc:
-      "The spread is Vietnam's overnight interbank rate minus overnight USD SOFR (both % per year) — how much more (or less) it costs to fund in VND than in USD. DXY (the US-dollar index) is drawn behind it as a backdrop. The ribbon flags the regime by fixed thresholds.",
+      "This compares the overnight interest rate on Vietnamese dong with the same overnight rate on US dollars (called SOFR) — in short, whether it is more expensive to borrow in dong or in dollars. The grey line behind is a measure of how strong the US dollar is worldwide. The coloured band flags how stretched the situation is.",
     epHowUseDeep:
-      "deep-negative spread (below −1.5): VND funding is far cheaper than USD, the zone where the SBV has historically been forced to intervene and FX pressure tends to follow within days-to-weeks. Treat it as a caution signal.",
+      "deep negative (below −1.5): the dong is far cheaper to borrow than the dollar — the zone where the central bank has usually had to step in to defend the currency, with pressure on the exchange rate often following within days or weeks. Treat it as a warning.",
     epHowUsePositive:
-      "positive spread (≥ 0): the dong pays more than the dollar, so pressure on the currency eases — a calmer backdrop for equities.",
+      "positive (0 or above): the dong pays more than the dollar, so there is little pressure on the currency — a calmer backdrop for stocks.",
     // Foreign flows
     ffHowCalc:
-      "Bars are the daily net foreign (khối ngoại) buy value on HOSE — green for net buying, red for net selling, in billion VND. The line is the trailing 20-session cumulative net, the sustained-pressure gauge. VN-Index is overlaid for context.",
+      "The bars show how much foreign investors (khối ngoại) bought or sold on the HOSE exchange each day — green for net buying, red for net selling, in billion VND. The line adds up the last 20 trading days so you can see the lasting trend. VN-Index is drawn on top for context.",
     ffHowUse:
-      "Persistent net selling (a falling cumulative line) is a steady liquidity drag that often pressures the index; sustained net buying is supportive. The 20-session trend matters far more than any single session.",
+      "Steady foreign selling (the line sloping down) pulls money out of the market and often drags the index lower; steady buying supports it. The 20-day trend matters far more than any single day.",
     // Exchange rate (USD/VND)
     macroFxHowCalc:
-      "The market rate (VCB sell) is compared with the SBV ceiling (central reference rate × the trading band). \"Percent to ceiling\" measures how close the dong is to its cap, and Δ5 tracks how fast the SBV is moving the central rate. The regime combines pressure (near the ceiling) with policy velocity (how fast the reference moves).",
+      "The central bank sets a reference exchange rate for USD/VND and lets the market rate move within a band around it — the top of that band is the ceiling (the weakest the dong is allowed to get). This chart compares the market rate (VCB's selling price) with that ceiling: \"percent to ceiling\" shows how close the dong is to its limit, and the chart also tracks how quickly the central bank is nudging the reference rate. The status combines how close we are to the ceiling with how fast policy is moving.",
     macroFxHowUse:
-      "release regime — the market rate hugging the ceiling while the SBV lifts the central rate quickly — means FX pressure is high, historically a headwind for stocks. A stable, low-pressure regime is a supportive backdrop. Sharp moves toward the ceiling are the ones to watch.",
+      "release — the market rate pinned near the ceiling while the central bank raises the reference rate quickly — means currency pressure is high, historically a headwind for stocks. A calm, low-pressure status is a supportive backdrop. Sharp moves toward the ceiling are the ones to watch.",
     // CPI
     macroCpiHowCalc:
-      "Headline CPI YoY is chained from the monthly index; the YTD-average YoY is the running \"CPI bình quân\" that the SBV actually targets. Headroom is the inflation budget left for the rest of the year versus the annual target.",
+      "CPI tracks the prices households pay. The main line is inflation compared with a year earlier (%). The second line is the average inflation so far this year — the \"CPI bình quân\" the central bank actually targets. \"Headroom\" is how much room is left under this year's inflation target for the months still to come.",
     macroCpiHowUse:
-      "Positive headroom means inflation is running below the pace needed to hit the target — room for the SBV to keep policy easy. Negative headroom (the budget is blown) constrains policy and can weigh on valuations. Watch the YTD-average line against the target, not just one month.",
+      "Positive headroom means inflation is running below what's needed to stay on target — leaving the central bank room to keep policy loose, which tends to help stocks. Negative headroom means the target is at risk, which ties the central bank's hands and can weigh on the market. Watch the year-to-date average against the target line, not just one month.",
 
     // MCDX histogram legend (Analysis chart subplot)
     mcdxLegendBanker: "Banker",
@@ -677,42 +677,42 @@ export const translations = {
     mcZoneSupportive: "Vùng thuận lợi −0,5",
     mcHowSummary: "FCI được tính thế nào và dùng ra sao?",
     mcHowCalc:
-      "Mỗi chỉ báo được chuẩn hóa thành z-score so với chính nó trong 2 năm gần nhất, quy ước dấu sao cho càng cao càng xấu (tiền tệ càng căng, dư địa tỷ giá càng hẹp, khối ngoại bán ròng, lạm phát nóng), rồi lấy trung bình theo trọng số cố định: Thanh khoản & lãi suất 40% (lãi suất qua đêm 15, chênh lệch VND–SOFR 15, số dư OMO lũy kế 10) · Tỷ giá 30% (khoảng cách tới trần NHNN) · Bên ngoài 20% (khối ngoại 12, DXY 8) · Lạm phát 10% (dư địa CPI so với mục tiêu năm). Lịch sử bắt đầu từ 2021, khi cả 7 cấu phần đủ dữ liệu.",
+      "Chỉ số gộp bảy tín hiệu vĩ mô lớn thành một con số. Mỗi tín hiệu được so với mức bình thường của chính nó trong 2 năm gần nhất, và đảo dấu khi cần để điểm càng cao luôn nghĩa là điều kiện càng khó cho cổ phiếu (tiền tệ căng hơn, tỷ giá còn ít dư địa, khối ngoại bán ra, lạm phát cao hơn). Bảy tín hiệu được ghép theo trọng số cố định: Tiền tệ & lãi suất 40% (lãi suất vay qua đêm giữa các ngân hàng 15, chênh lệch lãi suất VND với USD 15, hoạt động bơm/hút tiền của ngân hàng trung ương 10) · Tỷ giá 30% (dư địa còn lại trước khi tiền đồng chạm mức trần) · Yếu tố bên ngoài 20% (khối ngoại mua/bán 12, sức mạnh đồng USD 8) · Lạm phát 10% (dư địa còn lại dưới mục tiêu lạm phát cả năm). Chuỗi bắt đầu từ 2021, khi cả bảy tín hiệu đủ dữ liệu.",
     mcHowUseOff:
-      "Rủi ro cao: trên +1 kéo dài (5 trong 7 phiên gần nhất) trong lịch sử thường đi trước các nhịp giảm do thanh khoản/tỷ giá vài ngày tới vài tuần (ví dụ: vào vùng này tháng 6/2022, ba tháng trước cú sập tháng 9; tháng 4/2024, hai tuần trước khi NHNN bán USD giao ngay). Hãy coi đây là tín hiệu thận trọng / đứng ngoài (KB3) và xem các cột đóng góp để biết nhóm nào đang gây áp lực.",
+      "Rủi ro cao: điểm trên +1 và duy trì (5 trong 7 phiên gần nhất) trong quá khứ thường xuất hiện trước các nhịp giảm do căng thẳng tiền tệ hoặc tỷ giá vài ngày tới vài tuần — ví dụ vào vùng này tháng 6/2022, ba tháng trước cú sập tháng 9/2022, và tháng 4/2024, hai tuần trước khi ngân hàng trung ương bắt đầu bán USD để giữ giá tiền đồng. Hãy xem đây là lý do để thận trọng hoặc đứng ngoài (KB3), và nhìn các cột bên dưới để biết yếu tố nào đang gây ra.",
     mcHowUseOn:
-      "Dưới −0,5 nghĩa là kênh vĩ mô KHÔNG phải trở ngại — đây là điều kiện cho phép, không phải tín hiệu mua: các cú sốc ngoài kênh này (thuế quan, risk-off toàn cầu, tin tức) FCI không nhìn thấy, và thị trường từng giảm mạnh khi FCI đang thấp. Luôn xác nhận bằng diễn biến giá.",
+      "Dưới −0,5 nghĩa là bức tranh vĩ mô lúc này KHÔNG phải vấn đề — đây là đèn xanh cho điều kiện chung, không phải tín hiệu mua. Những cú sốc mô hình này không thấy được (thuế quan, bán tháo toàn cầu, tin bất ngờ) vẫn có thể xảy ra, và thị trường từng giảm ngay cả khi điểm số thấp. Luôn xác nhận bằng diễn biến giá thực tế.",
     mcNoData: "Chưa có dữ liệu FCI. Chạy refresh_macro.py (workflow Macro hằng ngày sẽ tự tính).",
 
     // Nhãn giải thích dùng chung cho mọi biểu đồ vĩ mô.
     chartHowSummary: "Chỉ báo này tính thế nào và dùng ra sao?",
     // Lãi suất + OMO
     irHowCalc:
-      "Đường là lãi suất liên ngân hàng qua đêm của NHNN (VNIBOR, %/năm) — giá vốn rất ngắn hạn giữa các ngân hàng. Cột là nghiệp vụ thị trường mở (OMO) hằng ngày, tỷ VND: xanh khi bơm thanh khoản, đỏ khi hút. VN-Index được vẽ chồng làm bối cảnh.",
+      "Đường là lãi suất các ngân hàng cho nhau vay qua đêm (thị trường liên ngân hàng Việt Nam, %/năm) — cho biết nhanh tiền ngắn hạn đang đắt hay rẻ. Cột thể hiện ngân hàng trung ương bơm thêm tiền vào hệ thống (xanh) hay rút bớt ra (đỏ), tỷ VND. VN-Index vẽ chồng làm bối cảnh.",
     irHowUse:
-      "Lãi suất qua đêm tăng hoặc hút ròng kéo dài nghĩa là thanh khoản đang thắt lại — trong lịch sử thường là lực cản với cổ phiếu. Lãi suất giảm và bơm ròng là nới lỏng, nền tảng thuận lợi hơn cho tài sản rủi ro. Hãy nhìn xu hướng, đừng nhìn một phiên.",
+      "Khi lãi suất qua đêm tăng, hoặc ngân hàng trung ương liên tục rút tiền, dòng tiền đang thắt lại — thường là lực cản với cổ phiếu. Lãi suất giảm và tiền được bơm thêm nghĩa là điều kiện dễ thở hơn, thường có lợi. Hãy nhìn xu hướng chung, đừng nhìn một phiên.",
     // Áp lực bên ngoài (chênh lệch VND–SOFR)
     epHowCalc:
-      "Chênh lệch = lãi suất qua đêm liên ngân hàng của Việt Nam trừ SOFR qua đêm của USD (đều %/năm) — vốn VND đắt hay rẻ hơn USD bao nhiêu. DXY (chỉ số USD) vẽ phía sau làm bối cảnh. Dải màu đánh dấu trạng thái theo ngưỡng cố định.",
+      "So sánh lãi suất vay qua đêm bằng tiền đồng với lãi suất vay qua đêm bằng USD (gọi là SOFR) — nói gọn là vay bằng đồng hay bằng đô đắt hơn. Đường xám phía sau đo sức mạnh của đồng USD trên toàn cầu. Dải màu cho biết tình hình đang căng đến mức nào.",
     epHowUseDeep:
-      "chênh lệch âm sâu (dưới −1,5): vốn VND rẻ hơn USD nhiều, là vùng NHNN trong lịch sử thường phải can thiệp và áp lực tỷ giá thường đến sau vài ngày tới vài tuần. Hãy coi đây là tín hiệu thận trọng.",
+      "âm sâu (dưới −1,5): vay bằng tiền đồng rẻ hơn hẳn USD — đây là vùng ngân hàng trung ương thường phải can thiệp để giữ giá tiền đồng, và áp lực tỷ giá thường đến sau đó vài ngày tới vài tuần. Hãy coi đây là cảnh báo.",
     epHowUsePositive:
-      "chênh lệch dương (≥ 0): VND trả cao hơn USD nên áp lực lên tiền đồng giảm — bối cảnh êm ả hơn cho cổ phiếu.",
+      "dương (từ 0 trở lên): tiền đồng trả lãi cao hơn USD nên áp lực lên tỷ giá thấp — bối cảnh êm ả hơn cho cổ phiếu.",
     // Khối ngoại
     ffHowCalc:
-      "Cột là giá trị mua ròng của khối ngoại trên HOSE mỗi ngày — xanh là mua ròng, đỏ là bán ròng, tỷ VND. Đường là lũy kế mua ròng 20 phiên gần nhất, thước đo áp lực kéo dài. VN-Index vẽ chồng làm bối cảnh.",
+      "Cột cho biết nhà đầu tư nước ngoài (khối ngoại) mua hay bán bao nhiêu trên sàn HOSE mỗi ngày — xanh là mua ròng, đỏ là bán ròng, tỷ VND. Đường cộng dồn 20 phiên gần nhất để thấy xu hướng kéo dài. VN-Index vẽ chồng làm bối cảnh.",
     ffHowUse:
-      "Bán ròng dai dẳng (đường lũy kế đi xuống) là lực hút thanh khoản đều đặn, thường gây áp lực lên chỉ số; mua ròng kéo dài thì hỗ trợ. Xu hướng 20 phiên quan trọng hơn nhiều so với một phiên đơn lẻ.",
+      "Khối ngoại bán ròng đều đặn (đường đi xuống) rút tiền khỏi thị trường và thường kéo chỉ số giảm; mua ròng đều đặn thì nâng đỡ. Xu hướng 20 phiên quan trọng hơn nhiều so với một phiên đơn lẻ.",
     // Tỷ giá (USD/VND)
     macroFxHowCalc:
-      "Tỷ giá thị trường (VCB bán) được so với trần NHNN (tỷ giá trung tâm × biên độ). \"Phần trăm tới trần\" đo tiền đồng còn cách trần bao xa, còn Δ5 theo dõi NHNN đang nâng tỷ giá trung tâm nhanh cỡ nào. Trạng thái kết hợp áp lực (gần trần) với tốc độ điều hành.",
+      "Ngân hàng trung ương đặt một tỷ giá tham chiếu cho USD/VND và cho tỷ giá thị trường dao động trong một biên độ quanh đó — đỉnh của biên độ là mức trần (mức yếu nhất tiền đồng được phép chạm). Biểu đồ so tỷ giá thị trường (giá bán của VCB) với mức trần đó: \"phần trăm tới trần\" cho biết tiền đồng còn cách giới hạn bao xa, đồng thời theo dõi ngân hàng trung ương đang nâng tỷ giá tham chiếu nhanh cỡ nào. Trạng thái kết hợp mức gần trần với tốc độ điều hành chính sách.",
     macroFxHowUse:
-      "trạng thái \"xả\" — tỷ giá thị trường ép sát trần trong khi NHNN nâng nhanh tỷ giá trung tâm — nghĩa là áp lực tỷ giá cao, trong lịch sử là lực cản với cổ phiếu. Trạng thái ổn định, áp lực thấp là nền thuận lợi. Cần chú ý những nhịp tăng mạnh áp sát trần.",
+      "trạng thái \"xả\" — tỷ giá thị trường ép sát trần trong khi ngân hàng trung ương nâng nhanh tỷ giá tham chiếu — nghĩa là áp lực tỷ giá cao, trong lịch sử là lực cản với cổ phiếu. Trạng thái ổn định, áp lực thấp là nền thuận lợi. Cần chú ý những nhịp tăng mạnh áp sát trần.",
     // CPI
     macroCpiHowCalc:
-      "CPI YoY tiêu đề được nối chuỗi từ chỉ số theo tháng; YoY bình quân lũy kế từ đầu năm chính là \"CPI bình quân\" mà NHNN thực sự đặt mục tiêu. Dư địa là phần ngân sách lạm phát còn lại cho phần còn lại của năm so với mục tiêu năm.",
+      "CPI theo dõi giá cả các hộ gia đình phải trả. Đường chính là lạm phát so với một năm trước (%). Đường thứ hai là lạm phát bình quân từ đầu năm — chính là \"CPI bình quân\" mà ngân hàng trung ương đặt mục tiêu. \"Dư địa\" là phần còn lại dưới mục tiêu lạm phát của năm cho những tháng còn lại.",
     macroCpiHowUse:
-      "Dư địa dương nghĩa là lạm phát đang thấp hơn nhịp cần để đạt mục tiêu — NHNN còn dư địa giữ chính sách nới lỏng. Dư địa âm (đã vượt ngân sách) bó hẹp chính sách và có thể đè lên định giá. Hãy nhìn đường bình quân lũy kế so với mục tiêu, đừng chỉ nhìn một tháng.",
+      "Dư địa dương nghĩa là lạm phát đang thấp hơn mức cần để giữ đúng mục tiêu — ngân hàng trung ương còn chỗ để giữ chính sách nới lỏng, thường có lợi cho cổ phiếu. Dư địa âm nghĩa là mục tiêu đang bị đe dọa, bó tay ngân hàng trung ương và có thể đè lên thị trường. Hãy nhìn đường bình quân từ đầu năm so với đường mục tiêu, đừng chỉ nhìn một tháng.",
 
     // MCDX histogram legend (Analysis chart subplot)
     mcdxLegendBanker: "Tay to",
