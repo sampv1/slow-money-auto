@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
-import { ChartHowTo } from "./chart-how-to";
+import { ChartHowTo } from "@/components/chart-how-to";
 
 // 2×2 SBV regime: pressure (pct_to_ceiling) × policy velocity (central Δ5).
 export type Regime = "stable" | "leading" | "compressed" | "release";

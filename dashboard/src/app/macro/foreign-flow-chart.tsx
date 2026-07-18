@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
-import { ChartHowTo } from "./chart-how-to";
+import { ChartHowTo } from "@/components/chart-how-to";
 
 // One trading day of foreign (khối ngoại) activity on HOSE:
 // - net: daily net buy value, billion VND (negative = net foreign selling)

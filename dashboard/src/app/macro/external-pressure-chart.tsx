@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
-import { ChartHowTo } from "./chart-how-to";
+import { ChartHowTo } from "@/components/chart-how-to";
 
 // Overnight VND–SOFR spread regime (thresholds fixed by spec):
 //   positive: spread >= 0        — VND funding pays more than USD

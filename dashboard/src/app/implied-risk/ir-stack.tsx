@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
+import { ChartHowTo } from "@/components/chart-how-to";
 
 // One daily row. `ir` is the RAW signed log basis ln(F/S) (chart plots -ir);
 // `future` drives the daily log return; `vnindex` is the context panel.
@@ -201,6 +202,9 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
           ))}
         </div>
       </div>
+
+      {/* how-to explainer */}
+      <ChartHowTo summary={t(locale, "chartHowSummary")} items={[t(locale, "impliedHowCalc"), t(locale, "impliedHowUse")]} />
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => { setHover(null); setHoverY(null); }} role="img">
         {/* ---- panel titles ---- */}

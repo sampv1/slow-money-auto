@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
-import { ChartHowTo } from "./chart-how-to";
+import { ChartHowTo } from "@/components/chart-how-to";
 
 // One daily point on the union grid of the two series:
 // - rate: SBV overnight interbank average (VNIBOR, %/year); null on days where
