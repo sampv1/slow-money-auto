@@ -82,13 +82,23 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
     return { lo: lo - pad, hi: hi + pad };
   }, [view]);
 
-  // FCI panel: always include the +1 / −0.5 regime thresholds so the tinted
-  // zones stay visible whatever the window.
+  // FCI panel: fit the y-window to the data in view so day-to-day moves stay
+  // readable — anchoring it to the ±thresholds squashed quiet stretches into a
+  // near-flat line. A minimum span keeps pure noise from being magnified into
+  // false drama. The +1 / −0.5 guides and tinted zones are clipped to this
+  // fitted window and drop out when far off-scale (the regime ribbon below
+  // still carries the state, and the header badge shows the regime).
   const zDom = useMemo(() => {
     const vals = view.map((r) => r.full).filter((v): v is number => v !== null);
     if (!vals.length) return { lo: -1.5, hi: 1.5 };
-    const lo = Math.min(-0.5, ...vals), hi = Math.max(1, ...vals);
-    const pad = (hi - lo) * 0.08 || 0.5;
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const MIN_SPAN = 0.4;
+    if (hi - lo < MIN_SPAN) {
+      const mid = (lo + hi) / 2;
+      lo = mid - MIN_SPAN / 2;
+      hi = mid + MIN_SPAN / 2;
+    }
+    const pad = (hi - lo) * 0.08;
     return { lo: lo - pad, hi: hi + pad };
   }, [view]);
 
@@ -127,6 +137,9 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
   const xAt = (i: number) => mL + (n <= 1 ? 0 : (i / (n - 1)) * iw);
   const yVn = (v: number) => vnTop + (1 - (v - vnDom.lo) / (vnDom.hi - vnDom.lo)) * vnH;
   const yZ = (v: number) => zTop + (1 - (v - zDom.lo) / (zDom.hi - zDom.lo)) * zH;
+  // Clamped to the FCI panel — used for the regime zones so a threshold outside
+  // the fitted window pins to the panel edge instead of bleeding into neighbours.
+  const yZc = (v: number) => Math.max(zTop, Math.min(zTop + zH, yZ(v)));
   const yP = (v: number) => pTop + (1 - (v - pDom.lo) / (pDom.hi - pDom.lo)) * pH;
 
   const segsOf = (valOf: (r: FciRow) => number | null, yScale: (v: number) => number) => {
@@ -161,7 +174,8 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
   }
 
   const vnTicks = [vnDom.hi, (vnDom.lo + vnDom.hi) / 2, vnDom.lo];
-  const zTicks = [zDom.hi, 1, 0, -0.5, zDom.lo];
+  // Reference ticks (thresholds + zero) only where they fall inside the fitted window.
+  const zTicks = [zDom.hi, 1, 0, -0.5, zDom.lo].filter((v) => v >= zDom.lo && v <= zDom.hi);
   const xTickIdx = Array.from(
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
   ).filter((i) => i >= 0 && i < n);
@@ -285,18 +299,26 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
 
         {/* ---- FCI panel: regime zones + refs + core/full lines ---- */}
         <text x={mL} y={zTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "mcPanelComposite")}</text>
-        <rect x={mL} y={zTop} width={iw} height={Math.max(0, yZ(1) - zTop)} fill={OFF_COLOR} opacity={0.05} />
-        <rect x={mL} y={yZ(-0.5)} width={iw} height={Math.max(0, zTop + zH - yZ(-0.5))} fill={ON_COLOR} opacity={0.05} />
+        <rect x={mL} y={zTop} width={iw} height={Math.max(0, yZc(1) - zTop)} fill={OFF_COLOR} opacity={0.05} />
+        <rect x={mL} y={yZc(-0.5)} width={iw} height={Math.max(0, zTop + zH - yZc(-0.5))} fill={ON_COLOR} opacity={0.05} />
         {zTicks.map((v, k) => (
           <g key={`zt${k}`}>
             <line x1={mL} y1={yZ(v)} x2={W - mR} y2={yZ(v)} stroke={v === 0 ? "#cbd5e1" : "#f1f5f9"} strokeWidth={1} strokeDasharray={v === 0 ? "4 3" : undefined} />
             <text x={mL - 6} y={yZ(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtS2(v)}</text>
           </g>
         ))}
-        <line x1={mL} y1={yZ(1)} x2={W - mR} y2={yZ(1)} stroke={OFF_COLOR} strokeWidth={1} strokeDasharray="4 3" />
-        <text x={W - mR} y={yZ(1) - 3} textAnchor="end" fontSize={9} fill={OFF_COLOR} fontFamily="monospace">{t(locale, "mcZoneRiskoff")}</text>
-        <line x1={mL} y1={yZ(-0.5)} x2={W - mR} y2={yZ(-0.5)} stroke={ON_COLOR} strokeWidth={1} strokeDasharray="4 3" />
-        <text x={W - mR} y={yZ(-0.5) + 11} textAnchor="end" fontSize={9} fill={ON_COLOR} fontFamily="monospace">{t(locale, "mcZoneSupportive")}</text>
+        {1 >= zDom.lo && 1 <= zDom.hi && (
+          <g>
+            <line x1={mL} y1={yZ(1)} x2={W - mR} y2={yZ(1)} stroke={OFF_COLOR} strokeWidth={1} strokeDasharray="4 3" />
+            <text x={W - mR} y={yZ(1) - 3} textAnchor="end" fontSize={9} fill={OFF_COLOR} fontFamily="monospace">{t(locale, "mcZoneRiskoff")}</text>
+          </g>
+        )}
+        {-0.5 >= zDom.lo && -0.5 <= zDom.hi && (
+          <g>
+            <line x1={mL} y1={yZ(-0.5)} x2={W - mR} y2={yZ(-0.5)} stroke={ON_COLOR} strokeWidth={1} strokeDasharray="4 3" />
+            <text x={W - mR} y={yZ(-0.5) + 11} textAnchor="end" fontSize={9} fill={ON_COLOR} fontFamily="monospace">{t(locale, "mcZoneSupportive")}</text>
+          </g>
+        )}
         {fullSegs.map((pts, k) => (
           <polyline key={`fu${k}`} points={pts} fill="none" stroke={FULL_COLOR} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
         ))}
