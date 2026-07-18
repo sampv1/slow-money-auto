@@ -38,7 +38,7 @@ export const translations = {
     impliedHowCalc:
       "VN30 index futures let traders bet on where Vietnam's 30 largest stocks (the VN30 index) will be at expiry. This compares the futures price with the index itself. When futures trade below the index (a \"discount\"), traders are effectively paying to protect against a fall — a sign of hedging and fear; when they trade above it (a \"premium\"), positioning is optimistic. The top line (−IR) flips the sign so that up = more fear. The lower panel is the futures' own daily move (%), a quick read on day-to-day swings. VN-Index is drawn on top for context.",
     impliedHowUse:
-      "A rising −IR line (futures slipping to a bigger discount, shown red) means traders are hedging harder — usually a sign of caution or stress, and it tends to jump around market drops. Near or below zero (a premium, shown green) is a calmer, more optimistic backdrop. Treat it as an independent fear gauge: use it to confirm what price action and the macro picture are already telling you, not as a buy or sell signal on its own.",
+      "A rising −IR line (futures slipping to a bigger discount) means traders are hedging harder — usually a sign of caution or stress, and it tends to jump around market drops. A line near or below zero (a premium) is a calmer, more optimistic backdrop. The badge next to the latest reading shows which side you're on: red = Discount (fear), green = Premium (greed). Treat it as an independent fear gauge: use it to confirm what price action and the macro picture are already telling you, not as a buy or sell signal on its own.",
     frUnit: "log return",
     frUp: "Up",
     frDown: "Down",
@@ -585,7 +585,7 @@ export const translations = {
     impliedHowCalc:
       "HĐTL chỉ số VN30 cho phép nhà đầu tư đặt cược VN30 (30 cổ phiếu lớn nhất Việt Nam) sẽ ở đâu khi đáo hạn. Chỉ báo so giá HĐTL với chính chỉ số. Khi HĐTL thấp hơn chỉ số (\"chiết khấu\"), nhà đầu tư gần như đang trả tiền để phòng ngừa giá giảm — dấu hiệu phòng hộ và lo ngại; khi cao hơn (\"phụ trội\"), tâm lý đang lạc quan. Đường trên (−IR) đảo dấu để càng lên cao càng nhiều lo ngại. Panel dưới là mức biến động hằng ngày của chính HĐTL (%), cho biết nhanh dao động từng ngày. VN-Index vẽ chồng làm bối cảnh.",
     impliedHowUse:
-      "Đường −IR đi lên (HĐTL chiết khấu sâu hơn, màu đỏ) nghĩa là nhà đầu tư đang phòng hộ mạnh hơn — thường là dấu hiệu thận trọng hoặc căng thẳng, và thường bật lên quanh các nhịp giảm. Gần hoặc dưới mức 0 (phụ trội, màu xanh) là bối cảnh êm ả, lạc quan hơn. Hãy xem đây là thước đo lo ngại độc lập: dùng để xác nhận điều mà giá và bức tranh vĩ mô đang cho thấy, không phải tín hiệu mua/bán riêng lẻ.",
+      "Đường −IR đi lên (HĐTL chiết khấu sâu hơn) nghĩa là nhà đầu tư đang phòng hộ mạnh hơn — thường là dấu hiệu thận trọng hoặc căng thẳng, và thường bật lên quanh các nhịp giảm. Đường ở gần hoặc dưới mức 0 (phụ trội) là bối cảnh êm ả, lạc quan hơn. Huy hiệu cạnh số liệu mới nhất cho biết đang ở phía nào: đỏ = Chiết khấu (lo ngại), xanh = Phụ trội (hưng phấn). Hãy xem đây là thước đo lo ngại độc lập: dùng để xác nhận điều mà giá và bức tranh vĩ mô đang cho thấy, không phải tín hiệu mua/bán riêng lẻ.",
     frUnit: "log return",
     frUp: "Tăng",
     frDown: "Giảm",
