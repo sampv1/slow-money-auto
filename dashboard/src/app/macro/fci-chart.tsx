@@ -413,8 +413,9 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
             Appears when the cursor is over the histogram. The stacked bars get
             squished to sub-pixel width at 3y/all, so this floats an inset over
             the FCI panel (opposite the cursor) showing ±15 days AUTOSCALED to the
-            local extent — small contributions are magnified to fill the lens. */}
-        {hover !== null && hoverY !== null && hoverY >= pTop && hoverY <= pTop + pH && (() => {
+            local extent — small contributions are magnified to fill the lens. A
+            value column lists the hovered day's 7 contributions + VN-Index. */}
+        {hover !== null && hoverY !== null && hoverY >= pTop && hoverY <= pTop + pH && hv && (() => {
           const HALF = 15;
           const lo = Math.max(0, hover - HALF);
           const hi = Math.min(n - 1, hover + HALF);
@@ -438,12 +439,13 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
           const lLo = lNeg - lpad, lHi = lPos + lpad;
 
           // Card floats over the FCI panel, on the side away from the cursor.
-          const lensW = 300, lensH = 150;
+          // Left region = zoomed bars; right region = value list for the hovered day.
+          const lensW = 440, lensH = 160;
           const lensX = hx > W / 2 ? mL + 4 : W - mR - lensW;
           const lensY = zTop + (zH - lensH) / 2;
-          const px0 = lensX + 40, px1 = lensX + lensW - 12;
+          const px0 = lensX + 36, px1 = lensX + lensW - 150;
           const plotW = px1 - px0;
-          const py0 = lensY + 30, py1 = lensY + lensH - 16;
+          const py0 = lensY + 46, py1 = lensY + lensH - 14;
           const plotH = py1 - py0;
           const slot = plotW / m;
           const lensBarW = Math.max(2, slot * 0.7);
@@ -452,12 +454,28 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
           const yL0 = yL(0);
           const lTicks = [lHi, 0, lLo];
 
+          // Value rows for the hovered (centre) day: the 7 components + VN-Index.
+          const valRows: { color: string; label: string; val: string }[] = [
+            ...COMPONENTS.map((p) => ({
+              color: p.color, label: p.short,
+              val: hv[p.key] !== null ? fmtS2(hv[p.key]!) : "—",
+            })),
+            { color: VN_COLOR, label: "VNI", val: hv.vnindex !== null ? fmtInt(hv.vnindex) : "—" },
+          ];
+          const vlX = px1 + 16;
+          const rowH = 13;
+          const vlY0 = lensY + 52;
+
           return (
             <g>
               <rect x={lensX} y={lensY} width={lensW} height={lensH} rx={5} fill="#ffffff" stroke="#cbd5e1" strokeWidth={1} opacity={0.98} />
               <text x={lensX + 10} y={lensY + 16} fontSize={10} fill="#475569" fontFamily="monospace">{t(locale, "mcLensTitle")}</text>
               <text x={lensX + lensW - 10} y={lensY + 16} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">
                 {fmtDay(win[0].date)} – {fmtDay(win[m - 1].date)}
+              </text>
+              {/* hovered-day summary line */}
+              <text x={lensX + 10} y={lensY + 32} fontSize={10} fill="#0f172a" fontFamily="monospace">
+                {hv.date}{hv.full !== null && ` · FCI ${fmtS2(hv.full)}`}
               </text>
               {lTicks.map((v, k) => (
                 <g key={`lt${k}`}>
@@ -485,6 +503,14 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
                   </g>
                 );
               })}
+              {/* value column: 7 component contributions + VN-Index for the hovered day */}
+              {valRows.map((row, k) => (
+                <g key={`vl${k}`}>
+                  <rect x={vlX} y={vlY0 + k * rowH - 7} width={8} height={8} rx={1.5} fill={row.color} />
+                  <text x={vlX + 13} y={vlY0 + k * rowH} fontSize={9} fill="#475569" fontFamily="monospace">{row.label}</text>
+                  <text x={lensX + lensW - 10} y={vlY0 + k * rowH} textAnchor="end" fontSize={9} fill="#0f172a" fontFamily="monospace">{row.val}</text>
+                </g>
+              ))}
             </g>
           );
         })()}
