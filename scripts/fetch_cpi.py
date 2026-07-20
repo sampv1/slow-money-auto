@@ -56,6 +56,9 @@ CAFEF_SEARCH = "https://cafef.vn/tim-kiem.chn?keywords={q}"
 _CPIKW = re.compile(r"CPI|ch[ỉi] s[ốo] gi[áa] ti[êe]u d[ùu]ng", re.I)
 _CORE = re.compile(r"c[ơo] b[ảa]n", re.I)                 # "lạm phát cơ bản" (core) — exclude
 _US = re.compile(r"\bM[ỹy]\b|Fed", re.I)                   # US CPI — exclude
+_CITY = re.compile(  # city/province CPI releases ("Hà Nội: CPI tháng 11 tăng 0,26%...") — exclude
+    r"H[àa] N[ộo]i|TP\.?\s?HCM|TPHCM|H[ồo] Ch[íi] Minh|[ĐD][àa] N[ẵă]ng|"
+    r"C[ụu]c Th[ốo]ng k[êe] (?:th[àa]nh ph[ốo]|t[ỉi]nh)", re.I)
 _MONTH = re.compile(r"th[aá]ng\s*(\d{1,2})(?:\s*/\s*(\d{4}))?", re.I)  # "tháng M" (year optional)
 # MoM %, phrased either way around the month-on-month anchor ("so với tháng (liền) trước"):
 _P_BEFORE = re.compile(  # "... tăng 1,23% so với tháng (liền) trước"
@@ -123,7 +126,7 @@ def parse_headline_mom(text: str, want_m: int, want_y: int | None) -> list[tuple
     out: list[tuple[float, str]] = []
     for m in _P_BEFORE.finditer(text):
         pre = text[max(0, m.start() - 75):m.start()]
-        if _CORE.search(pre) or _US.search(pre) or not _CPIKW.search(pre):
+        if _CORE.search(pre) or _US.search(pre) or _CITY.search(pre) or not _CPIKW.search(pre):
             continue
         if not _month_ok(text[max(0, m.start() - 75):m.end()], want_m, want_y):
             continue
@@ -132,7 +135,7 @@ def parse_headline_mom(text: str, want_m: int, want_y: int | None) -> list[tuple
             out.append((idx, text[max(0, m.start() - 55):m.end()].strip()))
     for m in _P_AFTER.finditer(text):
         seg = text[m.start():m.end()]
-        if _CORE.search(seg) or _US.search(seg) or not _month_ok(seg, want_m, want_y):
+        if _CORE.search(seg) or _US.search(seg) or _CITY.search(seg) or not _month_ok(seg, want_m, want_y):
             continue
         idx = _mom_from_match(m)
         if idx is not None:

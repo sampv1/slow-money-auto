@@ -16,9 +16,18 @@
 # `python3 scripts/fetch_cpi.py --backfill` (2025-09 -> now) to auto-populate it from
 # CafeF, then review. Only hand-fill the months it reports as "not found".
 #
+# CAUTION: use the NATIONAL figure, not a city release — CafeF republishes Hanoi's
+# monthly CPI with near-identical wording ("Hà Nội: CPI tháng 11 tăng 0,26%..."),
+# which is how 2025-11 was briefly stored as 100.26 instead of the national 100.45.
+#
 month,mom_index
-2025-11,100.26
+2025-09,100.42
+2025-10,100.20
+2025-11,100.45
+2025-12,100.19
+2026-01,100.05
 2026-02,101.14
 2026-03,101.23
 2026-04,100.84
 2026-05,100.29
+2026-06,99.61
