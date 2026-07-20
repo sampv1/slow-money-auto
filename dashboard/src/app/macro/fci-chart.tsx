@@ -325,6 +325,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
 
         {/* ---- component contribution bars ---- */}
         <text x={mL} y={pTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "mcPanelPillars")}</text>
+        <text x={W - mR} y={pTop - 8} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">⌕ {t(locale, "mcLensHint")}</text>
         <line x1={mL} y1={y0p} x2={W - mR} y2={y0p} stroke="#cbd5e1" strokeWidth={1} />
         {view.map((r, i) => {
           if (r.full === null) return null;
@@ -404,6 +405,86 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
               <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
               <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
               <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+            </g>
+          );
+        })()}
+
+        {/* ---- hover magnifier: a zoomed local window of the component bars ----
+            Appears when the cursor is over the histogram. The stacked bars get
+            squished to sub-pixel width at 3y/all, so this floats an inset over
+            the FCI panel (opposite the cursor) showing ±15 days AUTOSCALED to the
+            local extent — small contributions are magnified to fill the lens. */}
+        {hover !== null && hoverY !== null && hoverY >= pTop && hoverY <= pTop + pH && (() => {
+          const HALF = 15;
+          const lo = Math.max(0, hover - HALF);
+          const hi = Math.min(n - 1, hover + HALF);
+          const win = view.slice(lo, hi + 1);
+          const m = win.length;
+          if (m < 1) return null;
+
+          // Local stacked extents → the zoom domain.
+          let lPos = 0, lNeg = 0;
+          for (const r of win) {
+            let pos = 0, neg = 0;
+            for (const p of COMPONENTS) {
+              const v = r[p.key];
+              if (v === null) continue;
+              if (v >= 0) pos += v; else neg += v;
+            }
+            if (pos > lPos) lPos = pos;
+            if (neg < lNeg) lNeg = neg;
+          }
+          const lpad = (lPos - lNeg) * 0.12 || 0.1;
+          const lLo = lNeg - lpad, lHi = lPos + lpad;
+
+          // Card floats over the FCI panel, on the side away from the cursor.
+          const lensW = 300, lensH = 150;
+          const lensX = hx > W / 2 ? mL + 4 : W - mR - lensW;
+          const lensY = zTop + (zH - lensH) / 2;
+          const px0 = lensX + 40, px1 = lensX + lensW - 12;
+          const plotW = px1 - px0;
+          const py0 = lensY + 30, py1 = lensY + lensH - 16;
+          const plotH = py1 - py0;
+          const slot = plotW / m;
+          const lensBarW = Math.max(2, slot * 0.7);
+          const yL = (v: number) => py0 + (1 - (v - lLo) / (lHi - lLo)) * plotH;
+          const lx = (wI: number) => px0 + slot * (wI + 0.5);
+          const yL0 = yL(0);
+          const lTicks = [lHi, 0, lLo];
+
+          return (
+            <g>
+              <rect x={lensX} y={lensY} width={lensW} height={lensH} rx={5} fill="#ffffff" stroke="#cbd5e1" strokeWidth={1} opacity={0.98} />
+              <text x={lensX + 10} y={lensY + 16} fontSize={10} fill="#475569" fontFamily="monospace">{t(locale, "mcLensTitle")}</text>
+              <text x={lensX + lensW - 10} y={lensY + 16} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">
+                {fmtDay(win[0].date)} – {fmtDay(win[m - 1].date)}
+              </text>
+              {lTicks.map((v, k) => (
+                <g key={`lt${k}`}>
+                  <line x1={px0} y1={yL(v)} x2={px1} y2={yL(v)} stroke={v === 0 ? "#cbd5e1" : "#f1f5f9"} strokeWidth={1} strokeDasharray={v === 0 ? "3 2" : undefined} />
+                  <text x={px0 - 5} y={yL(v) + 3} textAnchor="end" fontSize={8} fill="#94a3b8" fontFamily="monospace">{fmtS2(v)}</text>
+                </g>
+              ))}
+              {/* highlight the hovered (centre) day */}
+              <rect x={lx(hover - lo) - slot / 2} y={py0} width={slot} height={plotH} fill="#0f172a" opacity={0.06} />
+              {/* zoomed stacked bars */}
+              {win.map((r, wI) => {
+                if (r.full === null) return null;
+                let up = yL0, dn = yL0;
+                const bx = lx(wI) - lensBarW / 2;
+                return (
+                  <g key={`lb${wI}`}>
+                    {COMPONENTS.map((p) => {
+                      const v = r[p.key];
+                      if (v === null || v === 0) return null;
+                      const h = Math.abs(yL(0) - yL(v));
+                      let y: number;
+                      if (v > 0) { up -= h; y = up; } else { y = dn; dn += h; }
+                      return <rect key={p.key} x={bx} y={y} width={lensBarW} height={Math.max(h, 0.6)} fill={p.color} />;
+                    })}
+                  </g>
+                );
+              })}
             </g>
           );
         })()}
