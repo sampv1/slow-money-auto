@@ -47,14 +47,17 @@ const REGIME: Record<FciRegime, { color: string; label: TranslationKey }> = {
 // categorical palette assigned in this order so adjacent stacked segments stay
 // CVD-distinct (validated: worst adjacent ΔE 9.1, normal-vision 19.6); the
 // legend labels satisfy the low-contrast relief rule for magenta/yellow/aqua.
+// `short` is the compact ASCII code for the dense inline tooltip one-liner (kept
+// language-neutral so the 7-in-a-row readout can't overflow near the chart edge);
+// `shortKey` is the localized label used in the roomy magnifier value column.
 const COMPONENTS = [
-  { key: "ctbOn", color: "#2a78d6", label: "mcCompOn", short: "O/N" },        // blue
-  { key: "ctbSpread", color: "#008300", label: "mcCompSpread", short: "Sprd" }, // green
-  { key: "ctbOmo", color: "#e87ba4", label: "mcCompOmo", short: "OMO" },       // magenta
-  { key: "ctbFx", color: "#eda100", label: "mcCompFx", short: "FX" },         // yellow
-  { key: "ctbDxy", color: "#1baf7a", label: "mcCompDxy", short: "DXY" },       // aqua
-  { key: "ctbForeign", color: "#eb6834", label: "mcCompForeign", short: "Frgn" }, // orange
-  { key: "ctbCpi", color: "#4a3aa7", label: "mcCompCpi", short: "CPI" },       // violet
+  { key: "ctbOn", color: "#2a78d6", label: "mcCompOn", short: "O/N", shortKey: "mcShortOn" },        // blue
+  { key: "ctbSpread", color: "#008300", label: "mcCompSpread", short: "Sprd", shortKey: "mcShortSpread" }, // green
+  { key: "ctbOmo", color: "#e87ba4", label: "mcCompOmo", short: "OMO", shortKey: "mcShortOmo" },       // magenta
+  { key: "ctbFx", color: "#eda100", label: "mcCompFx", short: "FX", shortKey: "mcShortFx" },         // yellow
+  { key: "ctbDxy", color: "#1baf7a", label: "mcCompDxy", short: "DXY", shortKey: "mcShortDxy" },       // aqua
+  { key: "ctbForeign", color: "#eb6834", label: "mcCompForeign", short: "Frgn", shortKey: "mcShortForeign" }, // orange
+  { key: "ctbCpi", color: "#4a3aa7", label: "mcCompCpi", short: "CPI", shortKey: "mcShortCpi" },       // violet
 ] as const;
 
 export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
@@ -454,11 +457,22 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
           const yL0 = yL(0);
           const lTicks = [lHi, 0, lLo];
 
-          // Value rows for the hovered (centre) day: the 7 components + VN-Index.
+          // Value rows for the hovered (centre) day, ORDERED to match the bar's
+          // vertical stack read top→bottom, so a segment lines up with its row:
+          // positives first (the up-stack, top segment = last component, so
+          // reverse order), then flat/undefined at the zero line, then negatives
+          // (the down-stack, in component order). VN-Index isn't a stack member,
+          // so it sits last.
+          const withIdx = COMPONENTS.map((p, idx) => ({ p, idx, v: hv[p.key] }));
+          const stacked = [
+            ...withIdx.filter((c) => c.v !== null && c.v > 0).sort((a, b) => b.idx - a.idx),
+            ...withIdx.filter((c) => c.v === null || c.v === 0),
+            ...withIdx.filter((c) => c.v !== null && c.v < 0).sort((a, b) => a.idx - b.idx),
+          ];
           const valRows: { color: string; label: string; val: string }[] = [
-            ...COMPONENTS.map((p) => ({
-              color: p.color, label: p.short,
-              val: hv[p.key] !== null ? fmtS2(hv[p.key]!) : "—",
+            ...stacked.map((c) => ({
+              color: c.p.color, label: t(locale, c.p.shortKey),
+              val: c.v !== null ? fmtS2(c.v) : "—",
             })),
             { color: VN_COLOR, label: "VNI", val: hv.vnindex !== null ? fmtInt(hv.vnindex) : "—" },
           ];
