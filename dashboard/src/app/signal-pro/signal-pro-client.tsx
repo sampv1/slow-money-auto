@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
@@ -122,6 +122,10 @@ export function SignalProClient({
   activeSymbols?: string[];
 }) {
   const router = useRouter();
+  // Pending state for the quarter switch: router.push does a server round-trip
+  // (getFaRows for the new quarter) with no built-in feedback, so isPending
+  // drives a spinner + dims the table until the new rows arrive.
+  const [isPending, startTransition] = useTransition();
   const activeSet = useMemo(() => new Set(activeSymbols), [activeSymbols]);
   // Old quarters carry a FROZEN Final score (no TA detail) — for those we show
   // only Symbol / FA Score / Final score. The full TA layout is latest-only.
@@ -376,13 +380,18 @@ export function SignalProClient({
           <span className="block text-gray-500 mb-1">{t(locale, "faQuarter")}</span>
           <select
             value={selectedQuarter}
-            onChange={(e) => router.push(`/signal-pro?q=${encodeURIComponent(e.target.value)}`)}
-            className="border border-gray-300 rounded px-2 py-1"
+            disabled={isPending}
+            onChange={(e) => {
+              const q = e.target.value;
+              startTransition(() => router.push(`/signal-pro?q=${encodeURIComponent(q)}`));
+            }}
+            className="border border-gray-300 rounded px-2 py-1 disabled:opacity-60"
           >
             {quarters.map((q) => (
               <option key={q} value={q}>{q}</option>
             ))}
           </select>
+          {isPending && <span className="ml-2 text-xs text-gray-400">{t(locale, "loading")}</span>}
         </label>
         <label className="text-sm">
           <span className="block text-gray-500 mb-1">{t(locale, "spMinFinalRating")}</span>
@@ -430,7 +439,7 @@ export function SignalProClient({
           {t(locale, "faNoRows")}
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+        <div className={`bg-white rounded-lg border border-gray-200 overflow-x-auto${isPending ? " opacity-50 transition-opacity" : ""}`}>
           <table className="w-full text-sm">
             <thead>
               {/* Group row */}
