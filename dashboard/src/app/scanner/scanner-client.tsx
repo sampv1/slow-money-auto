@@ -367,6 +367,12 @@ export function ScannerClient({
               const d = e.target.value;
               // Clean URL for the latest date (the default), ?date= for older ones.
               router.push(d === dates[0] ? "/scanner" : `/scanner?date=${encodeURIComponent(d)}`);
+              // A searchParams-only soft nav can be served from the client Router
+              // Cache and NOT re-render the server component (the date-select data
+              // then stays stale until a full reload). refresh() clears the client
+              // cache for this route and re-pulls the RSC — server-side unstable_cache
+              // keeps it cheap — while preserving the selected indicators (useState).
+              router.refresh();
             }}
             className="border border-gray-300 rounded px-2 py-1 font-mono text-gray-700"
           >
