@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
 import {
@@ -135,17 +136,20 @@ type ResultRow = {
 
 export function ScannerClient({
   latestDate,
+  dates,
   signals,
   closes,
   universe,
   locale,
 }: {
   latestDate: string;
+  dates: string[];
   signals: TriggeredSignal[];
   closes: LatestClose[];
   universe: UniverseLiquidity[];
   locale: Locale;
 }) {
+  const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
   const [minCompositeRs, setMinCompositeRs] = useState<number>(DEFAULT_MIN_COMPOSITE_RS);
@@ -355,9 +359,24 @@ export function ScannerClient({
           <h1 className="text-xl font-semibold">{t(locale, "taScanner")}</h1>
           <p className="text-sm text-gray-500">{t(locale, "taScannerSubtitle")}</p>
         </div>
-        <p className="text-sm text-gray-500">
-          {t(locale, "taLastUpdated")} <span className="font-mono">{latestDate}</span>
-        </p>
+        <label className="text-sm text-gray-500 flex items-center gap-2">
+          <span>{t(locale, "taDataDate")}</span>
+          <select
+            value={latestDate}
+            onChange={(e) => {
+              const d = e.target.value;
+              // Clean URL for the latest date (the default), ?date= for older ones.
+              router.push(d === dates[0] ? "/scanner" : `/scanner?date=${encodeURIComponent(d)}`);
+            }}
+            className="border border-gray-300 rounded px-2 py-1 font-mono text-gray-700"
+          >
+            {dates.map((d) => (
+              <option key={d} value={d}>
+                {d}{d === dates[0] ? ` (${t(locale, "taLatest")})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">

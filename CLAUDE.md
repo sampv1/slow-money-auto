@@ -19,7 +19,7 @@ Design docs (read these before touching a subsystem — they carry the settled d
 Three loosely-coupled components:
 
 1. **Python scripts** (`scripts/`) — the data pipeline. Parse Claude's JSON, push to Supabase, fetch prices via vnstock, compute TA/FA/RS/price-base/composite scores, evaluate P&L. Subpackages: `ta/` (indicators, RS, price base, S/R, trendlines, implied risk), `fa/` (Excel import, metrics, scoring, persist), `sentiment/` (catalyst scoring via Claude), `macro/`. Top-level `refresh_*.py` / `update_*.py` are the CLI/cron entry points.
-2. **Supabase** — PostgreSQL with auto-generated REST API. Schema is a sequence of numbered migrations in `supabase/` (`001…034+`), applied by hand in the Supabase SQL editor. Anon key + RLS (mostly anon-readable).
+2. **Supabase** — PostgreSQL with auto-generated REST API. Schema is a sequence of numbered migrations in `supabase/` (`001…041+`), applied by hand in the Supabase SQL editor. Anon key + RLS (mostly anon-readable).
 3. **Next.js dashboard** (`dashboard/`) — frontend on Vercel: recommendation views + TA/FA scanners, per-symbol analysis, implied-risk chart, admin input/import pages.
 
 The pipeline is **DB-centric**: scripts read/write Supabase, the dashboard reads (and admin pages write) Supabase. Scripts and dashboard never call each other directly.
@@ -58,6 +58,11 @@ python3 refresh_fa.py score --backfill              # score all eligible quarter
 
 # --- Sentiment ---
 python3 refresh_catalysts.py                        # CAN SLIM "N" catalyst scoring for A/A+ shortlist via Claude+web_search (--batch, --symbols, --limit, --dry-run)
+
+# --- Macro (raw inputs → macro_series) ---
+python3 refresh_macro.py                            # SBV central rate (today) + VCB sell + VN-Index + CPI + interbank (--backfill one-time history, --days, --dry-run)
+python3 fetch_cpi.py --upsert                       # scrape headline CPI MoM from CafeF news → data/cpi_manual.csv overlay + macro_series (--backfill, --month, --dry-run — ALWAYS --dry-run first)
+python3 analysis/validate_composite.py             # FCI frozen validation protocol (dev mode); holdout is CONSUMED — do not re-run holdout
 ```
 
 Most `refresh_*` scripts read columns that earlier passes wrote, so **order matters** — the daily orchestrator `update_ta_daily.py` runs them in the correct sequence (Steps 1–6). Run individual scripts only for manual/ad-hoc refreshes after the pass they depend on.
@@ -91,6 +96,7 @@ Cron workflows in `.github/workflows/` (times in UTC; VN market closes ~07:45 UT
 | `ta-daily.yml` | ~09:23 UTC (+ 13:47 backup) | `update_ta_daily.py` then `refresh_implied_risk.py`; the backup cron skips if the primary already succeeded | **active** |
 | `fa-score-daily.yml` | ~10:10 UTC | `refresh_fa.py score` then `refresh_final_score.py` | **active** |
 | `daily-evaluation.yml` | ~06:12 UTC | `update_prices.py` (P&L eval) | **active** |
+| `macro-daily.yml` | ~10:40 UTC (Mon–Fri) | `refresh_macro.py` then `fetch_cpi.py --upsert` (CPI is `continue-on-error`) | **active** |
 | `daily-prompt.yml` | (23:37 UTC) | `run_prompt.py` | **commented out** |
 | `sentiment-daily.yml` | (14:30 UTC) | `refresh_catalysts.py` | **commented out** |
 

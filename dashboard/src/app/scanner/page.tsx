@@ -29,23 +29,38 @@ export type UniverseLiquidity = {
   ta_score: number | null;
 };
 
-// Everything the scanner needs, in one cached unit: the latest signal date,
-// that date's triggered signals + closes, and the universe snapshot. Cached
-// until the nightly TA pipeline hits /api/revalidate (TTL is a safety net);
-// the three paged reads run in parallel on a cache miss.
-const getScannerData = unstable_cache(
-  async () => {
-    // Find the latest date that has signal data.
-    const { data: latestRow, error: latestErr } = await supabase
-      .from("ta_signals")
-      .select("date")
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (latestErr) throw new Error(latestErr.message);
-    if (!latestRow) return null;
+// Distinct signal dates (newest first) → the date dropdown options. Sourced
+// from ta_runs (the run log — one row per run, indexed on trading_date), so we
+// never scan the multi-million-row ta_signals table just to list dates. dates[0]
+// is the latest. Cached/invalidated on the same TAG_TA as the scanner data.
+const getSignalDates = unstable_cache(
+  async (): Promise<string[]> => {
+    const rows = await fetchAllPaged<{ trading_date: string }>((from, to, withCount) =>
+      supabase
+        .from("ta_runs")
+        .select("trading_date", withCount ? { count: "exact" } : undefined)
+        .eq("status", "success")
+        .order("trading_date", { ascending: false })
+        .order("id", { ascending: false }) // deterministic tie-break for paging
+        .range(from, to),
+    );
+    // Multiple successful runs can share a trading_date; dedupe, keeping the
+    // newest-first order from the query.
+    return Array.from(new Set(rows.map((r) => r.trading_date)));
+  },
+  ["scanner-signal-dates"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
+);
 
-    const latestDate = latestRow.date as string;
+// Everything the scanner needs for one date, in one cached unit: that date's
+// triggered signals + closes, plus the (current) universe snapshot used by the
+// liquidity / RS filters. Keyed by targetDate — each date gets its own cache
+// entry (unstable_cache folds the argument into the key). Cached until the
+// nightly TA pipeline hits /api/revalidate (TTL is a safety net); the three
+// paged reads run in parallel on a cache miss.
+const getScannerData = unstable_cache(
+  async (targetDate: string) => {
+    const latestDate = targetDate;
 
     const [signals, closes, universe] = await Promise.all([
       // All triggered signals for the latest date (>1000 rows, paged).
@@ -86,17 +101,28 @@ const getScannerData = unstable_cache(
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
 );
 
-export default async function ScannerPage() {
+export default async function ScannerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | undefined }>;
+}) {
   const locale = await getLocale();
+  const params = await searchParams;
 
-  let data: Awaited<ReturnType<typeof getScannerData>>;
+  let dates: string[] = [];
+  let selectedDate: string | undefined;
+  let data: Awaited<ReturnType<typeof getScannerData>> | null = null;
   try {
-    data = await getScannerData();
+    // Distinct signal dates (newest first). Default = latest; an older date is
+    // honoured only if it's a real signal date (guards arbitrary ?date input).
+    dates = await getSignalDates();
+    selectedDate = params.date && dates.includes(params.date) ? params.date : dates[0];
+    if (selectedDate) data = await getScannerData(selectedDate);
   } catch (e) {
     return <p className="text-red-600">Error loading scanner: {e instanceof Error ? e.message : String(e)}</p>;
   }
 
-  if (!data) {
+  if (!data || !selectedDate) {
     return (
       <div>
         <h1 className="text-xl font-semibold mb-4">{t(locale, "taScanner")}</h1>
@@ -109,7 +135,8 @@ export default async function ScannerPage() {
 
   return (
     <ScannerClient
-      latestDate={data.latestDate}
+      latestDate={selectedDate}
+      dates={dates}
       signals={data.signals}
       closes={data.closes}
       universe={data.universe}
