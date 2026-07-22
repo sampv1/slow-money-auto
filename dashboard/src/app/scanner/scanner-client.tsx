@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
 import {
@@ -149,7 +148,22 @@ export function ScannerClient({
   universe: UniverseLiquidity[];
   locale: Locale;
 }) {
-  const router = useRouter();
+  // The date's signal data lives in state so switching dates updates the table
+  // WITHOUT a full-page navigation. We deliberately do NOT drive this off the
+  // URL via router.push: a searchParams-only soft nav is served from Next's
+  // client Router Cache and won't re-render the server component, so the table
+  // stayed stale until a manual reload. Instead the dropdown fetches the chosen
+  // date from /api/scanner and swaps the rows in via plain React state. The URL
+  // is still synced (history API) so a reload / bookmark restores the same date.
+  const [activeDate, setActiveDate] = useState(latestDate);
+  const [activeSignals, setActiveSignals] = useState(signals);
+  const [activeCloses, setActiveCloses] = useState(closes);
+  const [dateLoading, setDateLoading] = useState(false);
+  const [dateError, setDateError] = useState(false);
+  // Monotonic request id — ignore a slow response if the user has since picked
+  // another date (out-of-order fetches must not clobber the newer selection).
+  const dateReqId = useRef(0);
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
   const [minCompositeRs, setMinCompositeRs] = useState<number>(DEFAULT_MIN_COMPOSITE_RS);
@@ -239,33 +253,34 @@ export function ScannerClient({
     return true;
   }
 
-  // Pre-bucket signals by symbol (memoized — never changes after server fetch)
+  // Pre-bucket signals by symbol — recomputed whenever the active date's signals
+  // change (initial props, or a new date fetched via onDateChange).
   const signalsBySymbol = useMemo(() => {
     const m = new Map<string, Set<string>>();
-    for (const s of signals) {
+    for (const s of activeSignals) {
       if (!m.has(s.symbol)) m.set(s.symbol, new Set());
       m.get(s.symbol)!.add(s.indicator);
     }
     return m;
-  }, [signals]);
+  }, [activeSignals]);
 
   // Exact MCDX Banker strength (0..100) per symbol — the three bands share one
   // value, so we display the number instead of the band label in the chips.
   const mcdxBankerBySymbol = useMemo(() => {
     const m = new Map<string, number | null>();
-    for (const s of signals) {
+    for (const s of activeSignals) {
       if (MCDX_BANKER_KEYS.has(s.indicator) && !m.has(s.symbol)) {
         m.set(s.symbol, s.value);
       }
     }
     return m;
-  }, [signals]);
+  }, [activeSignals]);
 
   const closeBySymbol = useMemo(() => {
     const m = new Map<string, LatestClose>();
-    for (const c of closes) m.set(c.symbol, c);
+    for (const c of activeCloses) m.set(c.symbol, c);
     return m;
-  }, [closes]);
+  }, [activeCloses]);
 
   const avgVolBySymbol = useMemo(() => {
     const m = new Map<string, number | null>();
@@ -352,6 +367,30 @@ export function ScannerClient({
     setSelected(new Set());
   }
 
+  async function onDateChange(d: string) {
+    if (d === activeDate) return;
+    const reqId = ++dateReqId.current;
+    setActiveDate(d);
+    setDateError(false);
+    setDateLoading(true);
+    // Update the URL without a navigation (no server round-trip) so a manual
+    // reload or a shared link restores this date — the scanner page reads ?date.
+    const url = d === dates[0] ? "/scanner" : `/scanner?date=${encodeURIComponent(d)}`;
+    window.history.replaceState(null, "", url);
+    try {
+      const res = await fetch(`/api/scanner?date=${encodeURIComponent(d)}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as { signals: TriggeredSignal[]; closes: LatestClose[] };
+      if (dateReqId.current !== reqId) return; // a newer date was picked meanwhile
+      setActiveSignals(json.signals);
+      setActiveCloses(json.closes);
+    } catch {
+      if (dateReqId.current === reqId) setDateError(true);
+    } finally {
+      if (dateReqId.current === reqId) setDateLoading(false);
+    }
+  }
+
   return (
     <div>
       <div className="flex items-baseline justify-between mb-4">
@@ -362,19 +401,10 @@ export function ScannerClient({
         <label className="text-sm text-gray-500 flex items-center gap-2">
           <span>{t(locale, "taDataDate")}</span>
           <select
-            value={latestDate}
-            onChange={(e) => {
-              const d = e.target.value;
-              // Clean URL for the latest date (the default), ?date= for older ones.
-              router.push(d === dates[0] ? "/scanner" : `/scanner?date=${encodeURIComponent(d)}`);
-              // A searchParams-only soft nav can be served from the client Router
-              // Cache and NOT re-render the server component (the date-select data
-              // then stays stale until a full reload). refresh() clears the client
-              // cache for this route and re-pulls the RSC — server-side unstable_cache
-              // keeps it cheap — while preserving the selected indicators (useState).
-              router.refresh();
-            }}
-            className="border border-gray-300 rounded px-2 py-1 font-mono text-gray-700"
+            value={activeDate}
+            disabled={dateLoading}
+            onChange={(e) => onDateChange(e.target.value)}
+            className="border border-gray-300 rounded px-2 py-1 font-mono text-gray-700 disabled:opacity-60"
           >
             {dates.map((d) => (
               <option key={d} value={d}>
@@ -382,6 +412,8 @@ export function ScannerClient({
               </option>
             ))}
           </select>
+          {dateLoading && <span className="text-xs text-gray-400">{t(locale, "loading")}</span>}
+          {dateError && <span className="text-xs text-red-600">{t(locale, "taDateLoadError")}</span>}
         </label>
       </div>
 
