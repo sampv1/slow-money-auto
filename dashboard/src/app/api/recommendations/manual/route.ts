@@ -115,6 +115,19 @@ async function buy(
   const holding = (body.holding ?? "").toString().trim() || null;
   const note = (body.note ?? "").toString().trim() || null;
 
+  // Reject targets on the wrong side of entry (long-only tracker). A mistyped
+  // TP at/below entry would otherwise sit in the DB until update_prices.py's
+  // daily eval either books a false "take-profit" exit at that price (a huge
+  // apparent loss) or — after that pipeline guard — silently drops it; better
+  // to catch the typo here, at entry, than either of those.
+  const issues: string[] = [];
+  if (stopLoss !== null && stopLoss >= entry) issues.push(`Stop loss (${stopLoss}) must be below entry (${entry})`);
+  if (tp1 !== null && tp1 <= entry) issues.push(`TP1 (${tp1}) must be above entry (${entry})`);
+  if (tp2 !== null && tp2 <= entry) issues.push(`TP2 (${tp2}) must be above entry (${entry})`);
+  if (issues.length > 0) {
+    return Response.json({ error: issues.join("; ") }, { status: 400 });
+  }
+
   const row = {
     daily_log_id: null,
     trading_date: close.date,

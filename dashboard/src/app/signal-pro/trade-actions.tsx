@@ -152,6 +152,18 @@ export function TradeActions({
     ? Number((((priceNum - entry) / entry) * 100).toFixed(2))
     : null;
 
+  // BUY-only: reject targets on the wrong side of entry before they ever reach
+  // the server (mirrors the check in /api/recommendations/manual). An empty
+  // field is fine (SL/TP are optional) — only a filled-in, wrong-side value
+  // blocks submit.
+  const buyIssues: string[] = [];
+  if (mode === "BUY" && priceValid) {
+    const slNum = Number(sl), tp1Num = Number(tp1), tp2Num = Number(tp2);
+    if (sl.trim() !== "" && Number.isFinite(slNum) && slNum >= priceNum) buyIssues.push(t(locale, "spSlMustBeBelowEntry"));
+    if (tp1.trim() !== "" && Number.isFinite(tp1Num) && tp1Num <= priceNum) buyIssues.push(t(locale, "spTpMustBeAboveEntry"));
+    if (tp2.trim() !== "" && Number.isFinite(tp2Num) && tp2Num <= priceNum) buyIssues.push(t(locale, "spTpMustBeAboveEntry"));
+  }
+
   return (
     <>
       <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -238,6 +250,12 @@ export function TradeActions({
               </div>
             )}
 
+            {buyIssues.length > 0 && (
+              <ul className="mt-2 text-xs text-red-600 list-disc list-inside">
+                {[...new Set(buyIssues)].map((msg) => <li key={msg}>{msg}</li>)}
+              </ul>
+            )}
+
             <div className="mt-3">
               <label className="block text-xs text-gray-500 mb-1">{t(locale, "spNote")}</label>
               <textarea
@@ -266,7 +284,7 @@ export function TradeActions({
               <button
                 type="button"
                 onClick={submit}
-                disabled={submitting || loading || !close || !priceValid}
+                disabled={submitting || loading || !close || !priceValid || buyIssues.length > 0}
                 className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {submitting ? `${t(locale, "loading")}…` : t(locale, "yes")}
