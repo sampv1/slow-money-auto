@@ -194,6 +194,19 @@ def evaluate_recommendation(rec: dict, price: dict, days_held: int) -> dict | No
     tp2 = float(rec["tp2"]) if rec.get("tp2") else None
     status = rec["status"]
 
+    # Guard against targets on the wrong side of entry (this tracker is
+    # long-only). A take-profit at/below entry or a stop at/above entry is bad
+    # data — e.g. a mistyped manual entry of tp1=20 against a 10,200 entry —
+    # which would otherwise fire a false exit and book a catastrophic "gain"
+    # (exit at 20 → −99.8% P&L and max drawdown). Treat such targets as absent.
+    if str(rec.get("action") or "BUY").upper() != "SELL":
+        if stop_loss is not None and stop_loss >= entry:
+            stop_loss = None
+        if tp1 is not None and tp1 <= entry:
+            tp1 = None
+        if tp2 is not None and tp2 <= entry:
+            tp2 = None
+
     day_high = float(price["high"])
     day_low = float(price["low"])
     day_close = float(price["close"])
