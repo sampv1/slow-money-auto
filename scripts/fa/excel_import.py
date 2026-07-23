@@ -23,6 +23,7 @@ expected and re-importable.
 """
 
 import re
+import unicodedata
 
 import openpyxl
 
@@ -101,12 +102,146 @@ def _read_sheet_metric(ws, header_row_idx: int, want_prefix: str | None = None):
     return data
 
 
-def parse_fiinpro(path: str) -> list[dict]:
-    """Parse Data_FiinPro.xlsx → list of fa_quarterly row dicts (only present cells).
+# --- Single-sheet "DE - Doanh nghiệp" template (raw statement items) ---------
+#
+# A newer FiinProX export puts every metric in ONE sheet, one row per symbol,
+# as RAW items (parent profit, shares, gross/net profit) instead of the
+# pre-computed EPS / margin% columns. We match columns by (accent-stripped)
+# label and DERIVE the three missing metrics — reproducing FiinProX's own values
+# exactly: eps = parent profit / shares, gross_margin = gross profit / revenue,
+# net_margin = net profit / revenue (margins are fractions — no ×100).
+# Mirror: dashboard/src/lib/fa-import.ts.
 
-    One dict per (symbol, period) that has at least one metric value.
+_LEGACY_SHEETS = ("EPS", "Biên lãi gộp + ròng", "Doanh thu", "Nợ ngắn hạn",
+                  "Nợ dài hạn", "Vốn chủ", "ROE")
+
+# Direct metric label tests (pre-computed columns), on the normalized header.
+_DIRECT_TESTS = {
+    "eps": lambda h: "eps" in h,
+    "gross_margin": lambda h: "bien lai gop" in h,
+    "net_margin": lambda h: "bien lai rong" in h,
+    "revenue": lambda h: "doanh thu thuan" in h,
+    "st_debt": lambda h: "vay" in h and "ngan han" in h,
+    "lt_debt": lambda h: "vay" in h and "dai han" in h,
+    "total_equity": lambda h: "von chu so huu" in h,
+    "roe_ttm": lambda h: "roe" in h,
+}
+# Raw statement components (not persisted) → used only to derive eps/margins.
+_RAW_TESTS = {
+    "parent_profit": lambda h: "loi nhuan sau thue" in h and "chu so huu" in h,
+    "shares": lambda h: "cp luu hanh" in h,
+    "gross_profit": lambda h: "loi nhuan gop" in h,
+    "net_profit": lambda h: "loi nhuan sau thue" in h and "thu nhap doanh nghiep" in h,
+}
+
+
+def _norm(s) -> str:
+    """Lowercase, strip Vietnamese diacritics, collapse whitespace (mirror of the TS norm())."""
+    if s is None:
+        return ""
+    s = unicodedata.normalize("NFD", str(s))
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = s.replace("đ", "d").replace("Đ", "d")
+    return " ".join(s.lower().split())
+
+
+def _find_header_row(ws, max_scan: int = 20):
+    """Locate (0-based header row index, symbol column) by finding the 'Mã' cell."""
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=max_scan, values_only=True)):
+        for c, cell in enumerate(row):
+            if _norm(cell) == "ma":
+                return i, c
+    return None
+
+
+def _parse_single_sheet(ws) -> list[dict]:
+    """Parse one raw-items sheet → fa_quarterly row dicts, deriving eps/margins."""
+    found = _find_header_row(ws)
+    if not found:
+        return []
+    hdr_idx, sym_col = found
+    header = next(ws.iter_rows(min_row=hdr_idx + 1, max_row=hdr_idx + 1, values_only=True))
+
+    def build_cols(tests):
+        m = {}
+        for field, test in tests.items():
+            cols = []
+            for idx, cell in enumerate(header):
+                if idx <= sym_col or cell is None:
+                    continue
+                period = _parse_quarter(str(cell))
+                if period and test(_norm(cell)):
+                    cols.append((idx, period))
+            if cols:
+                m[field] = cols
+        return m
+
+    direct_cols = build_cols(_DIRECT_TESTS)
+    raw_cols = build_cols(_RAW_TESTS)
+
+    rows: dict[tuple[str, str], dict] = {}
+    raw_by_key: dict[tuple[str, str], dict] = {}
+    for row in ws.iter_rows(min_row=hdr_idx + 2, values_only=True):
+        sym = row[sym_col] if len(row) > sym_col else None
+        if not sym:
+            continue
+        sym = str(sym).strip().upper()
+        for field, cols in direct_cols.items():
+            for idx, period in cols:
+                if idx < len(row):
+                    val = _num(row[idx])
+                    if val is not None:
+                        key = (sym, period)
+                        r = rows.get(key)
+                        if r is None:
+                            year, q = period.split("-Q")
+                            r = {"symbol": sym, "period": period, "year": int(year), "quarter": int(q)}
+                            rows[key] = r
+                        r[field] = val
+        for field, cols in raw_cols.items():
+            for idx, period in cols:
+                if idx < len(row):
+                    val = _num(row[idx])
+                    if val is not None:
+                        raw_by_key.setdefault((sym, period), {})[field] = val
+
+    # Derivation: pre-computed metric wins; else compute from raw components
+    # (guard denominators). Create a row only when something is actually derived.
+    for key, rc in raw_by_key.items():
+        r = rows.get(key)
+        revenue = r.get("revenue") if r else None
+        derived = {}
+        if (r is None or r.get("eps") is None) and rc.get("parent_profit") is not None and rc.get("shares"):
+            derived["eps"] = rc["parent_profit"] / rc["shares"]
+        if (r is None or r.get("gross_margin") is None) and rc.get("gross_profit") is not None and revenue:
+            derived["gross_margin"] = rc["gross_profit"] / revenue
+        if (r is None or r.get("net_margin") is None) and rc.get("net_profit") is not None and revenue:
+            derived["net_margin"] = rc["net_profit"] / revenue
+        if not derived:
+            continue
+        if r is None:
+            sym, period = key
+            year, q = period.split("-Q")
+            r = {"symbol": sym, "period": period, "year": int(year), "quarter": int(q)}
+            rows[key] = r
+        r.update(derived)
+    return list(rows.values())
+
+
+def parse_fiinpro(path: str) -> list[dict]:
+    """Parse a FiinProX financials workbook → fa_quarterly row dicts (present cells only).
+
+    Dispatches by layout: the legacy multi-sheet workbook (Data_FiinPro.xlsx) uses
+    the per-metric sheets below; any other workbook is treated as the single-sheet
+    raw-items template and parsed with column-label matching + derivation.
     """
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    if not all(s in wb.sheetnames for s in _LEGACY_SHEETS):
+        for name in wb.sheetnames:
+            rows = _parse_single_sheet(wb[name])
+            if rows:
+                return rows
+        return []
 
     eps = _read_sheet_metric(wb["EPS"], HEADER_ROW_IDX, want_prefix="EPS ")
     gm = _read_sheet_metric(wb["Biên lãi gộp + ròng"], HEADER_ROW_IDX, want_prefix="Biên lãi gộp")

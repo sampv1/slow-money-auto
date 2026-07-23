@@ -64,6 +64,26 @@ const FINANCIAL_FIELDS: FieldDef[] = [
   { field: "roe_ttm", test: (h) => h.includes("roe") },
 ];
 
+// Raw statement components — NOT persisted (not fa_quarterly columns). Used only
+// to DERIVE eps / gross_margin / net_margin when the workbook ships raw items
+// instead of the pre-computed columns above — the single-sheet "DE - Doanh
+// nghiệp" template. The formulas reproduce FiinProX's own pre-computed values
+// exactly: eps = parent profit ÷ shares, gross_margin = gross profit ÷ revenue,
+// net_margin = net profit ÷ revenue (margins are fractions — no ×100).
+// Mirror: scripts/fa/excel_import.py.
+type RawComponents = { parentProfit?: number; shares?: number; grossProfit?: number; netProfit?: number };
+
+const RAW_COMPONENT_FIELDS: { field: keyof RawComponents; test: (h: string) => boolean }[] = [
+  // "17.1. Lợi nhuận sau thuế phân bổ cho chủ sở hữu" (EPS numerator)
+  { field: "parentProfit", test: (h) => h.includes("loi nhuan sau thue") && h.includes("chu so huu") },
+  // "Số CP lưu hành hiện thời"
+  { field: "shares", test: (h) => h.includes("cp luu hanh") },
+  // "5. Lợi nhuận gộp…" (distinct from margin "bien lai gop")
+  { field: "grossProfit", test: (h) => h.includes("loi nhuan gop") },
+  // "18. Lợi nhuận sau thuế thu nhập doanh nghiệp" (net_margin numerator)
+  { field: "netProfit", test: (h) => h.includes("loi nhuan sau thue") && h.includes("thu nhap doanh nghiep") },
+];
+
 // ---- result types --------------------------------------------------------
 
 export type QuarterlyRow = {
@@ -107,44 +127,102 @@ function parseFinancials(wb: XLSX.WorkBook): ParseResult {
   const detected: DetectedField[] = [];
   const merged = new Map<string, QuarterlyRow>();
 
-  for (const def of FINANCIAL_FIELDS) {
-    let placed = false;
-    for (const sheetName of wb.SheetNames) {
-      const grid = sheetGrid(wb.Sheets[sheetName]);
-      const hdr = findHeader(grid);
-      if (!hdr) continue;
+  // Parse every sheet's grid + header once (findHeader locates the "Mã" row).
+  const sheets = wb.SheetNames
+    .map((name) => {
+      const grid = sheetGrid(wb.Sheets[name]);
+      return { name, grid, hdr: findHeader(grid) };
+    })
+    .filter((s): s is { name: string; grid: Grid; hdr: { headerIdx: number; symbolCol: number } } => s.hdr !== null);
+
+  // Scan all sheets for the columns matching `test` (label + a parseable quarter);
+  // the FIRST sheet that yields any matching column wins. `sink` is called per
+  // cell value. Returns detection info, or null if no sheet matched.
+  function scanField(test: (h: string) => boolean, field: string, sink: (sym: string, period: string, val: number) => void): DetectedField | null {
+    for (const { name, grid, hdr } of sheets) {
       const headerRow = grid[hdr.headerIdx] || [];
-      // columns of this sheet that belong to this field (label match + a quarter)
       const cols: { idx: number; period: string }[] = [];
       for (let c = hdr.symbolCol + 1; c < headerRow.length; c++) {
         const cell = headerRow[c];
         const period = parseQuarter(cell);
-        if (period && def.test(norm(cell))) cols.push({ idx: c, period });
+        if (period && test(norm(cell))) cols.push({ idx: c, period });
       }
       if (cols.length === 0) continue;
-      // first sheet that yields this field wins
       for (let r = hdr.headerIdx + 1; r < grid.length; r++) {
         const row = grid[r] || [];
         const sym = String(row[hdr.symbolCol] ?? "").trim().toUpperCase();
         if (!sym) continue;
         for (const { idx, period } of cols) {
           const val = toNum(row[idx]);
-          if (val === null) continue;
-          const key = `${sym}|${period}`;
-          let mrow = merged.get(key);
-          if (!mrow) {
-            const [y, q] = period.split("-Q");
-            mrow = { symbol: sym, period, year: Number(y), quarter: Number(q) };
-            merged.set(key, mrow);
-          }
-          (mrow as Record<string, unknown>)[def.field] = val;
+          if (val !== null) sink(sym, period, val);
         }
       }
-      detected.push({ field: def.field, sheet: sheetName, columns: cols.length, periods: [...new Set(cols.map((c) => c.period))].sort() });
-      placed = true;
-      break;
+      return { field, sheet: name, columns: cols.length, periods: [...new Set(cols.map((c) => c.period))].sort() };
     }
-    if (!placed) warnings.push(`Could not locate any column for "${def.field}"`);
+    return null;
+  }
+
+  function rowFor(sym: string, period: string): QuarterlyRow {
+    const key = `${sym}|${period}`;
+    let mrow = merged.get(key);
+    if (!mrow) {
+      const [y, q] = period.split("-Q");
+      mrow = { symbol: sym, period, year: Number(y), quarter: Number(q) };
+      merged.set(key, mrow);
+    }
+    return mrow;
+  }
+
+  // 1) Direct DB metrics from pre-computed columns. Old multi-sheet files fill
+  //    all 8; the single-sheet raw template fills 5 (eps/margins derived below).
+  const satisfied = new Set<string>();
+  for (const def of FINANCIAL_FIELDS) {
+    const d = scanField(def.test, def.field, (sym, period, val) => {
+      (rowFor(sym, period) as Record<string, unknown>)[def.field] = val;
+    });
+    if (d) { detected.push(d); satisfied.add(def.field); }
+  }
+
+  // 2) Raw statement components (not persisted) → keyed parallel map.
+  const rawByKey = new Map<string, RawComponents>();
+  for (const def of RAW_COMPONENT_FIELDS) {
+    scanField(def.test, def.field, (sym, period, val) => {
+      const key = `${sym}|${period}`;
+      const rc = rawByKey.get(key) ?? {};
+      rc[def.field] = val;
+      rawByKey.set(key, rc);
+    });
+  }
+
+  // 3) Derivation pass: fill eps/gross_margin/net_margin from raw components when
+  //    the pre-computed metric is absent (pre-computed always wins → old files
+  //    are untouched). Guard denominators against 0/null.
+  const derivedPeriods: Record<"eps" | "gross_margin" | "net_margin", Set<string>> = {
+    eps: new Set(), gross_margin: new Set(), net_margin: new Set(),
+  };
+  for (const [key, rc] of rawByKey) {
+    const existing = merged.get(key);
+    const revenue = existing?.revenue ?? null;
+    const set: { eps?: number; gross_margin?: number; net_margin?: number } = {};
+    if ((existing?.eps ?? null) === null && rc.parentProfit != null && rc.shares) set.eps = rc.parentProfit / rc.shares;
+    if ((existing?.gross_margin ?? null) === null && rc.grossProfit != null && revenue) set.gross_margin = rc.grossProfit / revenue;
+    if ((existing?.net_margin ?? null) === null && rc.netProfit != null && revenue) set.net_margin = rc.netProfit / revenue;
+    const fields = Object.keys(set) as (keyof typeof set)[];
+    if (fields.length === 0) continue;
+    const sep = key.indexOf("|");
+    const row = existing ?? rowFor(key.slice(0, sep), key.slice(sep + 1));
+    Object.assign(row, set);
+    for (const f of fields) derivedPeriods[f].add(row.period);
+  }
+  for (const f of ["eps", "gross_margin", "net_margin"] as const) {
+    if (derivedPeriods[f].size > 0) {
+      detected.push({ field: `${f} (derived)`, sheet: "(computed from raw items)", columns: 0, periods: [...derivedPeriods[f]].sort() });
+      satisfied.add(f);
+    }
+  }
+
+  for (const def of FINANCIAL_FIELDS) {
+    if (!satisfied.has(def.field)) warnings.push(`Could not locate a column for "${def.field}"`);
   }
 
   const rows = [...merged.values()];
