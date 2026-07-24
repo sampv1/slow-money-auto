@@ -26,6 +26,8 @@ import re
 
 import requests
 
+from ta.common import safe_execute
+
 # --------------------------------------------------------------------------- #
 # Constants
 # --------------------------------------------------------------------------- #
@@ -213,5 +215,8 @@ def upsert_macro(client, rows: list[dict]) -> int:
     if not rows:
         return 0
     for j in range(0, len(rows), 500):
-        client.table("macro_series").upsert(rows[j:j + 500], on_conflict="metric,date").execute()
+        safe_execute(
+            client.table("macro_series").upsert(rows[j:j + 500], on_conflict="metric,date"),
+            label=f"macro_series upsert [{j // 500}]",
+        )
     return len(rows)

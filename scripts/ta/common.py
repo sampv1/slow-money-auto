@@ -56,6 +56,16 @@ _TRANSIENT_ERROR_MARKERS = (
     "WriteTimeout",
     "PoolTimeout",
     "TimeoutException",
+    # Supabase/Cloudflare gateway blips (origin briefly unreachable). PostgREST
+    # can't parse the Cloudflare HTML / control-plane body, so its client raises
+    # an APIError whose message is "JSON could not be generated" — this only ever
+    # happens for a gateway/infra hiccup, never a real data error, so it's safe
+    # to retry. Seen as Cloudflare 520/521/522/523/524/525 or a 500 with body
+    # "Failed to get project config".
+    "JSON could not be generated",
+    "Failed to get project config",
+    "SSL handshake failed",
+    "Web server is returning an unknown error",
 )
 
 
