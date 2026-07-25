@@ -319,6 +319,7 @@ export default async function MacroPage() {
         lendingMid: lo !== null && hi !== null ? Math.round(((lo + hi) / 2) * 100) / 100 : null,
         wbLending: wbLending.get(date) ?? null,
         wbDeposit: wbDeposit.get(date) ?? null,
+        vnindex: vnAsof(date),
       };
     });
 
