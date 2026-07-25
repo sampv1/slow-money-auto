@@ -9,6 +9,7 @@ import { ExternalPressureChart, type EpRegime, type EpRow } from "./external-pre
 import { ForeignFlowChart, type FfRow } from "./foreign-flow-chart";
 import { FciChart, type FciRegime, type FciRow } from "./fci-chart";
 import { BondYieldChart, type GbRow } from "./bond-yield-chart";
+import { BankRatesChart, type BrRow } from "./bank-rates-chart";
 
 export const revalidate = 0;
 
@@ -80,6 +81,7 @@ async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCf
 const getMacroData = unstable_cache(
   async () => {
     const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, govbond10y,
+      bankDeposit12m, bankLendingMin, bankLendingMax, wbLending, wbDeposit,
       fciFull, fciCtbOn, fciCtbSpread, fciCtbOmo, fciCtbFx, fciCtbDxy, fciCtbForeign, fciCtbCpi, cfg] = await Promise.all([
       fetchMetricEntries("fx_central_rate"),
       fetchMetricEntries("fx_vcb_sell"),
@@ -95,6 +97,14 @@ const getMacroData = unstable_cache(
       // 10Y government bond yield (ADB AsianBondsOnline) — standalone context
       // panel, NOT an FCI input (frozen design).
       fetchMetricEntries("govbond_10y"),
+      // Bank interest rates (standalone context panel, NOT FCI inputs): all-bank
+      // 12M deposit avg (daily, CafeF); system-wide lending range (monthly, SBV);
+      // World Bank annual lending/deposit underlay for long-run context.
+      fetchMetricEntries("bank_deposit_12m_avg"),
+      fetchMetricEntries("bank_lending_avg_min"),
+      fetchMetricEntries("bank_lending_avg_max"),
+      fetchMetricEntries("wb_lending_rate"),
+      fetchMetricEntries("wb_deposit_rate"),
       // Financial Conditions Index (frozen design) — written by refresh_macro.py.
       // Only the `full` variant is charted; `macro_fci_core` is still computed
       // and stored (validation artifact) but not fetched here. The seven
@@ -110,6 +120,7 @@ const getMacroData = unstable_cache(
       loadMacroConfig(),
     ] as const);
     return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, govbond10y,
+      bankDeposit12m, bankLendingMin, bankLendingMax, wbLending, wbDeposit,
       fciFull, fciCtbOn, fciCtbSpread, fciCtbOmo, fciCtbFx, fciCtbDxy, fciCtbForeign, fciCtbCpi, cfg };
   },
   ["macro-data"],
@@ -221,6 +232,7 @@ export default async function MacroPage() {
   let ffRows: FfRow[] = [];
   let fciRows: FciRow[] = [];
   let gbRows: GbRow[] = [];
+  let brRows: BrRow[] = [];
   let error: string | null = null;
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
@@ -283,6 +295,32 @@ export default async function MacroPage() {
       yield10y: govbond.get(date) ?? null,
       vnindex: vnAsof(date),
     }));
+
+    // Bank interest rates: all-bank 12M deposit (daily, CafeF), system-wide lending
+    // range (monthly, SBV), World Bank annual lending/deposit underlay. One row per
+    // date on the union grid; each series null where it has no point. The spread
+    // (lending midpoint − deposit) is computed in the chart from the latest of each.
+    const bankDeposit = new Map(d.bankDeposit12m);
+    const lendingMin = new Map(d.bankLendingMin);
+    const lendingMax = new Map(d.bankLendingMax);
+    const wbLending = new Map(d.wbLending);
+    const wbDeposit = new Map(d.wbDeposit);
+    const brDates = Array.from(
+      new Set([...bankDeposit.keys(), ...lendingMin.keys(), ...wbLending.keys(), ...wbDeposit.keys()]),
+    ).sort();
+    brRows = brDates.map((date) => {
+      const lo = lendingMin.get(date) ?? null;
+      const hi = lendingMax.get(date) ?? null;
+      return {
+        date,
+        deposit: bankDeposit.get(date) ?? null,
+        lendingMin: lo,
+        lendingMax: hi,
+        lendingMid: lo !== null && hi !== null ? Math.round(((lo + hi) / 2) * 100) / 100 : null,
+        wbLending: wbLending.get(date) ?? null,
+        wbDeposit: wbDeposit.get(date) ?? null,
+      };
+    });
 
     // External pressure: overnight VND–SOFR spread on the VNIBOR date grid.
     // SOFR (T+1, US calendar) and DXY are as-of joined — the last US print on
@@ -450,6 +488,20 @@ export default async function MacroPage() {
           <StubCard title={t(locale, "gbTitle")} note={t(locale, "gbNoData")} />
         ) : (
           <BondYieldChart rows={gbRows} locale={locale} />
+        )}
+      </section>
+
+      <section className="mb-6">
+        <div className="mb-2">
+          <h2 className="text-base font-semibold">{t(locale, "brTitle")}</h2>
+          <p className="text-xs text-gray-500">{t(locale, "brSubtitle")}</p>
+        </div>
+        {error ? (
+          <p className="text-red-600 text-sm">Error loading bank-rate data: {error}</p>
+        ) : brRows.length < 1 ? (
+          <StubCard title={t(locale, "brTitle")} note={t(locale, "brNoData")} />
+        ) : (
+          <BankRatesChart rows={brRows} locale={locale} />
         )}
       </section>
 

@@ -77,6 +77,24 @@ jobs:
             python fetch_cpi.py --upsert
           fi
 
+      # Bank lending rate (system-wide average range) from SBV's monthly report.
+      # SBV lists the last ~4 months; older months come from CafeF republications
+      # (fallback) or data/bank_lending_manual.csv. --upsert writes bank_lending_avg_*
+      # to macro_series. Non-fatal: SBV's WAF / a not-yet-published month must never
+      # fail the pipeline, and the CSV overlay (re-asserted by refresh_macro) persists.
+      - name: Fetch bank lending rate (SBV)
+        continue-on-error: true
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ "${{ inputs.backfill }}" = "true" ]; then
+            python fetch_bank_lending.py --from 2024-04 --upsert
+          else
+            python fetch_bank_lending.py --upsert
+          fi
+
       # Expire the dashboard's server-side data cache so the next page view
       # shows today's series immediately (see dashboard /api/revalidate).
       # Non-fatal: if it fails, the cache TTL still refreshes within the hour.

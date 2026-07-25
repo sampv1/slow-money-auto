@@ -29,6 +29,7 @@ Usage:
 
 import argparse
 import datetime as dt
+import re
 import sys
 import time
 from pathlib import Path
@@ -72,10 +73,24 @@ from macro.bond_yield import (
     METRIC_GOVBOND_10Y,
     fetch_govbond_10y_history,
 )
+from macro.bank_rates import (
+    METRIC_DEPOSIT_12M,
+    WB_CODES,
+    WB_HISTORY_START,
+    deposit_12m_average,
+    fetch_deposit_board,
+    fetch_wb_series,
+)
 
 # Manual CPI overlay (Vietstock CPI froze at 2025-08; GSO is VPN-gated to cloud IPs,
 # so newer months are hand-entered here — see data/cpi_manual.csv).
 MANUAL_CPI_CSV = Path(__file__).resolve().parent.parent / "data" / "cpi_manual.csv"
+
+# System-wide average lending-rate range (SBV monthly report). Collected by
+# fetch_bank_lending.py into this CSV; refresh_macro overlays it each run (like CPI).
+BANK_LENDING_CSV = Path(__file__).resolve().parent.parent / "data" / "bank_lending_manual.csv"
+METRIC_LENDING_MIN = "bank_lending_avg_min"
+METRIC_LENDING_MAX = "bank_lending_avg_max"
 
 # VN-Index is a context overlay on every macro chart, so its history must reach
 # back at least as far as the oldest primary series (interbank since 2015). We
@@ -264,6 +279,72 @@ def collect_govbond(start: dt.date, end: dt.date) -> list[dict]:
     print(f"  Govt bond 10Y: {len(pts)} daily points"
           + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:.2f}%)" if pts else ""))
     return series_rows(METRIC_GOVBOND_10Y, pts, "%", "adb-abo")
+
+
+def collect_bank_rates(end: dt.date) -> list[dict]:
+    """Bank interest rates → macro_series rows (standalone /macro context panel; NOT
+    FCI inputs). Two legs, each failure-tolerant (a break in one never blocks the
+    others or the rest of the pipeline):
+      * bank_deposit_12m_avg — DAILY all-bank average of the 12-month term-deposit
+        board rate (CafeF). One snapshot row keyed on `end` (the source has no dates,
+        so history can't be backfilled — it accumulates forward from the cron).
+      * wb_lending_rate / wb_deposit_rate / wb_rate_spread — ANNUAL World Bank
+        context underlay (idempotent full-history re-upsert; ~24 rows each, cheap)."""
+    rows: list[dict] = []
+    try:
+        avg, n = deposit_12m_average(fetch_deposit_board())
+        print(f"  Bank deposit 12M avg: {avg:.3f}% across {n} banks (as of {end}).")
+        rows += series_rows(METRIC_DEPOSIT_12M, [(end, avg)], "%", "cafef")
+    except Exception as e:  # noqa: BLE001
+        print(f"  Bank deposit fetch failed: {str(e)[:100]}")
+    for code, metric in WB_CODES.items():
+        try:
+            pts = fetch_wb_series(code, WB_HISTORY_START, end)
+            print(f"  World Bank {code}: {len(pts)} annual points"
+                  + (f" ({pts[0][0].year}..{pts[-1][0].year}, last {pts[-1][1]:.2f}%)" if pts else ""))
+            rows += series_rows(metric, pts, "%", "worldbank")
+        except Exception as e:  # noqa: BLE001
+            print(f"  World Bank {code} fetch failed: {str(e)[:100]}")
+    return rows
+
+
+def load_bank_lending(path: Path) -> list[tuple[dt.date, float, float]]:
+    """Read data/bank_lending_manual.csv -> [(month_first_day, min, max), ...] sorted.
+
+    Skips the comment/header lines; tolerates malformed rows. Empty if the file is
+    absent (the overlay is then simply skipped)."""
+    if not path.exists():
+        return []
+    out: list[tuple[dt.date, float, float]] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.lower().startswith("month"):
+            continue
+        parts = [c.strip() for c in line.split(",")]
+        m = re.match(r"(\d{4})-(\d{1,2})$", parts[0]) if parts else None
+        if not m or len(parts) < 3:
+            continue
+        try:
+            out.append((dt.date(int(m.group(1)), int(m.group(2)), 1), float(parts[1]), float(parts[2])))
+        except ValueError:
+            continue
+    return sorted(out)
+
+
+def bank_lending_rows(path: Path) -> list[dict]:
+    """SBV monthly average lending-rate min/max as macro_series rows, from the CSV
+    overlay that fetch_bank_lending.py maintains. Monthly (keyed to the 1st)."""
+    entries = load_bank_lending(path)
+    if not entries:
+        return []
+    rows: list[dict] = []
+    for d, lo, hi in entries:
+        rows.append({"metric": METRIC_LENDING_MIN, "date": d.isoformat(), "value": lo, "unit": "%", "source": "sbv"})
+        rows.append({"metric": METRIC_LENDING_MAX, "date": d.isoformat(), "value": hi, "unit": "%", "source": "sbv"})
+    last = entries[-1]
+    print(f"  Bank lending overlay: {len(entries)} month(s) from {path.name} "
+          f"({entries[0][0]} .. {last[0]}, last {last[1]:.1f}-{last[2]:.1f}%/năm)")
+    return rows
 
 
 def overlay_sbv_interbank(vietstock_rows: list[dict]) -> list[dict]:
@@ -458,6 +539,9 @@ def main():
 
         print(f"=== Backfill govt bond 10Y (ADB ABO): {GOVBOND_HISTORY_START} -> {end} ===")
         govbond_rows = collect_govbond(GOVBOND_HISTORY_START, end)
+
+        print("=== Bank rates (CafeF deposit snapshot + World Bank annual underlay) ===")
+        bank_rates_rows = collect_bank_rates(end)
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
@@ -492,14 +576,24 @@ def main():
         # self-heals any missed days, like the other collectors.
         print("Govt bond 10Y (recent):")
         govbond_rows = collect_govbond(end - dt.timedelta(days=21), end)
+        # Bank rates: today's all-bank deposit snapshot + WB annual underlay (cheap,
+        # idempotent). The monthly lending range comes from the CSV overlay below.
+        print("Bank rates (deposit snapshot + World Bank underlay):")
+        bank_rates_rows = collect_bank_rates(end)
+
+    # System-wide average lending rate (SBV monthly) — overlaid from the CSV that
+    # fetch_bank_lending.py maintains, re-asserted every run like the CPI overlay.
+    bank_lending = bank_lending_rows(BANK_LENDING_CSV)
 
     rows = (central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows
-            + omo_rows + sofr_rows + dxy_rows + foreign_rows + govbond_rows)
+            + omo_rows + sofr_rows + dxy_rows + foreign_rows + govbond_rows
+            + bank_rates_rows + bank_lending)
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
               f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi + {len(interbank_rows)} interbank "
               f"+ {len(omo_rows)} omo + {len(sofr_rows)} sofr + {len(dxy_rows)} dxy "
-              f"+ {len(foreign_rows)} foreign + {len(govbond_rows)} govbond = {len(rows)} rows "
+              f"+ {len(foreign_rows)} foreign + {len(govbond_rows)} govbond "
+              f"+ {len(bank_rates_rows)} bankrates + {len(bank_lending)} banklending = {len(rows)} rows "
               f"into macro_series, then recompute the FCI (skipped: it reads the written rows).")
         return
     if not rows:
@@ -513,7 +607,8 @@ def main():
           f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex, "
           f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank, {len(omo_rows)} omo, "
           f"{len(sofr_rows)} sofr, {len(dxy_rows)} dxy, {len(foreign_rows)} foreign, "
-          f"{len(govbond_rows)} govbond).")
+          f"{len(govbond_rows)} govbond, {len(bank_rates_rows)} bankrates, "
+          f"{len(bank_lending)} banklending).")
 
     since = None if args.backfill else end - dt.timedelta(days=FCI_REFRESH_DAYS)
     print(f"=== FCI (frozen W={FROZEN_FCI['window']}/{FROZEN_FCI['dxy_mode']}): "

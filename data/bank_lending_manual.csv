@@ -1,0 +1,9 @@
+# Vietnam system-wide AVERAGE LENDING RATE range (%/year), VND new + outstanding
+# loans, from SBV's monthly 'Diễn biến lãi suất' report (fetch_bank_lending.py).
+# Hand-fill any month the script can't resolve. Columns: month,min,max
+month,min,max
+2025-04,6.6,8.9
+2026-03,7.4,9.7
+2026-04,7.8,10.0
+2026-05,8.0,10.1
+2026-06,8.1,10.5

@@ -171,6 +171,21 @@ export const translations = {
       "The line is the yield (interest rate, % per year) on Vietnam's 10-year government bonds — what the government pays to borrow for ten years. It's the market's benchmark \"risk-free\" rate and moves with expectations for inflation, interest rates and how much investors want to be paid to hold long-dated debt. VN-Index is drawn on top for context. Source: AsianBondsOnline (ADB), based on Bloomberg data.",
     gbHowUse:
       "Rising long-term yields make bonds a more attractive alternative to stocks and raise the discount rate on future company earnings — usually a headwind for equities, especially richly-valued ones. Falling yields ease that pressure. Watch the trend and turning points rather than any single day.",
+    // Bank interest rates (deposit / lending / spread)
+    brTitle: "Bank interest rates",
+    brSubtitle:
+      "Average commercial-bank deposit vs lending rates and the spread between them — deposit = all-bank 12M board average (daily, CafeF); lending = system-wide average range (monthly, SBV); World Bank annual underlay for long-run context",
+    brNoData: "No bank-rate data yet. Run refresh_macro.py.",
+    brDeposit: "Deposit 12M avg",
+    brLending: "Lending avg (SBV)",
+    brLendingMid: "Lending mid",
+    brSpread: "Spread (lend−dep)",
+    brWb: "World Bank (annual)",
+    brRange: "Lending range",
+    brHowCalc:
+      "Two rates and the gap between them. The deposit line is the average 12-month savings rate across all listed banks (updated daily from bank boards). The lending band is the system-wide average lending rate on new and outstanding loans, which the central bank (SBV) reports once a month as a range (min–max) — the midpoint is drawn as a line. The spread is that lending midpoint minus the deposit rate: roughly how much banks earn between what they pay savers and charge borrowers. The faint dashed lines are the World Bank's annual figures back to 2000, for long-run context.",
+    brHowUse:
+      "A widening spread means banks are earning more on lending relative to deposits — supportive for bank-stock margins, but often a sign borrowing costs are running ahead of deposit rates. A narrowing spread squeezes bank margins. The deposit and lending levels themselves show where the cost of money sits: rising rates are a headwind for the broader market, falling rates a tailwind. The daily deposit series accumulates from launch (there is no history to backfill); lending updates monthly.",
     // External pressure (VND–SOFR spread)
     epHowCalc:
       "This compares the overnight interest rate on Vietnamese dong with the same overnight rate on US dollars (called SOFR) — in short, whether it is more expensive to borrow in dong or in dollars. The grey line behind is a measure of how strong the US dollar is worldwide. The coloured band flags how stretched the situation is.",
@@ -742,6 +757,21 @@ export const translations = {
       "Đường biểu diễn là lợi suất (lãi suất, %/năm) của trái phiếu Chính phủ Việt Nam kỳ hạn 10 năm — mức lãi Chính phủ phải trả khi vay trong mười năm. Đây là lãi suất \"phi rủi ro\" tham chiếu của thị trường, biến động theo kỳ vọng lạm phát, lãi suất và mức bù rủi ro cho việc nắm giữ nợ dài hạn. VN-Index vẽ chồng làm bối cảnh. Nguồn: AsianBondsOnline (ADB), dựa trên dữ liệu Bloomberg.",
     gbHowUse:
       "Lợi suất dài hạn tăng khiến trái phiếu hấp dẫn hơn so với cổ phiếu và nâng mức chiết khấu dòng lợi nhuận tương lai của doanh nghiệp — thường là lực cản cho cổ phiếu, nhất là nhóm định giá cao. Lợi suất giảm thì áp lực này dịu lại. Hãy nhìn xu hướng và các điểm đảo chiều thay vì từng phiên riêng lẻ.",
+    // Lãi suất ngân hàng (tiền gửi / cho vay / chênh lệch)
+    brTitle: "Lãi suất ngân hàng",
+    brSubtitle:
+      "Lãi suất tiền gửi và cho vay bình quân của các NHTM và chênh lệch giữa chúng — tiền gửi = bình quân 12 tháng toàn hệ thống (hằng ngày, CafeF); cho vay = khoảng bình quân toàn hệ thống (hằng tháng, NHNN); nền World Bank hằng năm làm bối cảnh dài hạn",
+    brNoData: "Chưa có dữ liệu lãi suất ngân hàng. Chạy refresh_macro.py.",
+    brDeposit: "Tiền gửi 12T BQ",
+    brLending: "Cho vay BQ (NHNN)",
+    brLendingMid: "Cho vay (trung bình)",
+    brSpread: "Chênh lệch (vay−gửi)",
+    brWb: "World Bank (năm)",
+    brRange: "Khoảng cho vay",
+    brHowCalc:
+      "Hai mức lãi suất và khoảng cách giữa chúng. Đường tiền gửi là lãi suất tiết kiệm kỳ hạn 12 tháng bình quân của tất cả ngân hàng niêm yết (cập nhật hằng ngày từ biểu lãi suất). Dải cho vay là lãi suất cho vay bình quân toàn hệ thống đối với dư nợ mới và cũ, do NHNN công bố mỗi tháng dưới dạng khoảng (thấp–cao) — đường giữa là trung điểm. Chênh lệch = trung điểm cho vay trừ lãi suất tiền gửi: xấp xỉ mức ngân hàng hưởng giữa lãi trả người gửi và lãi thu người vay. Các đường nét đứt mờ là số liệu năm của World Bank từ 2000, làm bối cảnh dài hạn.",
+    brHowUse:
+      "Chênh lệch nới rộng nghĩa là ngân hàng hưởng lợi nhiều hơn từ cho vay so với tiền gửi — hỗ trợ biên lợi nhuận cổ phiếu ngân hàng, nhưng thường là dấu hiệu chi phí vay tăng nhanh hơn lãi tiền gửi. Chênh lệch thu hẹp thì bóp biên lợi nhuận ngân hàng. Bản thân mức tiền gửi và cho vay cho biết chi phí vốn: lãi suất tăng là lực cản cho thị trường chung, lãi suất giảm là lực đẩy. Chuỗi tiền gửi hằng ngày tích lũy từ lúc khởi tạo (không có lịch sử để nạp lại); cho vay cập nhật hằng tháng.",
     // Áp lực bên ngoài (chênh lệch VND–SOFR)
     epHowCalc:
       "So sánh lãi suất vay qua đêm bằng tiền đồng với lãi suất vay qua đêm bằng USD (gọi là SOFR) — nói gọn là vay bằng đồng hay bằng đô đắt hơn. Đường xám phía sau đo sức mạnh của đồng USD trên toàn cầu. Dải màu cho biết tình hình đang căng đến mức nào.",
