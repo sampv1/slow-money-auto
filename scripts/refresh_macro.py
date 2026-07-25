@@ -92,6 +92,12 @@ BANK_LENDING_CSV = Path(__file__).resolve().parent.parent / "data" / "bank_lendi
 METRIC_LENDING_MIN = "bank_lending_avg_min"
 METRIC_LENDING_MAX = "bank_lending_avg_max"
 
+# Total market margin debt (quarterly, nghìn tỷ). Collected by fetch_margin_debt.py
+# into this CSV; refresh_macro overlays it each run (like CPI). Stored in macro_series
+# as billion VND (× 1000), keyed to quarter-end.
+MARGIN_DEBT_CSV = Path(__file__).resolve().parent.parent / "data" / "margin_debt_manual.csv"
+METRIC_MARGIN_DEBT = "margin_debt_total"
+
 # VN-Index is a context overlay on every macro chart, so its history must reach
 # back at least as far as the oldest primary series (interbank since 2015). We
 # backfill the full range vnstock offers (~2004-01) — independent of the FX
@@ -347,6 +353,37 @@ def bank_lending_rows(path: Path) -> list[dict]:
     return rows
 
 
+def _quarter_end(y: int, q: int) -> dt.date:
+    return {1: dt.date(y, 3, 31), 2: dt.date(y, 6, 30), 3: dt.date(y, 9, 30), 4: dt.date(y, 12, 31)}[q]
+
+
+def margin_debt_rows(path: Path) -> list[dict]:
+    """Total market margin debt as macro_series rows, from the CSV overlay that
+    fetch_margin_debt.py maintains. Quarterly (keyed to quarter-end); CSV is in
+    nghìn tỷ (trillion VND) → stored as billion VND (× 1000)."""
+    if not path.exists():
+        return []
+    pts: list[tuple[dt.date, float]] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.lower().startswith("quarter"):
+            continue
+        parts = [c.strip() for c in line.split(",")]
+        m = re.match(r"(20\d{2})-Q([1-4])$", parts[0]) if parts else None
+        if not m or len(parts) < 2:
+            continue
+        try:
+            pts.append((_quarter_end(int(m.group(1)), int(m.group(2))), float(parts[1]) * 1000.0))
+        except ValueError:
+            continue
+    if not pts:
+        return []
+    pts.sort()
+    print(f"  Margin debt overlay: {len(pts)} quarter(s) from {path.name} "
+          f"({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1] / 1000:.0f} nghìn tỷ)")
+    return series_rows(METRIC_MARGIN_DEBT, pts, "billion VND", "cafef-news")
+
+
 def overlay_sbv_interbank(vietstock_rows: list[dict]) -> list[dict]:
     """Overlay today's SBV-portal overnight point on the Vietstock rows.
 
@@ -584,16 +621,20 @@ def main():
     # System-wide average lending rate (SBV monthly) — overlaid from the CSV that
     # fetch_bank_lending.py maintains, re-asserted every run like the CPI overlay.
     bank_lending = bank_lending_rows(BANK_LENDING_CSV)
+    # Total market margin debt (quarterly) — overlaid from the CSV that
+    # fetch_margin_debt.py maintains, re-asserted every run like the CPI overlay.
+    margin_debt = margin_debt_rows(MARGIN_DEBT_CSV)
 
     rows = (central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows
             + omo_rows + sofr_rows + dxy_rows + foreign_rows + govbond_rows
-            + bank_rates_rows + bank_lending)
+            + bank_rates_rows + bank_lending + margin_debt)
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
               f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi + {len(interbank_rows)} interbank "
               f"+ {len(omo_rows)} omo + {len(sofr_rows)} sofr + {len(dxy_rows)} dxy "
               f"+ {len(foreign_rows)} foreign + {len(govbond_rows)} govbond "
-              f"+ {len(bank_rates_rows)} bankrates + {len(bank_lending)} banklending = {len(rows)} rows "
+              f"+ {len(bank_rates_rows)} bankrates + {len(bank_lending)} banklending "
+              f"+ {len(margin_debt)} margindebt = {len(rows)} rows "
               f"into macro_series, then recompute the FCI (skipped: it reads the written rows).")
         return
     if not rows:
@@ -608,7 +649,7 @@ def main():
           f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank, {len(omo_rows)} omo, "
           f"{len(sofr_rows)} sofr, {len(dxy_rows)} dxy, {len(foreign_rows)} foreign, "
           f"{len(govbond_rows)} govbond, {len(bank_rates_rows)} bankrates, "
-          f"{len(bank_lending)} banklending).")
+          f"{len(bank_lending)} banklending, {len(margin_debt)} margindebt).")
 
     since = None if args.backfill else end - dt.timedelta(days=FCI_REFRESH_DAYS)
     print(f"=== FCI (frozen W={FROZEN_FCI['window']}/{FROZEN_FCI['dxy_mode']}): "

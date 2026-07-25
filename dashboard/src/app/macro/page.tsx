@@ -10,6 +10,7 @@ import { ForeignFlowChart, type FfRow } from "./foreign-flow-chart";
 import { FciChart, type FciRegime, type FciRow } from "./fci-chart";
 import { BondYieldChart, type GbRow } from "./bond-yield-chart";
 import { BankRatesChart, type BrRow } from "./bank-rates-chart";
+import { MarginDebtChart, type MdRow } from "./margin-debt-chart";
 
 export const revalidate = 0;
 
@@ -81,7 +82,7 @@ async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCf
 const getMacroData = unstable_cache(
   async () => {
     const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, govbond10y,
-      bankDeposit12m, bankLendingMin, bankLendingMax, wbLending, wbDeposit,
+      bankDeposit12m, bankLendingMin, bankLendingMax, wbLending, wbDeposit, marginDebt,
       fciFull, fciCtbOn, fciCtbSpread, fciCtbOmo, fciCtbFx, fciCtbDxy, fciCtbForeign, fciCtbCpi, cfg] = await Promise.all([
       fetchMetricEntries("fx_central_rate"),
       fetchMetricEntries("fx_vcb_sell"),
@@ -105,6 +106,8 @@ const getMacroData = unstable_cache(
       fetchMetricEntries("bank_lending_avg_max"),
       fetchMetricEntries("wb_lending_rate"),
       fetchMetricEntries("wb_deposit_rate"),
+      // Total market margin debt (quarterly, billion VND) — standalone context panel.
+      fetchMetricEntries("margin_debt_total"),
       // Financial Conditions Index (frozen design) — written by refresh_macro.py.
       // Only the `full` variant is charted; `macro_fci_core` is still computed
       // and stored (validation artifact) but not fetched here. The seven
@@ -120,7 +123,7 @@ const getMacroData = unstable_cache(
       loadMacroConfig(),
     ] as const);
     return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, govbond10y,
-      bankDeposit12m, bankLendingMin, bankLendingMax, wbLending, wbDeposit,
+      bankDeposit12m, bankLendingMin, bankLendingMax, wbLending, wbDeposit, marginDebt,
       fciFull, fciCtbOn, fciCtbSpread, fciCtbOmo, fciCtbFx, fciCtbDxy, fciCtbForeign, fciCtbCpi, cfg };
   },
   ["macro-data"],
@@ -233,6 +236,7 @@ export default async function MacroPage() {
   let fciRows: FciRow[] = [];
   let gbRows: GbRow[] = [];
   let brRows: BrRow[] = [];
+  let mdRows: MdRow[] = [];
   let error: string | null = null;
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
@@ -322,6 +326,12 @@ export default async function MacroPage() {
         vnindex: vnAsof(date),
       };
     });
+
+    // Total market margin debt (quarterly): stored in billion VND → shown in nghìn
+    // tỷ (trillion, ÷1000). VN-Index aligned as-of. Standalone context panel.
+    mdRows = [...new Map(d.marginDebt).entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, v]) => ({ date, margin: v / 1000, vnindex: vnAsof(date) }));
 
     // External pressure: overnight VND–SOFR spread on the VNIBOR date grid.
     // SOFR (T+1, US calendar) and DXY are as-of joined — the last US print on
@@ -503,6 +513,20 @@ export default async function MacroPage() {
           <StubCard title={t(locale, "brTitle")} note={t(locale, "brNoData")} />
         ) : (
           <BankRatesChart rows={brRows} locale={locale} />
+        )}
+      </section>
+
+      <section className="mb-6">
+        <div className="mb-2">
+          <h2 className="text-base font-semibold">{t(locale, "mdTitle")}</h2>
+          <p className="text-xs text-gray-500">{t(locale, "mdSubtitle")}</p>
+        </div>
+        {error ? (
+          <p className="text-red-600 text-sm">Error loading margin-debt data: {error}</p>
+        ) : mdRows.length < 1 ? (
+          <StubCard title={t(locale, "mdTitle")} note={t(locale, "mdNoData")} />
+        ) : (
+          <MarginDebtChart rows={mdRows} locale={locale} />
         )}
       </section>
 

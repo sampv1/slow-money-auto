@@ -186,6 +186,17 @@ export const translations = {
       "Two rates and the gap between them. The deposit line is the average 12-month savings rate across all listed banks (updated daily from bank boards). The lending band is the system-wide average lending rate on new and outstanding loans, which the central bank (SBV) reports once a month as a range (min–max) — the midpoint is drawn as a line. The spread is that lending midpoint minus the deposit rate: roughly how much banks earn between what they pay savers and charge borrowers. The faint dashed lines are the World Bank's annual figures back to 2000, for long-run context.",
     brHowUse:
       "A widening spread means banks are earning more on lending relative to deposits — supportive for bank-stock margins, but often a sign borrowing costs are running ahead of deposit rates. A narrowing spread squeezes bank margins. The deposit and lending levels themselves show where the cost of money sits: rising rates are a headwind for the broader market, falling rates a tailwind. The daily deposit series accumulates from launch (there is no history to backfill); lending updates monthly.",
+    // Market margin debt (quarterly)
+    mdTitle: "Market margin debt",
+    mdSubtitle:
+      "Total margin-lending balance across all securities firms (nghìn tỷ VND) — quarterly, aggregated from broker financial statements; there is no daily figure. Source: financial press (CafeF)",
+    mdNoData: "No margin-debt data yet. Run fetch_margin_debt.py.",
+    mdLabel: "Margin debt",
+    mdUnit: "nghìn tỷ",
+    mdHowCalc:
+      "This is the total amount investors have borrowed from securities firms to buy stocks (margin debt), added up across the whole market, in nghìn tỷ đồng (trillion VND). Each broker only discloses its margin balance in its quarterly financial statements, so this is a quarterly figure — no daily number exists. The line breaks where quarters are missing (older history is sparse). VN-Index is drawn on top for context.",
+    mdHowUse:
+      "Rising margin debt means investors are taking on more leverage — it tends to climb in rallies and amplifies both gains and falls; record or fast-rising levels warn that a pullback could be sharper, as margin calls force selling. Falling margin debt signals deleveraging. Read it against the index: margin climbing faster than prices is a caution sign.",
     // External pressure (VND–SOFR spread)
     epHowCalc:
       "This compares the overnight interest rate on Vietnamese dong with the same overnight rate on US dollars (called SOFR) — in short, whether it is more expensive to borrow in dong or in dollars. The grey line behind is a measure of how strong the US dollar is worldwide. The coloured band flags how stretched the situation is.",
@@ -772,6 +783,17 @@ export const translations = {
       "Hai mức lãi suất và khoảng cách giữa chúng. Đường tiền gửi là lãi suất tiết kiệm kỳ hạn 12 tháng bình quân của tất cả ngân hàng niêm yết (cập nhật hằng ngày từ biểu lãi suất). Dải cho vay là lãi suất cho vay bình quân toàn hệ thống đối với dư nợ mới và cũ, do NHNN công bố mỗi tháng dưới dạng khoảng (thấp–cao) — đường giữa là trung điểm. Chênh lệch = trung điểm cho vay trừ lãi suất tiền gửi: xấp xỉ mức ngân hàng hưởng giữa lãi trả người gửi và lãi thu người vay. Các đường nét đứt mờ là số liệu năm của World Bank từ 2000, làm bối cảnh dài hạn.",
     brHowUse:
       "Chênh lệch nới rộng nghĩa là ngân hàng hưởng lợi nhiều hơn từ cho vay so với tiền gửi — hỗ trợ biên lợi nhuận cổ phiếu ngân hàng, nhưng thường là dấu hiệu chi phí vay tăng nhanh hơn lãi tiền gửi. Chênh lệch thu hẹp thì bóp biên lợi nhuận ngân hàng. Bản thân mức tiền gửi và cho vay cho biết chi phí vốn: lãi suất tăng là lực cản cho thị trường chung, lãi suất giảm là lực đẩy. Chuỗi tiền gửi hằng ngày tích lũy từ lúc khởi tạo (không có lịch sử để nạp lại); cho vay cập nhật hằng tháng.",
+    // Dư nợ margin toàn thị trường (theo quý)
+    mdTitle: "Dư nợ margin toàn thị trường",
+    mdSubtitle:
+      "Tổng dư nợ cho vay ký quỹ tại tất cả công ty chứng khoán (nghìn tỷ VND) — theo quý, tổng hợp từ báo cáo tài chính các CTCK; không có số liệu hằng ngày. Nguồn: báo chí tài chính (CafeF)",
+    mdNoData: "Chưa có dữ liệu dư nợ margin. Chạy fetch_margin_debt.py.",
+    mdLabel: "Dư nợ margin",
+    mdUnit: "nghìn tỷ",
+    mdHowCalc:
+      "Đây là tổng số tiền nhà đầu tư vay từ các công ty chứng khoán để mua cổ phiếu (dư nợ margin), cộng gộp toàn thị trường, đơn vị nghìn tỷ đồng. Mỗi CTCK chỉ công bố dư nợ trong báo cáo tài chính hằng quý, nên đây là số liệu theo quý — không có số hằng ngày. Đường bị ngắt ở những quý thiếu dữ liệu (lịch sử cũ còn thưa). VN-Index vẽ chồng làm bối cảnh.",
+    mdHowUse:
+      "Dư nợ margin tăng nghĩa là nhà đầu tư dùng đòn bẩy nhiều hơn — thường tăng trong sóng tăng và khuếch đại cả lãi lẫn lỗ; mức kỷ lục hoặc tăng nhanh cảnh báo nhịp điều chỉnh có thể mạnh hơn do bán giải chấp khi bị call margin. Dư nợ giảm là dấu hiệu giảm đòn bẩy. Hãy nhìn cùng chỉ số: margin tăng nhanh hơn giá là dấu hiệu thận trọng.",
     // Áp lực bên ngoài (chênh lệch VND–SOFR)
     epHowCalc:
       "So sánh lãi suất vay qua đêm bằng tiền đồng với lãi suất vay qua đêm bằng USD (gọi là SOFR) — nói gọn là vay bằng đồng hay bằng đô đắt hơn. Đường xám phía sau đo sức mạnh của đồng USD trên toàn cầu. Dải màu cho biết tình hình đang căng đến mức nào.",

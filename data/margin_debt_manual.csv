@@ -1,0 +1,33 @@
+# Vietnam TOTAL MARKET MARGIN DEBT ("dư nợ cho vay margin toàn thị trường"),
+# end-of-quarter, in TRILLION VND (nghìn tỷ). Aggregated by financial press from
+# securities companies' quarterly financial statements — QUARTERLY is the finest
+# grain published (no daily/monthly source exists). fetch_margin_debt.py keeps the
+# latest quarter current; hand-fill/verify older quarters here as needed.
+#
+# DEFINITION CAVEAT: the press headline "dư nợ margin toàn thị trường" sometimes means
+# pure margin (dư nợ cho vay ký quỹ) and sometimes margin + advance-on-sale (ứng trước
+# tiền bán); the two differ by ~10-15 nghìn tỷ. Values below use the reported HEADLINE
+# figure each quarter, so small definitional steps may exist — the TREND is reliable.
+#
+# Provenance (CafeF quarterly reports, verified 2026-07-25):
+#   [A]=article stated the total directly · [D]=derived from a stated QoQ delta
+#   2022-Q1 230 [A] "ước tính 230.000 tỷ vào cuối quý 1/2022"
+#   2024-Q4 245 [A] (+13 QoQ)  · 2024-Q3 232 [D] (245-13)
+#   2025-Q1 280 [A]  · 2025-Q2 300 [A] (+20 QoQ)
+#   2025-Q4 406 [A] (+23 QoQ, "chạm ngưỡng 400.000") · 2025-Q3 383 [D] (406-23)
+#   2026-Q1 415 [A] (record) · 2026-Q2 445 [A] ("gần 450.000"; 435 pure margin)
+#   2020-Q4 90 / 2021-Q4 193 [A, lower confidence — older, single-source]
+# GAP 2022-Q2 .. 2024-Q2: CafeF search does not index those market-total articles;
+#   hand-verify + fill if full continuity is needed. Columns: quarter,trillion_vnd
+quarter,trillion_vnd
+2020-Q4,90
+2021-Q4,193
+2022-Q1,230
+2024-Q3,232
+2024-Q4,245
+2025-Q1,280
+2025-Q2,300
+2025-Q3,383
+2025-Q4,406
+2026-Q1,415
+2026-Q2,445

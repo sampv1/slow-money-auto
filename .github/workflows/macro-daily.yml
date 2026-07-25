@@ -95,6 +95,20 @@ jobs:
             python fetch_bank_lending.py --upsert
           fi
 
+      # Total market margin debt (quarterly) from the CafeF "dư nợ margin toàn thị
+      # trường" report — aggregated from securities-company quarterly financials.
+      # --upsert writes margin_debt_total to macro_series; the ~2-quarter lookback
+      # picks up each new quarter ~3 weeks after quarter-end. Non-fatal: a not-yet-
+      # published quarter must never fail the pipeline, and older quarters persist
+      # in data/margin_debt_manual.csv (re-asserted by refresh_macro).
+      - name: Fetch margin debt (quarterly)
+        continue-on-error: true
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: python fetch_margin_debt.py --upsert
+
       # Expire the dashboard's server-side data cache so the next page view
       # shows today's series immediately (see dashboard /api/revalidate).
       # Non-fatal: if it fails, the cache TTL still refreshes within the hour.
