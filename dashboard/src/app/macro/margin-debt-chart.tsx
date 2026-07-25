@@ -21,9 +21,29 @@ const RANGE_DAYS: Record<Range, number> = { "3y": 1095, all: Infinity };
 
 const MD = "#7c3aed"; // violet — margin debt
 const VN_COLOR = "#2563eb"; // blue — VN-Index (context)
+const DIV_POS = "#ef4444"; // red — margin outpacing prices (leverage building)
+const DIV_NEG = "#10b981"; // emerald — margin lagging prices (deleveraging)
 const GAP_MS = 130 * 86400000; // > ~1 quarter apart ⇒ break the line
 
 const ms = (d: string) => new Date(d + "T00:00:00Z").getTime();
+
+// QoQ growth of margin vs VN-Index over consecutive quarters (gaps skipped).
+// `div` = margin growth − index growth, in percentage points: >0 means borrowing
+// grew faster than the market itself (leverage building).
+type Growth = { date: string; mQoQ: number; vQoQ: number; div: number };
+function growthOf(rows: MdRow[]): Growth[] {
+  const pts = rows.filter((r): r is MdRow & { margin: number } => r.margin !== null);
+  const out: Growth[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    if (ms(b.date) - ms(a.date) > GAP_MS) continue; // missing quarter — no valid QoQ
+    if (a.vnindex === null || b.vnindex === null || a.margin === 0 || a.vnindex === 0) continue;
+    const mQoQ = (b.margin / a.margin - 1) * 100;
+    const vQoQ = (b.vnindex / a.vnindex - 1) * 100;
+    out.push({ date: b.date, mQoQ, vQoQ, div: mQoQ - vQoQ });
+  }
+  return out;
+}
 
 export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Locale }) {
   const [range, setRange] = useState<Range>("all");
@@ -58,23 +78,39 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
     return { lo: lo - pad, hi: hi + pad };
   }, [view]);
 
+  // QoQ growth divergence (margin vs index) — the context that makes the level useful.
+  const growthView = useMemo(() => growthOf(view), [view]);
+  const growthAll = useMemo(() => growthOf(rows), [rows]);
+  const latestGrowth = growthAll.length ? growthAll[growthAll.length - 1] : null;
+
+  const divDom = useMemo(() => {
+    const vals = growthView.map((g) => g.div);
+    if (vals.length === 0) return { lo: -1, hi: 1 };
+    const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+    const pad = (hi - lo) * 0.15 || 1;
+    return { lo: lo - pad, hi: hi + pad };
+  }, [growthView]);
+
   if (rows.length < 1) {
     return <p className="text-sm text-gray-500">{t(locale, "mdNoData")}</p>;
   }
 
   const hasVn = view.some((r) => r.vnindex !== null);
+  const hasDiv = growthView.length > 0;
   const W = 900, mL = 44, mR = 16;
   const iw = W - mL - mR;
-  const vnTop = 18, vnH = 110;
+  const vnTop = 18, vnH = 100;
   const vnBlock = hasVn ? vnH + 28 : 0;
-  const top = 16 + vnBlock, h = 200;
-  const xLabelY = top + h + 16;
+  const top = 16 + vnBlock, h = hasDiv ? 160 : 200;
+  const divTop = top + h + 30, divH = 80;
+  const xLabelY = (hasDiv ? divTop + divH : top + h) + 16;
   const H = xLabelY + 6;
 
   const t0 = ms(view[0].date), t1 = ms(view[view.length - 1].date);
   const xAt = (d: string) => mL + (t1 <= t0 ? iw / 2 : ((ms(d) - t0) / (t1 - t0)) * iw);
   const yAt = (v: number) => top + (1 - (v - dom.lo) / (dom.hi - dom.lo)) * h;
   const yVn = (v: number) => vnTop + (1 - (v - vnDom.lo) / (vnDom.hi - vnDom.lo)) * vnH;
+  const yDiv = (v: number) => divTop + (1 - (v - divDom.lo) / (divDom.hi - divDom.lo)) * divH;
 
   // Margin line split into segments, broken where quarters are missing (>~1 quarter apart).
   const mdPts = view
@@ -101,6 +137,8 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
   for (let y = y0; y <= y1; y += yearStep) yearTicks.push(y);
 
   const fmtInt = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+  const fmtPp = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`; // percentage points (unit shown separately)
   const chg = latest && prev && latest.margin !== null && prev.margin !== null ? latest.margin - prev.margin : null;
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
@@ -125,20 +163,45 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
-        {latest && latest.margin !== null && (
-          <div>
-            <div className="text-xs text-gray-500">{t(locale, "mdLabel")} · {quarterOf(latest.date)}</div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-semibold font-mono" style={{ color: MD }}>{fmtInt(latest.margin)}</span>
-              <span className="text-sm text-gray-400">{t(locale, "mdUnit")}</span>
-              {chg !== null && Math.abs(chg) >= 1 && (
-                <span className={`text-xs font-mono ${chg > 0 ? "text-emerald-600" : "text-red-600"}`}>
-                  {chg > 0 ? "+" : ""}{fmtInt(chg)}
-                </span>
-              )}
+        <div className="flex flex-wrap items-end gap-5">
+          {latest && latest.margin !== null && (
+            <div>
+              <div className="text-xs text-gray-500">{t(locale, "mdLabel")} · {quarterOf(latest.date)}</div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-semibold font-mono" style={{ color: MD }}>{fmtInt(latest.margin)}</span>
+                <span className="text-sm text-gray-400">{t(locale, "mdUnit")}</span>
+                {chg !== null && Math.abs(chg) >= 1 && (
+                  <span className={`text-xs font-mono ${chg > 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    {chg > 0 ? "+" : ""}{fmtInt(chg)}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+          {/* the context that makes the level meaningful: growth vs the market */}
+          {latestGrowth && (
+            <>
+              <div>
+                <div className="text-xs text-gray-500">{t(locale, "mdQoQ")} · {t(locale, "mdVnQoQ")}</div>
+                <div className="text-lg font-semibold font-mono">
+                  <span style={{ color: MD }}>{fmtPct(latestGrowth.mQoQ)}</span>
+                  <span className="text-gray-300 mx-1.5">·</span>
+                  <span style={{ color: VN_COLOR }}>{fmtPct(latestGrowth.vQoQ)}</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500">{t(locale, "mdDivergence")}</div>
+                <div
+                  className="text-lg font-semibold font-mono"
+                  style={{ color: latestGrowth.div >= 0 ? DIV_POS : DIV_NEG }}
+                  title={t(locale, latestGrowth.div >= 0 ? "mdLeverageUp" : "mdLeverageDown")}
+                >
+                  {fmtPp(latestGrowth.div)}<span className="text-xs text-gray-400"> pp</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         <div className="flex gap-1">
           {(["3y", "all"] as Range[]).map((r) => (
             <button
@@ -159,6 +222,12 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: MD }} />{t(locale, "mdLabel")} ({t(locale, "mdUnit")})</span>
         {hasVn && <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: VN_COLOR }} />VN-Index</span>}
+        {hasDiv && (
+          <>
+            <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: DIV_POS }} />{t(locale, "mdLeverageUp")}</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: DIV_NEG }} />{t(locale, "mdLeverageDown")}</span>
+          </>
+        )}
       </div>
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => { setHover(null); setHoverY(null); }} role="img">
@@ -200,6 +269,34 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
           </g>
         ))}
 
+        {/* ---- divergence panel: margin QoQ growth − VN-Index QoQ growth (pp) ---- */}
+        {hasDiv && (
+          <>
+            <text x={mL} y={divTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "mdPanelDiv")}</text>
+            {[divDom.hi, 0, divDom.lo].map((v, k) => (
+              <g key={`dt${k}`}>
+                <line x1={mL} y1={yDiv(v)} x2={W - mR} y2={yDiv(v)} stroke={v === 0 ? "#e2e8f0" : "#f1f5f9"} strokeWidth={1} />
+                <text x={mL - 6} y={yDiv(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{v.toFixed(0)}</text>
+              </g>
+            ))}
+            {growthView.map((g) => {
+              const bw = Math.max(6, Math.min(26, iw / Math.max(growthView.length, 1) * 0.5));
+              const x = xAt(g.date);
+              return (
+                <rect
+                  key={`db${g.date}`}
+                  x={x - bw / 2}
+                  y={Math.min(yDiv(g.div), yDiv(0))}
+                  width={bw}
+                  height={Math.max(1, Math.abs(yDiv(g.div) - yDiv(0)))}
+                  fill={g.div >= 0 ? DIV_POS : DIV_NEG}
+                  opacity={0.85}
+                />
+              );
+            })}
+          </>
+        )}
+
         {/* year axis labels */}
         {yearTicks.map((y) => {
           const x = xAt(`${y}-01-01`);
@@ -212,12 +309,14 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
           const hx = xAt(hv.date);
           const anchor: "start" | "middle" | "end" = hx > W - mR - 200 ? "end" : hx < mL + 200 ? "start" : "middle";
           const tx = anchor === "end" ? W - mR : anchor === "start" ? mL : hx;
+          const g = growthView.find((x) => x.date === hv.date) ?? null;
           const parts: string[] = [quarterOf(hv.date)];
           if (hv.margin !== null) parts.push(`${t(locale, "mdLabel")} ${fmtInt(hv.margin)} ${t(locale, "mdUnit")}`);
           if (hasVn && hv.vnindex !== null) parts.push(`VNI ${fmtInt(hv.vnindex)}`);
+          if (g) parts.push(`${t(locale, "mdQoQ")} ${fmtPct(g.mQoQ)} vs ${fmtPct(g.vQoQ)} → ${fmtPp(g.div)}pp`);
           return (
             <g>
-              <line x1={hx} y1={hasVn ? vnTop : top} x2={hx} y2={top + h} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+              <line x1={hx} y1={hasVn ? vnTop : top} x2={hx} y2={hasDiv ? divTop + divH : top + h} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
               {hv.margin !== null && <circle cx={hx} cy={yAt(hv.margin)} r={3.5} fill={MD} />}
               {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
               <text x={tx} y={10} textAnchor={anchor} fontSize={10} fill="#0f172a" fontFamily="monospace">{parts.join(" · ")}</text>
@@ -231,6 +330,7 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
           let label: string | null = null;
           if (hasVn && hoverY >= vnTop && hoverY <= vnTop + vnH) label = fmtInt(inv(vnTop, vnH, vnDom.lo, vnDom.hi));
           else if (hoverY >= top && hoverY <= top + h) label = fmtInt(inv(top, h, dom.lo, dom.hi));
+          else if (hasDiv && hoverY >= divTop && hoverY <= divTop + divH) label = `${inv(divTop, divH, divDom.lo, divDom.hi).toFixed(1)}pp`;
           if (label === null) return null;
           return (
             <g>

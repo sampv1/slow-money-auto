@@ -193,10 +193,16 @@ export const translations = {
     mdNoData: "No margin-debt data yet. Run fetch_margin_debt.py.",
     mdLabel: "Margin debt",
     mdUnit: "nghìn tỷ",
+    mdQoQ: "QoQ",
+    mdVnQoQ: "VN-Index QoQ",
+    mdDivergence: "Divergence",
+    mdPanelDiv: "Margin growth − VN-Index growth (pp, QoQ)",
+    mdLeverageUp: "Leverage building faster than prices",
+    mdLeverageDown: "Leverage growing slower than prices",
     mdHowCalc:
-      "This is the total amount investors have borrowed from securities firms to buy stocks (margin debt), added up across the whole market, in nghìn tỷ đồng (trillion VND). Each broker only discloses its margin balance in its quarterly financial statements, so this is a quarterly figure — no daily number exists. The line breaks where quarters are missing (older history is sparse). VN-Index is drawn on top for context.",
+      "The top line is the total amount investors have borrowed from securities firms to buy stocks (margin debt), added up across the whole market, in nghìn tỷ đồng (trillion VND). Each broker only discloses its margin balance in its quarterly financial statements, so this is a quarterly figure — no daily number exists, and the line breaks where quarters are missing. The bottom panel compares how fast margin grew against how fast the VN-Index moved over the same quarter: it is margin growth minus index growth, in percentage points. Positive bars mean borrowing rose faster than the market itself.",
     mdHowUse:
-      "Rising margin debt means investors are taking on more leverage — it tends to climb in rallies and amplifies both gains and falls; record or fast-rising levels warn that a pullback could be sharper, as margin calls force selling. Falling margin debt signals deleveraging. Read it against the index: margin climbing faster than prices is a caution sign.",
+      "Margin debt on its own only tells you the market is bigger; what matters is whether leverage is outpacing prices. Positive bars (borrowing growing faster than the index) mean investors are adding risk faster than the market is rising — that is when a pullback tends to hurt more, because margin calls force selling into weakness. Negative bars mean deleveraging, or that gains are being driven by prices rather than borrowed money. Watch runs of large positive bars near record margin levels — that combination has historically preceded the sharpest corrections.",
     // External pressure (VND–SOFR spread)
     epHowCalc:
       "This compares the overnight interest rate on Vietnamese dong with the same overnight rate on US dollars (called SOFR) — in short, whether it is more expensive to borrow in dong or in dollars. The grey line behind is a measure of how strong the US dollar is worldwide. The coloured band flags how stretched the situation is.",
@@ -790,10 +796,16 @@ export const translations = {
     mdNoData: "Chưa có dữ liệu dư nợ margin. Chạy fetch_margin_debt.py.",
     mdLabel: "Dư nợ margin",
     mdUnit: "nghìn tỷ",
+    mdQoQ: "QoQ",
+    mdVnQoQ: "VN-Index QoQ",
+    mdDivergence: "Chênh lệch",
+    mdPanelDiv: "Tăng trưởng margin − VN-Index (điểm %, QoQ)",
+    mdLeverageUp: "Đòn bẩy tăng nhanh hơn giá",
+    mdLeverageDown: "Đòn bẩy tăng chậm hơn giá",
     mdHowCalc:
-      "Đây là tổng số tiền nhà đầu tư vay từ các công ty chứng khoán để mua cổ phiếu (dư nợ margin), cộng gộp toàn thị trường, đơn vị nghìn tỷ đồng. Mỗi CTCK chỉ công bố dư nợ trong báo cáo tài chính hằng quý, nên đây là số liệu theo quý — không có số hằng ngày. Đường bị ngắt ở những quý thiếu dữ liệu (lịch sử cũ còn thưa). VN-Index vẽ chồng làm bối cảnh.",
+      "Đường phía trên là tổng số tiền nhà đầu tư vay từ các công ty chứng khoán để mua cổ phiếu (dư nợ margin), cộng gộp toàn thị trường, đơn vị nghìn tỷ đồng. Mỗi CTCK chỉ công bố dư nợ trong báo cáo tài chính hằng quý, nên đây là số liệu theo quý — không có số hằng ngày, và đường bị ngắt ở những quý thiếu dữ liệu. Panel dưới so sánh tốc độ tăng của margin với mức biến động của VN-Index trong cùng quý: bằng tăng trưởng margin trừ tăng trưởng chỉ số, đơn vị điểm phần trăm. Cột dương nghĩa là dư nợ vay tăng nhanh hơn chính thị trường.",
     mdHowUse:
-      "Dư nợ margin tăng nghĩa là nhà đầu tư dùng đòn bẩy nhiều hơn — thường tăng trong sóng tăng và khuếch đại cả lãi lẫn lỗ; mức kỷ lục hoặc tăng nhanh cảnh báo nhịp điều chỉnh có thể mạnh hơn do bán giải chấp khi bị call margin. Dư nợ giảm là dấu hiệu giảm đòn bẩy. Hãy nhìn cùng chỉ số: margin tăng nhanh hơn giá là dấu hiệu thận trọng.",
+      "Bản thân dư nợ margin chỉ cho biết quy mô thị trường lớn lên; điều quan trọng là đòn bẩy có tăng nhanh hơn giá hay không. Cột dương (vay tăng nhanh hơn chỉ số) nghĩa là nhà đầu tư gia tăng rủi ro nhanh hơn đà tăng của thị trường — đó là lúc nhịp điều chỉnh thường đau hơn, vì call margin ép bán ra khi giá giảm. Cột âm nghĩa là đang giảm đòn bẩy, hoặc đà tăng đến từ giá chứ không phải tiền vay. Hãy chú ý chuỗi nhiều cột dương lớn khi dư nợ ở vùng kỷ lục — tổ hợp này trong lịch sử thường đi trước các nhịp giảm mạnh nhất.",
     // Áp lực bên ngoài (chênh lệch VND–SOFR)
     epHowCalc:
       "So sánh lãi suất vay qua đêm bằng tiền đồng với lãi suất vay qua đêm bằng USD (gọi là SOFR) — nói gọn là vay bằng đồng hay bằng đô đắt hơn. Đường xám phía sau đo sức mạnh của đồng USD trên toàn cầu. Dải màu cho biết tình hình đang căng đến mức nào.",
