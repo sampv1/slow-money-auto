@@ -161,6 +161,16 @@ export const translations = {
       "The line is the interest rate banks charge each other for overnight loans (Vietnam's interbank market, % per year) — a quick read on how expensive short-term cash is. The bars show the central bank adding cash to the banking system (green, \"bơm\") or draining it out (red, \"hút\"), in billion VND. VN-Index is drawn on top for context.",
     irHowUse:
       "When the overnight rate climbs, or the central bank keeps draining cash, money is getting tighter — usually a headwind for stocks. Falling rates and cash being added mean easier conditions, which tends to help. Look at the overall trend, not a single day.",
+    // 10-Year government bond yield
+    gbTitle: "10-Year government bond yield",
+    gbSubtitle:
+      "Vietnam 10Y local-currency government bond yield — the long-term risk-free anchor (Source: AsianBondsOnline/ADB, Bloomberg LP)",
+    gbYield: "10Y yield",
+    gbNoData: "No bond-yield data yet. Run refresh_macro.py.",
+    gbHowCalc:
+      "The line is the yield (interest rate, % per year) on Vietnam's 10-year government bonds — what the government pays to borrow for ten years. It's the market's benchmark \"risk-free\" rate and moves with expectations for inflation, interest rates and how much investors want to be paid to hold long-dated debt. VN-Index is drawn on top for context. Source: AsianBondsOnline (ADB), based on Bloomberg data.",
+    gbHowUse:
+      "Rising long-term yields make bonds a more attractive alternative to stocks and raise the discount rate on future company earnings — usually a headwind for equities, especially richly-valued ones. Falling yields ease that pressure. Watch the trend and turning points rather than any single day.",
     // External pressure (VND–SOFR spread)
     epHowCalc:
       "This compares the overnight interest rate on Vietnamese dong with the same overnight rate on US dollars (called SOFR) — in short, whether it is more expensive to borrow in dong or in dollars. The grey line behind is a measure of how strong the US dollar is worldwide. The coloured band flags how stretched the situation is.",
@@ -722,6 +732,16 @@ export const translations = {
       "Đường là lãi suất các ngân hàng cho nhau vay qua đêm (thị trường liên ngân hàng Việt Nam, %/năm) — cho biết nhanh tiền ngắn hạn đang đắt hay rẻ. Cột thể hiện ngân hàng trung ương bơm thêm tiền vào hệ thống (xanh) hay rút bớt ra (đỏ), tỷ VND. VN-Index vẽ chồng làm bối cảnh.",
     irHowUse:
       "Khi lãi suất qua đêm tăng, hoặc ngân hàng trung ương liên tục rút tiền, dòng tiền đang thắt lại — thường là lực cản với cổ phiếu. Lãi suất giảm và tiền được bơm thêm nghĩa là điều kiện dễ thở hơn, thường có lợi. Hãy nhìn xu hướng chung, đừng nhìn một phiên.",
+    // Lợi suất trái phiếu Chính phủ 10 năm
+    gbTitle: "Lợi suất TPCP 10 năm",
+    gbSubtitle:
+      "Lợi suất trái phiếu Chính phủ Việt Nam kỳ hạn 10 năm (nội tệ) — neo lãi suất phi rủi ro dài hạn (Nguồn: AsianBondsOnline/ADB, Bloomberg LP)",
+    gbYield: "Lợi suất 10 năm",
+    gbNoData: "Chưa có dữ liệu lợi suất. Chạy refresh_macro.py.",
+    gbHowCalc:
+      "Đường biểu diễn là lợi suất (lãi suất, %/năm) của trái phiếu Chính phủ Việt Nam kỳ hạn 10 năm — mức lãi Chính phủ phải trả khi vay trong mười năm. Đây là lãi suất \"phi rủi ro\" tham chiếu của thị trường, biến động theo kỳ vọng lạm phát, lãi suất và mức bù rủi ro cho việc nắm giữ nợ dài hạn. VN-Index vẽ chồng làm bối cảnh. Nguồn: AsianBondsOnline (ADB), dựa trên dữ liệu Bloomberg.",
+    gbHowUse:
+      "Lợi suất dài hạn tăng khiến trái phiếu hấp dẫn hơn so với cổ phiếu và nâng mức chiết khấu dòng lợi nhuận tương lai của doanh nghiệp — thường là lực cản cho cổ phiếu, nhất là nhóm định giá cao. Lợi suất giảm thì áp lực này dịu lại. Hãy nhìn xu hướng và các điểm đảo chiều thay vì từng phiên riêng lẻ.",
     // Áp lực bên ngoài (chênh lệch VND–SOFR)
     epHowCalc:
       "So sánh lãi suất vay qua đêm bằng tiền đồng với lãi suất vay qua đêm bằng USD (gọi là SOFR) — nói gọn là vay bằng đồng hay bằng đô đắt hơn. Đường xám phía sau đo sức mạnh của đồng USD trên toàn cầu. Dải màu cho biết tình hình đang căng đến mức nào.",

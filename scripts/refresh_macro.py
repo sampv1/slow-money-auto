@@ -67,6 +67,11 @@ from macro.external import (
     fetch_sofr_history,
 )
 from macro.foreign import FOREIGN_HISTORY_START, METRIC_FOREIGN_NET, fetch_foreign_net_history
+from macro.bond_yield import (
+    GOVBOND_HISTORY_START,
+    METRIC_GOVBOND_10Y,
+    fetch_govbond_10y_history,
+)
 
 # Manual CPI overlay (Vietstock CPI froze at 2025-08; GSO is VPN-gated to cloud IPs,
 # so newer months are hand-entered here — see data/cpi_manual.csv).
@@ -244,6 +249,21 @@ def collect_foreign(start: dt.date, end: dt.date) -> list[dict]:
     print(f"  Foreign net: {len(pts)} daily points"
           + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:,.0f} bn)" if pts else ""))
     return series_rows(METRIC_FOREIGN_NET, pts, "billion VND", "cafef")
+
+
+def collect_govbond(start: dt.date, end: dt.date) -> list[dict]:
+    """VN 10Y government bond yield (ADB AsianBondsOnline / Bloomberg, %/year)
+    over [start, end] as macro_series rows — the long-term risk-free anchor. A
+    failure never blocks other metrics (any error returns [] with a note). This
+    metric is a standalone /macro context panel; it is NOT an FCI input."""
+    try:
+        pts = fetch_govbond_10y_history(start, end)
+    except Exception as e:  # noqa: BLE001
+        print(f"  Govt bond 10Y fetch failed: {str(e)[:100]}")
+        return []
+    print(f"  Govt bond 10Y: {len(pts)} daily points"
+          + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:.2f}%)" if pts else ""))
+    return series_rows(METRIC_GOVBOND_10Y, pts, "%", "adb-abo")
 
 
 def overlay_sbv_interbank(vietstock_rows: list[dict]) -> list[dict]:
@@ -435,6 +455,9 @@ def main():
 
         print(f"=== Backfill foreign flows (CafeF): {FOREIGN_HISTORY_START} -> {end} ===")
         foreign_rows = collect_foreign(FOREIGN_HISTORY_START, end)
+
+        print(f"=== Backfill govt bond 10Y (ADB ABO): {GOVBOND_HISTORY_START} -> {end} ===")
+        govbond_rows = collect_govbond(GOVBOND_HISTORY_START, end)
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
@@ -464,15 +487,20 @@ def main():
         dxy_rows = collect_dxy(end - dt.timedelta(days=21), end)
         print("Foreign flows (recent):")
         foreign_rows = collect_foreign(end - dt.timedelta(days=21), end)
+        # Govt bond 10Y (ADB ABO): the year-granular `years` param means a recent
+        # window effectively re-fetches the current year (cheap, ~15 KB) and
+        # self-heals any missed days, like the other collectors.
+        print("Govt bond 10Y (recent):")
+        govbond_rows = collect_govbond(end - dt.timedelta(days=21), end)
 
     rows = (central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows
-            + omo_rows + sofr_rows + dxy_rows + foreign_rows)
+            + omo_rows + sofr_rows + dxy_rows + foreign_rows + govbond_rows)
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
               f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi + {len(interbank_rows)} interbank "
               f"+ {len(omo_rows)} omo + {len(sofr_rows)} sofr + {len(dxy_rows)} dxy "
-              f"+ {len(foreign_rows)} foreign = {len(rows)} rows into macro_series, "
-              f"then recompute the FCI (skipped: it reads the written rows).")
+              f"+ {len(foreign_rows)} foreign + {len(govbond_rows)} govbond = {len(rows)} rows "
+              f"into macro_series, then recompute the FCI (skipped: it reads the written rows).")
         return
     if not rows:
         print("Nothing to write.")
@@ -484,7 +512,8 @@ def main():
     print(f"Upserted {n} rows into macro_series "
           f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex, "
           f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank, {len(omo_rows)} omo, "
-          f"{len(sofr_rows)} sofr, {len(dxy_rows)} dxy, {len(foreign_rows)} foreign).")
+          f"{len(sofr_rows)} sofr, {len(dxy_rows)} dxy, {len(foreign_rows)} foreign, "
+          f"{len(govbond_rows)} govbond).")
 
     since = None if args.backfill else end - dt.timedelta(days=FCI_REFRESH_DAYS)
     print(f"=== FCI (frozen W={FROZEN_FCI['window']}/{FROZEN_FCI['dxy_mode']}): "

@@ -8,6 +8,7 @@ import { InterestRateChart, type IrRow } from "./interest-rate-chart";
 import { ExternalPressureChart, type EpRegime, type EpRow } from "./external-pressure-chart";
 import { ForeignFlowChart, type FfRow } from "./foreign-flow-chart";
 import { FciChart, type FciRegime, type FciRow } from "./fci-chart";
+import { BondYieldChart, type GbRow } from "./bond-yield-chart";
 
 export const revalidate = 0;
 
@@ -78,7 +79,7 @@ async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCf
 // macro pipeline via /api/revalidate (tag macro-data); TTL is a safety net.
 const getMacroData = unstable_cache(
   async () => {
-    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet,
+    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, govbond10y,
       fciFull, fciCtbOn, fciCtbSpread, fciCtbOmo, fciCtbFx, fciCtbDxy, fciCtbForeign, fciCtbCpi, cfg] = await Promise.all([
       fetchMetricEntries("fx_central_rate"),
       fetchMetricEntries("fx_vcb_sell"),
@@ -91,6 +92,9 @@ const getMacroData = unstable_cache(
       fetchMetricEntries("sofr"),
       fetchMetricEntries("dxy"),
       fetchMetricEntries("foreign_net_value"),
+      // 10Y government bond yield (ADB AsianBondsOnline) — standalone context
+      // panel, NOT an FCI input (frozen design).
+      fetchMetricEntries("govbond_10y"),
       // Financial Conditions Index (frozen design) — written by refresh_macro.py.
       // Only the `full` variant is charted; `macro_fci_core` is still computed
       // and stored (validation artifact) but not fetched here. The seven
@@ -105,7 +109,7 @@ const getMacroData = unstable_cache(
       fetchMetricEntries("macro_fci_ctb_cpi"),
       loadMacroConfig(),
     ] as const);
-    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet,
+    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, govbond10y,
       fciFull, fciCtbOn, fciCtbSpread, fciCtbOmo, fciCtbFx, fciCtbDxy, fciCtbForeign, fciCtbCpi, cfg };
   },
   ["macro-data"],
@@ -216,6 +220,7 @@ export default async function MacroPage() {
   let epRows: EpRow[] = [];
   let ffRows: FfRow[] = [];
   let fciRows: FciRow[] = [];
+  let gbRows: GbRow[] = [];
   let error: string | null = null;
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
@@ -269,6 +274,15 @@ export default async function MacroPage() {
     }));
     // CPI (monthly): VN-Index sampled at each month-end from the same series.
     cpiRows = buildCpiRows(cpiMom, cpiTargets).map((r) => ({ ...r, vnindex: vnAsof(monthEnd(r.date)) }));
+
+    // 10Y government bond yield (ADB AsianBondsOnline): its own daily date grid,
+    // VN-Index aligned as-of by day. Standalone context panel — NOT an FCI input.
+    const govbond = new Map(d.govbond10y);
+    gbRows = [...govbond.keys()].sort().map((date) => ({
+      date,
+      yield10y: govbond.get(date) ?? null,
+      vnindex: vnAsof(date),
+    }));
 
     // External pressure: overnight VND–SOFR spread on the VNIBOR date grid.
     // SOFR (T+1, US calendar) and DXY are as-of joined — the last US print on
@@ -422,6 +436,20 @@ export default async function MacroPage() {
           <StubCard title={t(locale, "macroInterestTitle")} note={t(locale, "macroInterestNoData")} />
         ) : (
           <InterestRateChart rows={irRows} locale={locale} />
+        )}
+      </section>
+
+      <section className="mb-6">
+        <div className="mb-2">
+          <h2 className="text-base font-semibold">{t(locale, "gbTitle")}</h2>
+          <p className="text-xs text-gray-500">{t(locale, "gbSubtitle")}</p>
+        </div>
+        {error ? (
+          <p className="text-red-600 text-sm">Error loading bond-yield data: {error}</p>
+        ) : gbRows.length < 2 ? (
+          <StubCard title={t(locale, "gbTitle")} note={t(locale, "gbNoData")} />
+        ) : (
+          <BondYieldChart rows={gbRows} locale={locale} />
         )}
       </section>
 
