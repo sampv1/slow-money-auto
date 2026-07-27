@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { CACHE_TTL_SECONDS, TAG_TA, fetchAllPaged } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { ScannerClient } from "./scanner-client";
+import { DataError } from "@/components/data-error";
 
 export const revalidate = 0;
 
@@ -119,7 +120,7 @@ export default async function ScannerPage({
     selectedDate = params.date && dates.includes(params.date) ? params.date : dates[0];
     if (selectedDate) data = await getScannerData(selectedDate);
   } catch (e) {
-    return <p className="text-red-600">Error loading scanner: {e instanceof Error ? e.message : String(e)}</p>;
+    return <DataError error={e} locale={locale} />;
   }
 
   if (!data || !selectedDate) {

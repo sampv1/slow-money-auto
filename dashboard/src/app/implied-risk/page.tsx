@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { CACHE_TTL_SECONDS, TAG_MACRO, TAG_TA, fetchAllPaged } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { ImpliedRiskStack, type IrRow } from "./ir-stack";
+import { DataError } from "@/components/data-error";
 
 export const revalidate = 0;
 
@@ -54,7 +55,7 @@ export default async function ImpliedRiskPage() {
     return (
       <div>
         {header}
-        <p className="text-red-600">Error loading implied risk: {e instanceof Error ? e.message : String(e)}</p>
+        <DataError error={e} locale={locale} />
       </div>
     );
   }

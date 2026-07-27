@@ -11,6 +11,7 @@ import { FciChart, type FciRegime, type FciRow } from "./fci-chart";
 import { BondYieldChart, type GbRow } from "./bond-yield-chart";
 import { BankRatesChart, type BrRow } from "./bank-rates-chart";
 import { MarginDebtChart, type MdRow } from "./margin-debt-chart";
+import { dataErrorDetail } from "@/lib/errors";
 
 export const revalidate = 0;
 
@@ -453,7 +454,9 @@ export default async function MacroPage() {
     const smoothed = applyHysteresis(rawRegime, regimeCfg.hysteresis_min_days);
     rows = base.map((r, i) => ({ ...r, regime: smoothed[i] }));
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    // Sanitised here, once, so all ten panels below stay short: an unhealthy
+    // Supabase answers with a whole HTML error page (see lib/errors.ts).
+    error = dataErrorDetail(e);
   }
 
   return (

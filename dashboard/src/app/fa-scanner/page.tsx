@@ -2,6 +2,7 @@ import type { FaScore } from "@/lib/fa";
 import { getFaQuarters, getFaRows, getUniverseLiquidity } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { FaScannerClient } from "./fa-scanner-client";
+import { DataError } from "@/components/data-error";
 
 export const revalidate = 0;
 
@@ -19,7 +20,11 @@ export default async function FaScannerPage({
   let selected: string | undefined;
   let rows: FaScore[] = [];
   let universe: { symbol: string; avg_volume_20d: number | null }[] = [];
-  let loadError: string | null = null;
+  // Hold the ERROR ITSELF, not its message: a failed head:true count query
+  // comes back with an empty message, and the old `string | null` + truthy
+  // check swallowed it — during the 2026-07-27 Supabase outage this page
+  // claimed "no data" instead of reporting that the source was down.
+  let loadError: unknown = null;
   try {
     // Distinct quarters (newest first) → dropdown options. Default = latest.
     quarters = await getFaQuarters();
@@ -31,7 +36,7 @@ export default async function FaScannerPage({
       [rows, universe] = await Promise.all([getFaRows(selected), getUniverseLiquidity()]);
     }
   } catch (e) {
-    loadError = e instanceof Error ? e.message : String(e);
+    loadError = e ?? new Error("unknown error");
   }
 
   const header = (
@@ -41,11 +46,11 @@ export default async function FaScannerPage({
     </div>
   );
 
-  if (loadError) {
+  if (loadError !== null) {
     return (
       <div>
         {header}
-        <p className="text-red-600">Error loading FA scanner: {loadError}</p>
+        <DataError error={loadError} locale={locale} />
       </div>
     );
   }

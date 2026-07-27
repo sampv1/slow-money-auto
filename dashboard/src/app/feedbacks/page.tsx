@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getFeedbacks } from "@/lib/cached-data";
 import { getUserRole } from "@/lib/supabase-server";
 import { getLocale, t } from "@/lib/i18n";
+import { DataError } from "@/components/data-error";
 
 export const revalidate = 0;
 
@@ -28,7 +29,7 @@ export default async function FeedbacksPage() {
     feedbacks = (await getFeedbacks()) as unknown as Feedback[];
   } catch (e) {
     return (
-      <p className="text-red-600">Error loading feedbacks: {e instanceof Error ? e.message : String(e)}</p>
+      <DataError error={e} locale={locale} />
     );
   }
 

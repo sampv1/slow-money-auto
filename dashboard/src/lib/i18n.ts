@@ -401,6 +401,10 @@ export const translations = {
     poweredBy: "Analysis written by Claude Opus 4.8",
     frontierModel: "World's most advanced reasoning AI",
 
+    // Data-load failures (see components/data-error.tsx)
+    dataUnavailable: "Data temporarily unavailable",
+    dataUnavailableHint: "The data source didn't respond. Please try again in a minute.",
+
     // Portfolio page (open + closed positions in one table)
     portfolio: "Portfolio",
     position: "position",
@@ -1001,6 +1005,10 @@ export const translations = {
     nextDay: "Ngày sau",
     poweredBy: "Phân tích được viết bởi Claude Opus 4.8",
     frontierModel: "AI suy luận tiên tiến nhất thế giới",
+
+    // Data-load failures (see components/data-error.tsx)
+    dataUnavailable: "Dữ liệu tạm thời không khả dụng",
+    dataUnavailableHint: "Nguồn dữ liệu không phản hồi. Vui lòng thử lại sau ít phút.",
 
     // Portfolio page (open + closed positions in one table)
     portfolio: "Danh mục",

@@ -5,6 +5,7 @@ import { getUserRole } from "@/lib/supabase-server";
 import type { Recommendation } from "@/lib/types";
 import { ACTIVE_STATUSES } from "@/lib/types";
 import { TradeActions } from "../signal-pro/trade-actions";
+import { DataError } from "@/components/data-error";
 
 export const revalidate = 0;
 
@@ -81,7 +82,7 @@ export default async function PortfolioPage({
         return b.trading_date.localeCompare(a.trading_date);
       });
   } catch (e) {
-    return <p className="text-red-600">Error loading portfolio: {e instanceof Error ? e.message : String(e)}</p>;
+    return <DataError error={e} locale={locale} />;
   }
 
   // Summary over the FILTERED rows, covering the WHOLE portfolio: an open

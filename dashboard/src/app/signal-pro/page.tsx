@@ -4,6 +4,7 @@ import { CACHE_TTL_SECONDS, TAG_TA, getFaRowsLatestPerSymbol } from "@/lib/cache
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import { SignalProClient } from "./signal-pro-client";
+import { DataError } from "@/components/data-error";
 
 export const revalidate = 0;
 
@@ -102,7 +103,11 @@ export default async function SignalProPage() {
   let universe: UniverseRow[] = [];
   let activeSymbols: string[] = [];
   let rows: Awaited<ReturnType<typeof getFaRowsLatestPerSymbol>> = [];
-  let loadError: string | null = null;
+  // Hold the ERROR ITSELF, not its message: a failed head:true count query
+  // comes back with an empty message, and the old `string | null` + truthy
+  // check swallowed it — during the 2026-07-27 Supabase outage this page
+  // claimed "no data" instead of reporting that the source was down.
+  let loadError: unknown = null;
   try {
     // FA rows + universe are independent → parallel. Both come from the data
     // cache when warm. activeSymbols is admin-only trade state, so it stays
@@ -124,7 +129,7 @@ export default async function SignalProPage() {
       })(),
     ]);
   } catch (e) {
-    loadError = e instanceof Error ? e.message : String(e);
+    loadError = e ?? new Error("unknown error");
   }
 
   const header = (
@@ -134,11 +139,11 @@ export default async function SignalProPage() {
     </div>
   );
 
-  if (loadError) {
+  if (loadError !== null) {
     return (
       <div>
         {header}
-        <p className="text-red-600">Error loading Signal Pro: {loadError}</p>
+        <DataError error={loadError} locale={locale} />
       </div>
     );
   }

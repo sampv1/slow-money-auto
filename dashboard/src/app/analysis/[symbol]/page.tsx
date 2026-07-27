@@ -10,6 +10,7 @@ import { ChartClient } from "./chart-client";
 import { FaSummary } from "./fa-summary";
 import { TaSearch } from "../ta-search";
 import { TradeActions } from "../../signal-pro/trade-actions";
+import { DataError } from "@/components/data-error";
 
 export const revalidate = 0;
 
@@ -179,7 +180,7 @@ export default async function SymbolDrillDown({
   try {
     data = await getSymbolData(symbol);
   } catch (e) {
-    return <p className="text-red-600">Error: {e instanceof Error ? e.message : String(e)}</p>;
+    return <DataError error={e} locale={locale} />;
   }
   const { candles, signals: allSignals, srLevels: allSrLevels, trendlines: allTrendlines, faRows, rsHist } = data;
 
