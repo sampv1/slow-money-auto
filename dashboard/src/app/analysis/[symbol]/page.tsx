@@ -2,12 +2,14 @@ import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { CACHE_TTL_SECONDS, TAG_FA, TAG_TA, fetchAllPaged, getActiveSymbols } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
+import { getUserRole } from "@/lib/supabase-server";
 import { formatPrice } from "@/lib/format";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import type { FaScore } from "@/lib/fa";
 import { ChartClient } from "./chart-client";
 import { FaSummary } from "./fa-summary";
 import { TaSearch } from "../ta-search";
+import { TradeActions } from "../../signal-pro/trade-actions";
 
 export const revalidate = 0;
 
@@ -144,20 +146,34 @@ export default async function SymbolDrillDown({
   const { ind, fq } = await searchParams;
   const symbol = raw.toUpperCase();
   const locale = await getLocale();
+  const isAdmin = (await getUserRole()) === "admin";
   const explicitSelection = ind !== undefined;
   let selected = (ind ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 
-  // Active universe for the header search box's autocomplete (best-effort — an
-  // empty list just means no suggestions, the free-text field still works).
-  let universe: string[] = [];
-  try {
-    universe = await getActiveSymbols();
-  } catch {
-    universe = [];
-  }
+  // Two independent reads → parallel:
+  //  - the active universe for the header search box's autocomplete
+  //    (best-effort — an empty list just means no suggestions, the free-text
+  //    field still works);
+  //  - admin only: does this symbol already have an open manual position? That
+  //    picks BUY vs SELL in the header (same rule as Signal Pro). Deliberately
+  //    UNCACHED so a trade shows up immediately on the router.refresh() that
+  //    TradeActions fires after a successful BUY/SELL.
+  const [universe, hasOpenPosition] = await Promise.all([
+    getActiveSymbols().catch((): string[] => []),
+    (async (): Promise<boolean> => {
+      if (!isAdmin) return false;
+      const { data } = await supabase
+        .from("recommendations")
+        .select("id")
+        .eq("symbol", symbol)
+        .in("status", ["OPEN", "TP1_HIT"])
+        .limit(1);
+      return (data ?? []).length > 0;
+    })(),
+  ]);
 
   let data: Awaited<ReturnType<typeof getSymbolData>>;
   try {
@@ -241,14 +257,20 @@ export default async function SymbolDrillDown({
           </div>
           <h1 className="text-2xl font-semibold shrink-0">{symbol}</h1>
         </div>
-        <div className="text-right shrink-0">
-          <div className="text-xl font-mono">{formatPrice(latest.close)}</div>
-          {dayChangePct !== null && (
-            <div className={`text-sm font-mono ${dayChangeColor}`}>
-              {dayChangePct >= 0 ? "+" : ""}{dayChangePct.toFixed(2)}%
-            </div>
-          )}
-          <div className="text-xs text-gray-500 font-mono">{latest.date}</div>
+        <div className="shrink-0 flex items-center gap-3 sm:gap-4">
+          {/* Admin-only paper-trade controls — identical behaviour to the
+              Signal Pro row buttons (BUY when flat, SELL when a position is
+              open; both open the same confirmation popup). */}
+          {isAdmin && <TradeActions symbol={symbol} isActive={hasOpenPosition} locale={locale} />}
+          <div className="text-right">
+            <div className="text-xl font-mono">{formatPrice(latest.close)}</div>
+            {dayChangePct !== null && (
+              <div className={`text-sm font-mono ${dayChangeColor}`}>
+                {dayChangePct >= 0 ? "+" : ""}{dayChangePct.toFixed(2)}%
+              </div>
+            )}
+            <div className="text-xs text-gray-500 font-mono">{latest.date}</div>
+          </div>
         </div>
       </div>
 

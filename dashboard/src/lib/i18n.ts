@@ -5,8 +5,7 @@ export const translations = {
     // Layout / Nav
     appName: "Lọc tín hiệu",
     navAnalysis: "Market",
-    navActive: "Active",
-    navHistory: "History",
+    navPortfolio: "Portfolio",
     navLogs: "Daily Logs",
     navStats: "Stats",
     navInput: "Input",
@@ -402,11 +401,12 @@ export const translations = {
     poweredBy: "Analysis written by Claude Opus 4.8",
     frontierModel: "World's most advanced reasoning AI",
 
-    // Active page
-    activePositions: "Active Positions",
+    // Portfolio page (open + closed positions in one table)
+    portfolio: "Portfolio",
     position: "position",
     positions: "positions",
-    noActivePositions: "No active positions. All recommendations are closed or no data yet.",
+    allPositions: "All positions",
+    noPositions: "No positions found.",
 
     // Table headers (shared)
     date: "Date",
@@ -417,6 +417,7 @@ export const translations = {
     tp1: "TP1",
     tp2: "TP2",
     current: "Current",
+    currentExit: "Current / Exit",
     pnl: "P&L",
     maxDd: "Max DD",
     rMultiple: "R",
@@ -431,12 +432,10 @@ export const translations = {
     trades: "Trades",
     avgR: "Avg R",
 
-    // History page
-    history: "History",
+    // Portfolio filters + summary
     recommendation: "recommendation",
     recommendations: "recommendations",
     symbolPlaceholder: "Symbol",
-    allClosed: "All Closed",
     allStatuses: "All Statuses",
     tp2Hit: "TP2 Hit",
     tp1Hit: "TP1 Hit",
@@ -447,7 +446,6 @@ export const translations = {
     reset: "Reset",
     winRate: "Win Rate",
     avgPnl: "Avg P&L",
-    noClosedRecs: "No closed recommendations found.",
 
     // Logs page
     dailyLogs: "Daily Logs",
@@ -608,8 +606,7 @@ export const translations = {
     // Layout / Nav
     appName: "Lọc tín hiệu",
     navAnalysis: "Thị trường",
-    navActive: "Đang nắm giữ",
-    navHistory: "Lịch sử",
+    navPortfolio: "Danh mục",
     navLogs: "Nhật ký",
     navStats: "Thống kê",
     navInput: "Nhập liệu",
@@ -1005,11 +1002,12 @@ export const translations = {
     poweredBy: "Phân tích được viết bởi Claude Opus 4.8",
     frontierModel: "AI suy luận tiên tiến nhất thế giới",
 
-    // Active page
-    activePositions: "Vị thế đang mở",
+    // Portfolio page (open + closed positions in one table)
+    portfolio: "Danh mục",
     position: "vị thế",
     positions: "vị thế",
-    noActivePositions: "Không có vị thế đang mở. Tất cả khuyến nghị đã đóng hoặc chưa có dữ liệu.",
+    allPositions: "Tất cả vị thế",
+    noPositions: "Không tìm thấy vị thế.",
 
     // Table headers (shared)
     date: "Ngày",
@@ -1020,6 +1018,7 @@ export const translations = {
     tp1: "Mục tiêu 1",
     tp2: "Mục tiêu 2",
     current: "Hiện tại",
+    currentExit: "Hiện tại / Giá ra",
     pnl: "Lãi/Lỗ",
     maxDd: "Mức lỗ tối đa",
     rMultiple: "R",
@@ -1034,12 +1033,10 @@ export const translations = {
     trades: "Lệnh",
     avgR: "TB R",
 
-    // History page
-    history: "Lịch sử",
+    // Portfolio filters + summary
     recommendation: "khuyến nghị",
     recommendations: "khuyến nghị",
     symbolPlaceholder: "Mã CK",
-    allClosed: "Tất cả đã đóng",
     allStatuses: "Tất cả trạng thái",
     tp2Hit: "Đạt mục tiêu 2",
     tp1Hit: "Đạt mục tiêu 1",
@@ -1050,7 +1047,6 @@ export const translations = {
     reset: "Đặt lại",
     winRate: "Tỷ lệ thắng",
     avgPnl: "TB lãi/lỗ",
-    noClosedRecs: "Không tìm thấy khuyến nghị đã đóng.",
 
     // Logs page
     dailyLogs: "Nhật ký giao dịch",
