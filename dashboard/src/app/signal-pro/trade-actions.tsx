@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
@@ -187,7 +188,15 @@ export function TradeActions({
         </button>
       </div>
 
-      {mode && (
+      {/* Portalled to <body> ON PURPOSE — do not inline it back into this tree.
+          An ancestor with backdrop-filter / filter / transform becomes the
+          containing block for position:fixed descendants, so `fixed inset-0`
+          would resolve against that ancestor instead of the viewport. The
+          Analysis page renders these buttons inside its sticky `backdrop-blur`
+          header (~50px tall), which centred the dialog in that strip and pushed
+          its top half off-screen. The portal also frees the overlay from the
+          header's z-20 stacking context. */}
+      {mode && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={cancel}>
           <div
             className="bg-white rounded-lg shadow-xl border border-gray-200 p-5 w-full max-w-md max-h-[90vh] overflow-y-auto"

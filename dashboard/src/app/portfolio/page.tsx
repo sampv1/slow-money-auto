@@ -22,6 +22,11 @@ export const revalidate = 0;
 
 const isOpen = (r: Recommendation) => (ACTIVE_STATUSES as string[]).includes(r.status);
 
+// The position's P&L as the table shows it: realized once the trade is closed,
+// mark-to-market while it's still running. The summary uses the SAME helper as
+// the P&L column, so a card can never disagree with the rows beneath it.
+const pnlOf = (r: Recommendation) => r.actual_pnl_pct ?? r.unrealized_pnl_pct;
+
 export default async function PortfolioPage({
   searchParams,
 }: {
@@ -79,13 +84,16 @@ export default async function PortfolioPage({
     return <p className="text-red-600">Error loading portfolio: {e instanceof Error ? e.message : String(e)}</p>;
   }
 
-  // Summary over the FILTERED rows. Win rate / avg P&L are realized-only
-  // (actual_pnl_pct), so an open position never flatters the track record.
+  // Summary over the FILTERED rows, covering the WHOLE portfolio: an open
+  // position counts at its current mark, a closed one at its realized result.
+  // So these read as "how the book stands today", not as a closed-trade track
+  // record — win rate and avg P&L will move with the market until every
+  // position is closed.
   const openCount = recommendations.filter(isOpen).length;
-  const withPnl = recommendations.filter((r) => r.actual_pnl_pct !== null);
-  const wins = withPnl.filter((r) => r.actual_pnl_pct! > 0);
+  const withPnl = recommendations.filter((r) => pnlOf(r) !== null);
+  const wins = withPnl.filter((r) => pnlOf(r)! > 0);
   const winRate = withPnl.length > 0 ? (wins.length / withPnl.length) * 100 : 0;
-  const avgPnl = withPnl.length > 0 ? withPnl.reduce((s, r) => s + r.actual_pnl_pct!, 0) / withPnl.length : 0;
+  const avgPnl = withPnl.length > 0 ? withPnl.reduce((s, r) => s + pnlOf(r)!, 0) / withPnl.length : 0;
 
   return (
     <div>
@@ -204,7 +212,7 @@ export default async function PortfolioPage({
                 const open = isOpen(rec);
                 // Realized figures once the trade is closed, live ones while it
                 // runs — the two old tables showed these in separate columns.
-                const pnl = rec.actual_pnl_pct ?? rec.unrealized_pnl_pct;
+                const pnl = pnlOf(rec);
                 const lastPrice = rec.actual_exit_price ?? rec.current_price;
                 const plan =
                   rec.holding_period_label ??
