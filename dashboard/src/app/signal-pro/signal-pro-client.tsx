@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, faNormalizedScore } from "@/lib/fa";
 import { supabase } from "@/lib/supabase";
@@ -12,7 +11,7 @@ import { CatalystDetail, type CatalystRow } from "./catalyst";
 import { TradeActions } from "./trade-actions";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
-type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol";
+type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol" | "quarter";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 
@@ -93,8 +92,6 @@ export function SignalProClient({
   rows,
   universe,
   locale,
-  quarters,
-  selectedQuarter,
   isAdmin = false,
   activeSymbols = [],
 }: {
@@ -116,20 +113,10 @@ export function SignalProClient({
     catalyst_score: number | null;
   }[];
   locale: Locale;
-  quarters: string[];
-  selectedQuarter: string;
   isAdmin?: boolean;
   activeSymbols?: string[];
 }) {
-  const router = useRouter();
-  // Pending state for the quarter switch: router.push does a server round-trip
-  // (getFaRows for the new quarter) with no built-in feedback, so isPending
-  // drives a spinner + dims the table until the new rows arrive.
-  const [isPending, startTransition] = useTransition();
   const activeSet = useMemo(() => new Set(activeSymbols), [activeSymbols]);
-  // Old quarters carry a FROZEN Final score (no TA detail) — for those we show
-  // only Symbol / FA Score / Final score. The full TA layout is latest-only.
-  const isLatestQuarter = quarters.length > 0 && selectedQuarter === quarters[0];
   // Reliable "as of" date: the most recent close-price date among displayed rows
   // (current_price_date is refreshed daily by the FA score job).
   const latestData = useMemo(() => {
@@ -183,11 +170,19 @@ export function SignalProClient({
     return m;
   }, [universe]);
 
-  // Final score: per-quarter value stored on the fa_scores row (frozen for old
-  // quarters; refreshed daily for the latest one).
+  // Final score: stored on each symbol's LATEST fa_scores row and refreshed
+  // every run against the current TA score (no per-quarter freeze).
   const finalBySymbol = useMemo(() => {
     const m = new Map<string, number | null>();
     for (const r of rows) m.set(r.symbol, r.final_score);
+    return m;
+  }, [rows]);
+
+  // The FA quarter each row comes from — symbols report on different schedules,
+  // so this is per-symbol, not a single page-wide quarter.
+  const quarterBySymbol = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) m.set(r.symbol, r.as_of_period);
     return m;
   }, [rows]);
 
@@ -303,6 +298,11 @@ export function SignalProClient({
       if (sortKey === "symbol") {
         av = a.symbol;
         bv = b.symbol;
+      } else if (sortKey === "quarter") {
+        // 'YYYY-Qn' sorts correctly as a plain string; symbol breaks ties so
+        // the (many) rows sharing a quarter keep a stable order.
+        av = `${a.as_of_period}|${a.symbol}`;
+        bv = `${b.as_of_period}|${b.symbol}`;
       } else {
         // total_score lives on the row; RS values come from the universe maps.
         // Nulls sort last regardless of direction.
@@ -377,23 +377,6 @@ export function SignalProClient({
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-4 mb-3">
         <label className="text-sm">
-          <span className="block text-gray-500 mb-1">{t(locale, "faQuarter")}</span>
-          <select
-            value={selectedQuarter}
-            disabled={isPending}
-            onChange={(e) => {
-              const q = e.target.value;
-              startTransition(() => router.push(`/signal-pro?q=${encodeURIComponent(q)}`));
-            }}
-            className="border border-gray-300 rounded px-2 py-1 disabled:opacity-60"
-          >
-            {quarters.map((q) => (
-              <option key={q} value={q}>{q}</option>
-            ))}
-          </select>
-          {isPending && <span className="ml-2 text-xs text-gray-400">{t(locale, "loading")}</span>}
-        </label>
-        <label className="text-sm">
           <span className="block text-gray-500 mb-1">{t(locale, "spMinFinalRating")}</span>
           <select
             value={rating}
@@ -439,55 +422,51 @@ export function SignalProClient({
           {t(locale, "faNoRows")}
         </div>
       ) : (
-        <div className={`bg-white rounded-lg border border-gray-200 overflow-x-auto${isPending ? " opacity-50 transition-opacity" : ""}`}>
+        <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               {/* Group row */}
               <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th rowSpan={isLatestQuarter ? 2 : 1} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
+                <th rowSpan={2} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
-                <th rowSpan={isLatestQuarter ? 2 : 1} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
+                {/* Each symbol is shown at its OWN latest FA quarter */}
+                <th rowSpan={2} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("quarter")}>
+                  {t(locale, "faQuarter")}{sortIndicator("quarter")}
+                </th>
+                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
                   {t(locale, "spFaScore")} (100){sortIndicator("total_score")}
                 </th>
-                {isLatestQuarter && (
-                  <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
-                    {t(locale, "spTaScore")} (100){sortIndicator("ta_score")}
-                  </th>
-                )}
-                <th rowSpan={isLatestQuarter ? 2 : 1} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none bg-amber-50" onClick={() => toggleSort("final_score")}>
+                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
+                  {t(locale, "spTaScore")} (100){sortIndicator("ta_score")}
+                </th>
+                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none bg-amber-50" onClick={() => toggleSort("final_score")}>
                   <div>{t(locale, "spFinalScore")} (100)</div>
                   <div className="text-xs font-normal text-gray-400">{t(locale, "spOverallGrade")}{sortIndicator("final_score")}</div>
                 </th>
-                {isLatestQuarter && (
-                  <>
-                    <th colSpan={3} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spTaComponents")}</th>
-                    <th colSpan={4} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
-                    <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom border-l border-gray-200" title={t(locale, "spCatalystTitle")}>{t(locale, "spCatalyst")}</th>
-                  </>
-                )}
+                <th colSpan={3} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spTaComponents")}</th>
+                <th colSpan={4} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
+                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom border-l border-gray-200" title={t(locale, "spCatalystTitle")}>{t(locale, "spCatalyst")}</th>
                 {isAdmin && (
-                  <th rowSpan={isLatestQuarter ? 2 : 1} className="px-4 py-2 font-medium text-right align-bottom border-l border-gray-200">{t(locale, "spTrade")}</th>
+                  <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom border-l border-gray-200">{t(locale, "spTrade")}</th>
                 )}
               </tr>
-              {/* Sub-header row (latest quarter only) */}
-              {isLatestQuarter && (
-                <tr className="border-b border-gray-200 text-left text-gray-500 text-xs">
-                  <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
-                    {t(locale, "taRs3m")}{sortIndicator("rs_3m")}
-                  </th>
-                  <th className="px-4 py-2 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
-                    {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
-                  </th>
-                  <th className="px-4 py-2 font-medium">{t(locale, "taRsLine")}</th>
-                  <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
-                    {t(locale, "spBaseScore")}{sortIndicator("base_score")}
-                  </th>
-                  <th className="px-4 py-2 font-medium">{t(locale, "spBaseChart")}</th>
-                  <th className="px-4 py-2 font-medium">{t(locale, "spBaseType")}</th>
-                  <th className="px-4 py-2 font-medium">{t(locale, "spBaseStatus")}</th>
-                </tr>
-              )}
+              {/* Sub-header row */}
+              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs">
+                <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
+                  {t(locale, "taRs3m")}{sortIndicator("rs_3m")}
+                </th>
+                <th className="px-4 py-2 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
+                  {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
+                </th>
+                <th className="px-4 py-2 font-medium">{t(locale, "taRsLine")}</th>
+                <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
+                  {t(locale, "spBaseScore")}{sortIndicator("base_score")}
+                </th>
+                <th className="px-4 py-2 font-medium">{t(locale, "spBaseChart")}</th>
+                <th className="px-4 py-2 font-medium">{t(locale, "spBaseType")}</th>
+                <th className="px-4 py-2 font-medium">{t(locale, "spBaseStatus")}</th>
+              </tr>
             </thead>
             <tbody>
               {filtered.map((row) => {
@@ -506,12 +485,13 @@ export function SignalProClient({
                         {row.symbol}
                       </Link>
                     </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">
+                      {quarterBySymbol.get(row.symbol) ?? row.as_of_period}
+                    </td>
                     <ScoreCell score={faNormalizedScore(row)} />
-                    {isLatestQuarter && <ScoreCell score={taScore} />}
+                    <ScoreCell score={taScore} />
                     <ScoreCell score={finalScore} highlight grade />
-                    {isLatestQuarter && (
-                      <>
-                        <td className="px-4 py-3 text-right font-mono border-l border-gray-100">{rs3m ?? "—"}</td>
+                    <td className="px-4 py-3 text-right font-mono border-l border-gray-100">{rs3m ?? "—"}</td>
                         <td className="px-4 py-3 text-right font-mono">{rs ?? "—"}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -585,9 +565,7 @@ export function SignalProClient({
                           ) : (
                             <span className="text-gray-300">—</span>
                           )}
-                        </td>
-                      </>
-                    )}
+                    </td>
                     {isAdmin && (
                       <td className="px-4 py-3 text-right border-l border-gray-100">
                         <TradeActions symbol={row.symbol} isActive={activeSet.has(row.symbol)} locale={locale} />

@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { CACHE_TTL_SECONDS, TAG_TA, getFaQuarters, getFaRows } from "@/lib/cached-data";
+import { CACHE_TTL_SECONDS, TAG_TA, getFaRowsLatestPerSymbol } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import { SignalProClient } from "./signal-pro-client";
@@ -92,30 +92,27 @@ async function getSignalProUniverse(): Promise<UniverseRow[]> {
   return chunks.flat();
 }
 
-export default async function SignalProPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ [key: string]: string | undefined }>;
-}) {
+export default async function SignalProPage() {
   const locale = await getLocale();
-  const params = await searchParams;
   const role = await getUserRole();
   const isAdmin = role === "admin";
 
   // Fetch inside try (data errors), render outside (lint: JSX in try/catch
   // wouldn't catch render errors anyway).
-  let quarters: string[] = [];
-  let selected: string | undefined;
   let universe: UniverseRow[] = [];
   let activeSymbols: string[] = [];
-  let rows: Awaited<ReturnType<typeof getFaRows>> = [];
+  let rows: Awaited<ReturnType<typeof getFaRowsLatestPerSymbol>> = [];
   let loadError: string | null = null;
   try {
-    // Quarters + universe are independent → parallel. Both come from the data
+    // FA rows + universe are independent → parallel. Both come from the data
     // cache when warm. activeSymbols is admin-only trade state, so it stays
     // uncached (must reflect a BUY/SELL immediately).
-    [quarters, universe, activeSymbols] = await Promise.all([
-      getFaQuarters(),
+    //
+    // Each symbol is shown at ITS OWN latest FA quarter (no global quarter
+    // selection): symbols report on different schedules, so pinning one quarter
+    // would hide most of the universe.
+    [rows, universe, activeSymbols] = await Promise.all([
+      getFaRowsLatestPerSymbol(),
       getSignalProUniverse(),
       (async (): Promise<string[]> => {
         if (!isAdmin) return [];
@@ -126,9 +123,6 @@ export default async function SignalProPage({
         return Array.from(new Set((active ?? []).map((r) => r.symbol as string)));
       })(),
     ]);
-
-    selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
-    if (selected) rows = await getFaRows(selected);
   } catch (e) {
     loadError = e instanceof Error ? e.message : String(e);
   }
@@ -149,7 +143,7 @@ export default async function SignalProPage({
     );
   }
 
-  if (!selected) {
+  if (rows.length === 0) {
     return (
       <div>
         {header}
@@ -167,8 +161,6 @@ export default async function SignalProPage({
         rows={rows}
         universe={universe}
         locale={locale}
-        quarters={quarters}
-        selectedQuarter={selected}
         isAdmin={isAdmin}
         activeSymbols={activeSymbols}
       />

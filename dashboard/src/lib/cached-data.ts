@@ -112,6 +112,35 @@ export const getFaRows = unstable_cache(
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
 );
 
+// --- Latest FA row per symbol ------------------------------------------------
+
+/**
+ * One FA row per symbol: that symbol's most recent `as_of_period`.
+ *
+ * Symbols file on different schedules (e.g. ~424 at 2026-Q2 while ~1,144 were
+ * still at 2026-Q1), so pinning a page to one global quarter hides most of the
+ * universe. This walks the quarters newest-first and keeps the first row seen
+ * for each symbol.
+ *
+ * Deliberately built on top of getFaRows(quarter) rather than one big query:
+ * each quarter stays its own cache entry (well under Vercel's 2 MB per-entry
+ * limit) and is reused by the FA scanner, which still browses by quarter.
+ */
+export async function getFaRowsLatestPerSymbol(): Promise<FaScore[]> {
+  const quarters = await getFaQuarters(); // newest-first
+  if (quarters.length === 0) return [];
+  const perQuarter = await Promise.all(quarters.map((q) => getFaRows(q)));
+  const bySymbol = new Map<string, FaScore>();
+  for (const rows of perQuarter) {
+    for (const r of rows) {
+      if (!bySymbol.has(r.symbol)) bySymbol.set(r.symbol, r); // newest wins
+    }
+  }
+  return [...bySymbol.values()].sort(
+    (a, b) => b.total_score - a.total_score || a.symbol.localeCompare(b.symbol),
+  );
+}
+
 // --- Universe liquidity (FA scanner's volume filter) ------------------------
 
 export const getUniverseLiquidity = unstable_cache(
