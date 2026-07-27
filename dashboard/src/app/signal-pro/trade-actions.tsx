@@ -300,7 +300,8 @@ export function TradeActions({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
