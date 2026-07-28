@@ -61,10 +61,14 @@ from macro.interest_rate import (
 from macro.omo import OMO_HISTORY_START, fetch_omo_history
 from macro.external import (
     DXY_HISTORY_START,
+    FED_TARGET_HISTORY_START,
     METRIC_DXY,
+    METRIC_FED_TARGET_LOWER,
+    METRIC_FED_TARGET_UPPER,
     METRIC_SOFR,
     SOFR_HISTORY_START,
     fetch_dxy_history,
+    fetch_fed_target_history,
     fetch_sofr_history,
 )
 from macro.foreign import FOREIGN_HISTORY_START, METRIC_FOREIGN_NET, fetch_foreign_net_history
@@ -242,6 +246,23 @@ def collect_sofr(start: dt.date, end: dt.date) -> list[dict]:
     print(f"  SOFR: {len(pts)} daily points"
           + (f" ({pts[0][0]} .. {pts[-1][0]}, last {pts[-1][1]:.2f}%)" if pts else ""))
     return series_rows(METRIC_SOFR, pts, "%", "fred")
+
+
+def collect_fed_target(start: dt.date, end: dt.date) -> list[dict]:
+    """FOMC federal funds target range (FRED DFEDTARL/DFEDTARU, %/year) over
+    [start, end] as macro_series rows — the U.S. policy-rate context for the
+    External-Pressure block. CONTEXT ONLY: never an FCI input (frozen design).
+    A failure never blocks other metrics."""
+    try:
+        lower, upper = fetch_fed_target_history(start, end)
+    except Exception as e:  # noqa: BLE001
+        print(f"  Fed target fetch failed: {str(e)[:100]}")
+        return []
+    print(f"  Fed target: {len(lower)}/{len(upper)} daily points (lower/upper)"
+          + (f" ({lower[0][0]} .. {lower[-1][0]}, last {lower[-1][1]:.2f}–{upper[-1][1]:.2f}%)"
+             if lower and upper else ""))
+    return (series_rows(METRIC_FED_TARGET_LOWER, lower, "%", "fred")
+            + series_rows(METRIC_FED_TARGET_UPPER, upper, "%", "fred"))
 
 
 def collect_dxy(start: dt.date, end: dt.date) -> list[dict]:
@@ -571,6 +592,9 @@ def main():
         print(f"=== Backfill DXY (Yahoo DX-Y.NYB): {DXY_HISTORY_START} -> {end} ===")
         dxy_rows = collect_dxy(DXY_HISTORY_START, end)
 
+        print(f"=== Backfill Fed target range (FRED DFEDTARL/U): {FED_TARGET_HISTORY_START} -> {end} ===")
+        fed_rows = collect_fed_target(FED_TARGET_HISTORY_START, end)
+
         print(f"=== Backfill foreign flows (CafeF): {FOREIGN_HISTORY_START} -> {end} ===")
         foreign_rows = collect_foreign(FOREIGN_HISTORY_START, end)
 
@@ -606,6 +630,11 @@ def main():
         sofr_rows = collect_sofr(end - dt.timedelta(days=21), end)
         print("DXY (recent):")
         dxy_rows = collect_dxy(end - dt.timedelta(days=21), end)
+        # Fed target range only moves on FOMC decision days (8/yr), but the
+        # series carries a value EVERY calendar day, so the same 21-day window
+        # both picks up a new decision and heals any missed days.
+        print("Fed target range (recent):")
+        fed_rows = collect_fed_target(end - dt.timedelta(days=21), end)
         print("Foreign flows (recent):")
         foreign_rows = collect_foreign(end - dt.timedelta(days=21), end)
         # Govt bond 10Y (ADB ABO): the year-granular `years` param means a recent
@@ -626,12 +655,13 @@ def main():
     margin_debt = margin_debt_rows(MARGIN_DEBT_CSV)
 
     rows = (central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows
-            + omo_rows + sofr_rows + dxy_rows + foreign_rows + govbond_rows
+            + omo_rows + sofr_rows + dxy_rows + fed_rows + foreign_rows + govbond_rows
             + bank_rates_rows + bank_lending + margin_debt)
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
               f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi + {len(interbank_rows)} interbank "
               f"+ {len(omo_rows)} omo + {len(sofr_rows)} sofr + {len(dxy_rows)} dxy "
+              f"+ {len(fed_rows)} fedtarget "
               f"+ {len(foreign_rows)} foreign + {len(govbond_rows)} govbond "
               f"+ {len(bank_rates_rows)} bankrates + {len(bank_lending)} banklending "
               f"+ {len(margin_debt)} margindebt = {len(rows)} rows "

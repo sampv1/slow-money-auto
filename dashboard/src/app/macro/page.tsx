@@ -82,7 +82,7 @@ async function loadMacroConfig(): Promise<{ bands: BandEntry[]; regime: RegimeCf
 // macro pipeline via /api/revalidate (tag macro-data); TTL is a safety net.
 const getMacroData = unstable_cache(
   async () => {
-    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, govbond10y,
+    const [central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, fedLower, fedUpper, foreignNet, govbond10y,
       bankDeposit12m, bankLendingMin, bankLendingMax, wbLending, wbDeposit, marginDebt,
       fciFull, fciCtbOn, fciCtbSpread, fciCtbOmo, fciCtbFx, fciCtbDxy, fciCtbForeign, fciCtbCpi, cfg] = await Promise.all([
       fetchMetricEntries("fx_central_rate"),
@@ -95,6 +95,10 @@ const getMacroData = unstable_cache(
       fetchMetricEntries("omo_withdraw"),
       fetchMetricEntries("sofr"),
       fetchMetricEntries("dxy"),
+      // FOMC target range (declared policy rate) — External-Pressure context
+      // only, deliberately NOT an FCI input (frozen design).
+      fetchMetricEntries("fed_target_lower"),
+      fetchMetricEntries("fed_target_upper"),
       fetchMetricEntries("foreign_net_value"),
       // 10Y government bond yield (ADB AsianBondsOnline) — standalone context
       // panel, NOT an FCI input (frozen design).
@@ -123,11 +127,15 @@ const getMacroData = unstable_cache(
       fetchMetricEntries("macro_fci_ctb_cpi"),
       loadMacroConfig(),
     ] as const);
-    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, foreignNet, govbond10y,
+    return { central, vcb, vn, cpiMom, interbankOn, omoNet, omoPump, omoWithdraw, sofr, dxy, fedLower, fedUpper, foreignNet, govbond10y,
       bankDeposit12m, bankLendingMin, bankLendingMax, wbLending, wbDeposit, marginDebt,
       fciFull, fciCtbOn, fciCtbSpread, fciCtbOmo, fciCtbFx, fciCtbDxy, fciCtbForeign, fciCtbCpi, cfg };
   },
-  ["macro-data"],
+  // v2: payload gained the Fed target range. Bumping the key matters — cached
+  // entries outlive a deploy, so without it the new code would read old-shape
+  // entries (no fedLower/fedUpper) for up to the TTL and the panel would
+  // silently not render. Bump again on any payload-shape change.
+  ["macro-data-v2"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
 );
 
@@ -341,6 +349,11 @@ export default async function MacroPage() {
     // below -1.5 deeply negative (the zone where SBV historically intervenes).
     const sofrAsof = asofSampler(sofr);
     const dxyAsof = asofSampler(dxy);
+    // Fed target range: as-of joined like SOFR/DXY. The FOMC only moves it on
+    // decision days, so the as-of value is a step function — exactly how the
+    // declared policy rate behaves between meetings.
+    const fedLoAsof = asofSampler(new Map(d.fedLower));
+    const fedHiAsof = asofSampler(new Map(d.fedUpper));
     epRows = [...interbankOn.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
       .flatMap(([date, vnibor]) => {
@@ -348,7 +361,10 @@ export default async function MacroPage() {
         if (s === null) return []; // before SOFR history begins (2018-04)
         const spread = Math.round((vnibor - s) * 100) / 100;
         const regime: EpRegime = spread >= 0 ? "positive" : spread >= -1.5 ? "mild" : "deep";
-        return [{ date, spread, vnibor, sofr: s, dxy: dxyAsof(date), vnindex: vnAsof(date), regime }];
+        return [{
+          date, spread, vnibor, sofr: s, dxy: dxyAsof(date), vnindex: vnAsof(date), regime,
+          fedLo: fedLoAsof(date), fedHi: fedHiAsof(date),
+        }];
       });
 
     // Financial Conditions Index: charted on the `full` (headline) variant's

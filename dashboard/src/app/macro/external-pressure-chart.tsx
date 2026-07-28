@@ -22,6 +22,11 @@ export type EpRow = {
   dxy: number | null;
   vnindex: number | null;
   regime: EpRegime;
+  // FOMC target range (declared policy rate), as-of joined. Null before the
+  // stored history begins, or if the pipeline hasn't fetched it yet — the
+  // panel hides itself rather than drawing an empty box.
+  fedLo: number | null;
+  fedHi: number | null;
 };
 
 type Range = "6m" | "1y" | "3y" | "all";
@@ -29,6 +34,7 @@ const RANGE_DAYS: Record<Range, number> = { "6m": 183, "1y": 365, "3y": 1095, al
 
 const VN_COLOR = "#2563eb"; // blue   — VN-Index (context)
 const DXY_COLOR = "#64748b"; // slate — DXY (context backdrop)
+const FED_COLOR = "#c2410c"; // orange — Fed target range (US policy rate)
 const SPREAD_COLOR = "#4f46e5"; // indigo — the spread line
 const DEEP_LINE = "#ef4444"; // red — the -1.5 intervention threshold
 
@@ -72,6 +78,18 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
     return { lo: lo - pad, hi: hi + pad };
   }, [view]);
 
+  const hasFed = useMemo(() => view.some((r) => r.fedLo !== null && r.fedHi !== null), [view]);
+
+  // Fed panel: anchor at 0 so the depth of a zero-rate stretch reads correctly
+  // (2015-2022 and 2020-2022 were literally 0-0.25%) — a floating baseline
+  // would make "at the floor" look like an ordinary low.
+  const fedDom = useMemo(() => {
+    const vals = view.flatMap((r) => (r.fedLo !== null && r.fedHi !== null ? [r.fedLo, r.fedHi] : []));
+    if (!vals.length) return { lo: 0, hi: 1 };
+    const hi = Math.max(...vals);
+    return { lo: 0, hi: hi + (hi * 0.12 || 0.5) };
+  }, [view]);
+
   // Spread panel: always include 0 and the -1.5 intervention line so the
   // regime bands stay visible whatever the window.
   const spDom = useMemo(() => {
@@ -86,14 +104,18 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
     return <p className="text-sm text-gray-500">{t(locale, "macroNoData")}</p>;
   }
 
-  // --- layout: VN-Index (optional) + DXY (context) + spread + ribbon, shared x ---
+  // --- layout: VN-Index (opt) + DXY + Fed target (opt) + spread + ribbon, shared x ---
+  // Fed sits with the other U.S. context series, directly above the spread it
+  // helps explain; the spread stays adjacent to the regime ribbon it drives.
   const W = 900, mL = 54, mR = 16;
   const iw = W - mL - mR;
   const vnTop = 18, vnH = 140;
   const vnBlock = hasVn ? vnH + 30 : 0;
   const dxyTop = 22 + vnBlock, dxyH = hasDxy ? 120 : 0;
   const dxyBlock = hasDxy ? dxyH + 30 : 0;
-  const spTop = dxyTop + dxyBlock, spH = 150;
+  const fedTop = dxyTop + dxyBlock, fedH = hasFed ? 110 : 0;
+  const fedBlock = hasFed ? fedH + 30 : 0;
+  const spTop = fedTop + fedBlock, spH = 150;
   const ribTop = spTop + spH + 22, ribH = 16;
   const xLabelY = ribTop + ribH + 15;
   const H = xLabelY + 6;
@@ -101,6 +123,7 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
   const xAt = (i: number) => mL + (n <= 1 ? 0 : (i / (n - 1)) * iw);
   const yVn = (v: number) => vnTop + (1 - (v - vnDom.lo) / (vnDom.hi - vnDom.lo)) * vnH;
   const yDxy = (v: number) => dxyTop + (1 - (v - dxyDom.lo) / (dxyDom.hi - dxyDom.lo)) * dxyH;
+  const yFed = (v: number) => fedTop + (1 - (v - fedDom.lo) / (fedDom.hi - fedDom.lo)) * fedH;
   const ySp = (v: number) => spTop + (1 - (v - spDom.lo) / (spDom.hi - spDom.lo)) * spH;
 
   const segsOf = (valOf: (r: EpRow) => number | null, yScale: (v: number) => number) => {
@@ -120,6 +143,31 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
   const dxySegs = hasDxy ? segsOf((r) => r.dxy, yDxy) : [];
   const spPoints = view.map((r, i) => `${xAt(i).toFixed(1)},${ySp(r.spread).toFixed(1)}`).join(" ");
 
+  // Fed target range: STEP interpolation, not linear. The rate holds flat
+  // between FOMC meetings and jumps on decision day; sloping from one meeting
+  // to the next would draw a gradual move the Fed never made. Each change emits
+  // a riser at the old level before the new level starts.
+  const fedStep = (valOf: (r: EpRow) => number | null): [number, number][] => {
+    const pts: [number, number][] = [];
+    let prev: number | null = null;
+    view.forEach((r, i) => {
+      const v = valOf(r);
+      if (v === null) return;
+      const x = xAt(i);
+      if (prev !== null && v !== prev) pts.push([x, yFed(prev)]);
+      pts.push([x, yFed(v)]);
+      prev = v;
+    });
+    return pts;
+  };
+  const fedHiPts = hasFed ? fedStep((r) => r.fedHi) : [];
+  const fedLoPts = hasFed ? fedStep((r) => r.fedLo) : [];
+  const asPoly = (pts: [number, number][]) => pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  // Band = upper edge forward, lower edge back — the 25bp corridor itself.
+  const fedBand = hasFed && fedHiPts.length && fedLoPts.length
+    ? asPoly(fedHiPts) + " " + asPoly([...fedLoPts].reverse())
+    : "";
+
   // Regime ribbon: merge contiguous same-regime days into one rect each.
   const ribbon: { x: number; w: number; regime: EpRegime }[] = [];
   for (let i = 0; i < n; ) {
@@ -133,6 +181,7 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
 
   const vnTicks = [vnDom.hi, (vnDom.lo + vnDom.hi) / 2, vnDom.lo];
   const dxyTicks = [dxyDom.hi, (dxyDom.lo + dxyDom.hi) / 2, dxyDom.lo];
+  const fedTicks = [fedDom.hi, fedDom.hi / 2, 0];
   const spTicks = [spDom.hi, 0, -1.5, spDom.lo];
   const xTickIdx = Array.from(
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
@@ -178,6 +227,9 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
             <div className="text-xs text-gray-400 mt-0.5 font-mono">
               VNIBOR {fmt2(latest.vnibor)}% · SOFR {fmt2(latest.sofr)}%
               {latest.dxy !== null && <> · DXY {fmt2(latest.dxy)}</>}
+              {latest.fedLo !== null && latest.fedHi !== null && (
+                <> · FED {fmt2(latest.fedLo)}–{fmt2(latest.fedHi)}%</>
+              )}
             </div>
           </div>
         )}
@@ -211,6 +263,7 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
             {" — "}
             {t(locale, "epHowUsePositive")}
           </>,
+          ...(hasFed ? [t(locale, "epHowFed")] : []),
         ]}
       />
 
@@ -263,6 +316,23 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
           </g>
         )}
 
+        {/* ---- Fed target range panel (US policy rate, declared by the FOMC) ---- */}
+        {hasFed && (
+          <g>
+            <text x={mL + 4} y={fedTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "epPanelFed")}</text>
+            {fedTicks.map((v, k) => (
+              <g key={`ft${k}`}>
+                <line x1={mL} y1={yFed(v)} x2={W - mR} y2={yFed(v)} stroke="#f1f5f9" strokeWidth={1} />
+                <text x={mL - 6} y={yFed(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmt2(v)}</text>
+              </g>
+            ))}
+            {/* the 25bp corridor, then both declared limits on top of it */}
+            <polygon points={fedBand} fill={FED_COLOR} opacity={0.18} />
+            <polyline points={asPoly(fedHiPts)} fill="none" stroke={FED_COLOR} strokeWidth={1.5} strokeLinejoin="round" />
+            <polyline points={asPoly(fedLoPts)} fill="none" stroke={FED_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeDasharray="3 2" />
+          </g>
+        )}
+
         {/* ---- spread panel: regime tint bands + refs + line ---- */}
         <text x={mL} y={spTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "epPanelSpread")}</text>
         <rect x={mL} y={spTop} width={iw} height={Math.max(0, ySp(0) - spTop)} fill={REGIME.positive.color} opacity={0.05} />
@@ -299,6 +369,7 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
             <line x1={hx} y1={hasVn ? vnTop : dxyTop} x2={hx} y2={ribTop + ribH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
             {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
             {hasDxy && hv.dxy !== null && <circle cx={hx} cy={yDxy(hv.dxy)} r={3} fill={DXY_COLOR} />}
+            {hasFed && hv.fedHi !== null && <circle cx={hx} cy={yFed(hv.fedHi)} r={3} fill={FED_COLOR} />}
             <circle cx={hx} cy={ySp(hv.spread)} r={3} fill={SPREAD_COLOR} />
             <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill="#0f172a" fontFamily="monospace">
               {hv.date} · Δ {fmtS2(hv.spread)} · {t(locale, REGIME[hv.regime].label)}
@@ -306,6 +377,7 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
             <text x={tipX} y={24} textAnchor={tipAnchor} fontSize={10} fill="#475569" fontFamily="monospace">
               VNIBOR {fmt2(hv.vnibor)} · SOFR {fmt2(hv.sofr)}
               {hv.dxy !== null && ` · DXY ${fmt2(hv.dxy)}`}
+              {hv.fedLo !== null && hv.fedHi !== null && ` · FED ${fmt2(hv.fedLo)}-${fmt2(hv.fedHi)}`}
               {hasVn && hv.vnindex !== null && ` · VNI ${fmtInt(hv.vnindex)}`}
             </text>
           </g>

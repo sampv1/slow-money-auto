@@ -1,4 +1,4 @@
-"""External (U.S.) series for the External-Pressure block — SOFR + DXY.
+"""External (U.S.) series for the External-Pressure block — SOFR, DXY, Fed target.
 
 * SOFR — overnight USD secured funding rate, the U.S. leg of the VND–SOFR
   spread. Source: FRED's keyless CSV endpoint (official NY Fed data, published
@@ -10,8 +10,21 @@
   collector is failure-tolerant: a broken day never blocks other metrics and
   self-heals inside the daily 21-day refresh window.
 
+* FED TARGET RANGE — the policy rate the FOMC actually *declares* (lower and
+  upper limits of the federal funds target range), from the same keyless FRED
+  CSV endpoint: series DFEDTARL / DFEDTARU, daily since 2008-12-16.
+  Deliberately the TARGET, not the effective rate (EFFR/DFF): the question the
+  panel answers is "where has the Fed set policy", and the target is a step
+  function that only moves on FOMC decision days, whereas EFFR wobbles daily
+  with market conditions. Both limits are stored so the chart can draw the
+  range as a band. (FRED also has DFEDTAR, the single pre-2008 target — not
+  fetched: the panel never reaches back that far.)
+
 The spread itself (VNIBOR ON − SOFR) is computed at view time on the dashboard
 (as-of join), like `% to ceiling` — no derived series is stored.
+
+NOTE: the Fed-target series is CONTEXT ONLY. It must never become an FCI input
+— the FCI design is frozen and its holdout already consumed.
 """
 
 import csv
@@ -25,19 +38,28 @@ from macro.exchange_rate import _UA
 
 METRIC_SOFR = "sofr"
 METRIC_DXY = "dxy"
+METRIC_FED_TARGET_LOWER = "fed_target_lower"
+METRIC_FED_TARGET_UPPER = "fed_target_upper"
 
 SOFR_HISTORY_START = dt.date(2018, 4, 1)  # series begins 2018-04-03
 DXY_HISTORY_START = dt.date(2015, 1, 1)   # match VNIBOR depth for full context
+# The target range exists from 2008-12-16, but the External-Pressure panel is
+# gated by SOFR (2018-04) and its deepest context series is DXY (2015), so
+# there is nothing to show before then — matching DXY keeps macro_series lean.
+FED_TARGET_HISTORY_START = dt.date(2015, 1, 1)
 
-FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SOFR"
+FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
+FRED_SERIES_SOFR = "SOFR"
+FRED_SERIES_FED_LOWER = "DFEDTARL"
+FRED_SERIES_FED_UPPER = "DFEDTARU"
 YAHOO_DXY = "https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB"
 
 
-def fetch_sofr_history(start: dt.date, end: dt.date) -> list[tuple[dt.date, float]]:
-    """SOFR (%/year) over [start, end] from FRED's keyless CSV.
+def _fred_series(series: str, start: dt.date, end: dt.date) -> list[tuple[dt.date, float]]:
+    """One FRED series (%/year) over [start, end] from the keyless CSV endpoint.
 
-    The endpoint always returns the full series (~35 KB) — fetched once and
-    sliced. Missing observations appear as '.' and are skipped.
+    The endpoint always returns the full series — fetched once and sliced.
+    Missing observations appear as '.' and are skipped.
 
     Transport is curl via subprocess with curl's DEFAULT User-Agent, NOT
     requests and NOT a browser UA: FRED sits behind Akamai, which stalls both
@@ -49,7 +71,7 @@ def fetch_sofr_history(start: dt.date, end: dt.date) -> list[tuple[dt.date, floa
     last_err = ""
     for _ in range(3):
         proc = subprocess.run(
-            ["curl", "-fsS", "-m", "60", FRED_CSV],
+            ["curl", "-fsS", "-m", "60", FRED_CSV.format(series=series)],
             capture_output=True, text=True,
         )
         if proc.returncode == 0 and proc.stdout.strip():
@@ -57,10 +79,10 @@ def fetch_sofr_history(start: dt.date, end: dt.date) -> list[tuple[dt.date, floa
             break
         last_err = (proc.stderr or f"exit {proc.returncode}").strip()[:120]
     if text is None:
-        raise RuntimeError(f"FRED SOFR: curl failed after retries: {last_err}")
+        raise RuntimeError(f"FRED {series}: curl failed after retries: {last_err}")
     out: list[tuple[dt.date, float]] = []
     for row in csv.DictReader(io.StringIO(text)):
-        raw = (row.get("SOFR") or "").strip()
+        raw = (row.get(series) or "").strip()
         if raw in ("", "."):
             continue
         try:
@@ -71,8 +93,27 @@ def fetch_sofr_history(start: dt.date, end: dt.date) -> list[tuple[dt.date, floa
         if start <= d <= end:
             out.append((d, v))
     if not out:
-        raise RuntimeError("FRED SOFR: no rows parsed — endpoint or format changed")
+        raise RuntimeError(f"FRED {series}: no rows parsed — endpoint or format changed")
     return out
+
+
+def fetch_sofr_history(start: dt.date, end: dt.date) -> list[tuple[dt.date, float]]:
+    """SOFR (%/year) over [start, end] from FRED's keyless CSV."""
+    return _fred_series(FRED_SERIES_SOFR, start, end)
+
+
+def fetch_fed_target_history(
+    start: dt.date, end: dt.date
+) -> tuple[list[tuple[dt.date, float]], list[tuple[dt.date, float]]]:
+    """(lower, upper) limits of the FOMC federal funds target range, %/year.
+
+    Two separate FRED series, fetched independently — they are published as one
+    decision, so a mismatch in coverage would be a source problem worth seeing
+    rather than silently papering over.
+    """
+    lower = _fred_series(FRED_SERIES_FED_LOWER, start, end)
+    upper = _fred_series(FRED_SERIES_FED_UPPER, start, end)
+    return lower, upper
 
 
 def fetch_dxy_history(start: dt.date, end: dt.date) -> list[tuple[dt.date, float]]:
