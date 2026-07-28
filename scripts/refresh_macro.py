@@ -72,6 +72,17 @@ from macro.external import (
     fetch_sofr_history,
 )
 from macro.foreign import FOREIGN_HISTORY_START, METRIC_FOREIGN_NET, fetch_foreign_net_history
+from macro.vnindex_ex import (
+    ENABLED as EXVIC_ENABLED,
+    EX_HISTORY_START,
+    METRIC_EX,
+    METRIC_WEIGHT,
+    compute_ex_series,
+    fetch_listed_shares,
+    hose_symbols,
+    latest_stored,
+    load_family,
+)
 from macro.bond_yield import (
     GOVBOND_HISTORY_START,
     METRIC_GOVBOND_10Y,
@@ -263,6 +274,43 @@ def collect_fed_target(start: dt.date, end: dt.date) -> list[dict]:
              if lower and upper else ""))
     return (series_rows(METRIC_FED_TARGET_LOWER, lower, "%", "fred")
             + series_rows(METRIC_FED_TARGET_UPPER, upper, "%", "fred"))
+
+
+def collect_vnindex_ex(end: dt.date, backfill: bool) -> list[dict]:
+    """VN-Index excluding the Vingroup family, as macro_series rows.
+
+    Backfill (or an unseeded table) rebuilds the whole history anchored to
+    VN-Index; otherwise the newest stored point anchors the chain and only NEW
+    dates are emitted, so history is never rewritten and each day's weights are
+    the point-in-time ones (see macro/vnindex_ex.py). CONTEXT ONLY: never an FCI
+    input (frozen design). A failure never blocks other metrics."""
+    if not EXVIC_ENABLED:
+        print("  VN-Index ex-VIC: disabled (MACRO_EXVIC=0) — skipped")
+        return []
+    try:
+        client = get_supabase_client()  # own client: nothing else needs one this early
+        family = load_family(client)
+        shares = fetch_listed_shares(hose_symbols(client))
+        anchor = None if backfill else latest_stored(client)
+        start = EX_HISTORY_START if anchor is None else dt.date.fromisoformat(anchor[0])
+        levels, weights, stats = compute_ex_series(client, shares, family, start, end, anchor)
+    except Exception as e:  # noqa: BLE001
+        print(f"  VN-Index ex-VIC fetch failed: {str(e)[:120]}")
+        return []
+    if stats.get("error"):
+        print(f"  VN-Index ex-VIC: {stats['error']} — skipped")
+        return []
+    if not levels and anchor is not None:
+        print(f"  VN-Index ex-VIC: up to date at {anchor[0]} — no new session")
+        return []
+    mode = "rebuild" if anchor is None else f"append from {anchor[0]}"
+    print(f"  VN-Index ex-VIC ({mode}, family {'+'.join(family)}): {len(levels)} new level(s), "
+          f"{len(weights)} weight(s) over {stats.get('universe', 0)} HOSE symbols"
+          + (f", {stats['skipped']} day(s) skipped as corporate-action artifacts" if stats.get("skipped") else "")
+          + (f" (last {levels[-1][0]} = {levels[-1][1]:,.2f}, family weight {weights[-1][1]:.2f}%)"
+             if levels and weights else ""))
+    return (series_rows(METRIC_EX, levels, "index", "computed")
+            + series_rows(METRIC_WEIGHT, weights, "%", "computed"))
 
 
 def collect_dxy(start: dt.date, end: dt.date) -> list[dict]:
@@ -595,6 +643,9 @@ def main():
         print(f"=== Backfill Fed target range (FRED DFEDTARL/U): {FED_TARGET_HISTORY_START} -> {end} ===")
         fed_rows = collect_fed_target(FED_TARGET_HISTORY_START, end)
 
+        print(f"=== Backfill VN-Index ex-VIC: {EX_HISTORY_START} -> {end} ===")
+        exvic_rows = collect_vnindex_ex(end, backfill=True)
+
         print(f"=== Backfill foreign flows (CafeF): {FOREIGN_HISTORY_START} -> {end} ===")
         foreign_rows = collect_foreign(FOREIGN_HISTORY_START, end)
 
@@ -635,6 +686,10 @@ def main():
         # both picks up a new decision and heals any missed days.
         print("Fed target range (recent):")
         fed_rows = collect_fed_target(end - dt.timedelta(days=21), end)
+        # Appends only sessions newer than the last stored point (self-seeds the
+        # full history if the metric is empty), so history is never rewritten.
+        print("VN-Index ex-VIC (append):")
+        exvic_rows = collect_vnindex_ex(end, backfill=False)
         print("Foreign flows (recent):")
         foreign_rows = collect_foreign(end - dt.timedelta(days=21), end)
         # Govt bond 10Y (ADB ABO): the year-granular `years` param means a recent
@@ -655,13 +710,13 @@ def main():
     margin_debt = margin_debt_rows(MARGIN_DEBT_CSV)
 
     rows = (central_rows + vcb_rows + vnindex_rows + cpi_rows + interbank_rows
-            + omo_rows + sofr_rows + dxy_rows + fed_rows + foreign_rows + govbond_rows
+            + omo_rows + sofr_rows + dxy_rows + fed_rows + exvic_rows + foreign_rows + govbond_rows
             + bank_rates_rows + bank_lending + margin_debt)
     if args.dry_run:
         print(f"[dry-run] would upsert {len(central_rows)} central + {len(vcb_rows)} vcb "
               f"+ {len(vnindex_rows)} vnindex + {len(cpi_rows)} cpi + {len(interbank_rows)} interbank "
               f"+ {len(omo_rows)} omo + {len(sofr_rows)} sofr + {len(dxy_rows)} dxy "
-              f"+ {len(fed_rows)} fedtarget "
+              f"+ {len(fed_rows)} fedtarget + {len(exvic_rows)} exvic "
               f"+ {len(foreign_rows)} foreign + {len(govbond_rows)} govbond "
               f"+ {len(bank_rates_rows)} bankrates + {len(bank_lending)} banklending "
               f"+ {len(margin_debt)} margindebt = {len(rows)} rows "
@@ -677,7 +732,9 @@ def main():
     print(f"Upserted {n} rows into macro_series "
           f"({len(central_rows)} central, {len(vcb_rows)} vcb, {len(vnindex_rows)} vnindex, "
           f"{len(cpi_rows)} cpi, {len(interbank_rows)} interbank, {len(omo_rows)} omo, "
-          f"{len(sofr_rows)} sofr, {len(dxy_rows)} dxy, {len(foreign_rows)} foreign, "
+          f"{len(sofr_rows)} sofr, {len(dxy_rows)} dxy, {len(fed_rows)} fedtarget, "
+          f"{len(exvic_rows)} exvic, "
+          f"{len(foreign_rows)} foreign, "
           f"{len(govbond_rows)} govbond, {len(bank_rates_rows)} bankrates, "
           f"{len(bank_lending)} banklending, {len(margin_debt)} margindebt).")
 

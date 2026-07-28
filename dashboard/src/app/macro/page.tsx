@@ -11,6 +11,8 @@ import { FciChart, type FciRegime, type FciRow } from "./fci-chart";
 import { BondYieldChart, type GbRow } from "./bond-yield-chart";
 import { BankRatesChart, type BrRow } from "./bank-rates-chart";
 import { MarginDebtChart, type MdRow } from "./margin-debt-chart";
+import { VnindexExChart, type ExRow } from "./vnindex-ex-chart";
+import { EXVIC_ENABLED } from "./exvic-flag";
 import { dataErrorDetail } from "@/lib/errors";
 
 export const revalidate = 0;
@@ -136,6 +138,39 @@ const getMacroData = unstable_cache(
   // entries (no fedLower/fedUpper) for up to the TTL and the panel would
   // silently not render. Bump again on any payload-shape change.
   ["macro-data-v2"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
+);
+
+// --- VN-Index ex-VIC (provisional panel) ------------------------------------
+//
+// Deliberately kept OUT of getMacroData. Its own cache entry means adding or
+// removing this feature never changes the shared payload's shape (no key bump,
+// no risk of the other panels going blank for a TTL), and its own read path
+// means a failure here can't take the page down with it. Same TAG_MACRO, so the
+// pipeline's existing revalidate call still refreshes it.
+//
+// Rows are assembled here rather than on the page so the cached unit holds only
+// what the chart needs (~580 points), not the full 5,600-point VN-Index series.
+// To remove the feature: delete this block, the import, and the section below.
+const getExVicData = unstable_cache(
+  async (): Promise<ExRow[]> => {
+    const [ex, weight, vni] = await Promise.all([
+      fetchMetricEntries("vnindex_ex_vic"),
+      fetchMetricEntries("vic_family_weight"),
+      fetchMetricEntries("vnindex"),
+    ]);
+    const wMap = new Map(weight);
+    const vMap = new Map(vni);
+    // The series is built only on dates where a VN-Index close exists, so an
+    // exact join is safe; null-tolerant anyway.
+    return ex.map(([date, level]) => ({
+      date,
+      ex: level,
+      vnindex: vMap.get(date) ?? null,
+      weight: wMap.get(date) ?? null,
+    }));
+  },
+  ["macro-exvic-v1"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
 );
 
@@ -475,6 +510,18 @@ export default async function MacroPage() {
     error = dataErrorDetail(e);
   }
 
+  // VN-Index ex-VIC — provisional panel, isolated on purpose (see getExVicData).
+  // Its own try/catch: a failure or a disabled flag hides just this panel and
+  // leaves every other one untouched.
+  let exRows: ExRow[] = [];
+  if (EXVIC_ENABLED) {
+    try {
+      exRows = await getExVicData();
+    } catch {
+      exRows = [];
+    }
+  }
+
   return (
     <div>
       {header}
@@ -564,6 +611,19 @@ export default async function MacroPage() {
           <ExternalPressureChart rows={epRows} locale={locale} />
         )}
       </section>
+
+      {/* VN-Index ex-VIC — provisional. Renders only when its own (isolated)
+          read produced data and the flag is on, so it self-hides rather than
+          showing an empty box. Remove this whole block to drop the feature. */}
+      {EXVIC_ENABLED && exRows.length >= 2 && (
+        <section className="mb-6">
+          <div className="mb-2">
+            <h2 className="text-base font-semibold">{t(locale, "exTitle")}</h2>
+            <p className="text-xs text-gray-500">{t(locale, "exSubtitle")}</p>
+          </div>
+          <VnindexExChart rows={exRows} locale={locale} />
+        </section>
+      )}
 
       <section className="mb-6">
         <div className="mb-2">
