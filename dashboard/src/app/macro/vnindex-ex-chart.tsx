@@ -44,26 +44,22 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
     return rows.filter((r) => ms(r.date) >= last - days * 86400000);
   }, [rows, range]);
 
-  // Both lines are REBASED TO 100 at the first date of the visible window —
-  // the subject of this chart is the gap between them, and two raw levels that
-  // only diverge after the anchor would hide it. Recomputed per range change.
-  const based = useMemo(() => {
-    const first = view.find((r) => r.vnindex !== null && r.ex > 0);
-    if (!first || first.vnindex === null) return [];
-    const e0 = first.ex, v0 = first.vnindex;
-    return view.map((r) => ({
-      date: r.date,
-      ex: (r.ex / e0) * 100,
-      vn: r.vnindex !== null ? (r.vnindex / v0) * 100 : null,
-      weight: r.weight,
-    }));
-  }, [view]);
+  // Plotted in INDEX POINTS, on one shared axis — NOT rebased to 100.
+  // The ex-VIC series is chained from the real VN-Index level at its 2024-03-28
+  // anchor, so its level is directly comparable to VN-Index (2026-07-28:
+  // 1,279.74 vs 1,680.62) and reads as "where the index would be had the VIC
+  // family been excluded since then". Rebasing per window would discard that
+  // and make the same day show a different number in every range.
+  const based = useMemo(
+    () => view.map((r) => ({ date: r.date, ex: r.ex, vn: r.vnindex, weight: r.weight })),
+    [view],
+  );
 
   const dom = useMemo(() => {
     const vals = based.flatMap((r) => (r.vn !== null ? [r.ex, r.vn] : [r.ex]));
-    if (vals.length === 0) return { lo: 90, hi: 110 };
+    if (vals.length === 0) return { lo: 0, hi: 1 };
     const lo = Math.min(...vals), hi = Math.max(...vals);
-    const pad = (hi - lo) * 0.08 || 2;
+    const pad = (hi - lo) * 0.08 || 10;
     return { lo: lo - pad, hi: hi + pad };
   }, [based]);
 
@@ -80,7 +76,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
     return <p className="text-sm text-gray-500">{t(locale, "macroNoData")}</p>;
   }
 
-  const W = 900, mL = 46, mR = 16;
+  const W = 900, mL = 52, mR = 16; // mL fits 4-digit index levels
   const iw = W - mL - mR;
   const top = 20, h = 190;
   const wTop = top + h + 34, wH = hasWeight ? 78 : 0;
@@ -103,9 +99,15 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
     .map((r) => ({ x: xAt(r.date), y: yW(r.weight) }));
 
   const last = based[based.length - 1];
-  const exRet = last.ex - 100;
-  const vnRet = last.vn !== null ? last.vn - 100 : null;
-  const spread = vnRet !== null ? vnRet - exRet : null;
+  // Point gap = how many index points of VN-Index are the VIC family's doing
+  // since the anchor. Returns are measured over the VISIBLE window, so they
+  // answer "what has each done lately" independently of the anchor.
+  const gapPts = last.vn !== null ? last.vn - last.ex : null;
+  const firstWithVn = based.find((r) => r.vn !== null && r.ex > 0);
+  const exRet = firstWithVn ? (last.ex / firstWithVn.ex - 1) * 100 : null;
+  const vnRet = firstWithVn && firstWithVn.vn !== null && last.vn !== null
+    ? (last.vn / firstWithVn.vn - 1) * 100 : null;
+  const spread = exRet !== null && vnRet !== null ? vnRet - exRet : null;
   const latestWeight = [...based].reverse().find((r) => r.weight !== null)?.weight ?? null;
 
   const yTicks = [dom.hi, (dom.lo + dom.hi) / 2, dom.lo];
@@ -115,7 +117,8 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
   const yearTicks: number[] = [];
   for (let y = y0; y <= y1; y += yearStep) yearTicks.push(y);
 
-  const fmt1 = (v: number) => v.toFixed(1);
+  const fmt1 = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const fmt2 = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
@@ -137,26 +140,39 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         <div className="flex flex-wrap items-end gap-5">
           <div>
-            <div className="text-xs text-gray-500">{t(locale, "exTitle")} · {last.date}</div>
+            <div className="text-xs text-gray-500">{t(locale, "exLegend")} · {last.date}</div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-semibold font-mono" style={{ color: EX_COLOR }}>{fmtPct(exRet)}</span>
-              {vnRet !== null && (
+              <span className="text-2xl font-semibold font-mono" style={{ color: EX_COLOR }}>{fmt2(last.ex)}</span>
+              {last.vn !== null && (
                 <>
-                  <span className="text-gray-300">vs</span>
-                  <span className="text-lg font-semibold font-mono" style={{ color: VN_COLOR }}>{fmtPct(vnRet)}</span>
+                  <span className="text-xs text-gray-400">vs VN-Index</span>
+                  <span className="text-lg font-semibold font-mono" style={{ color: VN_COLOR }}>{fmt2(last.vn)}</span>
                 </>
               )}
             </div>
           </div>
-          {spread !== null && (
+          {gapPts !== null && (
             <div>
               <div className="text-xs text-gray-500">{t(locale, "exSpread")}</div>
               <div
                 className="text-lg font-semibold font-mono"
-                style={{ color: spread >= 0 ? "#ef4444" : "#10b981" }}
-                title={t(locale, spread >= 0 ? "exSpreadUp" : "exSpreadDown")}
+                style={{ color: gapPts >= 0 ? "#ef4444" : "#10b981" }}
+                title={t(locale, gapPts >= 0 ? "exSpreadUp" : "exSpreadDown")}
               >
-                {spread >= 0 ? "+" : ""}{spread.toFixed(1)}<span className="text-xs text-gray-400"> pp</span>
+                {gapPts >= 0 ? "+" : ""}{fmt2(gapPts)}<span className="text-xs text-gray-400"> {t(locale, "exPts")}</span>
+              </div>
+            </div>
+          )}
+          {exRet !== null && vnRet !== null && (
+            <div>
+              <div className="text-xs text-gray-500">{t(locale, "exWindowRet")}</div>
+              <div className="text-lg font-semibold font-mono">
+                <span style={{ color: EX_COLOR }}>{fmtPct(exRet)}</span>
+                <span className="text-gray-300 mx-1.5">·</span>
+                <span style={{ color: VN_COLOR }}>{fmtPct(vnRet)}</span>
+                {spread !== null && (
+                  <span className="text-xs text-gray-400 ml-1.5">({spread >= 0 ? "+" : ""}{spread.toFixed(1)}pp)</span>
+                )}
               </div>
             </div>
           )}
@@ -198,14 +214,10 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
         <text x={mL} y={top - 6} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "exPanelIndex")}</text>
         {yTicks.map((v, k) => (
           <g key={`y${k}`}>
-            <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke={Math.abs(v - 100) < 0.01 ? "#e2e8f0" : "#f1f5f9"} strokeWidth={1} />
+            <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke="#f1f5f9" strokeWidth={1} />
             <text x={mL - 6} y={yAt(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmt1(v)}</text>
           </g>
         ))}
-        {/* the 100 baseline: everything is read as distance from it */}
-        {dom.lo < 100 && dom.hi > 100 && (
-          <line x1={mL} y1={yAt(100)} x2={W - mR} y2={yAt(100)} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="4 3" />
-        )}
         {vnPts.length > 1 && <polyline points={line(vnPts)} fill="none" stroke={VN_COLOR} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />}
         {exPts.length > 1 && <polyline points={line(exPts)} fill="none" stroke={EX_COLOR} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />}
 
@@ -241,8 +253,9 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
           const anchor: "start" | "middle" | "end" = hx > W - mR - 210 ? "end" : hx < mL + 210 ? "start" : "middle";
           const tx = anchor === "end" ? W - mR : anchor === "start" ? mL : hx;
           const parts: string[] = [hv.date];
-          if (hv.vn !== null) parts.push(`VNI ${fmtPct(hv.vn - 100)}`);
-          parts.push(`${t(locale, "exLegend")} ${fmtPct(hv.ex - 100)}`);
+          if (hv.vn !== null) parts.push(`VNI ${fmt2(hv.vn)}`);
+          parts.push(`${t(locale, "exLegend")} ${fmt2(hv.ex)}`);
+          if (hv.vn !== null) parts.push(`${t(locale, "exSpread")} ${fmt2(hv.vn - hv.ex)}`);
           if (hv.weight !== null) parts.push(`${t(locale, "exWeightLabel")} ${hv.weight.toFixed(1)}%`);
           return (
             <g>

@@ -90,12 +90,14 @@ export const translations = {
     exSpreadUp: "VN-Index is being carried by the VIC family",
     exSpreadDown: "The rest of the market is outperforming the VIC family",
     exWeightLabel: "VIC family weight",
-    exPanelIndex: "Rebased to 100 at window start",
+    exPanelIndex: "Index points",
+    exPts: "pts",
+    exWindowRet: "Return over window",
     exPanelWeight: "VIC family % of HOSE market cap",
     exHowCalc:
       "Calculation: an index return is the cap-weighted mean of its members. Subtract the VIC family's contribution and re-normalise — r_ex = (r_VNI − Σ w·r_family) / (1 − Σ w) — then chain daily.",
     exHowUse:
-      "Read the gap: when VN-Index rises and ex-VIC doesn't, the move is Vingroup, not the market. Both lines start at 100 on the left edge of the window you pick.",
+      "Read the gap: when VN-Index rises and ex-VIC doesn't, the move is Vingroup, not the market. Both lines are in index points on one axis — the ex-VIC line is chained from VN-Index's own level on 2024-03-28, so it reads as where the index would stand had the family been excluded since then.",
     exHowEstimate:
       "Estimated, not official. HOSE publishes no ex-issuer index; share counts are known only as of today, so weights in the backfilled history carry a small bias. History starts 2024-03-28.",
     epTitle: "External pressure",
@@ -716,12 +718,14 @@ export const translations = {
     exSpreadUp: "VN-Index đang được họ VIC kéo lên",
     exSpreadDown: "Phần còn lại của thị trường đang tốt hơn họ VIC",
     exWeightLabel: "Tỷ trọng họ VIC",
-    exPanelIndex: "Quy về 100 tại đầu kỳ",
+    exPanelIndex: "Điểm chỉ số",
+    exPts: "điểm",
+    exWindowRet: "Hiệu suất trong kỳ",
     exPanelWeight: "Họ VIC / vốn hóa HOSE (%)",
     exHowCalc:
       "Cách tính: lợi suất chỉ số là bình quân gia quyền theo vốn hóa. Trừ phần đóng góp của họ VIC rồi chuẩn hóa lại — r_ex = (r_VNI − Σ w·r_họVIC) / (1 − Σ w) — sau đó nối chuỗi theo ngày.",
     exHowUse:
-      "Đọc khoảng cách giữa hai đường: khi VN-Index tăng mà đường không gồm VIC không tăng, đó là Vingroup chứ không phải thị trường. Cả hai đường đều bắt đầu từ 100 ở mép trái của khoảng thời gian bạn chọn.",
+      "Đọc khoảng cách giữa hai đường: khi VN-Index tăng mà đường không gồm VIC không tăng, đó là Vingroup chứ không phải thị trường. Cả hai đường đều tính bằng điểm chỉ số trên cùng một trục — đường không gồm VIC được nối chuỗi từ chính mức VN-Index ngày 28-03-2024, nên nó cho biết chỉ số sẽ ở đâu nếu loại họ VIC từ thời điểm đó.",
     exHowEstimate:
       "Số liệu ước tính, không phải chính thức. HOSE không công bố chỉ số loại trừ cổ phiếu; số lượng cổ phiếu chỉ biết ở thời điểm hiện tại nên tỷ trọng trong quá khứ có sai số nhỏ. Lịch sử bắt đầu từ 28-03-2024.",
     epTitle: "Áp lực bên ngoài",
