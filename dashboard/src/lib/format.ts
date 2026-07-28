@@ -1,6 +1,18 @@
 import type { Locale } from "./i18n";
 import { t } from "./i18n";
 
+/**
+ * Today's date in Vietnam (GMT+7) as YYYY-MM-DD — the TS twin of the pipeline's
+ * `today_vn()` (scripts/ta/common.py).
+ *
+ * Must NOT use the host clock's local date: Vercel functions run in UTC, so
+ * between 00:00 and 07:00 Vietnam time `new Date().toISOString()` still reads
+ * yesterday. `en-CA` formats as YYYY-MM-DD, and Asia/Ho_Chi_Minh has no DST.
+ */
+export function todayVn(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date());
+}
+
 export function formatPrice(price: number | null): string {
   if (price === null) return "\u2014";
   if (price >= 1000) {

@@ -1,6 +1,7 @@
 import { revalidateTag } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { TAG_REC } from "@/lib/cached-data";
+import { todayVn } from "@/lib/format";
 import { getUserRole } from "@/lib/supabase-server";
 
 const ACTIVE_STATUSES = ["OPEN", "TP1_HIT"];
@@ -128,9 +129,17 @@ async function buy(
     return Response.json({ error: issues.join("; ") }, { status: 400 });
   }
 
+  // The date the position was actually opened — TODAY in Vietnam, not the date
+  // of the bar the price came from. Those differ whenever the admin buys before
+  // today's bar lands (or on a non-trading day), and trading_date is what the
+  // T+2.5 settlement guard, the expiry clock and days_held all count from, so it
+  // has to be the real decision date. `last_close_date` / `current_price_date`
+  // below stay on close.date — they describe the PRICE's provenance.
+  const tradingDate = todayVn();
+
   const row = {
     daily_log_id: null,
-    trading_date: close.date,
+    trading_date: tradingDate,
     rank: null,
     symbol,
     exchange: uni.exchange,
@@ -168,7 +177,7 @@ async function buy(
   // Drop the cached recommendations so Active/History/Stats show the new
   // position on the very next view.
   revalidateTag(TAG_REC, { expire: 0 });
-  return Response.json({ success: true, action: "BUY", id: inserted.id, symbol, entry, date: close.date });
+  return Response.json({ success: true, action: "BUY", id: inserted.id, symbol, entry, date: tradingDate });
 }
 
 async function sell(
@@ -201,6 +210,12 @@ async function sell(
   const exit = exitInput !== null && exitInput > 0 ? exitInput : close.price;
   const sellNote = (body.note ?? "").toString().trim();
 
+  // The date the position was actually closed — TODAY in Vietnam, matching how
+  // BUY stamps trading_date. Using the bar's date here would let a same-day
+  // buy-and-sell record a close that predates its own open. days_held counts
+  // from entry to THIS date, so it stays consistent with both ends.
+  const exitDate = todayVn();
+
   let totalEntry = 0;
   const results = await Promise.all(
     positions.map((pos) => {
@@ -216,11 +231,11 @@ async function sell(
           status: "CLOSED_MANUAL",
           actual_exit_price: exit,
           actual_pnl_pct: pnl,
-          closed_at: close.date,
+          closed_at: exitDate,
           current_price: exit,
-          current_price_date: close.date,
+          current_price_date: close.date, // provenance of the PRICE, not the trade
           unrealized_pnl_pct: null,
-          days_held: businessDays(pos.trading_date as string, close.date),
+          days_held: businessDays(pos.trading_date as string, exitDate),
           note,
         })
         .eq("id", pos.id);
@@ -247,6 +262,6 @@ async function sell(
     avg_entry: avgEntry,
     exit,
     pnl: avgPnl,
-    date: close.date,
+    date: exitDate,
   });
 }

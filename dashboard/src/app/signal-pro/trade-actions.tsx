@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
-import { formatPrice, formatPnl, pnlColor } from "@/lib/format";
+import { formatPrice, formatPnl, pnlColor, todayVn } from "@/lib/format";
 
 // Admin-only BUY/SELL controls for a single Signal Pro row (long-only paper
 // trades). When the symbol has no open manual position we show BUY (opens a
@@ -229,6 +229,16 @@ export function TradeActions({
                     {close && <span className="text-xs text-gray-400 font-mono whitespace-nowrap">{close.date}</span>}
                   </span>
                 )}
+              </div>
+              {/* The bare date beside the price is the BAR the price came from;
+                  the trade itself happens TODAY (VN). Showing both stops the
+                  two being read as one. Same value the server stores — computed
+                  from the same formula, just off the browser clock. */}
+              <div className="mt-1 flex items-center justify-between text-sm">
+                <span className="text-gray-500">
+                  {t(locale, mode === "BUY" ? "spEntryDate" : "spExitDate")}
+                </span>
+                <span className="font-mono text-gray-600">{todayVn()}</span>
               </div>
               {mode === "SELL" && entry !== null && (
                 <div className="mt-1 flex items-center justify-between text-sm">
