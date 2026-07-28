@@ -12,7 +12,7 @@ Metrics, stored raw (nothing derived):
                     data/cpi_manual.csv (Vietstock froze at 2025-08). See macro/cpi.py.
   interbank_overnight — SBV overnight interbank average rate (%/năm), daily.
                     Daily latest = SBV portal "lãi suất" page (1-2 days ahead);
-                    history/gap-fill = Vietstock NormID 293. See macro/interest_rate.py.
+                    history/gap-fill = Vietstock NormID 293. See macro/interbank_rate.py.
 
 The /macro dashboard derives percent_to_ceiling = (ceiling - vcb_sell) / ceiling,
 ceiling = central * (1 + band), band from scoring_config['macro'] (effective-dated,
@@ -52,7 +52,7 @@ from macro.exchange_rate import (
     upsert_macro,
 )
 from macro.cpi import CPI_HISTORY_START, METRIC_CPI_MOM, fetch_cpi_mom_history, load_cpi_manual
-from macro.interest_rate import (
+from macro.interbank_rate import (
     INTERBANK_HISTORY_START,
     METRIC_INTERBANK_ON,
     fetch_interbank_overnight_history,

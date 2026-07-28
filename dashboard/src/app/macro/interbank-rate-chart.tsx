@@ -11,7 +11,7 @@ import { ChartHowTo } from "@/components/chart-how-to";
 //   omoNet signed (>0 = SBV injected liquidity); omoWithdraw arrives negative.
 // - vnindex: VN-Index close (context, null before history begins) — the SAME
 //   shared series overlaid on the FX and CPI charts (see page.tsx).
-export type IrRow = {
+export type IbRow = {
   date: string;
   rate: number | null;
   vnindex: number | null;
@@ -28,7 +28,7 @@ const VN_COLOR = "#2563eb"; // blue — VN-Index (context), matches the FX chart
 const OMO_POS = "#10b981"; // emerald — net injection (bơm)
 const OMO_NEG = "#ef4444"; // red     — net withdrawal (hút)
 
-export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Locale }) {
+export function InterbankRateChart({ rows, locale }: { rows: IbRow[]; locale: Locale }) {
   const [range, setRange] = useState<Range>("3y");
   const [hover, setHover] = useState<number | null>(null);
   const [hoverY, setHoverY] = useState<number | null>(null);
@@ -75,7 +75,7 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
   }, [view]);
 
   if (rows.length < 2) {
-    return <p className="text-sm text-gray-500">{t(locale, "macroInterestNoData")}</p>;
+    return <p className="text-sm text-gray-500">{t(locale, "macroInterbankNoData")}</p>;
   }
 
   // --- layout: VN-Index (optional) + rate panel + OMO panel, shared x-axis ---
@@ -165,7 +165,7 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
         {latest && latest.rate !== null && (
           <div>
             <div className="text-xs text-gray-500">
-              {t(locale, "irOvernight")} · {t(locale, "macroFxLatest")} · {latest.date}
+              {t(locale, "ibOvernight")} · {t(locale, "macroFxLatest")} · {latest.date}
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-semibold font-mono" style={{ color: LINE }}>{fmtPct(latest.rate)}</span>
@@ -191,11 +191,11 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
       </div>
 
       {/* how-to explainer */}
-      <ChartHowTo summary={t(locale, "chartHowSummary")} items={[t(locale, "irHowCalc"), t(locale, "irHowUse")]} />
+      <ChartHowTo summary={t(locale, "chartHowSummary")} items={[t(locale, "ibHowCalc"), t(locale, "ibHowUse")]} />
 
       {/* legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: LINE }} />{t(locale, "irOvernight")}</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: LINE }} />{t(locale, "ibOvernight")}</span>
         {hasOmo && (
           <>
             <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: OMO_POS }} />{t(locale, "omoInject")}</span>
@@ -226,7 +226,7 @@ export function InterestRateChart({ rows, locale }: { rows: IrRow[]; locale: Loc
         )}
 
         {/* ---- rate panel ---- */}
-        <text x={mL} y={top - 6} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "irOvernight")} (%)</text>
+        <text x={mL} y={top - 6} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "ibOvernight")} (%)</text>
         {yTicks.map((v, k) => (
           <g key={`y${k}`}>
             <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke="#f1f5f9" strokeWidth={1} />

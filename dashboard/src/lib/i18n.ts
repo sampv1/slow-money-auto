@@ -60,7 +60,7 @@ export const translations = {
       "No exchange-rate data yet. Run the Macro Daily workflow with backfill=true (or refresh_macro.py --backfill).",
     // Chart index bar (macro-toc.tsx) — short labels, full titles are too long
     tocFci: "FCI",
-    tocInterest: "Interest rates",
+    tocInterbank: "Interbank rate",
     tocBond: "Bond 10Y",
     tocBank: "Bank rates",
     tocMargin: "Margin debt",
@@ -69,7 +69,7 @@ export const translations = {
     tocForeign: "Foreign flows",
     tocFx: "USD/VND",
     tocCpi: "CPI",
-    macroInterestTitle: "Interest rates",
+    macroInterbankTitle: "Interbank rate",
     macroCpiTitle: "CPI (inflation)",
     macroComingSoon: "Coming soon",
     macroChg5d: "Central Δ 5s",
@@ -87,7 +87,7 @@ export const translations = {
     macroPanelVnindex: "VN-Index (context)",
     // CPI (inflation) chart
     macroCpiSubtitle: "Headline CPI vs the annual target — how much easing room the SBV has left",
-    macroInterestSubtitle: "Overnight interbank rate (VNIBOR) + SBV open-market operations — the market's real-time read on VND liquidity",
+    macroInterbankSubtitle: "Overnight interbank rate (VNIBOR) + SBV open-market operations — the market's real-time read on VND liquidity",
     macroPanelOmo: "SBV OMO net injection (bn VND)",
     omoInject: "Inject",
     omoWithdraw: "Withdraw",
@@ -134,8 +134,8 @@ export const translations = {
     ffNetSell: "Net sell",
     ffPanelNet: "Daily net (bn VND)",
     ffPanelCum: "20-session cumulative (bn VND)",
-    macroInterestNoData: "No interbank-rate data yet. Run refresh_macro.py --backfill.",
-    irOvernight: "Overnight interbank",
+    macroInterbankNoData: "No interbank-rate data yet. Run refresh_macro.py --backfill.",
+    ibOvernight: "Overnight interbank",
     cpiPanelYoy: "CPI YoY (inflation)",
     cpiPanelHeadroom: "Inflation-budget headroom (% pts)",
     cpiYoy: "YoY",
@@ -188,9 +188,9 @@ export const translations = {
     // Shared "how-to" explainer summary, reused across every macro chart.
     chartHowSummary: "How is this calculated, and how do I use it?",
     // Interest rate + OMO
-    irHowCalc:
+    ibHowCalc:
       "The line is the interest rate banks charge each other for overnight loans (Vietnam's interbank market, % per year) — a quick read on how expensive short-term cash is. The bars show the central bank adding cash to the banking system (green, \"bơm\") or draining it out (red, \"hút\"), in billion VND. VN-Index is drawn on top for context.",
-    irHowUse:
+    ibHowUse:
       "When the overnight rate climbs, or the central bank keeps draining cash, money is getting tighter — usually a headwind for stocks. Falling rates and cash being added mean easier conditions, which tends to help. Look at the overall trend, not a single day.",
     // 10-Year government bond yield
     gbTitle: "10-Year government bond yield",
@@ -699,7 +699,7 @@ export const translations = {
       "Chưa có dữ liệu tỷ giá. Chạy workflow Macro Daily với backfill=true (hoặc refresh_macro.py --backfill).",
     // Chart index bar (macro-toc.tsx) — short labels, full titles are too long
     tocFci: "FCI",
-    tocInterest: "Lãi suất",
+    tocInterbank: "LS liên ngân hàng",
     tocBond: "TPCP 10 năm",
     tocBank: "LS ngân hàng",
     tocMargin: "Dư nợ margin",
@@ -708,7 +708,7 @@ export const translations = {
     tocForeign: "Khối ngoại",
     tocFx: "USD/VND",
     tocCpi: "CPI",
-    macroInterestTitle: "Lãi suất",
+    macroInterbankTitle: "Lãi suất liên ngân hàng",
     macroCpiTitle: "CPI (lạm phát)",
     macroComingSoon: "Sắp có",
     macroChg5d: "Δ TT 5 phiên",
@@ -726,7 +726,7 @@ export const translations = {
     macroPanelVnindex: "VN-Index",
     // Biểu đồ CPI (lạm phát)
     macroCpiSubtitle: "CPI so với mục tiêu năm — NHNN còn bao nhiêu dư địa nới lỏng",
-    macroInterestSubtitle: "Lãi suất liên ngân hàng qua đêm (VNIBOR) + nghiệp vụ thị trường mở của NHNN — thước đo thanh khoản VND theo thời gian thực",
+    macroInterbankSubtitle: "Lãi suất liên ngân hàng qua đêm (VNIBOR) + nghiệp vụ thị trường mở của NHNN — thước đo thanh khoản VND theo thời gian thực",
     macroPanelOmo: "Bơm ròng OMO của NHNN (tỷ đồng)",
     omoInject: "Bơm",
     omoWithdraw: "Hút",
@@ -773,8 +773,8 @@ export const translations = {
     ffNetSell: "Bán ròng",
     ffPanelNet: "Mua/bán ròng theo ngày (tỷ đồng)",
     ffPanelCum: "Lũy kế 20 phiên (tỷ đồng)",
-    macroInterestNoData: "Chưa có dữ liệu lãi suất liên ngân hàng. Chạy refresh_macro.py --backfill.",
-    irOvernight: "LNH qua đêm",
+    macroInterbankNoData: "Chưa có dữ liệu lãi suất liên ngân hàng. Chạy refresh_macro.py --backfill.",
+    ibOvernight: "LNH qua đêm",
     cpiPanelYoy: "CPI so cùng kỳ (lạm phát)",
     cpiPanelHeadroom: "Dư địa ngân sách lạm phát (điểm %)",
     cpiYoy: "So cùng kỳ",
@@ -827,9 +827,9 @@ export const translations = {
     // Nhãn giải thích dùng chung cho mọi biểu đồ vĩ mô.
     chartHowSummary: "Chỉ báo này tính thế nào và dùng ra sao?",
     // Lãi suất + OMO
-    irHowCalc:
+    ibHowCalc:
       "Đường là lãi suất các ngân hàng cho nhau vay qua đêm (thị trường liên ngân hàng Việt Nam, %/năm) — cho biết nhanh tiền ngắn hạn đang đắt hay rẻ. Cột thể hiện ngân hàng trung ương bơm thêm tiền vào hệ thống (xanh) hay rút bớt ra (đỏ), tỷ VND. VN-Index vẽ chồng làm bối cảnh.",
-    irHowUse:
+    ibHowUse:
       "Khi lãi suất qua đêm tăng, hoặc ngân hàng trung ương liên tục rút tiền, dòng tiền đang thắt lại — thường là lực cản với cổ phiếu. Lãi suất giảm và tiền được bơm thêm nghĩa là điều kiện dễ thở hơn, thường có lợi. Hãy nhìn xu hướng chung, đừng nhìn một phiên.",
     // Lợi suất trái phiếu Chính phủ 10 năm
     gbTitle: "Lợi suất TPCP 10 năm",

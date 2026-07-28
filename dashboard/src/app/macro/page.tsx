@@ -4,7 +4,7 @@ import { CACHE_TTL_SECONDS, TAG_MACRO, fetchAllPaged } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { ExchangeRateChart, type FxRow, type Regime } from "./exchange-rate-chart";
 import { CpiChart, type CpiRow } from "./cpi-chart";
-import { InterestRateChart, type IrRow } from "./interest-rate-chart";
+import { InterbankRateChart, type IbRow } from "./interbank-rate-chart";
 import { ExternalPressureChart, type EpRegime, type EpRow } from "./external-pressure-chart";
 import { ForeignFlowChart, type FfRow } from "./foreign-flow-chart";
 import { FciChart, type FciRegime, type FciRow } from "./fci-chart";
@@ -275,7 +275,7 @@ export default async function MacroPage() {
 
   let rows: FxRow[] = [];
   let cpiRows: CpiRow[] = [];
-  let irRows: IrRow[] = [];
+  let ibRows: IbRow[] = [];
   let epRows: EpRow[] = [];
   let ffRows: FfRow[] = [];
   let fciRows: FciRow[] = [];
@@ -325,7 +325,7 @@ export default async function MacroPage() {
     // rate alone would drop the newest OMO bar). Rate is null on OMO-only days
     // (the chart breaks the line there); VN-Index aligned as-of by day.
     const irDates = Array.from(new Set([...interbankOn.keys(), ...omoNet.keys()])).sort();
-    irRows = irDates.map((date) => ({
+    ibRows = irDates.map((date) => ({
       date,
       rate: interbankOn.get(date) ?? null,
       vnindex: vnAsof(date),
@@ -527,7 +527,7 @@ export default async function MacroPage() {
   // ex-VIC is included only when its (provisional, flag-gated) panel renders.
   const tocItems = [
     { id: "fci", label: t(locale, "tocFci") },
-    { id: "interest", label: t(locale, "tocInterest") },
+    { id: "interbank", label: t(locale, "tocInterbank") },
     { id: "bond", label: t(locale, "tocBond") },
     { id: "bank", label: t(locale, "tocBank") },
     { id: "margin", label: t(locale, "tocMargin") },
@@ -557,17 +557,17 @@ export default async function MacroPage() {
         )}
       </section>
 
-      <section id="interest" className="mb-6 scroll-mt-20">
+      <section id="interbank" className="mb-6 scroll-mt-20">
         <div className="mb-2">
-          <h2 className="text-base font-semibold">{t(locale, "macroInterestTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "macroInterestSubtitle")}</p>
+          <h2 className="text-base font-semibold">{t(locale, "macroInterbankTitle")}</h2>
+          <p className="text-xs text-gray-500">{t(locale, "macroInterbankSubtitle")}</p>
         </div>
         {error ? (
-          <p className="text-red-600 text-sm">Error loading interest-rate data: {error}</p>
-        ) : irRows.length < 2 ? (
-          <StubCard title={t(locale, "macroInterestTitle")} note={t(locale, "macroInterestNoData")} />
+          <p className="text-red-600 text-sm">Error loading interbank-rate data: {error}</p>
+        ) : ibRows.length < 2 ? (
+          <StubCard title={t(locale, "macroInterbankTitle")} note={t(locale, "macroInterbankNoData")} />
         ) : (
-          <InterestRateChart rows={irRows} locale={locale} />
+          <InterbankRateChart rows={ibRows} locale={locale} />
         )}
       </section>
 

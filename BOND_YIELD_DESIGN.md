@@ -210,7 +210,7 @@ gbRows = [...gb.keys()].sort().map((date) => ({
 
 ### 4.2 Chart component `src/app/macro/bond-yield-chart.tsx`
 
-Clone the structure of `interest-rate-chart.tsx` (recharts, range-selector buttons, VN-Index on
+Clone the structure of `interbank-rate-chart.tsx` (recharts, range-selector buttons, VN-Index on
 the right axis, `ChartHowTo` explainer): a single line series for the yield (%), tooltip with
 2-decimals, no regime ribbon (context panel). Keep the same file/layout conventions as the six
 existing charts.

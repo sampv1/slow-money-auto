@@ -147,7 +147,7 @@ User-Agent: Mozilla/5.0        # plain UA suffices; no auth/cookies
   lending band (min–max shaded, midpoint line) step-extended; spread series computed
   as-of; WB annual points as a faint dashed underlay (clearly labeled "annual, World Bank").
 - **New `bank-rates-chart.tsx`** cloned structurally from `bond-yield-chart.tsx` /
-  `interest-rate-chart.tsx` (SVG panels, range toggle 1y/3y/all, VN-Index overlay
+  `interbank-rate-chart.tsx` (SVG panels, range toggle 1y/3y/all, VN-Index overlay
   optional — likely omit VN-Index here to keep 3 series readable; hover crosshair;
   `ChartHowTo`).
 - **i18n (EN/VI), suggested keys:** `brTitle` "Bank interest rates" / "Lãi suất ngân hàng";
