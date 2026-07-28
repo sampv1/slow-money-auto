@@ -13,6 +13,7 @@ import { BankRatesChart, type BrRow } from "./bank-rates-chart";
 import { MarginDebtChart, type MdRow } from "./margin-debt-chart";
 import { VnindexExChart, type ExRow } from "./vnindex-ex-chart";
 import { EXVIC_ENABLED } from "./exvic-flag";
+import { MacroToc } from "./macro-toc";
 import { dataErrorDetail } from "@/lib/errors";
 
 export const revalidate = 0;
@@ -522,11 +523,27 @@ export default async function MacroPage() {
     }
   }
 
+  // Chart index for the sticky nav bar. Order MUST match the sections below;
+  // ex-VIC is included only when its (provisional, flag-gated) panel renders.
+  const tocItems = [
+    { id: "fci", label: t(locale, "tocFci") },
+    { id: "interest", label: t(locale, "tocInterest") },
+    { id: "bond", label: t(locale, "tocBond") },
+    { id: "bank", label: t(locale, "tocBank") },
+    { id: "margin", label: t(locale, "tocMargin") },
+    { id: "external", label: t(locale, "tocExternal") },
+    ...(EXVIC_ENABLED && exRows.length >= 2 ? [{ id: "exvic", label: t(locale, "tocExVic") }] : []),
+    { id: "foreign", label: t(locale, "tocForeign") },
+    { id: "fx", label: t(locale, "tocFx") },
+    { id: "cpi", label: t(locale, "tocCpi") },
+  ];
+
   return (
     <div>
       {header}
+      <MacroToc items={tocItems} />
 
-      <section className="mb-6">
+      <section id="fci" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "mcTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "mcSubtitle")}</p>
@@ -540,7 +557,7 @@ export default async function MacroPage() {
         )}
       </section>
 
-      <section className="mb-6">
+      <section id="interest" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroInterestTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "macroInterestSubtitle")}</p>
@@ -554,7 +571,7 @@ export default async function MacroPage() {
         )}
       </section>
 
-      <section className="mb-6">
+      <section id="bond" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "gbTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "gbSubtitle")}</p>
@@ -568,7 +585,7 @@ export default async function MacroPage() {
         )}
       </section>
 
-      <section className="mb-6">
+      <section id="bank" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "brTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "brSubtitle")}</p>
@@ -582,7 +599,7 @@ export default async function MacroPage() {
         )}
       </section>
 
-      <section className="mb-6">
+      <section id="margin" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "mdTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "mdSubtitle")}</p>
@@ -596,7 +613,7 @@ export default async function MacroPage() {
         )}
       </section>
 
-      <section className="mb-6">
+      <section id="external" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "epTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "epSubtitle")}</p>
@@ -616,7 +633,7 @@ export default async function MacroPage() {
           read produced data and the flag is on, so it self-hides rather than
           showing an empty box. Remove this whole block to drop the feature. */}
       {EXVIC_ENABLED && exRows.length >= 2 && (
-        <section className="mb-6">
+        <section id="exvic" className="mb-6 scroll-mt-20">
           <div className="mb-2">
             <h2 className="text-base font-semibold">{t(locale, "exTitle")}</h2>
             <p className="text-xs text-gray-500">{t(locale, "exSubtitle")}</p>
@@ -625,7 +642,7 @@ export default async function MacroPage() {
         </section>
       )}
 
-      <section className="mb-6">
+      <section id="foreign" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "ffTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "ffSubtitle")}</p>
@@ -641,7 +658,7 @@ export default async function MacroPage() {
         )}
       </section>
 
-      <section className="mb-6">
+      <section id="fx" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroFxTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "macroFxSubtitle")}</p>
@@ -657,7 +674,7 @@ export default async function MacroPage() {
         )}
       </section>
 
-      <section>
+      <section id="cpi" className="scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroCpiTitle")}</h2>
           <p className="text-xs text-gray-500">{t(locale, "macroCpiSubtitle")}</p>
