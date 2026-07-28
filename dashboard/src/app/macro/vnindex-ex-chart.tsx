@@ -78,7 +78,12 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
 
   const W = 900, mL = 52, mR = 16; // mL fits 4-digit index levels
   const iw = W - mL - mR;
-  const top = 20, h = 190;
+  // The hover readout gets its OWN band at the top. It and the panel label are
+  // both left-anchored at x=mL, so they must not share a baseline — at y=11 and
+  // y=14 they overlapped on every hover. Keep `top` derived from readoutY so
+  // the clearance can't silently regress.
+  const readoutY = 11;
+  const top = readoutY + 25, h = 190;
   const wTop = top + h + 34, wH = hasWeight ? 78 : 0;
   const xLabelY = (hasWeight ? wTop + wH : top + h) + 16;
   const H = xLabelY + 6;
@@ -263,7 +268,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
               {hv.vn !== null && <circle cx={hx} cy={yAt(hv.vn)} r={3} fill={VN_COLOR} />}
               <circle cx={hx} cy={yAt(hv.ex)} r={3} fill={EX_COLOR} />
               {hv.weight !== null && <circle cx={hx} cy={yW(hv.weight)} r={2.5} fill={W_COLOR} />}
-              <text x={tx} y={11} textAnchor={anchor} fontSize={10} fill="#0f172a" fontFamily="monospace">{parts.join(" · ")}</text>
+              <text x={tx} y={readoutY} textAnchor={anchor} fontSize={10} fill="#0f172a" fontFamily="monospace">{parts.join(" · ")}</text>
             </g>
           );
         })()}
