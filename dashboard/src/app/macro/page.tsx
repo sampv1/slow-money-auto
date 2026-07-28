@@ -155,13 +155,17 @@ const getMacroData = unstable_cache(
 // To remove the feature: delete this block, the import, and the section below.
 const getExVicData = unstable_cache(
   async (): Promise<ExRow[]> => {
-    const [ex, weight, vni] = await Promise.all([
+    const [ex, weight, vni, pe, peEx] = await Promise.all([
       fetchMetricEntries("vnindex_ex_vic"),
       fetchMetricEntries("vic_family_weight"),
       fetchMetricEntries("vnindex"),
+      fetchMetricEntries("market_pe"),
+      fetchMetricEntries("market_pe_ex_vic"),
     ]);
     const wMap = new Map(weight);
     const vMap = new Map(vni);
+    const peMap = new Map(pe);
+    const peExMap = new Map(peEx);
     // The series is built only on dates where a VN-Index close exists, so an
     // exact join is safe; null-tolerant anyway.
     return ex.map(([date, level]) => ({
@@ -169,9 +173,13 @@ const getExVicData = unstable_cache(
       ex: level,
       vnindex: vMap.get(date) ?? null,
       weight: wMap.get(date) ?? null,
+      pe: peMap.get(date) ?? null,
+      peEx: peExMap.get(date) ?? null,
     }));
   },
-  ["macro-exvic-v1"],
+  // v2: rows gained pe / peEx. Cached entries outlive a deploy, so the key must
+  // move or the new lines silently never appear for up to the TTL.
+  ["macro-exvic-v2"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
 );
 

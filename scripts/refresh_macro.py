@@ -76,12 +76,19 @@ from macro.vnindex_ex import (
     ENABLED as EXVIC_ENABLED,
     EX_HISTORY_START,
     METRIC_EX,
+    METRIC_PE,
+    METRIC_PE_EX,
     METRIC_WEIGHT,
     compute_ex_series,
+    compute_pe_rows,
+    family_cap_series,
+    family_ttm_earnings,
     fetch_listed_shares,
+    fetch_market_pe,
     hose_symbols,
     latest_stored,
     load_family,
+    stored_weight_series,
 )
 from macro.bond_yield import (
     GOVBOND_HISTORY_START,
@@ -293,24 +300,54 @@ def collect_vnindex_ex(end: dt.date, backfill: bool) -> list[dict]:
         shares = fetch_listed_shares(hose_symbols(client))
         anchor = None if backfill else latest_stored(client)
         start = EX_HISTORY_START if anchor is None else dt.date.fromisoformat(anchor[0])
-        levels, weights, stats = compute_ex_series(client, shares, family, start, end, anchor)
+        levels, weights, famcaps, stats = compute_ex_series(client, shares, family, start, end, anchor)
     except Exception as e:  # noqa: BLE001
         print(f"  VN-Index ex-VIC fetch failed: {str(e)[:120]}")
         return []
     if stats.get("error"):
         print(f"  VN-Index ex-VIC: {stats['error']} — skipped")
         return []
+    # NB: no early return when the index has nothing new — the P/E series below
+    # is fetched independently and may still need seeding or a fresh point.
     if not levels and anchor is not None:
         print(f"  VN-Index ex-VIC: up to date at {anchor[0]} — no new session")
-        return []
-    mode = "rebuild" if anchor is None else f"append from {anchor[0]}"
-    print(f"  VN-Index ex-VIC ({mode}, family {'+'.join(family)}): {len(levels)} new level(s), "
-          f"{len(weights)} weight(s) over {stats.get('universe', 0)} HOSE symbols"
-          + (f", {stats['skipped']} day(s) skipped as corporate-action artifacts" if stats.get("skipped") else "")
-          + (f" (last {levels[-1][0]} = {levels[-1][1]:,.2f}, family weight {weights[-1][1]:.2f}%)"
-             if levels and weights else ""))
-    return (series_rows(METRIC_EX, levels, "index", "computed")
+    else:
+        mode = "rebuild" if anchor is None else f"append from {anchor[0]}"
+        print(f"  VN-Index ex-VIC ({mode}, family {'+'.join(family)}): {len(levels)} new level(s), "
+              f"{len(weights)} weight(s) over {stats.get('universe', 0)} HOSE symbols"
+              + (f", {stats['skipped']} day(s) skipped as corporate-action artifacts" if stats.get("skipped") else "")
+              + (f" (last {levels[-1][0]} = {levels[-1][1]:,.2f}, family weight {weights[-1][1]:.2f}%)"
+                 if levels and weights else ""))
+    rows = (series_rows(METRIC_EX, levels, "index", "computed")
             + series_rows(METRIC_WEIGHT, weights, "%", "computed"))
+
+    # Market P/E (CafeF) + the same market with the family removed. Same panel,
+    # same kill switch — a failure here degrades to "no P/E lines", never to a
+    # broken index series.
+    try:
+        market_pe = fetch_market_pe()
+        pe_anchor = latest_stored(client, METRIC_PE)
+        fresh = market_pe if (backfill or pe_anchor is None) else [
+            (d, v) for d, v in market_pe if d.isoformat() > pe_anchor[0]
+        ]
+        # Seeding the ex-family P/E needs the FULL weight history, which the
+        # incremental path doesn't carry; read the stored weights and price just
+        # the four family symbols rather than re-scanning the universe.
+        if backfill or latest_stored(client, METRIC_PE_EX) is None:
+            w_for_pe = stored_weight_series(client, EX_HISTORY_START, end) or weights
+            c_for_pe = family_cap_series(client, shares, family, EX_HISTORY_START, end)
+        else:
+            w_for_pe, c_for_pe = weights, famcaps
+        pe_ex = compute_pe_rows(w_for_pe, c_for_pe, family_ttm_earnings(client, family), market_pe)
+        print(f"  Market P/E: {len(market_pe)} point(s) available, {len(fresh)} new"
+              + (f" (last {market_pe[-1][0]} = {market_pe[-1][1]:.2f})" if market_pe else "")
+              + f"; ex-family P/E: {len(pe_ex)} point(s)"
+              + (f" (last {pe_ex[-1][0]} = {pe_ex[-1][1]:.2f})" if pe_ex else ""))
+        rows += (series_rows(METRIC_PE, fresh, "x", "cafef")
+                 + series_rows(METRIC_PE_EX, pe_ex, "x", "computed"))
+    except Exception as e:  # noqa: BLE001
+        print(f"  Market P/E fetch failed: {str(e)[:120]} — index series unaffected")
+    return rows
 
 
 def collect_dxy(start: dt.date, end: dt.date) -> list[dict]:

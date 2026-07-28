@@ -21,6 +21,11 @@ export type ExRow = {
   ex: number;
   vnindex: number | null;
   weight: number | null;
+  // Market P/E (CafeF, 2016->) and the same market without the family. peEx
+  // only exists from 2025-05: it needs four consecutive quarters of family
+  // earnings, and fa_quarterly starts at 2024-Q2.
+  pe: number | null;
+  peEx: number | null;
 };
 
 type Range = "6m" | "1y" | "3y" | "all";
@@ -29,6 +34,8 @@ const RANGE_DAYS: Record<Range, number> = { "6m": 183, "1y": 365, "3y": 1095, al
 const VN_COLOR = "#2563eb"; // blue — VN-Index (headline)
 const EX_COLOR = "#0d9488"; // teal — the ex-VIC reconstruction
 const W_COLOR = "#c2410c"; // orange — family weight
+const PE_COLOR = "#7c3aed"; // violet — market P/E
+const PEX_COLOR = "#0d9488"; // teal — market P/E ex-family (matches the index line)
 
 const ms = (d: string) => new Date(d + "T00:00:00Z").getTime();
 
@@ -51,7 +58,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
   // family been excluded since then". Rebasing per window would discard that
   // and make the same day show a different number in every range.
   const based = useMemo(
-    () => view.map((r) => ({ date: r.date, ex: r.ex, vn: r.vnindex, weight: r.weight })),
+    () => view.map((r) => ({ date: r.date, ex: r.ex, vn: r.vnindex, weight: r.weight, pe: r.pe, peEx: r.peEx })),
     [view],
   );
 
@@ -64,6 +71,17 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
   }, [based]);
 
   const hasWeight = useMemo(() => based.some((r) => r.weight !== null), [based]);
+  const hasPe = useMemo(() => based.some((r) => r.pe !== null || r.peEx !== null), [based]);
+
+  // Shared scale for both P/E lines — the gap between them is the point, so
+  // they must never sit on separate axes.
+  const peDom = useMemo(() => {
+    const vals = based.flatMap((r) => [r.pe, r.peEx].filter((v): v is number => v !== null));
+    if (vals.length === 0) return { lo: 0, hi: 1 };
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = (hi - lo) * 0.12 || 1;
+    return { lo: Math.max(0, lo - pad), hi: hi + pad };
+  }, [based]);
 
   const wDom = useMemo(() => {
     const vals = based.map((r) => r.weight).filter((v): v is number => v !== null);
@@ -84,14 +102,18 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
   // the clearance can't silently regress.
   const readoutY = 11;
   const top = readoutY + 25, h = 190;
-  const wTop = top + h + 34, wH = hasWeight ? 78 : 0;
-  const xLabelY = (hasWeight ? wTop + wH : top + h) + 16;
+  const peTop = top + h + 34, peH = hasPe ? 120 : 0;
+  const peBlock = hasPe ? peH + 34 : 0;
+  const wTop = top + h + 34 + peBlock, wH = hasWeight ? 78 : 0;
+  const lastBottom = hasWeight ? wTop + wH : hasPe ? peTop + peH : top + h;
+  const xLabelY = lastBottom + 16;
   const H = xLabelY + 6;
 
   const t0 = ms(based[0].date), t1 = ms(based[based.length - 1].date);
   const xAt = (d: string) => mL + (t1 <= t0 ? iw / 2 : ((ms(d) - t0) / (t1 - t0)) * iw);
   const yAt = (v: number) => top + (1 - (v - dom.lo) / (dom.hi - dom.lo)) * h;
   const yW = (v: number) => wTop + (1 - (v - wDom.lo) / (wDom.hi - wDom.lo)) * wH;
+  const yPe = (v: number) => peTop + (1 - (v - peDom.lo) / (peDom.hi - peDom.lo)) * peH;
 
   const line = (pts: { x: number; y: number }[]) =>
     pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
@@ -102,6 +124,12 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
   const wPts = based
     .filter((r): r is typeof r & { weight: number } => r.weight !== null)
     .map((r) => ({ x: xAt(r.date), y: yW(r.weight) }));
+  const pePts = based
+    .filter((r): r is typeof r & { pe: number } => r.pe !== null)
+    .map((r) => ({ x: xAt(r.date), y: yPe(r.pe) }));
+  const peExPts = based
+    .filter((r): r is typeof r & { peEx: number } => r.peEx !== null)
+    .map((r) => ({ x: xAt(r.date), y: yPe(r.peEx) }));
 
   const last = based[based.length - 1];
   // Point gap = how many index points of VN-Index are the VIC family's doing
@@ -114,9 +142,12 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
     ? (last.vn / firstWithVn.vn - 1) * 100 : null;
   const spread = exRet !== null && vnRet !== null ? vnRet - exRet : null;
   const latestWeight = [...based].reverse().find((r) => r.weight !== null)?.weight ?? null;
+  const latestPe = [...based].reverse().find((r) => r.pe !== null)?.pe ?? null;
+  const latestPeEx = [...based].reverse().find((r) => r.peEx !== null)?.peEx ?? null;
 
   const yTicks = [dom.hi, (dom.lo + dom.hi) / 2, dom.lo];
   const wTicks = [wDom.hi, wDom.hi / 2, 0];
+  const peTicks = [peDom.hi, (peDom.lo + peDom.hi) / 2, peDom.lo];
   const y0 = new Date(t0).getUTCFullYear(), y1 = new Date(t1).getUTCFullYear();
   const yearStep = Math.max(1, Math.ceil((y1 - y0) / 6));
   const yearTicks: number[] = [];
@@ -181,6 +212,21 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
               </div>
             </div>
           )}
+          {latestPe !== null && (
+            <div>
+              <div className="text-xs text-gray-500">{t(locale, "exPeLabel")}</div>
+              <div className="text-lg font-semibold font-mono">
+                <span style={{ color: PE_COLOR }}>{latestPe.toFixed(2)}</span>
+                {latestPeEx !== null && (
+                  <>
+                    <span className="text-gray-300 mx-1.5">·</span>
+                    <span style={{ color: PEX_COLOR }}>{latestPeEx.toFixed(2)}</span>
+                    <span className="text-xs text-gray-400 ml-1.5">({(latestPeEx - latestPe).toFixed(2)})</span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
           {latestWeight !== null && (
             <div>
               <div className="text-xs text-gray-500">{t(locale, "exWeightLabel")}</div>
@@ -205,12 +251,23 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
 
       <ChartHowTo
         summary={t(locale, "chartHowSummary")}
-        items={[t(locale, "exHowCalc"), t(locale, "exHowUse"), t(locale, "exHowEstimate")]}
+        items={[
+          t(locale, "exHowCalc"),
+          t(locale, "exHowUse"),
+          ...(hasPe ? [t(locale, "exHowPe")] : []),
+          t(locale, "exHowEstimate"),
+        ]}
       />
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: VN_COLOR }} />VN-Index</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: EX_COLOR }} />{t(locale, "exLegend")}</span>
+        {hasPe && (
+          <>
+            <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: PE_COLOR }} />{t(locale, "exPeMarket")}</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: PEX_COLOR }} />{t(locale, "exPeExLegend")}</span>
+          </>
+        )}
         {hasWeight && <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: W_COLOR }} />{t(locale, "exWeightLabel")}</span>}
       </div>
 
@@ -225,6 +282,21 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
         ))}
         {vnPts.length > 1 && <polyline points={line(vnPts)} fill="none" stroke={VN_COLOR} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />}
         {exPts.length > 1 && <polyline points={line(exPts)} fill="none" stroke={EX_COLOR} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />}
+
+        {/* ---- P/E panel: market vs market-without-the-family, one shared axis ---- */}
+        {hasPe && (
+          <>
+            <text x={mL} y={peTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "exPanelPe")}</text>
+            {peTicks.map((v, k) => (
+              <g key={`pt${k}`}>
+                <line x1={mL} y1={yPe(v)} x2={W - mR} y2={yPe(v)} stroke="#f1f5f9" strokeWidth={1} />
+                <text x={mL - 6} y={yPe(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{v.toFixed(1)}</text>
+              </g>
+            ))}
+            {pePts.length > 1 && <polyline points={line(pePts)} fill="none" stroke={PE_COLOR} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />}
+            {peExPts.length > 1 && <polyline points={line(peExPts)} fill="none" stroke={PEX_COLOR} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />}
+          </>
+        )}
 
         {/* ---- family weight panel: how much is being removed ---- */}
         {hasWeight && (
@@ -261,12 +333,15 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
           if (hv.vn !== null) parts.push(`VNI ${fmt2(hv.vn)}`);
           parts.push(`${t(locale, "exLegend")} ${fmt2(hv.ex)}`);
           if (hv.vn !== null) parts.push(`${t(locale, "exSpread")} ${fmt2(hv.vn - hv.ex)}`);
+          if (hv.pe !== null) parts.push(`P/E ${hv.pe.toFixed(2)}${hv.peEx !== null ? ` / ${hv.peEx.toFixed(2)}` : ""}`);
           if (hv.weight !== null) parts.push(`${t(locale, "exWeightLabel")} ${hv.weight.toFixed(1)}%`);
           return (
             <g>
-              <line x1={hx} y1={top} x2={hx} y2={hasWeight ? wTop + wH : top + h} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+              <line x1={hx} y1={top} x2={hx} y2={lastBottom} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
               {hv.vn !== null && <circle cx={hx} cy={yAt(hv.vn)} r={3} fill={VN_COLOR} />}
               <circle cx={hx} cy={yAt(hv.ex)} r={3} fill={EX_COLOR} />
+              {hasPe && hv.pe !== null && <circle cx={hx} cy={yPe(hv.pe)} r={2.5} fill={PE_COLOR} />}
+              {hasPe && hv.peEx !== null && <circle cx={hx} cy={yPe(hv.peEx)} r={2.5} fill={PEX_COLOR} />}
               {hv.weight !== null && <circle cx={hx} cy={yW(hv.weight)} r={2.5} fill={W_COLOR} />}
               <text x={tx} y={readoutY} textAnchor={anchor} fontSize={10} fill="#0f172a" fontFamily="monospace">{parts.join(" · ")}</text>
             </g>
@@ -278,6 +353,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
           const inv = (pTop: number, pH: number, lo: number, hi: number) => hi - ((hoverY - pTop) / pH) * (hi - lo);
           let label: string | null = null;
           if (hoverY >= top && hoverY <= top + h) label = fmt1(inv(top, h, dom.lo, dom.hi));
+          else if (hasPe && hoverY >= peTop && hoverY <= peTop + peH) label = inv(peTop, peH, peDom.lo, peDom.hi).toFixed(1);
           else if (hasWeight && hoverY >= wTop && hoverY <= wTop + wH) label = `${inv(wTop, wH, wDom.lo, wDom.hi).toFixed(1)}%`;
           if (label === null) return null;
           return (
