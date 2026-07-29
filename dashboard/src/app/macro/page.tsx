@@ -519,9 +519,10 @@ export default async function MacroPage() {
     error = dataErrorDetail(e);
   }
 
-  // VN-Index ex-VIC — provisional panel, isolated on purpose (see getExVicData).
-  // Its own try/catch: a failure or a disabled flag hides just this panel and
-  // leaves every other one untouched.
+  // VN-Index ex-VIC — titled "Market P/E" in the UI (exTitle); the ex-VIC naming
+  // is kept throughout the code and the DB metrics. Provisional panel, isolated
+  // on purpose (see getExVicData). Its own try/catch: a failure or a disabled
+  // flag hides just this panel and leaves every other one untouched.
   let exRows: ExRow[] = [];
   if (EXVIC_ENABLED) {
     try {

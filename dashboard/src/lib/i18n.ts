@@ -65,7 +65,7 @@ export const translations = {
     tocBank: "Bank rates",
     tocMargin: "Margin debt",
     tocExternal: "External pressure",
-    tocExVic: "ex-VIC",
+    tocExVic: "P/E",
     tocForeign: "Foreign flows",
     tocFx: "USD/VND",
     tocCpi: "CPI",
@@ -93,9 +93,9 @@ export const translations = {
     omoWithdraw: "Withdraw",
     omoNet: "Net",
     // VN-Index ex-VIC (provisional panel — see macro/vnindex-ex-chart.tsx)
-    exTitle: "VN-Index excluding VIC family",
+    exTitle: "Market P/E",
     exSubtitle:
-      "The same index with VIC, VHM, VRE and VPL removed — estimated. Vingroup is ~30% of HOSE market cap, so the headline index largely tracks it",
+      "The market's P/E against the same market with VIC, VHM, VRE and VPL removed — estimated. Vingroup is ~30% of HOSE market cap but only ~15% of its earnings, so it lifts the headline multiple",
     exLegend: "ex-VIC",
     exSpread: "Gap",
     exSpreadUp: "VN-Index is being carried by the VIC family",
@@ -710,7 +710,7 @@ export const translations = {
     tocBank: "LS ngân hàng",
     tocMargin: "Dư nợ margin",
     tocExternal: "Áp lực ngoài",
-    tocExVic: "Không gồm VIC",
+    tocExVic: "P/E",
     tocForeign: "Khối ngoại",
     tocFx: "USD/VND",
     tocCpi: "CPI",
@@ -738,9 +738,9 @@ export const translations = {
     omoWithdraw: "Hút",
     omoNet: "Ròng",
     // VN-Index ex-VIC (provisional panel — see macro/vnindex-ex-chart.tsx)
-    exTitle: "VN-Index không gồm họ VIC",
+    exTitle: "P/E thị trường",
     exSubtitle:
-      "Chính chỉ số này nhưng loại VIC, VHM, VRE và VPL — số liệu ước tính. Vingroup chiếm ~30% vốn hóa HOSE nên chỉ số chính phần lớn phản ánh nhóm này",
+      "P/E của thị trường so với chính thị trường đó khi loại VIC, VHM, VRE và VPL — số liệu ước tính. Vingroup chiếm ~30% vốn hóa HOSE nhưng chỉ tạo ~15% lợi nhuận nên đẩy P/E chung lên cao",
     exLegend: "Không gồm VIC",
     exSpread: "Chênh lệch",
     exSpreadUp: "VN-Index đang được họ VIC kéo lên",
