@@ -76,8 +76,8 @@ type RawComponents = { parentProfit?: number; shares?: number; grossProfit?: num
 const RAW_COMPONENT_FIELDS: { field: keyof RawComponents; test: (h: string) => boolean }[] = [
   // "17.1. Lợi nhuận sau thuế phân bổ cho chủ sở hữu" (EPS numerator)
   { field: "parentProfit", test: (h) => h.includes("loi nhuan sau thue") && h.includes("chu so huu") },
-  // "Số CP lưu hành hiện thời"
-  { field: "shares", test: (h) => h.includes("cp luu hanh") },
+  // "Số CP lưu hành hiện thời" (dated) / "Số cổ phiếu lưu hành" (undated)
+  { field: "shares", test: (h) => h.includes("cp luu hanh") || h.includes("co phieu luu hanh") },
   // "5. Lợi nhuận gộp…" (distinct from margin "bien lai gop")
   { field: "grossProfit", test: (h) => h.includes("loi nhuan gop") },
   // "18. Lợi nhuận sau thuế thu nhập doanh nghiệp" (net_margin numerator)
@@ -138,13 +138,29 @@ function parseFinancials(wb: XLSX.WorkBook): ParseResult {
   // Scan all sheets for the columns matching `test` (label + a parseable quarter);
   // the FIRST sheet that yields any matching column wins. `sink` is called per
   // cell value. Returns detection info, or null if no sheet matched.
-  function scanField(test: (h: string) => boolean, field: string, sink: (sym: string, period: string, val: number) => void): DetectedField | null {
+  //
+  // `allowUndated`: shares outstanding can arrive without a quarter in its label —
+  // it is a *current* count, not a point-in-time quarterly figure, so FiinProX does
+  // not always date it. When the sheet covers exactly one quarter that snapshot is
+  // unambiguous, so attribute it to that quarter; with several quarters in the sheet
+  // it is dropped rather than guessed. Only raw components pass this flag — a stray
+  // undated metric column must not be attributed.
+  function scanField(test: (h: string) => boolean, field: string, sink: (sym: string, period: string, val: number) => void, allowUndated = false): DetectedField | null {
     for (const { name, grid, hdr } of sheets) {
       const headerRow = grid[hdr.headerIdx] || [];
+      let fallback: string | null = null;
+      if (allowUndated) {
+        const seen = new Set<string>();
+        for (let c = hdr.symbolCol + 1; c < headerRow.length; c++) {
+          const p = parseQuarter(headerRow[c]);
+          if (p) seen.add(p);
+        }
+        if (seen.size === 1) fallback = [...seen][0];
+      }
       const cols: { idx: number; period: string }[] = [];
       for (let c = hdr.symbolCol + 1; c < headerRow.length; c++) {
         const cell = headerRow[c];
-        const period = parseQuarter(cell);
+        const period = parseQuarter(cell) ?? fallback;
         if (period && test(norm(cell))) cols.push({ idx: c, period });
       }
       if (cols.length === 0) continue;
@@ -191,7 +207,7 @@ function parseFinancials(wb: XLSX.WorkBook): ParseResult {
       const rc = rawByKey.get(key) ?? {};
       rc[def.field] = val;
       rawByKey.set(key, rc);
-    });
+    }, true);
   }
 
   // 3) Derivation pass: fill eps/gross_margin/net_margin from raw components when

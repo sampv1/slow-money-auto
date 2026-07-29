@@ -127,9 +127,11 @@ _DIRECT_TESTS = {
     "roe_ttm": lambda h: "roe" in h,
 }
 # Raw statement components (not persisted) → used only to derive eps/margins.
+# The shares label has shipped in two forms: "Số CP lưu hành hiện thời" (dated,
+# "Quý: Q2.2026") and "Số cổ phiếu lưu hành" (undated) — accept both.
 _RAW_TESTS = {
     "parent_profit": lambda h: "loi nhuan sau thue" in h and "chu so huu" in h,
-    "shares": lambda h: "cp luu hanh" in h,
+    "shares": lambda h: "cp luu hanh" in h or "co phieu luu hanh" in h,
     "gross_profit": lambda h: "loi nhuan gop" in h,
     "net_profit": lambda h: "loi nhuan sau thue" in h and "thu nhap doanh nghiep" in h,
 }
@@ -162,14 +164,23 @@ def _parse_single_sheet(ws) -> list[dict]:
     hdr_idx, sym_col = found
     header = next(ws.iter_rows(min_row=hdr_idx + 1, max_row=hdr_idx + 1, values_only=True))
 
-    def build_cols(tests):
+    # Shares outstanding can arrive without a quarter in its label — it is a
+    # *current* count, not a point-in-time quarterly figure, so FiinProX does not
+    # always date it. When the sheet covers exactly one quarter that snapshot is
+    # unambiguous, so attribute it to that quarter; with several quarters in the
+    # sheet it is dropped rather than guessed. Undated columns are only accepted
+    # for raw components — a stray undated metric column must not be attributed.
+    sheet_periods = {p for p in (_parse_quarter(str(c)) for c in header if c is not None) if p}
+    fallback_period = next(iter(sheet_periods)) if len(sheet_periods) == 1 else None
+
+    def build_cols(tests, allow_undated: bool = False):
         m = {}
         for field, test in tests.items():
             cols = []
             for idx, cell in enumerate(header):
                 if idx <= sym_col or cell is None:
                     continue
-                period = _parse_quarter(str(cell))
+                period = _parse_quarter(str(cell)) or (fallback_period if allow_undated else None)
                 if period and test(_norm(cell)):
                     cols.append((idx, period))
             if cols:
@@ -177,7 +188,7 @@ def _parse_single_sheet(ws) -> list[dict]:
         return m
 
     direct_cols = build_cols(_DIRECT_TESTS)
-    raw_cols = build_cols(_RAW_TESTS)
+    raw_cols = build_cols(_RAW_TESTS, allow_undated=True)
 
     rows: dict[tuple[str, str], dict] = {}
     raw_by_key: dict[tuple[str, str], dict] = {}
