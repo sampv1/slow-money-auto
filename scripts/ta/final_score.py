@@ -72,6 +72,9 @@ def _ta_score_map(client) -> dict[str, int]:
     while True:
         rows = safe_execute(
             client.table("ta_universe").select("symbol,ta_score")
+            # Deterministic order is required for range() paging — see the note in
+            # ta/ta_score.py::_read_components.
+            .order("symbol")
             .range(offset, offset + page - 1),
             label="final ta read",
         ).data

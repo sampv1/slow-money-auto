@@ -30,6 +30,11 @@ def _read_components(client) -> list[dict]:
         rows = safe_execute(
             client.table("ta_universe")
             .select("symbol,exchange,rs_3m,rs_composite,rs_line_score,base_score")
+            # order() is required, not cosmetic: paging with range() over an
+            # unordered select relies on Postgres heap order, which this table's
+            # daily rewrites change — page boundaries would then duplicate or SKIP
+            # symbols, silently dropping them from TA scoring with no error.
+            .order("symbol")
             .range(offset, offset + page - 1),
             label="ta_score read",
         ).data

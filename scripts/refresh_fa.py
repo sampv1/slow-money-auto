@@ -94,7 +94,10 @@ def _load_annual_pe(client, symbols=None):
         q = client.table("fa_annual_pe").select("symbol,year,pe")
         if symbols:
             q = q.in_("symbol", symbols)
-        return q.order("symbol").range(a, b)
+        # (symbol, year) is the total order — ordering by symbol alone leaves rows
+        # within a symbol unordered, so a page boundary landing mid-symbol can
+        # duplicate or skip its years.
+        return q.order("symbol").order("year").range(a, b)
     out: dict[str, list] = {}
     for r in _paged(build):
         out.setdefault(r["symbol"], []).append((r["year"], r["pe"]))
@@ -102,17 +105,31 @@ def _load_annual_pe(client, symbols=None):
 
 
 def _load_prices(client, symbol):
-    """Sorted [(date, close)] for a symbol from ta_ohlcv (ascending)."""
-    res = safe_execute(
-        client.table("ta_ohlcv").select("date,close").eq("symbol", symbol).order("date"),
-        label=f"ta_ohlcv {symbol}",
-    )
+    """Sorted [(date, close)] for a symbol from ta_ohlcv (ascending).
+
+    Paged: PostgREST silently caps an unbounded select at 1000 rows, and with this
+    ASC order the rows it drops are the NEWEST ones — which would leave the live
+    price and every recent quarter-end close stale, with no error. ta_ohlcv is
+    append-only, so a symbol crosses 1000 bars with ordinary accumulation (~574
+    today) or the moment anyone runs a deeper backfill_ta_ohlcv.py.
+    """
     out = []
-    for r in res.data or []:
-        try:
-            out.append((date.fromisoformat(r["date"]), float(r["close"])))
-        except (TypeError, ValueError):
-            continue
+    offset, page = 0, 1000
+    while True:
+        res = safe_execute(
+            client.table("ta_ohlcv").select("date,close").eq("symbol", symbol)
+            .order("date").range(offset, offset + page - 1),
+            label=f"ta_ohlcv {symbol}",
+        )
+        rows = res.data or []
+        for r in rows:
+            try:
+                out.append((date.fromisoformat(r["date"]), float(r["close"])))
+            except (TypeError, ValueError):
+                continue
+        if len(rows) < page:
+            break
+        offset += page
     return out
 
 

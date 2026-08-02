@@ -100,6 +100,10 @@ def fetch_cpi_mom_history(start: dt.date, end: dt.date) -> list[tuple[dt.date, f
         parts = str(row).split("|")
         if len(parts) < 8:
             continue
+        # field[2] = NormID — guard as omo.py/interbank_rate.py do, so a response
+        # carrying sibling series can never be read as the CPI MoM index.
+        if parts[2].strip() != str(CPI_NORMID):
+            continue
         value = _parse_vn_number(parts[5])
         m = label_re.search(parts[7])
         if value is None or not m:

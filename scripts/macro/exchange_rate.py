@@ -57,6 +57,13 @@ CENTRAL_NORMID = 499  # "Tỷ giá trung tâm (từ 04/01/2016)", unit USD/VNĐ,
 # Vietcombank exchange-rate API (returns cash/transfer/sell per currency).
 VCB_API = "https://www.vietcombank.com.vn/api/exchangerates?date={date}"
 
+# Plausibility band for the USD/VND central rate. The regime started at ~21,900 in
+# 2016 and has drifted into the mid-20,000s; this band is wide enough to never
+# reject a real move but tight enough to catch a parse landing on a year, an
+# element id, or a truncated figure.
+MIN_PLAUSIBLE_CENTRAL_VND = 15_000
+MAX_PLAUSIBLE_CENTRAL_VND = 50_000
+
 
 # --------------------------------------------------------------------------- #
 # SBV portal — today's central rate (authoritative daily source)
@@ -80,16 +87,33 @@ def fetch_central_rate_sbv() -> tuple[dt.date | None, int | None]:
     if dm is None or i == -1:
         return None, None
 
-    window = html[i:i + 300]
-    tm = re.search(r'title="(\d{4,6})"', window)
+    # Confine the search to the VALUE cell. The row is
+    #   <td title="1 Đô la Mỹ ="><strong>1 Đô la Mỹ =</strong></td><td title="25338">25.338 VND</td>
+    # and the anchor lands on the label cell's title, so the value sits between the
+    # 1st and 2nd </td>. A fixed-width window instead spans several cells, and
+    # `title="(\d{4,6})"` would silently take any other numeric title that appeared
+    # inside it. (Same failure that produced a 54.8% overnight rate from the
+    # interbank table's turnover column — see interbank_rate.py.)
+    ends = [m.end() for m in re.finditer(r"</td>", html[i:i + 2000])]
+    if len(ends) < 2:
+        return None, None
+    cell = html[i + ends[0]:i + ends[1]]
+
+    tm = re.search(r'title="(\d{4,6})"', cell)
     if tm:
         value = int(tm.group(1))
     else:
-        seg = re.sub(r"<[^>]+>", " ", window)
-        vm = re.search(r"=\s*([\d.]+)\s*VND", seg)
+        seg = re.sub(r"<[^>]+>", " ", cell)
+        vm = re.search(r"=?\s*([\d.]+)\s*VND", seg)
         if not vm:
             return None, None
         value = int(vm.group(1).replace(".", ""))
+
+    # The USD/VND central rate has sat in the low-to-mid 20,000s since the regime
+    # began in 2016. Anything outside this band is a parse artefact (a year, an id,
+    # a truncated figure), so refuse it rather than store a plausible-looking number.
+    if not (MIN_PLAUSIBLE_CENTRAL_VND <= value <= MAX_PLAUSIBLE_CENTRAL_VND):
+        return None, None
 
     eff_date = dt.datetime.strptime(dm.group(1), "%d/%m/%Y").date()
     return eff_date, value
@@ -161,6 +185,11 @@ def fetch_central_rate_history(start: dt.date, end: dt.date) -> list[tuple[dt.da
         for row in (resp.json().get("Data") or []):
             parts = str(row).split("|")
             if len(parts) < 8:
+                continue
+            # field[2] = NormID. The endpoint honours listID today, but guard anyway
+            # (as omo.py and interbank_rate.py do) so a response carrying sibling
+            # series can never be read as the central rate.
+            if parts[2].strip() != str(CENTRAL_NORMID):
                 continue
             value = _parse_vn_number(parts[5])
             try:
