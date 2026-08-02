@@ -152,3 +152,5 @@ Core: `daily_logs` (one row per trading day) + `recommendations` (individual pic
   - **Any Supabase read that could exceed 1000 rows must page** via `fetchAllPaged` — PostgREST silently truncates at 1000, and with an ASC order that drops the *newest* rows. This broke the Analysis default-indicator selection once (a symbol has >1000 triggered signals). Pages need a deterministic tie-break column in the `order` too, or page boundaries can duplicate/skip rows.
 - Migrations are append-only and applied manually; add the next numbered file rather than editing an applied one.
 
+
+
