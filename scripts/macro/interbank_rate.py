@@ -47,6 +47,11 @@ INTERBANK_PAGE = "https://finance.vietstock.vn/vi-mo/du-lieu/lai-suat-lien-ngan-
 # and turnover. We take only the "Qua đêm" rate.
 SBV_IR_URL = "https://sbv.gov.vn/vi/l%C3%A3i-su%E1%BA%A5t1"
 
+# Upper bound for a believable overnight rate (%/year). VNIBOR overnight has never
+# closed above the mid-teens even in a liquidity squeeze, so anything past this is a
+# parse artefact, not a market move — refuse it rather than store it.
+MAX_PLAUSIBLE_ON_PCT = 30.0
+
 
 def fetch_interbank_overnight_sbv() -> tuple[dt.date | None, float | None]:
     """Return (effective_date, overnight_rate_pct) from the SBV portal.
@@ -76,13 +81,28 @@ def fetch_interbank_overnight_sbv() -> tuple[dt.date | None, float | None]:
     if not dates:
         return None, None
 
-    # First number after "Qua đêm" (tags stripped) = the BQ rate, e.g. "4,68";
-    # the turnover column follows it.
-    cell = re.sub(r"<[^>]+>", " ", html[qm:qm + 800])
-    vm = re.search(r"(\d{1,2}[.,]\d{1,2})", cell)
+    # Confine the value search to the RATE cell. The row is
+    #   <td>Qua đêm</td><td>…rate…</td><td>…turnover (Tỷ đồng)…</td>
+    # so the rate sits between the 1st and 2nd </td> after the label. Scanning a
+    # fixed-width window instead lets the search run past the cell boundary into
+    # the turnover column: on 2026-07-30 SBV rendered the rate with its integer
+    # part missing (" ,75 "), the old window found no number there, fell through to
+    # the turnover "854,800,0" and matched the substring "54,80" — storing a
+    # perfectly plausible-looking 54.8% overnight rate. Bound the cell, demand a
+    # well-formed number, and sanity-check the range; on any doubt return nothing
+    # so Vietstock fills the date instead of us inventing a value.
+    ends = [m.end() for m in re.finditer(r"</td>", html[qm:qm + 4000])]
+    if len(ends) < 2:
+        return None, None
+    cell = re.sub(r"<[^>]+>", " ", html[qm + ends[0]:qm + ends[1]])
+    # Reject digits glued to further digits/separators (a thousands-grouped
+    # turnover figure) and anything lacking an integer part (",75").
+    vm = re.search(r"(?<![\d.,])(\d{1,2}[.,]\d{1,2})(?![\d.,])", cell)
     if not vm:
         return None, None
     value = _parse_vn_number(vm.group(1))
+    if value is None or not (0.0 < value <= MAX_PLAUSIBLE_ON_PCT):
+        return None, None
 
     try:
         eff_date = dt.datetime.strptime(dates[-1], "%d/%m/%Y").date()
