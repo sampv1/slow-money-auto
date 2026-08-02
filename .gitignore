@@ -1,6 +1,8 @@
 # Environment secrets
 scripts/.env
 dashboard/.env.local
+# Scratch file of hand-run commands — holds pasted secrets (revalidate URLs etc.)
+scripts/.manual_cmds
 
 # Python
 __pycache__/

@@ -16,8 +16,8 @@ export type FfRow = {
   vnindex: number | null;
 };
 
-type Range = "6m" | "1y" | "3y" | "all";
-const RANGE_DAYS: Record<Range, number> = { "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
+type Range = "1m" | "6m" | "1y" | "3y" | "all";
+const RANGE_DAYS: Record<Range, number> = { "1m": 30, "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
 
 const VN_COLOR = "#2563eb"; // blue    — VN-Index (context)
 const BUY = "#10b981"; // emerald — net buying
@@ -166,7 +166,7 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
           </div>
         )}
         <div className="flex gap-1">
-          {(["6m", "1y", "3y", "all"] as Range[]).map((r) => (
+          {(["1m", "6m", "1y", "3y", "all"] as Range[]).map((r) => (
             <button
               key={r}
               onClick={() => setRange(r)}
@@ -174,7 +174,7 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
                 range === r ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              {t(locale, r === "6m" ? "irRange6m" : r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
+              {t(locale, r === "1m" ? "irRange1m" : r === "6m" ? "irRange6m" : r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
             </button>
           ))}
         </div>

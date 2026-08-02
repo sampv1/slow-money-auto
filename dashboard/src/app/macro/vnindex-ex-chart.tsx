@@ -28,8 +28,8 @@ export type ExRow = {
   peEx: number | null;
 };
 
-type Range = "6m" | "1y" | "3y" | "all";
-const RANGE_DAYS: Record<Range, number> = { "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
+type Range = "1m" | "6m" | "1y" | "3y" | "all";
+const RANGE_DAYS: Record<Range, number> = { "1m": 30, "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
 
 const VN_COLOR = "#2563eb"; // blue — VN-Index (headline)
 const EX_COLOR = "#0d9488"; // teal — the ex-VIC reconstruction
@@ -235,7 +235,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
           )}
         </div>
         <div className="flex gap-1">
-          {(["6m", "1y", "3y", "all"] as Range[]).map((r) => (
+          {(["1m", "6m", "1y", "3y", "all"] as Range[]).map((r) => (
             <button
               key={r}
               onClick={() => setRange(r)}
@@ -243,7 +243,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
                 range === r ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              {r === "6m" ? "6M" : r === "1y" ? "1Y" : r === "3y" ? "3Y" : t(locale, "irRangeAll")}
+              {r === "1m" ? "1M" : r === "6m" ? "6M" : r === "1y" ? "1Y" : r === "3y" ? "3Y" : t(locale, "irRangeAll")}
             </button>
           ))}
         </div>

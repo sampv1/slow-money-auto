@@ -30,6 +30,7 @@ export const translations = {
     irRange3y: "3Y",
     irRange1y: "1Y",
     irRange6m: "6M",
+    irRange1m: "1M",
 
     // Futures Daily Log Return chart (second chart on the Implied Risk page)
     frTitle: "Futures Daily Log Return",
@@ -675,6 +676,7 @@ export const translations = {
     irRange3y: "3N",
     irRange1y: "1N",
     irRange6m: "6T",
+    irRange1m: "1T",
 
     // Futures Daily Log Return chart (second chart on the Implied Risk page)
     frTitle: "Lợi suất log HĐTL hàng ngày",
