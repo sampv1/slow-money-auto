@@ -293,6 +293,25 @@ export default async function MacroPage() {
   let error: string | null = null;
   let pctNearCeiling = DEFAULT_REGIME.pct_near_ceiling;
   let chg5dFast = DEFAULT_REGIME.chg5d_fast;
+
+  // VN-Index ex-VIC — titled "Market P/E" in the UI (exTitle); the ex-VIC naming
+  // is kept throughout the code and the DB metrics. Provisional panel, isolated
+  // on purpose (see getExVicData). Its own try/catch: a failure or a disabled
+  // flag hides just this panel and leaves every other one untouched.
+  //
+  // Fetched BEFORE the main block because the FCI panel overlays this series on
+  // its VN-Index context line. The isolation still holds: on failure exRows is
+  // empty, the FCI chart simply draws no ex-VIC line, and nothing else changes.
+  let exRows: ExRow[] = [];
+  if (EXVIC_ENABLED) {
+    try {
+      exRows = await getExVicData();
+    } catch {
+      exRows = [];
+    }
+  }
+  const exByDate = new Map(exRows.map((r) => [r.date, r.ex]));
+
   try {
     const d = await getMacroData();
     const central = new Map(d.central);
@@ -447,6 +466,10 @@ export default async function MacroPage() {
         ctbForeign: fciCtbForeign.get(date) ?? null,
         ctbCpi: fciCtbCpi.get(date) ?? null,
         vnindex: vnAsof(date),
+        // Exact-date join, not as-of: the ex-VIC series is built only on dates
+        // that already have a VN-Index close. It starts at EX_HISTORY_START
+        // (2024-03-28), so on longer ranges the line simply begins partway in.
+        vnindexEx: exByDate.get(date) ?? null,
         regime,
       };
     });
@@ -517,19 +540,6 @@ export default async function MacroPage() {
     // Sanitised here, once, so all ten panels below stay short: an unhealthy
     // Supabase answers with a whole HTML error page (see lib/errors.ts).
     error = dataErrorDetail(e);
-  }
-
-  // VN-Index ex-VIC — titled "Market P/E" in the UI (exTitle); the ex-VIC naming
-  // is kept throughout the code and the DB metrics. Provisional panel, isolated
-  // on purpose (see getExVicData). Its own try/catch: a failure or a disabled
-  // flag hides just this panel and leaves every other one untouched.
-  let exRows: ExRow[] = [];
-  if (EXVIC_ENABLED) {
-    try {
-      exRows = await getExVicData();
-    } catch {
-      exRows = [];
-    }
   }
 
   // Chart index for the sticky nav bar. Order MUST match the sections below;

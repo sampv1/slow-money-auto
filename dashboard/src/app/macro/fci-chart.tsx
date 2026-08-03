@@ -24,6 +24,10 @@ export type FciRow = {
   ctbForeign: number | null;
   ctbCpi: number | null;
   vnindex: number | null;
+  // VN-Index with the Vingroup family removed — same units, same axis as
+  // `vnindex`, so the gap between the two lines is the family's distortion of
+  // the headline index. Null before 2024-03-28 (the ex-VIC history start).
+  vnindexEx: number | null;
   regime: FciRegime | null;
 };
 
@@ -31,6 +35,10 @@ type Range = "1m" | "6m" | "1y" | "3y" | "all";
 const RANGE_DAYS: Record<Range, number> = { "1m": 30, "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
 
 const VN_COLOR = "#2563eb"; // blue   — VN-Index (context)
+// teal — VN-Index ex-VIC, same teal the Market P/E panel uses for this series so
+// it reads as the same line across the page. Validated against VN_COLOR:
+// deutan ΔE 20.7, normal-vision 22.6 (scripts/validate_palette.js).
+const VNEX_COLOR = "#0d9488";
 const FULL_COLOR = "#4f46e5"; // indigo — the FCI line
 const OFF_COLOR = "#ef4444"; // red    — risk-off zone / ribbon
 const ON_COLOR = "#10b981"; // green   — supportive zone / ribbon
@@ -76,9 +84,16 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
   const latest = useMemo(() => [...rows].reverse().find((r) => r.full !== null) ?? null, [rows]);
   const n = view.length;
   const hasVn = useMemo(() => view.some((r) => r.vnindex !== null), [view]);
+  const hasVnEx = useMemo(() => view.some((r) => r.vnindexEx !== null), [view]);
 
+  // ONE shared scale for both index lines — never a second y-axis. They are the
+  // same measure in the same units, so a separate scale would fabricate crossings
+  // and destroy the only thing the pair is here to show: the size of the gap.
   const vnDom = useMemo(() => {
-    const vals = view.map((r) => r.vnindex).filter((v): v is number => v !== null);
+    const vals = [
+      ...view.map((r) => r.vnindex),
+      ...view.map((r) => r.vnindexEx),
+    ].filter((v): v is number => v !== null);
     if (!vals.length) return { lo: 0, hi: 1 };
     const lo = Math.min(...vals), hi = Math.max(...vals);
     const pad = (hi - lo) * 0.04 || 1;
@@ -159,6 +174,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
     return segs;
   };
   const vnSegs = hasVn ? segsOf((r) => r.vnindex, yVn) : [];
+  const vnExSegs = hasVnEx ? segsOf((r) => r.vnindexEx, yVn) : [];
   const fullSegs = segsOf((r) => r.full, yZ);
 
   // Component contribution bars: positives stack up from 0, negatives stack down.
@@ -279,6 +295,12 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
             VN-Index
           </span>
         )}
+        {hasVnEx && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-3 h-0.5" style={{ backgroundColor: VNEX_COLOR }} />
+            {t(locale, "exLegend")}
+          </span>
+        )}
       </div>
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => { setHover(null); setHoverY(null); }} role="img">
@@ -296,6 +318,9 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
             ))}
             {vnSegs.map((pts, k) => (
               <polyline key={`vn${k}`} points={pts} fill="none" stroke={VN_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+            ))}
+            {vnExSegs.map((pts, k) => (
+              <polyline key={`vnx${k}`} points={pts} fill="none" stroke={VNEX_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
             ))}
           </g>
         )}
@@ -373,12 +398,16 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
           <g>
             <line x1={hx} y1={hasVn ? vnTop : zTop} x2={hx} y2={ribTop + ribH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
             {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
+            {hasVnEx && hv.vnindexEx !== null && <circle cx={hx} cy={yVn(hv.vnindexEx)} r={3} fill={VNEX_COLOR} />}
             {hv.full !== null && <circle cx={hx} cy={yZ(hv.full)} r={3} fill={FULL_COLOR} />}
             <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill="#0f172a" fontFamily="monospace">
               {hv.date}
               {hv.full !== null && <> · FCI {fmtS2(hv.full)}</>}
               {hv.regime !== null && <> · {t(locale, REGIME[hv.regime].label)}</>}
               {hasVn && hv.vnindex !== null && ` · VNI ${fmtInt(hv.vnindex)}`}
+              {/* still shorter than the 7-code component line below, so this
+                  can't be the line that overflows near the chart edge */}
+              {hasVnEx && hv.vnindexEx !== null && ` · exVIC ${fmtInt(hv.vnindexEx)}`}
             </text>
             {/* per-component contribution readout (short codes; the legend maps
                 each code's colour to its full name) */}
@@ -475,6 +504,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
               val: c.v !== null ? fmtS2(c.v) : "—",
             })),
             { color: VN_COLOR, label: "VNI", val: hv.vnindex !== null ? fmtInt(hv.vnindex) : "—" },
+            { color: VNEX_COLOR, label: "exVIC", val: hv.vnindexEx !== null ? fmtInt(hv.vnindexEx) : "—" },
           ];
           const vlX = px1 + 16;
           const rowH = 13;
