@@ -283,7 +283,8 @@ def collect_fed_target(start: dt.date, end: dt.date) -> list[dict]:
             + series_rows(METRIC_FED_TARGET_UPPER, upper, "%", "fred"))
 
 
-def collect_vnindex_ex(end: dt.date, backfill: bool) -> list[dict]:
+def collect_vnindex_ex(end: dt.date, backfill: bool,
+                       vnindex_rows: list[dict] | None = None) -> list[dict]:
     """VN-Index excluding the Vingroup family, as macro_series rows.
 
     Backfill (or an unseeded table) rebuilds the whole history anchored to
@@ -300,7 +301,13 @@ def collect_vnindex_ex(end: dt.date, backfill: bool) -> list[dict]:
         shares = fetch_listed_shares(hose_symbols(client))
         anchor = None if backfill else latest_stored(client)
         start = EX_HISTORY_START if anchor is None else dt.date.fromisoformat(anchor[0])
-        levels, weights, famcaps, stats = compute_ex_series(client, shares, family, start, end, anchor)
+        # This run's VN-Index closes are not in the DB yet (everything is upserted
+        # in one batch at the end), so hand them over directly — otherwise the
+        # ex-VIC series can only ever reach the PREVIOUS run's last session.
+        fresh = {r["date"]: float(r["value"]) for r in (vnindex_rows or [])
+                 if r.get("metric") == METRIC_VNINDEX and r.get("value") is not None}
+        levels, weights, famcaps, stats = compute_ex_series(
+            client, shares, family, start, end, anchor, vnindex_fresh=fresh)
     except Exception as e:  # noqa: BLE001
         print(f"  VN-Index ex-VIC fetch failed: {str(e)[:120]}")
         return []
@@ -681,7 +688,7 @@ def main():
         fed_rows = collect_fed_target(FED_TARGET_HISTORY_START, end)
 
         print(f"=== Backfill VN-Index ex-VIC: {EX_HISTORY_START} -> {end} ===")
-        exvic_rows = collect_vnindex_ex(end, backfill=True)
+        exvic_rows = collect_vnindex_ex(end, backfill=True, vnindex_rows=vnindex_rows)
 
         print(f"=== Backfill foreign flows (CafeF): {FOREIGN_HISTORY_START} -> {end} ===")
         foreign_rows = collect_foreign(FOREIGN_HISTORY_START, end)
@@ -726,7 +733,7 @@ def main():
         # Appends only sessions newer than the last stored point (self-seeds the
         # full history if the metric is empty), so history is never rewritten.
         print("VN-Index ex-VIC (append):")
-        exvic_rows = collect_vnindex_ex(end, backfill=False)
+        exvic_rows = collect_vnindex_ex(end, backfill=False, vnindex_rows=vnindex_rows)
         print("Foreign flows (recent):")
         foreign_rows = collect_foreign(end - dt.timedelta(days=21), end)
         # Govt bond 10Y (ADB ABO): the year-granular `years` param means a recent

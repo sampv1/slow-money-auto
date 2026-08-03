@@ -227,8 +227,16 @@ def _load_closes(client, symbols: list[str], start: dt.date, end: dt.date) -> di
     return by_date
 
 
-def _load_vnindex(client, start: dt.date, end: dt.date) -> dict[str, float]:
-    """{date: VN-Index close} from macro_series."""
+def _load_vnindex(client, start: dt.date, end: dt.date,
+                  fresh: dict[str, float] | None = None) -> dict[str, float]:
+    """{date: VN-Index close} from macro_series, overlaid with `fresh`.
+
+    `fresh` carries the VN-Index closes the CURRENT refresh_macro run just
+    fetched but has not upserted yet — everything is written in one batch at the
+    end of the run, AFTER this collector executes. Reading the DB alone
+    therefore only ever sees the previous run's data, which pinned the whole
+    ex-VIC series exactly one trading session behind VN-Index on every run.
+    """
     out: dict[str, float] = {}
     offset = 0
     while True:
@@ -244,6 +252,10 @@ def _load_vnindex(client, start: dt.date, end: dt.date) -> dict[str, float]:
         if len(rows) < 1000:
             break
         offset += 1000
+    lo, hi = start.isoformat(), end.isoformat()
+    for d, v in (fresh or {}).items():
+        if lo <= d <= hi:
+            out[d] = v
     return out
 
 
@@ -261,7 +273,9 @@ def compute_ex_series(
     client, shares: dict[str, float], family: list[str],
     start: dt.date, end: dt.date,
     anchor: tuple[str, float] | None = None,
-) -> tuple[list[tuple[dt.date, float]], list[tuple[dt.date, float]], dict]:
+    vnindex_fresh: dict[str, float] | None = None,
+) -> tuple[list[tuple[dt.date, float]], list[tuple[dt.date, float]],
+           list[tuple[dt.date, float]], dict]:
     """(ex-index levels, family weight %, family cap, stats) over [start, end].
 
     Walks the dates on which BOTH a VN-Index close and HOSE bars exist.
@@ -274,7 +288,7 @@ def compute_ex_series(
     """
     universe = [s for s in hose_symbols(client) if s in shares]
     closes = _load_closes(client, universe, start, end)
-    vni = _load_vnindex(client, start, end)
+    vni = _load_vnindex(client, start, end, vnindex_fresh)
 
     dates = sorted(d for d in closes if d in vni)
     if len(dates) < 2:
