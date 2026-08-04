@@ -450,6 +450,9 @@ export const translations = {
     positions: "positions",
     allPositions: "All positions",
     noPositions: "No positions found.",
+    adjKindStock: "share action (bonus/split)",
+    adjKindCash: "cash dividend",
+    adjKindUnknown: "price adjustment",
     adjBadge: "ADJ",
     adjTooltip:
       "Corporate action detected on or before {date} (factor {factor}). Entry, SL and TP stay on the basis recorded at trade time; multiply by the factor for the market basis.",
@@ -1102,6 +1105,9 @@ export const translations = {
     positions: "vị thế",
     allPositions: "Tất cả vị thế",
     noPositions: "Không tìm thấy vị thế.",
+    adjKindStock: "chia cổ phiếu (thưởng/tách)",
+    adjKindCash: "cổ tức tiền mặt",
+    adjKindUnknown: "điều chỉnh giá",
     adjBadge: "ĐC",
     adjTooltip:
       "Phát hiện sự kiện doanh nghiệp vào hoặc trước {date} (hệ số {factor}). Giá mua, cắt lỗ và chốt lời giữ nguyên theo mốc ghi nhận lúc vào lệnh; nhân với hệ số để ra giá thị trường.",

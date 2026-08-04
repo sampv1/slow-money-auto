@@ -37,6 +37,7 @@ from ta.adjustments import (
     REF_TOL,
     SCAN_DAYS,
     detect_adjusted_symbols,
+    record_actions,
     repair_symbols,
 )
 from ta.common import REQUEST_DELAY, get_supabase_client
@@ -82,6 +83,17 @@ def main():
     print(f"\nDetected {len(flagged)} adjusted symbol(s):")
     for f in flagged:
         print(f"  {f['symbol']:<6} [{f['exchange'] or '?':<5}]  {'; '.join(f['reasons'])}")
+
+    events = [e for f in flagged for e in f.get("events", [])]
+    if args.dry_run:
+        print(f"\n[dry-run] would record {len(events)} corporate action(s):")
+        for e in events[:20]:
+            print(f"  {e['symbol']:<6} ex={e['ex_date']} ratio={e['ratio']:.4f} "
+                  f"{e['kind']:<7} {e['label'] or '':<8} [{e['source']}]")
+    else:
+        n_act = record_actions(client, events)
+        if n_act:
+            print(f"\nRecorded {n_act} corporate action(s).")
 
     targets = [f["symbol"] for f in flagged]
     if args.limit is not None and len(targets) > args.limit:

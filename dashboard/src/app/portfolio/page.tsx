@@ -1,4 +1,4 @@
-import { getRecommendations } from "@/lib/cached-data";
+import { getCorporateActions, getRecommendations, type CorporateAction } from "@/lib/cached-data";
 import { formatPrice, formatPnl, pnlColor, statusBadge } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
@@ -35,6 +35,17 @@ const adjFactor = (r: Recommendation): number | null => {
   return typeof k === "number" && Number.isFinite(k) && k > 0 && Math.abs(k - 1) > 0.01 ? k : null;
 };
 
+// The action(s) behind this position's factor: same symbol, ex-date inside the
+// holding window. `adj_factor` says a corporate action happened; corporate_actions
+// (migration 043) says WHICH — so the badge can read "shares x2 on 2026-07-15"
+// rather than a bare number. Empty until 043 is applied, which is why the factor
+// alone still drives the badge.
+const actionsFor = (r: Recommendation, all: CorporateAction[]): CorporateAction[] => {
+  const from = r.last_close_date;
+  const to = r.closed_at ?? "9999-12-31";
+  return all.filter((a) => a.symbol === r.symbol && a.ex_date > from && a.ex_date <= to);
+};
+
 // The position's P&L as the table shows it: realized once the trade is closed,
 // mark-to-market while it's still running. The summary uses the SAME helper as
 // the P&L column, so a card can never disagree with the rows beneath it.
@@ -61,6 +72,14 @@ export default async function PortfolioPage({
   // per query would fragment the cache — one entry holds every row and the
   // filtering/ordering happens in-memory here, as it does for Stats.
   let recommendations: Recommendation[];
+  // Its own try/catch and a [] fallback: the badge degrades to the bare factor
+  // rather than taking the page down if the table is missing or the read fails.
+  let actions: CorporateAction[] = [];
+  try {
+    actions = await getCorporateActions();
+  } catch {
+    actions = [];
+  }
   try {
     const all = await getRecommendations();
     recommendations = all
@@ -243,9 +262,28 @@ export default async function PortfolioPage({
                       {k !== null && (
                         <span
                           className="ml-1.5 inline-block px-1 py-0.5 text-[10px] rounded bg-amber-100 text-amber-700 align-middle"
-                          title={t(locale, "adjTooltip")
-                            .replace("{date}", rec.adj_detected_at ?? "—")
-                            .replace("{factor}", k.toFixed(4))}
+                          title={
+                            // Prefer the recorded event(s) — they name the ex-date
+                            // and the inferred kind. Fall back to the bare factor
+                            // when nothing was logged (pre-migration-043 rows).
+                            (() => {
+                              const evs = actionsFor(rec, actions);
+                              const detail = evs.length
+                                ? evs
+                                    .map((a) =>
+                                      `${a.ex_date}: ${t(locale, a.kind === "stock" ? "adjKindStock" : a.kind === "cash" ? "adjKindCash" : "adjKindUnknown")}` +
+                                      (a.label ? ` (${a.label})` : ""),
+                                    )
+                                    .join(" · ")
+                                : null;
+                              return (
+                                (detail ? `${detail}\n` : "") +
+                                t(locale, "adjTooltip")
+                                  .replace("{date}", rec.adj_detected_at ?? "—")
+                                  .replace("{factor}", k.toFixed(4))
+                              );
+                            })()
+                          }
                         >
                           {t(locale, "adjBadge")}
                         </span>

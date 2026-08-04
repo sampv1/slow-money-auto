@@ -130,8 +130,14 @@ def main():
     if not args.dry_run:
         try:
             print("\n--- Step 1b: corporate-action adjustment repair ---")
-            from ta.adjustments import detect_adjusted_symbols, repair_symbols
+            from ta.adjustments import detect_adjusted_symbols, record_actions, repair_symbols
             flagged = detect_adjusted_symbols(client, scan_days=15, use_ref=True)
+            # Log the events before repairing. Every flagged symbol is recorded,
+            # not just the ones inside the repair cap, so the log never silently
+            # omits an action just because the day was busy. Non-fatal by design.
+            n_act = record_actions(client, [e for f in flagged for e in f.get("events", [])])
+            if n_act:
+                print(f"  Recorded {n_act} corporate action(s).")
             targets = [f["symbol"] for f in flagged]
             if len(targets) > MAX_DAILY_REPAIRS:
                 print(f"  {len(targets)} symbols flagged (> cap {MAX_DAILY_REPAIRS}); "

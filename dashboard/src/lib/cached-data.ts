@@ -225,3 +225,39 @@ export const getFeedbacks = unstable_cache(
   ["feedbacks-all"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FEEDBACK] },
 );
+
+// Corporate actions detected by ta/adjustments.py (migration 043). Written by
+// the TA pipeline, so it carries TAG_TA and the ta-daily revalidate refreshes it.
+//
+// Small by construction — a few hundred rows over the whole scan window — so the
+// Portfolio page pulls the lot and joins in memory rather than querying per row.
+// Returns [] if the table does not exist yet, because the page must render
+// before migration 043 is applied.
+export type CorporateAction = {
+  symbol: string;
+  ex_date: string;
+  ratio: number;
+  kind: "stock" | "cash" | "unknown";
+  share_multiplier: number | null;
+  label: string | null;
+  source: string;
+};
+
+export const getCorporateActions = unstable_cache(
+  async (): Promise<CorporateAction[]> => {
+    try {
+      return await fetchAllPaged<CorporateAction>((from, to, withCount) =>
+        supabase
+          .from("corporate_actions")
+          .select("symbol,ex_date,ratio,kind,share_multiplier,label,source", withCount ? { count: "exact" } : undefined)
+          .order("ex_date", { ascending: false })
+          .order("symbol", { ascending: true }) // tie-break → deterministic paging
+          .range(from, to),
+      );
+    } catch {
+      return [];
+    }
+  },
+  ["corporate-actions-all"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
+);
