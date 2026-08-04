@@ -23,6 +23,18 @@ export const revalidate = 0;
 
 const isOpen = (r: Recommendation) => (ACTIVE_STATUSES as string[]).includes(r.status);
 
+// Corporate actions (cash dividend / bonus / split) re-scale the market price
+// but NOT this row: entry/SL/TP are the nominal levels captured at trade time and
+// current_price is rebased back onto that same basis by update_prices.py, so P&L
+// stays correct as a total return on the original share count. The cost is that
+// the levels shown stop matching a broker screen — after a 1:1 bonus this row
+// reads 50,000 while the market trades at 26,000. `adjFactor` recovers the market
+// basis (nominal x k) so the row can show both and explain itself.
+const adjFactor = (r: Recommendation): number | null => {
+  const k = r.adj_factor;
+  return typeof k === "number" && Number.isFinite(k) && k > 0 && Math.abs(k - 1) > 0.01 ? k : null;
+};
+
 // The position's P&L as the table shows it: realized once the trade is closed,
 // mark-to-market while it's still running. The summary uses the SAME helper as
 // the P&L column, so a card can never disagree with the rows beneath it.
@@ -219,6 +231,7 @@ export default async function PortfolioPage({
                   rec.holding_period_label ??
                   (rec.holding_period_sessions ? `${rec.holding_period_sessions} ${t(locale, "sessions")}` : null);
                 const badge = statusBadge(rec.status, locale);
+                const k = adjFactor(rec);
                 return (
                   <tr key={rec.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{rec.trading_date}</td>
@@ -226,6 +239,16 @@ export default async function PortfolioPage({
                       {rec.symbol}
                       {rec.source === "MANUAL" && (
                         <span className="ml-1.5 inline-block px-1 py-0.5 text-[10px] rounded bg-gray-100 text-gray-500 align-middle">M</span>
+                      )}
+                      {k !== null && (
+                        <span
+                          className="ml-1.5 inline-block px-1 py-0.5 text-[10px] rounded bg-amber-100 text-amber-700 align-middle"
+                          title={t(locale, "adjTooltip")
+                            .replace("{date}", rec.adj_detected_at ?? "—")
+                            .replace("{factor}", k.toFixed(4))}
+                        >
+                          {t(locale, "adjBadge")}
+                        </span>
                       )}
                       {rec.note && (
                         <span className="block text-[11px] text-gray-400 font-normal mt-0.5 max-w-[180px] truncate" title={rec.note}>{rec.note}</span>
@@ -251,7 +274,16 @@ export default async function PortfolioPage({
                         <span className="ml-1 text-xs">({rec.tp2_pct > 0 ? "+" : ""}{rec.tp2_pct.toFixed(1)}%)</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono">{formatPrice(lastPrice)}</td>
+                    <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
+                      {formatPrice(lastPrice)}
+                      {/* Market basis, so the row reconciles against a broker
+                          screen without altering what was actually recorded. */}
+                      {k !== null && lastPrice !== null && (
+                        <span className="block text-[11px] text-amber-700 font-normal mt-0.5">
+                          {formatPrice(lastPrice * k)} <span className="text-gray-400">{t(locale, "adjMarketBasis")}</span>
+                        </span>
+                      )}
+                    </td>
                     <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor(pnl)}`}>
                       {formatPnl(pnl)}
                     </td>
@@ -291,6 +323,15 @@ export default async function PortfolioPage({
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Only shown when at least one visible row is actually affected — an
+          always-on note about corporate actions would be noise on a page where
+          they are rare. */}
+      {recommendations.some((r) => adjFactor(r) !== null) && (
+        <p className="mt-3 text-xs text-gray-500 max-w-3xl">
+          {t(locale, "adjFootnote")}
+        </p>
       )}
     </div>
   );

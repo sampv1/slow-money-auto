@@ -103,6 +103,13 @@ export interface Recommendation {
   actual_pnl_pct: number | null;
   closed_at: string | null;
   days_held: number | null;
+  // Corporate-action factor k = adjusted_close(last_close_date)/last_close,
+  // written by update_prices.py when |k-1| > 1% (migration 042). entry/SL/TP and
+  // current_price are all stored on the recommendation's ORIGINAL nominal basis;
+  // multiply by k to get the market basis. Optional: rows predating the migration
+  // — and every row if it has not been applied yet — simply omit these.
+  adj_factor?: number | null;
+  adj_detected_at?: string | null;
   created_at: string;
   updated_at: string;
 }

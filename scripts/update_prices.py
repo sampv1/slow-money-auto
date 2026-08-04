@@ -420,6 +420,24 @@ def main():
             f"{change_str}"
         )
 
+        # Record the corporate-action factor. Presentation + audit only: no stored
+        # P&L depends on it (the rebase above already makes P&L a total-return
+        # measure on the original share count). The Portfolio page uses it to show
+        # the market-basis price beside the nominal one, so a row reading
+        # entry 50,000 / current 52,000 while the market trades at 26,000 explains
+        # itself instead of looking broken.
+        #
+        # Guarded on the column being present in the fetched row: recs come from
+        # select("*"), so before migration 042 is applied the key is simply absent
+        # and we skip the write rather than failing the whole daily evaluation.
+        if k != 1.0 and "adj_factor" in rec:
+            updates = updates or {}
+            updates["adj_factor"] = round(k, 6)
+            if rec.get("adj_detected_at") is None and price:
+                # First observation. Not the exchange ex-date — nothing here
+                # records ex-dates — so it means "detected on or before".
+                updates["adj_detected_at"] = price["date"]
+
         # Apply updates
         if updates and not args.dry_run:
             client.table("recommendations").update(updates).eq("id", rec["id"]).execute()
