@@ -37,10 +37,12 @@ from ta.adjustments import (
     REF_TOL,
     SCAN_DAYS,
     detect_adjusted_symbols,
+    detect_restated,
     record_actions,
     repair_symbols,
 )
 from ta.common import REQUEST_DELAY, get_supabase_client
+from ta.universe import get_active_symbols
 
 
 def main():
@@ -63,6 +65,13 @@ def main():
                     help="Safety cap on number of symbols to re-backfill")
     ap.add_argument("--delay", type=float, default=REQUEST_DELAY,
                     help=f"Per-symbol delay for re-backfill fetches (default {REQUEST_DELAY})")
+    ap.add_argument("--restate", action="store_true",
+                    help="Use the RELIABLE detector: re-fetch each symbol's history and "
+                         "compare it bar-for-bar with what is stored. Catches adjustments "
+                         "the gap scan structurally cannot (anything inside the exchange "
+                         "band — e.g. AIG's 15% bonus showed as -9.98% on UPCOM's +-15%). "
+                         "Costs one history() call per symbol, so pair it with --symbols "
+                         "or expect ~1.4h for the full universe.")
     ap.add_argument("--dry-run", action="store_true", help="Detect + report, don't re-backfill")
     args = ap.parse_args()
 
@@ -71,10 +80,16 @@ def main():
 
     print(f"Scanning for price adjustments (scan_days={args.scan_days}, "
           f"ref={'off' if args.no_ref else 'on'}, min_price={args.min_price:.0f})...")
-    flagged = detect_adjusted_symbols(
-        client, scan_days=args.scan_days, use_ref=not args.no_ref, symbols=syms,
-        buffer=args.buffer, min_price=args.min_price, ref_tol=args.ref_tol,
-    )
+    if args.restate:
+        flagged = detect_restated(
+            client, syms or get_active_symbols(client),
+            days=args.scan_days, delay=args.delay,
+        )
+    else:
+        flagged = detect_adjusted_symbols(
+            client, scan_days=args.scan_days, use_ref=not args.no_ref, symbols=syms,
+            buffer=args.buffer, min_price=args.min_price, ref_tol=args.ref_tol,
+        )
 
     if not flagged:
         print("No adjustments detected.")

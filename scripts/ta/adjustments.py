@@ -64,37 +64,107 @@ def _exchange_limit(exchange: str | None) -> float:
     return EXCHANGE_LIMIT.get((exchange or "").upper(), DEFAULT_LIMIT)
 
 
-STOCK_DROP_CUTOFF = 0.15  # price drop above which a cash dividend is implausible
+def classify_action(ratio: float | None) -> tuple[str, float | None, str | None]:
+    """(kind, share_multiplier_equivalent, label) for a post/pre price ratio.
 
+    THE TYPE IS NOT INFERRED, because it is not inferrable from price. Two
+    attempts were made and both failed on AIG, whose answer is known from its AGM
+    (5% cash dividend ex 07-31 + 15% bonus ex 08-04):
 
-def classify_action(ratio: float | None, cutoff: float = STOCK_DROP_CUTOFF) -> tuple[str, float | None, str | None]:
-    """(kind, share_multiplier, label) inferred from a post/pre price ratio.
+      1. Matching 1/ratio to a simple rational — with denominators to 12 there is
+         a rational within a fraction of a percent of almost any number, so
+         near-identical ratios split into different classes and upward moves got
+         labels like "x0.714286".
+      2. A magnitude cutoff (drop >= 15% => stock) — the 15% bonus shows as a
+         13.03% drop and landed on the wrong side.
+      3. A round-number test (round share ratio vs round VND amount) — for AIG
+         BOTH fired: 1/0.8693 = 1.1504 ~ 1.15, and 52,100 x 0.1307 = 6,809 ~ 6,800.
 
-    INFERRED FROM PRICE ALONE and only ever a hint — `ratio` is the fact.
+    Nor does the share count settle it: charter capital and listed_share update at
+    LISTING, weeks after the ex-date, so during the whole relevant window they
+    still read the pre-action figure.
 
-    Deliberately a magnitude rule, not a rational-matching one. Matching 1/ratio
-    against simple fractions looked precise and behaved badly on real data: with
-    denominators to 12 there is a rational within a fraction of a percent of
-    almost any number, so near-identical ratios landed in different classes
-    (0.7667 -> unknown vs 0.7713 -> "x1.3") and upward moves acquired confident
-    nonsense labels like "x0.714286". Magnitude is coarser and honest.
-
-      drop >= cutoff  -> 'stock'  (too large for a VN cash dividend)
-      drop <  cutoff  -> 'cash'
-      ratio >= 1      -> 'unknown' (upward: a share action lowers price, so this
-                                    is a genuine move, a halt resumption, or a
-                                    rare consolidation — do not guess)
-
-    The residual ambiguity is real and unfixable from price: a large special cash
-    dividend can exceed the cutoff and a small bonus can fall under it. Settling
-    it needs the share count, which is why `listed_share` is recorded.
+    So `ratio` is recorded as the fact and `share_multiplier` as its arithmetic
+    inverse — the equivalent share multiplier, a restatement rather than a claim.
+    `kind` stays 'unknown' unless a corporate announcement fills it in.
     """
     if not ratio or ratio <= 0 or ratio >= 1.0:
         return "unknown", None, None
-    drop = 1.0 - ratio
-    if drop >= cutoff:
-        return "stock", round(1.0 / ratio, 4), f"x{1.0 / ratio:.2f}".rstrip("0").rstrip(".")
-    return "cash", None, f"-{drop * 100:.1f}%"
+    return "unknown", round(1.0 / ratio, 4), f"-{(1.0 - ratio) * 100:.1f}%"
+
+
+RESTATE_TOL = 0.005   # below this a difference is rounding, not an adjustment
+RESTATE_DAYS = 120    # window of bars compared per symbol
+
+
+def detect_restated(client, symbols: list[str], days: int = RESTATE_DAYS,
+                    tol: float = RESTATE_TOL, delay: float = REQUEST_DELAY) -> list[dict]:
+    """THE RELIABLE CHECK: re-fetch each symbol's history and compare it, bar for
+    bar, with what we stored. A bar whose value changed was restated, which means
+    the series was adjusted. Returns the same event dicts as detect_adjusted_symbols.
+
+    Why this and not find_gap(): find_gap infers an action from a price move
+    larger than the exchange band, so anything inside the band is invisible to
+    it. AIG's 15% bonus moved UPCOM price -9.98% against a +-15% band and was
+    missed completely; so was a second BMD action. This check does not infer
+    anything — it compares our copy against the provider's own adjusted series,
+    so magnitude, exchange and action type are all irrelevant.
+
+    Cost is one history() call per symbol, so it is for targeted use (open
+    positions, a rolling slice of the universe), not a daily full sweep.
+
+    Caveat that no detector can remove: the provider must have applied the
+    adjustment already. On AIG's ex-date the back-adjustment was not live at
+    16:07 ICT but was by 21:56, so a same-session run can still see nothing.
+    That is why exits are deferred rather than trusted — see update_prices.py.
+    """
+    cutoff = (today_vn() - timedelta(days=days)).isoformat()
+    exch = _exchange_map(client)
+    out: list[dict] = []
+    detected = today_vn().isoformat()
+
+    for i, sym in enumerate(symbols):
+        stored = _stored_closes(client, sym, cutoff)
+        if len(stored) < 2:
+            continue
+        try:
+            fresh = fetch_ohlcv(sym, today_vn() - timedelta(days=days), today_vn())
+        except Exception:  # noqa: BLE001 — a fetch failure is not a detection
+            fresh = None
+        if i < len(symbols) - 1:
+            time.sleep(delay)
+        if not fresh:
+            continue
+        adj = {r["date"]: float(r["close"]) for r in fresh if r.get("close")}
+
+        common = [d for d in sorted(stored) if d in adj and stored[d]]
+        if not common:
+            continue
+        moved = [(d, stored[d], adj[d]) for d in common
+                 if abs(adj[d] / stored[d] - 1.0) > tol]
+        if not moved:
+            continue
+        # Ex-date = the first bar that was NOT restated (back-adjustment applies
+        # to everything strictly before the action). If every bar moved, the
+        # action predates the window and we can only bound it.
+        unmoved = [d for d in common if d not in {m[0] for m in moved}]
+        ex_date = min(unmoved) if unmoved else None
+        ratio = moved[-1][2] / moved[-1][1]  # factor applied to the pre-ex bars
+        kind, mult, label = classify_action(ratio)
+        out.append({
+            "symbol": sym, "exchange": exch.get(sym),
+            "reasons": [f"restated@{ex_date or '<=' + common[0]} "
+                        f"{len(moved)}/{len(common)} bars x{ratio:.4f}"],
+            "events": ([{
+                "symbol": sym, "ex_date": ex_date, "ratio": round(ratio, 8),
+                "kind": kind, "share_multiplier": mult, "label": label,
+                "detected_at": detected, "source": "restate",
+                "exchange": exch.get(sym),
+                "prev_close": moved[-1][1], "new_close": moved[-1][2],
+                "listed_share": None,
+            }] if ex_date else []),
+        })
+    return out
 
 
 def record_actions(client, events: list[dict]) -> int:

@@ -43,6 +43,23 @@ CLOSED_STATUSES = {"TP2_HIT", "STOPPED", "EXPIRED", "CLOSED_MANUAL"}
 # in the morning when selling is not possible. So we only check SL/TP from T+3.
 MIN_DAYS_BEFORE_EXIT = 3
 
+# A same-session corporate action can drag the RAW price through a nominal stop
+# without the position having lost anything. The rebase normally prevents that,
+# but it needs the provider's back-adjusted history, and the provider may not
+# have applied it yet: on AIG's ex-date (2026-08-04, 15% bonus) the adjustment
+# was not live at 16:07 ICT — when the daily job ran — but was by 21:56. So the
+# job saw k=1.0, compared a post-bonus 46,900 against a pre-bonus 48,000 stop,
+# and closed a position that was actually +6.7%.
+#
+# Guard: when a symbol looks adjusted but we could NOT rebase (k == 1.0), skip
+# the exit decision for that session. The price is still recorded; only the
+# irreversible close is deferred, and the next run decides with correct data.
+# Deviation of today's exchange reference from the last stored close. HOSE/HNX
+# set it to the adjusted prior close, so a few % is already conclusive; UPCOM
+# uses a session average, hence a threshold well above normal average-vs-close
+# drift (AIG showed -11.9%).
+SUSPECT_REF_DEV = 0.05
+
 # vnstock KBS source: free, no API key needed
 VNSTOCK_SOURCE = "KBS"
 REQUEST_DELAY = 3.5  # seconds between requests to stay under rate limit
@@ -175,6 +192,46 @@ def count_business_days(since_date: str) -> int:
             count += 1
         current += timedelta(days=1)
     return count
+
+
+def suspect_adjustments(client, symbols: list[str]) -> dict[str, float]:
+    """{symbol: deviation} where the exchange's reference price disagrees with the
+    last close we stored before it — the same-session signal that a corporate
+    action took effect, available before the provider back-adjusts its history.
+    Failures return {} so the guard degrades to today's behaviour, never worse.
+    """
+    out: dict[str, float] = {}
+    if not symbols:
+        return out
+    try:
+        from ta.adjustments import _fetch_ref_prices, _stored_closes
+        ref = _fetch_ref_prices(symbols)
+    except Exception as e:  # noqa: BLE001
+        print(f"  adjustment guard inactive (reference fetch failed: {str(e)[:70]})")
+        return out
+    cutoff = (date.today() - timedelta(days=45)).isoformat()
+    for sym in symbols:
+        got = ref.get(sym)
+        if not got:
+            continue
+        rp, td, _shares = got
+        try:
+            closes = _stored_closes(client, sym, cutoff)
+        except Exception:  # noqa: BLE001
+            continue
+        prior = max((d for d in closes if d < td), default=None)
+        if not prior or not closes[prior]:
+            continue
+        dev = rp / closes[prior] - 1.0
+        if abs(dev) > SUSPECT_REF_DEV:
+            out[sym] = dev
+    return out
+
+
+# Fields evaluate_recommendation() sets when it CLOSES a position. Stripping
+# these (and restoring the prior status) turns a close back into a plain
+# mark-to-market update, which is what deferring an exit means.
+CLOSE_FIELDS = ("actual_exit_price", "actual_pnl_pct", "closed_at")
 
 
 def evaluate_recommendation(rec: dict, price: dict, days_held: int) -> dict | None:
@@ -360,6 +417,13 @@ def main():
         if i < len(symbols) - 1:
             time.sleep(REQUEST_DELAY)
 
+    # One bulk price_board call for the open symbols — cheap, and it is the only
+    # signal available on the ex-date itself (see SUSPECT_REF_DEV).
+    suspects = suspect_adjustments(client, symbols)
+    for sym, dev in suspects.items():
+        print(f"  {sym}: exchange reference {dev * 100:+.1f}% vs last stored close "
+              f"— corporate action suspected")
+
     # Step 2: Evaluate each recommendation
     print(f"\n{'Symbol':<7} {'Entry':>9} {'SL':>9} {'TP1':>9} {'Current':>9} {'P&L':>8} {'Status':<12} {'Change'}")
     print("─" * 90)
@@ -379,6 +443,22 @@ def main():
 
         # Evaluate TP/SL (respects T+2.5 settlement)
         updates = evaluate_recommendation(rec, price, days_held)
+
+        # Defer — never close — on a suspected same-session adjustment we could
+        # not rebase. k != 1.0 means the rebase already handled it and the exit is
+        # trustworthy; k == 1.0 with the reference disagreeing means the provider
+        # has not back-adjusted yet, so any exit here is measured against a
+        # re-scaled price. The mark-to-market still lands; only the irreversible
+        # part waits for the next run.
+        if (updates and k == 1.0 and rec["symbol"] in suspects
+                and any(f in updates for f in CLOSE_FIELDS)):
+            dev = suspects[rec["symbol"]]
+            for f in CLOSE_FIELDS:
+                updates.pop(f, None)
+            updates["status"] = rec["status"]
+            print(f"  {rec['symbol']} (id {rec['id']}): exit DEFERRED — exchange "
+                  f"reference {dev * 100:+.1f}% vs last stored close suggests a "
+                  f"corporate action the price history has not picked up yet")
 
         # Check expiry (only if not already closed by TP/SL)
         if updates and updates.get("status", rec["status"]) in ACTIVE_STATUSES:

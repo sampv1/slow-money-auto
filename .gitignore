@@ -7,6 +7,8 @@ scripts/.manual_cmds
 # Python
 __pycache__/
 *.pyc
+.venv/
+scripts/.venv/
 
 # Script outputs (Claude API responses)
 scripts/outputs/

@@ -17,18 +17,30 @@
 -- confident falsehood. Such symbols are still repaired — repair_symbols verifies
 -- and skips, so a false flag is harmless there, unlike a false log entry.
 --
--- `kind` and `share_multiplier` are INFERRED FROM PRICE ALONE and are not
--- authoritative. The rule is deliberately coarse: a drop >= 15% is too large for
--- a VN cash dividend, so it reads as 'stock'; below that, 'cash'. An earlier
--- version matched 1/ratio against simple rationals and looked far more precise,
--- but on real data it classified near-identical ratios differently (0.7667 vs
--- 0.7713) and produced confident nonsense on upward moves — precision that was
--- an artifact of tolerance, not evidence.
+-- `kind` is NOT inferred from price, because it is not inferrable from price.
+-- Three rules were tried and all three failed on AIG, whose answer is known from
+-- its AGM (5% cash dividend ex 07-31 + 15% bonus ex 08-04): rational-matching
+-- split near-identical ratios into different classes; a 15%-drop cutoff put the
+-- 15% bonus on the wrong side (it shows as a 13.03% drop); and a round-number
+-- test fired BOTH ways at once (1/0.8693 = 1.1504 ~ 1.15, and 52,100 x 0.1307 =
+-- 6,809 ~ 6,800 VND). So `kind` stays 'unknown' until a corporate announcement
+-- fills it in, and `share_multiplier` is just 1/ratio — the equivalent share
+-- multiplier, a restatement of the fact rather than a claim about the cause.
 --
 -- The residual ambiguity is real and unfixable from price: a large special cash
--- dividend can clear the cutoff, and a small bonus can fall under it. Settling
--- it needs the share count, which is why `listed_share` is stored — comparing it
--- across two events for the same symbol resolves the case definitively.
+-- dividend can clear the cutoff, and a small bonus can fall under it.
+--
+-- DO NOT try to settle it with the share count. Charter capital and listed_share
+-- update when the new shares are LISTED, which is weeks after the ex-date, so
+-- during the entire window that matters they still show the pre-action figure.
+-- AIG proved this the hard way: its 15% bonus went ex 2026-08-04 while
+-- capital_history still read 2018-11-22 and listed_share still read 170,601,298.
+-- Treating "share count unchanged" as "no stock action" gives a confident wrong
+-- answer. `listed_share` is stored as a historical record only.
+--
+-- Only the corporate announcement gives the type. AIG's 2026 AGM approved a 5%
+-- cash dividend AND a 15% bonus, which show up here as two separate events
+-- (ex 07-31 factor 0.99045, ex 08-04 factor 0.86930).
 --
 -- Run this in the Supabase SQL Editor.
 -- ============================================================
