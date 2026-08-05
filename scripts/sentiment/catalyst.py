@@ -227,8 +227,13 @@ def _searched(msg: dict) -> bool:
     return any(t.get("type") == "search" for t in (msg.get("executed_tools") or []))
 
 
-def _score_one(symbol: str, exchange: str, cfg: dict, api_key: str) -> tuple[list | None, str, int]:
-    """Score one symbol, retrying the transient 413. Returns (result, status, attempts).
+def _score_one(symbol: str, exchange: str, cfg: dict,
+               api_key: str) -> tuple[list | None, str, int, bool]:
+    """Score one symbol, retrying the transient 413.
+
+    Returns (result, status, attempts, quota_dead) — `quota_dead` meaning the
+    account-wide 429 ceiling was hit, so the caller should stop rather than
+    repeat the same doomed retry budget on every remaining symbol.
 
     Why a retry loop exists at all — HTTP 413 here is NOT "your request is too
     big". Measured against the real prompt (2,162 chars):
@@ -265,6 +270,7 @@ def _score_one(symbol: str, exchange: str, cfg: dict, api_key: str) -> tuple[lis
     max_attempts = int(cfg.get("max_attempts", 12))
     backoff = float(cfg.get("retry_delay_sec", 8.0))
     last = "no attempt"
+    last_code = 0
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -279,7 +285,7 @@ def _score_one(symbol: str, exchange: str, cfg: dict, api_key: str) -> tuple[lis
                 msg = (resp.json().get("choices") or [{}])[0].get("message") or {}
                 found = _extract_json_array(msg.get("content") or "")
                 note = "" if _searched(msg) else " [NO SEARCH — from model memory]"
-                return found, f"{len(found)} found{note}", attempt
+                return found, f"{len(found)} found{note}", attempt, False
 
             if resp.status_code in (413, 429) and attempt < max_attempts:
                 # 429 reports how long the bucket needs; 413 does not, so a
@@ -291,20 +297,30 @@ def _score_one(symbol: str, exchange: str, cfg: dict, api_key: str) -> tuple[lis
                         wait = max(wait, float(resp.headers.get("retry-after", 0)) + 1)
                     except ValueError:
                         pass
-                last = f"HTTP {resp.status_code}"
+                last, last_code = f"HTTP {resp.status_code}", resp.status_code
                 time.sleep(wait)
                 continue
 
+            # Reached on a non-retryable code, and on 413/429 in the FINAL
+            # attempt (the retry branch above is gated on attempt < max). A 429
+            # here means the account-wide ceiling, so flag the quota as dead —
+            # this return, not the one after the loop, is where an exhausted
+            # 429 budget actually lands.
             detail = resp.text[:160].replace("\n", " ")
-            return None, f"ERROR HTTP {resp.status_code} {detail}", attempt
+            return (None, f"ERROR HTTP {resp.status_code} {detail}", attempt,
+                    resp.status_code == 429)
         except Exception as e:  # noqa: BLE001 — one bad symbol must not end the run
-            last = f"ERROR {str(e)[:160]}"
+            last, last_code = f"ERROR {str(e)[:160]}", 0
             if attempt < max_attempts:
                 time.sleep(backoff)
                 continue
-            return None, last, attempt
+            return None, last, attempt, False
 
-    return None, f"GAVE UP after {max_attempts} attempts (last: {last})", max_attempts
+    # Burning every attempt and ending on 429 means the shared quota is gone,
+    # not that this symbol was unlucky — 413 is per-attempt, 429 is account-wide.
+    # The caller uses this to stop rather than repeat the same wait per symbol.
+    return (None, f"GAVE UP after {max_attempts} attempts (last: {last})",
+            max_attempts, last_code == 429)
 
 
 def fetch_catalysts_groq(agroup: list[dict], cfg: dict, api_key: str) -> dict[str, list | None]:
@@ -327,7 +343,7 @@ def fetch_catalysts_groq(agroup: list[dict], cfg: dict, api_key: str) -> dict[st
     for i, a in enumerate(agroup, 1):
         sym, exch = a["symbol"], a["exchange"]
         started = time.monotonic()
-        out[sym], status, tries = _score_one(sym, exch, cfg, api_key)
+        out[sym], status, tries, quota_dead = _score_one(sym, exch, cfg, api_key)
 
         dt = time.monotonic() - started
         elapsed = time.monotonic() - t0
@@ -335,6 +351,18 @@ def fetch_catalysts_groq(agroup: list[dict], cfg: dict, api_key: str) -> dict[st
         att = f" · {tries} attempt(s)" if tries > 1 else ""
         print(f"  [{i}/{n}] {sym}: {status} ({dt:.0f}s{att}) · elapsed {elapsed / 60:.1f}m · "
               f"eta ~{eta / 60:.1f}m", flush=True)
+
+        if quota_dead:
+            # The 429 ceiling is account-wide, so every remaining symbol would
+            # burn the same full retry budget for the same failure — 4 symbols
+            # cost 28 minutes of CI to score nothing before this guard existed.
+            # Leave the rest as None so they keep their previous scores.
+            for rest in agroup[i:]:
+                out[rest["symbol"]] = None
+            print(f"  Groq quota exhausted (429 on every attempt) — stopping; "
+                  f"{n - i} symbol(s) skipped, existing scores kept.", flush=True)
+            break
+
         if i < n and delay > 0:
             time.sleep(delay)
     return out
