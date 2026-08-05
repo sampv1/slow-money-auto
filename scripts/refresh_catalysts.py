@@ -11,19 +11,23 @@ absorption and writes the average effective score to ta_universe.catalyst_score
 
 See scripts/sentiment/catalyst.py for the model + decay logic.
 
-Runs synchronously by default (per-symbol, ~10-20 min for the shortlist) so it
-reliably finishes inside one workflow run. --batch uses the Message Batches API
-(50% cheaper) but batch latency is unpredictable (minutes to 24h), so it may not
-finish in a single scheduled job.
+Groq has no Batch API, so symbols are scored one at a time and paced by
+`request_delay_sec` to stay inside the token-per-minute allowance.
+
+EXPECT PARTIAL COVERAGE on the free tier. `groq/compound` returns HTTP 413 on
+~9 of 10 calls — not a size problem but an overrun of an invisible internal
+sub-model quota (see sentiment/catalyst.py::_score_one). Each symbol is retried
+with spacing, landing it ~61% of the time; a symbol that never lands returns
+None and KEEPS ITS PREVIOUS SCORE rather than being cleared, so coverage builds
+up over successive nights. Budget ~10 min per unlucky symbol.
 
 Usage:
-  python3 refresh_catalysts.py                      # A/A+ shortlist, sync (default)
-  python3 refresh_catalysts.py --batch              # cheaper, but may not finish in-run
+  python3 refresh_catalysts.py                      # A/A+ shortlist
   python3 refresh_catalysts.py --dry-run            # fetch + compute, don't write
   python3 refresh_catalysts.py --symbols FPT,HPG    # override the shortlist
   python3 refresh_catalysts.py --limit 3            # cap symbols (cost control / testing)
 
-Requires ANTHROPIC_API_KEY (+ SUPABASE_URL / SUPABASE_ANON_KEY) in scripts/.env
+Requires GROQ_API_KEY (+ SUPABASE_URL / SUPABASE_ANON_KEY) in scripts/.env
 or the environment.
 """
 
@@ -45,21 +49,18 @@ def main():
                         help="Comma-separated symbols to score instead of the A/A+ shortlist")
     parser.add_argument("--limit", type=int, default=None,
                         help="Cap the number of symbols scored (cost control / testing)")
-    parser.add_argument("--batch", action="store_true",
-                        help="Use the Message Batches API (50%% cheaper) instead of synchronous calls. "
-                             "Batch latency is unpredictable — may not finish inside a scheduled run.")
     args = parser.parse_args()
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        print("Error: ANTHROPIC_API_KEY must be set in scripts/.env or the environment.")
+        print("Error: GROQ_API_KEY must be set in scripts/.env or the environment.")
         sys.exit(1)
 
     symbols = [s.strip() for s in args.symbols.split(",") if s.strip()] if args.symbols else None
 
     client = get_supabase_client()
     stats = compute_catalysts(client, api_key, dry_run=args.dry_run, symbols=symbols,
-                              limit=args.limit, use_batch=args.batch)
+                              limit=args.limit)
 
     print(f"\nDone ({stats['as_of']}): {stats['evaluated']}/{stats['candidates']} evaluated, "
           f"{stats['with_catalysts']} with catalysts, {stats['catalysts']} catalyst rows, "

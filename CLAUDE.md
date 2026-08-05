@@ -28,7 +28,7 @@ The pipeline is **DB-centric**: scripts read/write Supabase, the dashboard reads
 
 ### Python scripts
 
-Live in `scripts/`, use `scripts/.env` for credentials (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `ANTHROPIC_API_KEY`). Python >= 3.10.
+Live in `scripts/`, use `scripts/.env` for credentials (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`). Python >= 3.10.
 
 ```bash
 cd scripts
@@ -57,7 +57,7 @@ python3 refresh_fa.py import --fiin Data_FiinPro.xlsx --pe PE.xlsx   # additive 
 python3 refresh_fa.py score --backfill              # score all eligible quarters (default: latest quarter only, live price)
 
 # --- Sentiment ---
-python3 refresh_catalysts.py                        # CAN SLIM "N" catalyst scoring for A/A+ shortlist via Claude+web_search (--batch, --symbols, --limit, --dry-run)
+python3 refresh_catalysts.py                        # CAN SLIM "N" catalyst scoring for A/A+ shortlist via Groq groq/compound (built-in web search) (--symbols, --limit, --dry-run)
 
 # --- Macro (raw inputs → macro_series) ---
 python3 refresh_macro.py                            # SBV central rate (today) + VCB sell + VN-Index + CPI + interbank (--backfill one-time history, --days, --dry-run)
@@ -98,7 +98,9 @@ Cron workflows in `.github/workflows/` (times in UTC; VN market closes ~07:45 UT
 | `daily-evaluation.yml` | ~06:12 UTC | `update_prices.py` (P&L eval) | **active** |
 | `macro-daily.yml` | ~10:40 UTC (Mon–Fri) | `refresh_macro.py` then `fetch_cpi.py --upsert` (CPI is `continue-on-error`) | **active** |
 | `daily-prompt.yml` | (23:37 UTC) | `run_prompt.py` | **commented out** |
-| `sentiment-daily.yml` | (14:30 UTC) | `refresh_catalysts.py` | **commented out** |
+| `sentiment-daily.yml` | ~14:30 UTC (Mon–Fri) | `refresh_catalysts.py` (needs `GROQ_API_KEY`) | **active** — best-effort, see below |
+
+**Catalysts run best-effort on Groq's free tier and will NOT score every symbol every night.** `groq/compound` returns HTTP 413 on ~9 of 10 calls. This is not a request-size problem and is not worth re-diagnosing: the failure arrives 15–22 s in (*after* its search loop ran), the same prompt on a plain model answers in 1.5 s, shrinking the prompt or `max_tokens` doesn't help, and it fires while the visible budget still reads ~69,000/70,000 tokens. A 429 named the true ceiling — `meta-llama/llama-4-scout`, the sub-model compound drives its search loop with, which **404s if called directly** and therefore has a quota that is invisible in the response headers and untunable from the request. `_score_one` retries with **spacing**; do not make retries rapid — 12 attempts 8 s apart drained that sub-model's quota and turned every 413 into a 429, strictly worse. A symbol that never lands returns `None` and keeps its previous score, so coverage accumulates across nights instead of being wiped. A paid Groq tier is what would make this deterministic.
 
 ## Scoring pipeline
 
