@@ -44,34 +44,64 @@ def get_supabase_client():
     return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 
-# Transient-error markers we'd see from httpx/httpcore over a long-running job.
-# Most common: HTTP/2 stream exhaustion after ~20k requests on one connection.
+# Transient failures are matched on the exception TYPE, not on its message.
+# Matching on text alone silently failed: httpx.WriteError's message is
+# "EOF occurred in violation of protocol (_ssl.c:2427)" and httpx.ConnectError's
+# is "[Errno 111] Connection refused" — neither contains its own type name, so
+# type-name entries in a message-substring list were dead weight. Only the h2
+# case ever matched, because httpx embeds "<ConnectionTerminated ...>" in the
+# message text. That let a one-off SSL blip kill the whole TA daily run.
+#
+# These are matched against the full MRO, so listing a BASE class covers every
+# subclass: httpx.TimeoutException covers Connect/Read/Write/PoolTimeout, and
+# httpx.NetworkError covers Connect/Read/Write/CloseError. httpx and httpcore
+# use parallel names, so one set serves both.
+#
+# Deliberately EXCLUDED: HTTPStatusError (a real 4xx/5xx answer, not a network
+# fault) and LocalProtocolError (a client-side bug — retrying just hides it).
+_TRANSIENT_ERROR_TYPES = frozenset({
+    "TimeoutException",        # httpx/httpcore timeout base
+    "NetworkError",            # httpx/httpcore network base (incl. WriteError)
+    "RemoteProtocolError",     # peer broke the connection mid-flight
+    "ProxyError",
+    "ConnectionError",         # builtin base: Reset/Aborted/Refused/BrokenPipe
+    "TimeoutError",            # builtin (also socket.timeout)
+    "SSLError",                # ssl.SSLError, incl. SSLEOFError
+    "IncompleteRead",
+})
+
+# Message substrings for failures whose TYPE is generic. PostgREST can't parse a
+# Cloudflare HTML error body, so a gateway blip surfaces as an APIError reading
+# "JSON could not be generated" — infra, never a real data error, so it is safe
+# to retry. Seen as Cloudflare 520-525 or a 500 with "Failed to get project
+# config".
 _TRANSIENT_ERROR_MARKERS = (
-    "RemoteProtocolError",
-    "ConnectionTerminated",
+    "ConnectionTerminated",    # h2 GOAWAY: stream exhaustion on a long-lived conn
     "stream_id",
-    "ConnectError",
-    "ConnectTimeout",
-    "ReadTimeout",
-    "WriteTimeout",
-    "PoolTimeout",
-    "TimeoutException",
-    # Supabase/Cloudflare gateway blips (origin briefly unreachable). PostgREST
-    # can't parse the Cloudflare HTML / control-plane body, so its client raises
-    # an APIError whose message is "JSON could not be generated" — this only ever
-    # happens for a gateway/infra hiccup, never a real data error, so it's safe
-    # to retry. Seen as Cloudflare 520/521/522/523/524/525 or a 500 with body
-    # "Failed to get project config".
     "JSON could not be generated",
     "Failed to get project config",
     "SSL handshake failed",
     "Web server is returning an unknown error",
+    "Server disconnected",
 )
 
 
 def is_transient_error(exc: BaseException) -> bool:
-    err = str(exc)
-    return any(marker in err for marker in _TRANSIENT_ERROR_MARKERS)
+    """True when `exc` is a network/gateway blip worth retrying.
+
+    Walks the __cause__/__context__ chain because httpx wraps httpcore and
+    postgrest wraps httpx — the retryable type is often not the outermost one.
+    """
+    seen: set[int] = set()
+    err: BaseException | None = exc
+    while err is not None and id(err) not in seen:
+        seen.add(id(err))
+        if any(t.__name__ in _TRANSIENT_ERROR_TYPES for t in type(err).__mro__):
+            return True
+        if any(marker in str(err) for marker in _TRANSIENT_ERROR_MARKERS):
+            return True
+        err = err.__cause__ or err.__context__
+    return False
 
 
 def _deep_merge(default: dict, override: dict) -> dict:

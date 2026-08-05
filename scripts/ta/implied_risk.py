@@ -33,7 +33,7 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
-from .common import VNSTOCK_SOURCE
+from .common import VNSTOCK_SOURCE, safe_execute
 
 SPOT_SYMBOL = "VN30"
 FUTURE_SYMBOL = "VN30F1M"
@@ -192,5 +192,6 @@ def upsert_implied_risk(client, rows: list[dict]) -> int:
     if not rows:
         return 0
     for j in range(0, len(rows), 500):
-        client.table("implied_risk").upsert(rows[j:j + 500], on_conflict="date").execute()
+        safe_execute(client.table("implied_risk").upsert(rows[j:j + 500], on_conflict="date"),
+                     label="implied_risk upsert")
     return len(rows)

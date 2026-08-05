@@ -214,11 +214,11 @@ def upsert_trendlines(client, symbol: str, lines: Iterable[dict]) -> int:
 
 def load_trendlines(client, symbol: str) -> list[dict]:
     """Read current trendlines for a symbol from the DB."""
-    r = (
+    r = safe_execute(
         client.table("ta_trendlines")
         .select("trend_type,start_date,start_price,end_date,end_price,slope,touches")
-        .eq("symbol", symbol)
-        .execute()
+        .eq("symbol", symbol),
+        label=f"trendlines load {symbol}",
     )
     return r.data or []
 

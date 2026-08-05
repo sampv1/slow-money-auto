@@ -66,12 +66,12 @@ def _compute_kwargs_for(fn, *, levels, trendlines, benchmark) -> dict:
 
 def load_ohlcv(client, symbol: str) -> pd.DataFrame:
     """Load full OHLCV history for a symbol from ta_ohlcv as a date-indexed DataFrame."""
-    result = (
+    result = safe_execute(
         client.table("ta_ohlcv")
         .select("date,open,high,low,close,volume")
         .eq("symbol", symbol)
-        .order("date", desc=False)
-        .execute()
+        .order("date", desc=False),
+        label=f"ohlcv load {symbol}",
     )
     if not result.data:
         return pd.DataFrame()
@@ -168,27 +168,33 @@ def upsert_signals(client, rows: list[dict]) -> int:
 
 def start_run(client, trading_date: str) -> int | None:
     """Insert a 'running' row in ta_runs, return its id."""
-    res = client.table("ta_runs").insert(
-        {
-            "trading_date": trading_date,
-            "status": "running",
-        }
-    ).execute()
+    res = safe_execute(
+        client.table("ta_runs").insert(
+            {
+                "trading_date": trading_date,
+                "status": "running",
+            }
+        ),
+        label="ta_runs start",
+    )
     return res.data[0]["id"] if res.data else None
 
 
 def finish_run(client, run_id: int | None, status: str, symbols_n: int, signals_n: int, err: str | None = None):
     if run_id is None:
         return
-    client.table("ta_runs").update(
-        {
-            "finished_at": "now()",
-            "status": status,
-            "symbols_processed": symbols_n,
-            "signals_written": signals_n,
-            "error_message": err,
-        }
-    ).eq("id", run_id).execute()
+    safe_execute(
+        client.table("ta_runs").update(
+            {
+                "finished_at": "now()",
+                "status": status,
+                "symbols_processed": symbols_n,
+                "signals_written": signals_n,
+                "error_message": err,
+            }
+        ).eq("id", run_id),
+        label="ta_runs finish",
+    )
 
 
 def inspect_symbol_date(client, symbol: str, target_date: str):

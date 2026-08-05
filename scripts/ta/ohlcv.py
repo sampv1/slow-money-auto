@@ -7,7 +7,7 @@ matching the convention used elsewhere in this repo (see update_prices.py).
 import time
 from datetime import date, timedelta
 
-from .common import REQUEST_DELAY, VNSTOCK_SOURCE, today_vn
+from .common import REQUEST_DELAY, VNSTOCK_SOURCE, safe_execute, today_vn
 
 
 # Per-symbol retry schedule for transient vnstock failures (timeouts, rate
@@ -208,7 +208,8 @@ def upsert_ohlcv(client, rows: list[dict]) -> int:
     """Upsert OHLCV rows into ta_ohlcv. Returns number of rows written."""
     if not rows:
         return 0
-    client.table("ta_ohlcv").upsert(rows, on_conflict="symbol,date").execute()
+    safe_execute(client.table("ta_ohlcv").upsert(rows, on_conflict="symbol,date"),
+                 label="ohlcv upsert")
     return len(rows)
 
 

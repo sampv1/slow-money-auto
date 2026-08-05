@@ -243,10 +243,10 @@ def upsert_levels(client, symbol: str, levels: Iterable[dict]) -> int:
 
 def load_levels(client, symbol: str) -> list[dict]:
     """Load current S/R levels for a symbol from the DB."""
-    r = (
+    r = safe_execute(
         client.table("ta_sr_levels")
         .select("price,level_type,touches,strength,first_touch_date,last_touch_date")
-        .eq("symbol", symbol)
-        .execute()
+        .eq("symbol", symbol),
+        label=f"sr load {symbol}",
     )
     return r.data or []

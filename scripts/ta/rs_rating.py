@@ -555,10 +555,13 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
     if rs_hist:
         try:
             import datetime as _dt
-            client.table("ta_rs_hist_meta").upsert(
-                {"id": 1, "dates": rs_hist_dates,
-                 "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat()}
-            ).execute()
+            safe_execute(
+                client.table("ta_rs_hist_meta").upsert(
+                    {"id": 1, "dates": rs_hist_dates,
+                     "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat()}
+                ),
+                label="rs_hist_meta upsert",
+            )
             hist_payload = [
                 {
                     "symbol": sym, "exchange": exch.get(sym, "HOSE"),
@@ -574,7 +577,11 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
             # keeps each statement comfortably under a few hundred KB.
             HIST_BATCH = 150
             for i in range(0, len(hist_payload), HIST_BATCH):
-                client.table("ta_universe").upsert(hist_payload[i:i + HIST_BATCH], on_conflict="symbol").execute()
+                safe_execute(
+                    client.table("ta_universe").upsert(hist_payload[i:i + HIST_BATCH],
+                                                       on_conflict="symbol"),
+                    label="rs history upsert",
+                )
             print(f"  RS history: wrote {len(hist_payload)} symbols ({len(rs_hist_dates)} dates).")
         except Exception as e:  # noqa: BLE001 — most likely migration 040/041 not applied
             print(f"  RS history NOT written — apply migrations 040+041? ({str(e)[:120]})")

@@ -6,6 +6,8 @@ The universe is stored in the ta_universe table. This module provides:
 - reading the active universe back from the DB
 """
 
+from .common import safe_execute
+
 TARGET_EXCHANGES = {"HOSE", "HNX", "UPCOM"}
 
 # Curated fallback list of major HOSE tickers (VN30 + popular mid-caps).
@@ -94,7 +96,8 @@ def upsert_symbols(client, symbols: list[str], exchange: str = "HOSE") -> int:
         {"symbol": s.upper(), "exchange": exchange, "is_active": True}
         for s in symbols
     ]
-    client.table("ta_universe").upsert(rows, on_conflict="symbol").execute()
+    safe_execute(client.table("ta_universe").upsert(rows, on_conflict="symbol"),
+                 label="universe upsert")
     return len(rows)
 
 
@@ -114,7 +117,8 @@ def upsert_symbols_with_exchanges(client, items: list[tuple[str, str]]) -> int:
     ]
     chunk = 500
     for i in range(0, len(rows), chunk):
-        client.table("ta_universe").upsert(rows[i:i + chunk], on_conflict="symbol").execute()
+        safe_execute(client.table("ta_universe").upsert(rows[i:i + chunk], on_conflict="symbol"),
+                     label="universe upsert")
     return len(rows)
 
 
@@ -129,13 +133,12 @@ def _paged_symbols(client, table: str, column: str = "symbol") -> set[str]:
     offset = 0
     page = 1000
     while True:
-        rows = (
+        rows = safe_execute(
             client.table(table)
             .select(column)
-            .range(offset, offset + page - 1)
-            .execute()
-            .data
-        )
+            .range(offset, offset + page - 1),
+            label="universe read",
+        ).data
         for r in rows:
             v = r.get(column)
             if v:
@@ -196,13 +199,12 @@ def align_universe_to_fa(client) -> dict:
     existing: dict[str, str] = {}
     offset, page = 0, 1000
     while True:
-        rows = (
+        rows = safe_execute(
             client.table("ta_universe")
             .select("symbol,exchange")
-            .range(offset, offset + page - 1)
-            .execute()
-            .data
-        )
+            .range(offset, offset + page - 1),
+            label="universe read",
+        ).data
         for r in rows:
             existing[str(r["symbol"]).upper()] = r.get("exchange") or "HOSE"
         if len(rows) < page:
@@ -223,13 +225,15 @@ def align_universe_to_fa(client) -> dict:
     ]
     chunk = 500
     for i in range(0, len(rows), chunk):
-        client.table("ta_universe").upsert(rows[i:i + chunk], on_conflict="symbol").execute()
+        safe_execute(client.table("ta_universe").upsert(rows[i:i + chunk], on_conflict="symbol"),
+                     label="universe upsert")
 
     # Deactivate everything not in the FA set.
     to_deactivate = sorted(set(existing) - fa_syms)
     for i in range(0, len(to_deactivate), chunk):
         batch = to_deactivate[i:i + chunk]
-        client.table("ta_universe").update({"is_active": False}).in_("symbol", batch).execute()
+        safe_execute(client.table("ta_universe").update({"is_active": False}).in_("symbol", batch),
+                     label="universe deactivate")
 
     return {
         "fa_symbols": len(fa_syms),
@@ -248,15 +252,14 @@ def get_active_symbols(client) -> list[str]:
     out: list[str] = []
     offset, page = 0, 1000
     while True:
-        rows = (
+        rows = safe_execute(
             client.table("ta_universe")
             .select("symbol")
             .eq("is_active", True)
             .order("symbol")
-            .range(offset, offset + page - 1)
-            .execute()
-            .data
-        )
+            .range(offset, offset + page - 1),
+            label="universe read",
+        ).data
         out.extend(r["symbol"] for r in rows)
         if len(rows) < page:
             break
@@ -281,18 +284,19 @@ def apply_liquidity_filter(
     kept = 0
     deactivated = 0
     for symbol in universe:
-        result = (
+        result = safe_execute(
             client.table("ta_ohlcv")
             .select("close,volume,date")
             .eq("symbol", symbol)
             .order("date", desc=True)
-            .limit(lookback_days)
-            .execute()
+            .limit(lookback_days),
+            label=f"ohlcv liquidity {symbol}",
         )
         rows = result.data
         if not rows:
             # No price data → deactivate (we can't evaluate the filter)
-            client.table("ta_universe").update({"is_active": False}).eq("symbol", symbol).execute()
+            safe_execute(client.table("ta_universe").update({"is_active": False}).eq("symbol", symbol),
+                         label="universe deactivate")
             deactivated += 1
             continue
 
@@ -303,7 +307,8 @@ def apply_liquidity_filter(
         if passes:
             kept += 1
         else:
-            client.table("ta_universe").update({"is_active": False}).eq("symbol", symbol).execute()
+            safe_execute(client.table("ta_universe").update({"is_active": False}).eq("symbol", symbol),
+                         label="universe deactivate")
             deactivated += 1
 
     return kept, deactivated
