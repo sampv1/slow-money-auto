@@ -422,9 +422,21 @@ export function SignalProClient({
           {t(locale, "faNoRows")}
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+        // Vertical scrolling lives on this box, not the page, so the header can
+        // freeze. `overflow-x-auto` alone already made it a scroll container (per
+        // spec, a non-visible overflow on one axis computes the other to `auto`),
+        // which meant a `sticky` header anchored to it and never moved while the
+        // PAGE scrolled. Capping the height gives it something to scroll against.
+        <div className="bg-white rounded-lg border border-gray-200 overflow-auto max-h-[calc(100vh-12rem)]">
           <table className="w-full text-sm">
-            <thead>
+            {/* Sticky on <thead>, not per-<th>: this header is two rows deep with
+                rowSpan/colSpan cells, and freezing the whole thead keeps them
+                aligned without hardcoding a `top` offset for the sub-header row.
+                The divider is a shadow, not a border — Tailwind's preflight sets
+                `border-collapse: collapse`, and collapsed borders belong to the
+                table rather than the cell, so Chrome drops them once the header
+                is sticky. */}
+            <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#e5e7eb]">
               {/* Group row */}
               <tr className="border-b border-gray-200 text-left text-gray-500">
                 <th rowSpan={2} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>

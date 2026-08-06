@@ -213,9 +213,20 @@ export function FaScannerClient({
           {t(locale, "faNoRows")}
         </div>
       ) : (
-        <div className={`bg-white rounded-lg border border-gray-200 overflow-x-auto${isPending ? " opacity-50 transition-opacity" : ""}`}>
+        // Vertical scrolling lives on this box, not the page, so the header can
+        // freeze. `overflow-x-auto` alone already made it a scroll container (per
+        // spec, a non-visible overflow on one axis computes the other to `auto`),
+        // which meant a `sticky` header anchored to it and never moved while the
+        // PAGE scrolled. Capping the height gives it something to scroll against.
+        <div className={`bg-white rounded-lg border border-gray-200 overflow-auto max-h-[calc(100vh-12rem)]${isPending ? " opacity-50 transition-opacity" : ""}`}>
           <table className="w-full text-sm">
-            <thead>
+            {/* Sticky on <thead> rather than each <th>: it keeps multi-row headers
+                aligned without hardcoding a `top` offset per row. The divider is a
+                shadow, not a border — Tailwind's preflight sets
+                `border-collapse: collapse`, and collapsed borders belong to the
+                table rather than the cell, so Chrome drops them once the header
+                is sticky. */}
+            <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#e5e7eb]">
               <tr className="border-b border-gray-200 text-left text-gray-500">
                 <th className="px-4 py-3 font-medium cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
