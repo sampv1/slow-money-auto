@@ -503,18 +503,6 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
     if dry_run:
         return stats
 
-    # Clear stale RS on all active rows, then write the fresh snapshot. Keeps RS
-    # null for symbols that dropped out of the liquid set or lost history.
-    safe_execute(
-        client.table("ta_universe")
-        .update({"rs_3m": None, "rs_6m": None, "rs_9m": None, "rs_12m": None,
-                 "rs_composite": None, "rs_date": None,
-                 "rs_line": None, "rs_line_full": None, "rs_line_date": None,
-                 "rs_line_dates": None, "rs_line_score": None, "rs_line_grade": None})
-        .eq("is_active", True),
-        label="rs clear",
-    )
-
     exch = _exchange_map(client)
     payload = [
         {
@@ -540,6 +528,29 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
             client.table("ta_universe").upsert(payload[i:i + 500], on_conflict="symbol"),
             label="rs upsert",
         )
+
+    # Retire RS on rows this run did NOT refresh — symbols that dropped out of
+    # the liquid set or lost history. `rs_date` is identical across the whole
+    # snapshot, so "not equal to this run's date" is exactly that set. Rows
+    # already NULL don't match (SQL NULL semantics) and need no clearing.
+    #
+    # ORDER MATTERS: write first, retire second. This used to clear every active
+    # row BEFORE the upsert, which meant a single failed chunk left those symbols
+    # with NO RS at all — Step 3 catches the exception as "non-fatal", so the run
+    # went green while the dashboard showed blank TA components and a TA Score
+    # computed as if RS were 0 (missing component = 0). That is how VNM ended up
+    # scoring 24 = BQS 70 x 0.35 with RS3M/Composite/Line all blank: chunk 3 of 3
+    # failed, stranding 386 rated symbols. Writing first makes a partial failure
+    # degrade to STALE RS instead of ABSENT RS, and the next run repairs it.
+    safe_execute(
+        client.table("ta_universe")
+        .update({"rs_3m": None, "rs_6m": None, "rs_9m": None, "rs_12m": None,
+                 "rs_composite": None, "rs_date": None,
+                 "rs_line": None, "rs_line_full": None, "rs_line_date": None,
+                 "rs_line_dates": None, "rs_line_score": None, "rs_line_grade": None})
+        .eq("is_active", True).neq("rs_date", rs_date),
+        label="rs retire stale",
+    )
 
     # RS-rating history arrays (Analysis-page RS3M/6M/52W lines) — written in a
     # SEPARATE, guarded pass so a missing migration 040/041 can never break the
