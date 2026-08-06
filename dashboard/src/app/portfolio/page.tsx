@@ -228,7 +228,7 @@ export default async function PortfolioPage({
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "tp1")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "tp2")}</th>
                 <th className="px-4 py-3 font-medium text-right whitespace-nowrap">{t(locale, "currentExit")}</th>
-                <th className="px-4 py-3 font-medium text-right">{t(locale, "pnl")}</th>
+                <th className="px-4 py-3 font-bold text-right">{t(locale, "pnl")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "maxDd")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "rMultiple")}</th>
                 <th className="px-4 py-3 font-medium text-right">{t(locale, "winRateEst")}</th>
@@ -322,7 +322,7 @@ export default async function PortfolioPage({
                         </span>
                       )}
                     </td>
-                    <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor(pnl)}`}>
+                    <td className={`px-4 py-3 text-right font-mono font-bold ${pnlColor(pnl)}`}>
                       {formatPnl(pnl)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-red-600">
