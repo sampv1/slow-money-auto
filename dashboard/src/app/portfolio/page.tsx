@@ -1,6 +1,6 @@
 import { getCorporateActions, getRecommendations, type CorporateAction } from "@/lib/cached-data";
 import { formatPrice, formatPnl, pnlColor, statusBadge } from "@/lib/format";
-import { getLocale, t } from "@/lib/i18n";
+import { getLocale, t, type Locale } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import type { Recommendation } from "@/lib/types";
 import { ACTIVE_STATUSES } from "@/lib/types";
@@ -34,6 +34,27 @@ const adjFactor = (r: Recommendation): number | null => {
   const k = r.adj_factor;
   return typeof k === "number" && Number.isFinite(k) && k > 0 && Math.abs(k - 1) > 0.01 ? k : null;
 };
+
+// The market-basis echo printed under a nominal level. Shown under EVERY price
+// on an adjusted row — entry, SL, TP1, TP2 and current — because carrying it on
+// the current price alone was the confusing part: AIG read entry 51,000 against
+// a market trading near 43,900, with nothing on the row to reconcile them.
+//
+// The percentages beside SL/TP are deliberately NOT rescaled. They are ratios to
+// entry, and a corporate action scales entry and the level by the same k, so the
+// ratio is invariant — rescaling them would introduce an error, not fix one.
+const marketBasis = (
+  v: number | null | undefined,
+  k: number | null,
+  locale: Locale,
+  withLabel = false,
+) =>
+  k !== null && typeof v === "number" && Number.isFinite(v) ? (
+    <span className="block text-[11px] text-amber-700 font-normal mt-0.5">
+      {formatPrice(v * k)}
+      {withLabel && <span className="text-gray-400"> {t(locale, "adjMarketBasis")}</span>}
+    </span>
+  ) : null;
 
 // The action(s) behind this position's factor: same symbol, ex-date inside the
 // holding window. `adj_factor` says a corporate action happened; corporate_actions
@@ -293,34 +314,39 @@ export default async function PortfolioPage({
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
-                    <td className="px-4 py-3 text-right font-mono">{formatPrice(rec.entry_price)}</td>
+                    {/* Entry carries the "market basis" label; the levels after it
+                        repeat the amber figure without it, so the row explains
+                        itself once instead of five times. */}
+                    <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
+                      {formatPrice(rec.entry_price)}
+                      {marketBasis(rec.entry_price, k, locale, true)}
+                    </td>
                     <td className="px-4 py-3 text-right font-mono text-red-500 whitespace-nowrap">
                       {formatPrice(rec.stop_loss)}
                       {rec.stop_loss_pct !== null && (
                         <span className="ml-1 text-xs">({rec.stop_loss_pct > 0 ? "+" : ""}{rec.stop_loss_pct.toFixed(1)}%)</span>
                       )}
+                      {marketBasis(rec.stop_loss, k, locale)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-green-600 whitespace-nowrap">
                       {formatPrice(rec.tp1)}
                       {rec.tp1_pct !== null && (
                         <span className="ml-1 text-xs">({rec.tp1_pct > 0 ? "+" : ""}{rec.tp1_pct.toFixed(1)}%)</span>
                       )}
+                      {marketBasis(rec.tp1, k, locale)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-green-600 whitespace-nowrap">
                       {formatPrice(rec.tp2)}
                       {rec.tp2_pct !== null && (
                         <span className="ml-1 text-xs">({rec.tp2_pct > 0 ? "+" : ""}{rec.tp2_pct.toFixed(1)}%)</span>
                       )}
+                      {marketBasis(rec.tp2, k, locale)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
                       {formatPrice(lastPrice)}
                       {/* Market basis, so the row reconciles against a broker
                           screen without altering what was actually recorded. */}
-                      {k !== null && lastPrice !== null && (
-                        <span className="block text-[11px] text-amber-700 font-normal mt-0.5">
-                          {formatPrice(lastPrice * k)} <span className="text-gray-400">{t(locale, "adjMarketBasis")}</span>
-                        </span>
-                      )}
+                      {marketBasis(lastPrice, k, locale)}
                     </td>
                     <td className={`px-4 py-3 text-right font-mono font-bold ${pnlColor(pnl)}`}>
                       {formatPnl(pnl)}
