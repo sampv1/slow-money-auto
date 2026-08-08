@@ -101,12 +101,34 @@ jobs:
           fi
           echo "Secrets OK."
 
+      # PYTHONUNBUFFERED is not cosmetic here. Without it Python block-buffers
+      # when stdout is a pipe, so the whole run flushes at exit: the 2026-08-07
+      # log timestamped every step at 11:31:40, giving no ordering to work from —
+      # and had the job been killed, the log would have been empty. `-u` is
+      # belt-and-braces with the env var.
       - name: Run TA daily update
         working-directory: scripts
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: python update_ta_daily.py
+          PYTHONUNBUFFERED: "1"
+        run: python -u update_ta_daily.py
+
+      # Post-mortem snapshot. Runs even when the update step fails, because the
+      # state you need is the state right AFTER the failure — by the time anyone
+      # looks, the next nightly run has overwritten it. Reports the RS/base/score
+      # coverage counts and, when RS is short, which symbols are missing; that is
+      # exactly the evidence the 2026-08-07 partial write left behind none of.
+      # continue-on-error so diagnostics can never themselves fail the workflow.
+      - name: TA state snapshot (diagnostics)
+        if: always()
+        continue-on-error: true
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: python -u ta_state_snapshot.py
 
       # Auxiliary: VN30 futures implied risk (IR) for the Implied Risk chart.
       # Two vnstock fetches; non-fatal so an IR hiccup never fails the TA run.

@@ -19,7 +19,12 @@ i.e. rank across ALL symbols in the market that have enough history. A symbol
 needs full ~12-month history to be rated; those without it are left null.
 """
 
+import time
 from datetime import timedelta
+
+# Asks PostgREST to report how many rows each write actually affected — the
+# evidence the 2026-08-07 silent partial write left none of.
+from postgrest.types import CountMethod
 
 from datetime import date as _date_cls
 
@@ -530,11 +535,29 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
         print("  RS: 0 symbols scored — skipping write to preserve prior snapshot.")
         return stats
 
+    # Per-chunk write evidence. `count="exact"` makes PostgREST report how many
+    # rows it says it affected, which is the one signal that separates "the
+    # request never landed" from "the request landed and the rows still are not
+    # there" — the question the 2026-08-07 incident could not answer, because the
+    # loop logged nothing at all. Each line also carries the symbol range, so a
+    # short write can be matched against exactly which symbols went missing.
+    chunk_log: list[str] = []
+    reported = 0
     for i in range(0, len(payload), 500):
-        safe_execute(
-            client.table("ta_universe").upsert(payload[i:i + 500], on_conflict="symbol"),
+        chunk = payload[i:i + 500]
+        t0 = time.monotonic()
+        res = safe_execute(
+            client.table("ta_universe").upsert(chunk, on_conflict="symbol",
+                                               count=CountMethod.exact),
             label="rs upsert",
         )
+        n = res.count if res.count is not None else -1
+        reported += max(n, 0)
+        line = (f"    chunk {i // 500 + 1}: sent {len(chunk)} "
+                f"[{chunk[0]['symbol']}..{chunk[-1]['symbol']}] → reported {n} "
+                f"in {time.monotonic() - t0:.1f}s")
+        chunk_log.append(line)
+        print(line, flush=True)
 
     # VERIFY THE WRITE BEFORE RETIRING ANYTHING. On 2026-08-07 the upsert loop
     # above returned success for every chunk yet only the first 500 of 1,384 rows
@@ -549,11 +572,27 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
         .eq("rs_date", rs_date).limit(1),
         label="rs write verify",
     ).count or 0
+    print(f"  RS write: {len(payload)} sent · {reported} reported by PostgREST · "
+          f"{written} rows now carry rs_date {rs_date}", flush=True)
     if written < len(payload):
+        # Re-read the symbols that are actually missing so the next investigation
+        # starts from data instead of a re-run: if `reported` matches the payload
+        # but `written` does not, the server acknowledged writes it did not keep.
+        missing = [p["symbol"] for p in payload]
+        got: set[str] = set()
+        for j in range(0, len(missing), 200):
+            got.update(r["symbol"] for r in safe_execute(
+                client.table("ta_universe").select("symbol")
+                .eq("rs_date", rs_date).in_("symbol", missing[j:j + 200]),
+                label="rs missing probe",
+            ).data)
+        absent = [s for s in missing if s not in got]
         raise RuntimeError(
             f"RS write incomplete: {written} of {len(payload)} rows carry rs_date "
-            f"{rs_date}. NOT retiring stale rows — un-refreshed symbols keep their "
-            f"previous RS. Re-run refresh_rs.py."
+            f"{rs_date} (PostgREST reported {reported} affected). NOT retiring "
+            f"stale rows — un-refreshed symbols keep their previous RS. "
+            f"{len(absent)} absent, first 20: {absent[:20]}. "
+            f"Chunks:\n" + "\n".join(chunk_log)
         )
 
     # Retire RS only on the symbols this run positively decided are unrated —

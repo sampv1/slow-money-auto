@@ -24,6 +24,7 @@ Usage:
 
 import argparse
 import os
+import traceback
 import sys
 import time
 from pathlib import Path
@@ -40,6 +41,20 @@ from ta.final_score import compute_final_score
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
 from ta.universe import get_active_symbols
+
+
+def log_step_failure(step: str) -> None:
+    """Print a step's FULL traceback, then flag it in the Actions summary.
+
+    Was `print(f"... failed (non-fatal): {str(e)[:160]}")`. Two problems that cost
+    a whole investigation on 2026-08-07: 160 characters truncates a PostgREST
+    APIError before its message/details/hint, and the traceback — which says WHICH
+    write raised — was discarded entirely. A step that swallows its exception must
+    at least record what it swallowed.
+    """
+    print(f"  {step} FAILED (non-fatal) — full traceback follows:", flush=True)
+    traceback.print_exc()
+    write_job_summary(f"\n> **{step} failed** (non-fatal) — see the step log for the traceback.\n")
 
 
 def write_job_summary(text: str) -> None:
@@ -155,7 +170,7 @@ def main():
             else:
                 print("  No adjustments detected.")
         except Exception as e:  # noqa: BLE001
-            print(f"  adjustment repair failed (non-fatal): {str(e)[:160]}")
+            log_step_failure("Step 1b adjustment repair")
 
     # Step 2: compute signals (latest date only) and log to ta_runs
     print(f"\n--- Step 2: compute signals (latest date) ---")
@@ -233,7 +248,7 @@ def main():
                 print(f"RS: scored {rs_stats['scored']}/{rs_stats['liquid']} liquid symbols, "
                       f"{rs_stats.get('rs_lines', 0)} RS lines (rs_date {rs_stats['rs_date']}).")
             except Exception as e:
-                print(f"  RS ratings failed (non-fatal): {str(e)[:160]}")
+                log_step_failure("Step 3 RS ratings")
 
         # Step 4: Price bases (BQS V3). Runs after RS (Module 14 reuses the RS
         # Line). Isolated so a failure here doesn't undo the signal run.
@@ -246,7 +261,7 @@ def main():
                 print(f"Price bases: {base_stats['based']} detected "
                       f"(A={bg.get('A',0)} B={bg.get('B',0)} C={bg.get('C',0)} D={bg.get('D',0)}).")
             except Exception as e:
-                print(f"  price bases failed (non-fatal): {str(e)[:160]}")
+                log_step_failure("Step 4 price bases")
 
         # Step 5: TA Score (weighted blend of RS3M / RS Composite / RS Line /
         # BQS). Runs last because it re-reads the columns the prior steps wrote.
@@ -257,7 +272,7 @@ def main():
                 ta_stats = compute_ta_score(client)
                 print(f"TA Score: scored {ta_stats['scored']}/{ta_stats['rows']} symbols.")
             except Exception as e:
-                print(f"  TA Score failed (non-fatal): {str(e)[:160]}")
+                log_step_failure("Step 5 TA Score")
 
         # Step 6: Final score (latest TA blended with latest FA). Runs after
         # ta_score; reads the latest FA period's normalized scores.
@@ -269,7 +284,7 @@ def main():
                 print(f"Final score: scored {final_stats['scored']}/{final_stats['rows']} symbols "
                       f"(period {final_stats.get('period')}).")
             except Exception as e:
-                print(f"  Final score failed (non-fatal): {str(e)[:160]}")
+                log_step_failure("Step 6 Final score")
 
         # GitHub Actions Job Summary — visible on the run page without opening logs.
         summary_lines = [
