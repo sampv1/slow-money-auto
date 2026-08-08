@@ -126,17 +126,29 @@ def upsert_symbols_with_exchanges(client, items: list[tuple[str, str]]) -> int:
 _EXCHANGE_NORM = {"HSX": "HOSE", "HOSE": "HOSE", "HNX": "HNX", "UPCOM": "UPCOM", "UPCo M": "UPCOM"}
 
 
-def _paged_symbols(client, table: str, column: str = "symbol") -> set[str]:
+def _paged_symbols(client, table: str, column: str = "symbol",
+                   order_by: tuple[str, ...] = ("symbol",)) -> set[str]:
     """Return the distinct set of values of `column` from `table`, paging past
-    the PostgREST 1000-row cap."""
+    the PostgREST 1000-row cap.
+
+    `order_by` MUST be a total order (the primary key, or enough columns to be
+    unique). Offset paging with no ORDER BY — or a partial one — relies on
+    Postgres heap order, which shifts as rows are rewritten, so page boundaries
+    silently skip or duplicate rows. A skip here is not cosmetic: the caller
+    feeds `align_universe_to_fa`, which deactivates every ta_universe symbol
+    absent from this set, so one dropped symbol falls out of the whole TA
+    pipeline. fa_scores is rewritten daily by refresh_final_score, which is
+    exactly the churn that makes heap order move.
+    """
     out: set[str] = set()
     offset = 0
     page = 1000
     while True:
+        q = client.table(table).select(",".join(dict.fromkeys((column, *order_by))))
+        for col in order_by:
+            q = q.order(col)
         rows = safe_execute(
-            client.table(table)
-            .select(column)
-            .range(offset, offset + page - 1),
+            q.range(offset, offset + page - 1),
             label="universe read",
         ).data
         for r in rows:
@@ -151,7 +163,9 @@ def _paged_symbols(client, table: str, column: str = "symbol") -> set[str]:
 
 def fetch_fa_symbols(client) -> set[str]:
     """The symbol set the FA scanner covers (distinct symbols in fa_scores)."""
-    return _paged_symbols(client, "fa_scores", "symbol")
+    # (symbol, as_of_period) is fa_scores' primary key — a total order, which
+    # offset paging requires. See _paged_symbols.
+    return _paged_symbols(client, "fa_scores", "symbol", ("symbol", "as_of_period"))
 
 
 def _resolve_exchanges(symbols: list[str]) -> dict[str, str]:

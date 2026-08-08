@@ -119,25 +119,36 @@ def compute_final_score(client, dry_run: bool = False) -> dict:
     if dry_run:
         return stats
 
-    # Reset each symbol's latest row first (so a symbol that lost a component
-    # goes back to null rather than keeping a stale score), then write the
-    # buckets. UPDATE (not upsert) — no INSERT, so no NOT NULL issues with the
-    # other fa_scores columns. Older superseded rows are deliberately untouched.
-    by_period: dict[str, list[str]] = {}
-    for sym, (period, _) in latest.items():
-        by_period.setdefault(period, []).append(sym)
-    for period, syms in by_period.items():
-        for i in range(0, len(syms), 300):
-            safe_execute(
-                client.table("fa_scores").update({"final_score": None, "final_grade": None})
-                .eq("as_of_period", period).in_("symbol", syms[i:i + 300]),
-                label="final reset",
-            )
+    # Write the scores FIRST, then null only the latest-period rows that this run
+    # produced no score for. UPDATE (not upsert) — no INSERT, so no NOT NULL issues
+    # with the other fa_scores columns. Older superseded rows are deliberately
+    # untouched.
+    #
+    # ORDER MATTERS: this used to reset every latest row to NULL and then write the
+    # buckets. Any failure in between — or a write that silently persists only part
+    # of its rows — left those symbols with no Final score or grade at all, which is
+    # how the same shape wiped RS on 2026-08-07 (see ta/rs_rating.py). Writing first
+    # makes the bad case a STALE score, which the next run corrects, instead of a
+    # blank one. The reset set is computed explicitly (scored symbols subtracted from
+    # the latest set), never as a blanket predicate.
     for (period, score, grade), syms in buckets.items():
         for i in range(0, len(syms), 300):
             safe_execute(
                 client.table("fa_scores").update({"final_score": score, "final_grade": grade})
                 .eq("as_of_period", period).in_("symbol", syms[i:i + 300]),
                 label="final write",
+            )
+
+    scored_syms = {s for syms in buckets.values() for s in syms}
+    unscored: dict[str, list[str]] = {}
+    for sym, (period, _) in latest.items():
+        if sym not in scored_syms:
+            unscored.setdefault(period, []).append(sym)
+    for period, syms in unscored.items():
+        for i in range(0, len(syms), 300):
+            safe_execute(
+                client.table("fa_scores").update({"final_score": None, "final_grade": None})
+                .eq("as_of_period", period).in_("symbol", syms[i:i + 300]),
+                label="final reset unscored",
             )
     return stats

@@ -98,6 +98,72 @@ before reporting them.
 
 ---
 
+## Class 3 — Destructive retire/clear scoped by a blanket predicate
+
+**Found:** 2026-08-08, via blank RS3M / Composite / RS Line on Signal Pro (VNM).
+Noticed by eye. The run was GREEN and the derived TA Score was a plausible number,
+so nothing alerted — VNM read 24, which is exactly its BQS 68 × 0.35 with all three
+RS terms silently treated as 0 ("missing component = 0" is the documented formula).
+
+**Ingredients**
+1. A snapshot writer that removes/nulls rows by a **blanket predicate** — "all active
+   rows", or "every row whose `rs_date` ≠ this run's date" — instead of an explicitly
+   computed set of rows that should be retired.
+2. A **write that can partially persist without raising**. On 2026-08-07 the paged
+   upsert returned success for all three chunks yet only the first 500 of 1,384 rows
+   persisted (alphabetically A32..HJS). Cause still **unknown** — not reproducible
+   locally, where the identical code writes all 1,384.
+3. **Telemetry from the compute count, not the write count.** `stats["scored"]` is
+   `len(df)`, set before the upsert, so the log read "scored 1384/1568" while 884 rows
+   were missing.
+4. A per-step `try/except` in `update_ta_daily.py` that logs failures as `"non-fatal"`
+   and continues.
+
+Ingredient 1 is what converts a *recoverable* partial write into *data loss*: the
+predicate cannot distinguish "dropped out of the rated set" from "this run's write
+didn't land", so it nulled the 884 unwritten rows. `1068 NULL = 884 unwritten + 184
+legitimately unrated`, and `500 + 1068 = 1568` exactly — that arithmetic is what
+identified the mechanism.
+
+**Blast radius.** `ta_universe.rs_*` feeds TA Score (`RS3M·20% + RS Composite·25% +
+RS Line·20% + BQS·35%`), which feeds Final Score (`0.59·TA + 0.41·FA`) on `fa_scores`,
+which drives Signal Pro's grade and the A/A+ catalyst shortlist. Not sticky — a
+correct RS run repairs it — but it silently understated ~884 symbols' scores meanwhile.
+
+**Sites checked**
+
+| Site | Verdict |
+|---|---|
+| `ta/rs_rating.compute_rs_ratings` retire | **Firing** — blanket `.eq(is_active,True).neq(rs_date, …)`. Fixed: explicit `active − rated`, chunked `.in_()`, empty-payload bail, and a write-count verification that raises BEFORE retiring |
+| `ta/final_score.compute_final_score` | **Latent** — reset-then-write ordering (nulls `final_score`/`final_grade` on every latest row, then writes buckets). Scoped by symbol, so no blanket predicate, but a failure in between blanks the column. Fixed: write first, then null only `latest − scored` |
+| `ta/universe._paged_symbols` | **Latent (also Class 2 v2)** — paged `fa_scores` with no `ORDER BY`; feeds `align_universe_to_fa`, which deactivates every ta_universe symbol absent from the set, so one dropped symbol leaves the whole TA pipeline. Measured stable today (1,569 = ordered ground truth, 3 identical runs) but paging IS exercised (4,202 rows) and `refresh_final_score` rewrites the table daily. Fixed: `.order()` on the `(symbol, as_of_period)` primary key |
+| `ta/price_base.compute_price_bases` | **Already correct — the reference implementation.** Writes first; clears only `stale = [s for s in active if s not in based]`, chunked by symbol; bails entirely on an empty payload with an explicit "preserve prior snapshot" message |
+| `sentiment/catalyst.compute_catalysts` dropout clear | Already correct — clears only `scored_before − agroup_set`, per symbol; errored symbols stay in `agroup` so they keep their previous score (verified in code 2026-08-05) |
+| `ta/universe.align_universe_to_fa` | Already correct — bails on empty `fa_syms`; deactivates the explicit `set(existing) − fa_syms`, chunked |
+| `ta/sr.upsert_levels`, `ta/trendlines.upsert_trendlines` | **Latent — accepted.** Delete-then-insert per symbol. PostgREST offers no transaction and these are genuinely multi-row-per-symbol replaces, so delete-first is required; blast radius is one symbol for one day and Step 2 recomputes every symbol nightly. Documented, not restructured |
+| `sentiment/catalyst._persist_symbol` | **Latent — accepted.** Same delete-then-insert shape, one symbol. Does not self-heal quickly (Groq free tier gives partial coverage), but cannot null a whole column |
+| `ta/ta_score.compute_ta_score` | Already correct as a writer — payload is only `{symbol, exchange, ta_score}`, so it cannot clobber RS. Note it is the *amplifier*: `missing component = 0` turns absent RS into a plausible low score rather than a blank |
+| `ta/universe.apply_liquidity_filter` | Not this class — per-symbol `.eq("symbol", …)`. Separate concern: it writes `is_active` from a liquidity test, which contradicts CLAUDE.md ("liquidity is a view-time filter, never applied to `is_active`"). Only reachable via an explicit `refresh_ta_universe.py` mode, not the daily pipeline. Left alone; flagged |
+
+**Guard convention adopted**
+- A snapshot writer NEVER deletes/nulls by a blanket predicate. Compute the retire set
+  explicitly (`active − written`) and apply it chunked by primary key.
+- **Write first, retire second.** The bad case must degrade to a STALE value the next
+  run corrects, never to a NULL.
+- **Bail on an empty payload** — zero rows almost always means a data/detection
+  failure, not that every symbol genuinely lost the value.
+- **Verify the write before any destructive step.** Count the rows actually carrying
+  this run's stamp and raise if short. Never gate a destructive step on a count taken
+  from the compute.
+- Comment with the incident, including the numbers, so the ordering is not "tidied" back.
+
+**Unresolved.** Why chunks 2–3 returned success without persisting is still unknown;
+it did not reproduce locally across three full runs. The verification step converts
+that unknown from silent data loss into a loud failure, which is the best available
+response to a non-reproducible silent write.
+
+---
+
 ## Open items from the 2026-07-30 sweep
 
 - Delete the bad row so Vietstock can refill it (awaiting confirmation):

@@ -523,34 +523,62 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
         }
         for sym, row in df.iterrows()
     ]
+    # No rows at all almost always means a detection/data failure rather than
+    # every symbol genuinely losing its RS. Bail WITHOUT retiring so the prior
+    # snapshot survives (mirrors compute_price_bases' empty-payload guard).
+    if not payload:
+        print("  RS: 0 symbols scored — skipping write to preserve prior snapshot.")
+        return stats
+
     for i in range(0, len(payload), 500):
         safe_execute(
             client.table("ta_universe").upsert(payload[i:i + 500], on_conflict="symbol"),
             label="rs upsert",
         )
 
-    # Retire RS on rows this run did NOT refresh — symbols that dropped out of
-    # the liquid set or lost history. `rs_date` is identical across the whole
-    # snapshot, so "not equal to this run's date" is exactly that set. Rows
-    # already NULL don't match (SQL NULL semantics) and need no clearing.
+    # VERIFY THE WRITE BEFORE RETIRING ANYTHING. On 2026-08-07 the upsert loop
+    # above returned success for every chunk yet only the first 500 of 1,384 rows
+    # persisted (alphabetically A32..HJS) — no exception, nothing in the log. The
+    # cause of that partial persistence is still unknown, so this check exists to
+    # make it LOUD instead of silent: raising here leaves the un-refreshed rows
+    # holding yesterday's RS, which is recoverable, whereas retiring on top of a
+    # short write destroys them. `stats["scored"]` counts the COMPUTE, so it can
+    # never catch this on its own.
+    written = safe_execute(
+        client.table("ta_universe").select("symbol", count="exact")
+        .eq("rs_date", rs_date).limit(1),
+        label="rs write verify",
+    ).count or 0
+    if written < len(payload):
+        raise RuntimeError(
+            f"RS write incomplete: {written} of {len(payload)} rows carry rs_date "
+            f"{rs_date}. NOT retiring stale rows — un-refreshed symbols keep their "
+            f"previous RS. Re-run refresh_rs.py."
+        )
+
+    # Retire RS only on the symbols this run positively decided are unrated —
+    # an EXPLICITLY computed set, chunked by symbol, never a blanket predicate.
     #
-    # ORDER MATTERS: write first, retire second. This used to clear every active
-    # row BEFORE the upsert, which meant a single failed chunk left those symbols
-    # with NO RS at all — Step 3 catches the exception as "non-fatal", so the run
-    # went green while the dashboard showed blank TA components and a TA Score
-    # computed as if RS were 0 (missing component = 0). That is how VNM ended up
-    # scoring 24 = BQS 70 x 0.35 with RS3M/Composite/Line all blank: chunk 3 of 3
-    # failed, stranding 386 rated symbols. Writing first makes a partial failure
-    # degrade to STALE RS instead of ABSENT RS, and the next run repairs it.
-    safe_execute(
-        client.table("ta_universe")
-        .update({"rs_3m": None, "rs_6m": None, "rs_9m": None, "rs_12m": None,
-                 "rs_composite": None, "rs_date": None,
-                 "rs_line": None, "rs_line_full": None, "rs_line_date": None,
-                 "rs_line_dates": None, "rs_line_score": None, "rs_line_grade": None})
-        .eq("is_active", True).neq("rs_date", rs_date),
-        label="rs retire stale",
-    )
+    # The previous version filtered on `.eq(is_active,True).neq(rs_date, <today>)`,
+    # which silently conflates "dropped out of the rated set" with "this run's
+    # write didn't land". When the 2026-08-07 upsert persisted only 500 rows, that
+    # predicate matched the 884 whose write was missing and nulled them, so a
+    # recoverable partial write became data loss: Signal Pro showed blank
+    # RS3M/Composite/RS Line, and TA Score recomputed treating them as 0 (missing
+    # component = 0), so VNM read 24 = BQS 68 x 0.35 — a plausible number, which is
+    # why nothing alerted. Scoping to `active - rated` cannot make that mistake.
+    rated = {p["symbol"] for p in payload}
+    stale = [s for s in active if s not in rated]
+    for i in range(0, len(stale), 200):
+        safe_execute(
+            client.table("ta_universe")
+            .update({"rs_3m": None, "rs_6m": None, "rs_9m": None, "rs_12m": None,
+                     "rs_composite": None, "rs_date": None,
+                     "rs_line": None, "rs_line_full": None, "rs_line_date": None,
+                     "rs_line_dates": None, "rs_line_score": None, "rs_line_grade": None})
+            .in_("symbol", stale[i:i + 200]),
+            label="rs retire unrated",
+        )
 
     # RS-rating history arrays (Analysis-page RS3M/6M/52W lines) — written in a
     # SEPARATE, guarded pass so a missing migration 040/041 can never break the
