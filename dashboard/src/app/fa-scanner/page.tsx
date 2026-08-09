@@ -1,5 +1,12 @@
-import type { FaScore } from "@/lib/fa";
-import { getFaQuarters, getFaRows, getUniverseLiquidity } from "@/lib/cached-data";
+import type { FaScore, QuarterlyFacts } from "@/lib/fa";
+import { yearAgoPeriod } from "@/lib/fa";
+import type { UniverseLiquidityRow } from "@/lib/cached-data";
+import {
+  getFaQuarters,
+  getFaRows,
+  getFaQuarterlyFacts,
+  getUniverseLiquidity,
+} from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { FaScannerClient } from "./fa-scanner-client";
 import { DataError } from "@/components/data-error";
@@ -19,7 +26,12 @@ export default async function FaScannerPage({
   let quarters: string[] = [];
   let selected: string | undefined;
   let rows: FaScore[] = [];
-  let universe: { symbol: string; avg_volume_20d: number | null }[] = [];
+  let universe: UniverseLiquidityRow[] = [];
+  // Revenue / NPAT / NPAT-YoY per symbol. Derived HERE, not in the client: the
+  // raw fa_quarterly arrays for two quarters are several hundred KB across the
+  // RSC boundary versus a compact map, and the client's `filtered` memo re-runs
+  // on every keystroke in the search box — a 2,600-row join has no business there.
+  let quarterly: Map<string, QuarterlyFacts> = new Map();
   // Hold the ERROR ITSELF, not its message: a failed head:true count query
   // comes back with an empty message, and the old `string | null` + truthy
   // check swallowed it — during the 2026-07-27 Supabase outage this page
@@ -33,7 +45,11 @@ export default async function FaScannerPage({
       // Score rows for the quarter + the 20-session avg volume for the
       // liquidity filter (same source as the TA scanner) — independent, so
       // fetched in parallel (both served from the data cache when warm).
-      [rows, universe] = await Promise.all([getFaRows(selected), getUniverseLiquidity()]);
+      [rows, universe, quarterly] = await Promise.all([
+        getFaRows(selected),
+        getUniverseLiquidity(),
+        getFaQuarterlyFacts(selected),
+      ]);
     }
   } catch (e) {
     loadError = e ?? new Error("unknown error");
@@ -75,6 +91,8 @@ export default async function FaScannerPage({
         locale={locale}
         quarters={quarters}
         selectedQuarter={selected}
+        quarterly={Array.from(quarterly)}
+        priorQuarter={yearAgoPeriod(selected)}
       />
     </div>
   );

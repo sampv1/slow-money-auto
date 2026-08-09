@@ -8,6 +8,11 @@ rs_12m). The composite is the weighted blend
 
 re-ranked into a fresh 1..99 percentile (rs_composite).
 
+`rs_1m` is a fifth, DISPLAY-ONLY percentile (1-month return) for the FA Scanner.
+It is computed in a separate pass AFTER the blend and is deliberately NOT a
+member of `periods`/`weights` — see the RS_DEFAULTS comment and migration 044.
+Nothing downstream (rs_composite, TA Score, Final Score) depends on it.
+
 Unlike the per-symbol TA indicators, RS is cross-sectional: a symbol's rating
 depends on every other symbol's return, so it is computed in one market-wide
 pass and stored as the latest snapshot on ta_universe (like avg_volume_20d).
@@ -112,11 +117,25 @@ def _load_closes(client, symbols: list[str], cutoff_iso: str) -> dict[str, list[
 # deep (backfill_ta_ohlcv.py --days 800); shallower OHLCV just yields a shorter
 # history, never an error.
 RS_DEFAULTS = {
+    # INVARIANT: `periods` and `weights` must carry exactly the same keys —
+    # `blend` below indexes weights[k] for every k in periods, so a key present in
+    # one and not the other is a KeyError that writes no RS at all. Pinned by
+    # tests/test_rs_periods_weights.py.
     "periods": {"3m": 91, "6m": 182, "9m": 273, "12m": 365},
     "weights": {"3m": 0.4, "6m": 0.2, "9m": 0.2, "12m": 0.2},
     "tolerance_days": 25,
     "liquidity_floor": 0,
     "window_days": 780,
+    # 1-month RS is a TOP-LEVEL SCALAR, deliberately NOT an entry in `periods`.
+    # Two reasons, both load-bearing:
+    #   1. `periods` members must have a matching `weights` entry (see above), and
+    #      giving 1m a real weight would move rs_composite -> TA Score -> Final
+    #      Score for every symbol. rs_1m is display-only.
+    #   2. common.py::_deep_merge merges nested dicts, so a "1m" placed inside
+    #      RS_DEFAULTS["periods"] SURVIVES the scoring_config row that pins
+    #      periods to 3m/6m/9m/12m — the DB row would not protect us. A scalar is
+    #      immune to that. (Verified against the live config 2026-08-08.)
+    "rs_1m_days": 30,
     "rs_line": {"window_days": 365, "spark_points": 48, "min_points": 20},
 }
 
@@ -470,6 +489,31 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
     blend = sum(weights[k] * df[f"rs_{k}"] for k in periods)
     df["rs_composite"] = pct(blend)
 
+    # --- rs_1m: display-only, computed AFTER and OUTSIDE the blend -------------
+    # Deliberately a second pass rather than a fifth entry in `periods`:
+    #
+    #   * `blend` above is already fixed, so nothing here can move rs_composite,
+    #     TA Score or Final Score. That invariance is the whole point (verified by
+    #     an A/B diff of every symbol's rs_* and ta_score).
+    #   * _trailing_returns returns None for the WHOLE symbol when ANY requested
+    #     period lacks a bar within tolerance_days. Folding "1m" into the main
+    #     call could therefore drop symbols out of `rets` entirely — and because
+    #     RS is a CROSS-SECTIONAL rank, losing members silently shifts every other
+    #     symbol's rs_3m..rs_12m. Iterating df.index after the fact cannot.
+    #   * Ranking over df.index (the already-rated set) rather than all liquid
+    #     symbols is what makes rs_1m comparable to rs_3m — same population.
+    #
+    # Kept in a plain dict, never assigned onto `df`: a NaN-bearing column would
+    # upcast the int columns that the payload below reads with bare int(...).
+    one_month = {"1m": int(cfg.get("rs_1m_days", 30))}
+    rets_1m: dict[str, float] = {}
+    for sym in df.index:
+        r1 = _trailing_returns(closes_by_sym.get(sym) or [], one_month, tol)
+        if r1 is not None:
+            rets_1m[sym] = r1["1m"]
+    rs_1m = pct(pd.Series(rets_1m)).to_dict() if rets_1m else {}
+    stats["rs_1m"] = len(rs_1m)
+
     stats["scored"] = len(df)
     stats["rs_date"] = rs_date
 
@@ -518,6 +562,8 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
             "rs_9m": int(row["rs_9m"]),
             "rs_12m": int(row["rs_12m"]),
             "rs_composite": int(row["rs_composite"]),
+            # Plain .get — None when the symbol had no bar near the 1-month mark.
+            "rs_1m": rs_1m.get(sym),
             "rs_date": rs_date,
             "rs_line": _downsample(rs_lines[sym][0], rl["spark_points"]) if sym in rs_lines else None,
             "rs_line_full": rs_lines[sym][0] if sym in rs_lines else None,
@@ -612,7 +658,7 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
         safe_execute(
             client.table("ta_universe")
             .update({"rs_3m": None, "rs_6m": None, "rs_9m": None, "rs_12m": None,
-                     "rs_composite": None, "rs_date": None,
+                     "rs_composite": None, "rs_1m": None, "rs_date": None,
                      "rs_line": None, "rs_line_full": None, "rs_line_date": None,
                      "rs_line_dates": None, "rs_line_score": None, "rs_line_grade": None})
             .in_("symbol", stale[i:i + 200]),

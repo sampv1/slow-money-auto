@@ -1,10 +1,19 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
-import { type FaScore, FA_NORMALIZED_MAX, faNormalizedScore, pointsColor } from "@/lib/fa";
+import {
+  type FaScore,
+  type QuarterlyFacts,
+  FA_NORMALIZED_MAX,
+  faNormalizedScore,
+  fmtRatio,
+  pointsColor,
+} from "@/lib/fa";
+import type { UniverseLiquidityRow } from "@/lib/cached-data";
+import { formatBillions, formatPnl, pnlColor } from "@/lib/format";
 
 // Score components shown as columns: short word-label + formula tooltip, both
 // bilingual. This set is the manufacturing rubric; real estate / banks rubrics
@@ -30,8 +39,46 @@ const FA_COMPONENTS = [
     fEn: "Current P/E vs 5-year median P/E", fVi: "P/E hiện tại so với trung vị P/E 5 năm" },
 ] as const;
 
+// The sky-blue block: what the business did last quarter, plus how the stock is
+// trading now. Same data-driven shape as FA_COMPONENTS above.
+//   group "q" = quarterly results (fa_quarterly, moves once per quarter)
+//   group "d" = market data (moves daily)
+const FA_EXTRA = [
+  { key: "rev_bn", group: "q", en: "Revenue (bn)", vi: "Doanh thu (tỷ)",
+    fEn: "Net revenue for the selected quarter, VND billion",
+    fVi: "Doanh thu thuần của quý đã chọn, tỷ VND" },
+  { key: "rev_yoy", group: "q", en: "Rev YoY", vi: "DT YoY",
+    fEn: "Revenue ÷ revenue same quarter last year − 1",
+    fVi: "Doanh thu ÷ doanh thu cùng kỳ năm trước − 1" },
+  { key: "npat_bn", group: "q", en: "NPAT (bn)", vi: "LNST (tỷ)",
+    fEn: "Net profit after tax = net margin × revenue, VND billion (total NPAT, not the parent-only figure)",
+    fVi: "Lợi nhuận sau thuế = biên LN ròng × doanh thu, tỷ VND (LNST TNDN, không phải phần của chủ sở hữu)" },
+  { key: "npat_yoy", group: "q", en: "NPAT YoY", vi: "LNST YoY",
+    fEn: "NPAT ÷ NPAT same quarter last year − 1 (÷ |prior|, so a loss→profit swing reads positive)",
+    fVi: "LNST ÷ LNST cùng kỳ năm trước − 1 (chia |kỳ trước|, nên lỗ→lãi cho giá trị dương)" },
+  { key: "rs_1m", group: "d", en: "RS 1M", vi: "RS 1T",
+    fEn: "1-month return, ranked 1–99 across the rated universe. Updated daily.",
+    fVi: "Lợi suất 1 tháng, xếp hạng 1–99 trong nhóm được chấm. Cập nhật hằng ngày." },
+  { key: "pe", group: "d", en: "P/E", vi: "P/E",
+    fEn: "Price ÷ trailing-twelve-month EPS. Priced daily for the LATEST quarter only — older quarters show the P/E frozen at that quarter's last scoring.",
+    fVi: "Giá ÷ EPS 4 quý gần nhất. Chỉ cập nhật hằng ngày cho quý MỚI NHẤT — các quý cũ giữ P/E tại lần chấm cuối của quý đó." },
+] as const;
+
 type PtsKey = (typeof FA_COMPONENTS)[number]["pts"];
-type SortKey = "total_score" | "symbol" | PtsKey;
+type ExtraKey = (typeof FA_EXTRA)[number]["key"];
+type SortKey = "total_score" | "symbol" | PtsKey | ExtraKey;
+
+const N_QUARTERLY = FA_EXTRA.filter((c) => c.group === "q").length;
+const N_DAILY = FA_EXTRA.filter((c) => c.group === "d").length;
+
+// Sky, not amber: amber already means "the headline number" on Signal Pro's
+// Final score, so a cool tint reads as "a different kind of data" instead of
+// "more important". The block stays tinted on row hover because a <td>
+// background paints over the <tr>'s hover — same as that amber column.
+const BLOCK_HEAD = "bg-sky-100 text-sky-900";
+const BLOCK_BODY = "bg-sky-50";
+const BLOCK_EDGE = "border-l-2 border-sky-300"; // outer edge of the whole block
+const BLOCK_SPLIT = "border-l border-sky-200"; // quarterly | daily divider
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 
@@ -41,12 +88,18 @@ export function FaScannerClient({
   locale,
   quarters,
   selectedQuarter,
+  quarterly,
+  priorQuarter,
 }: {
   rows: FaScore[];
-  universe: { symbol: string; avg_volume_20d: number | null }[];
+  universe: UniverseLiquidityRow[];
   locale: Locale;
   quarters: string[];
   selectedQuarter: string;
+  // Entries, not a Map: plain arrays cross the RSC boundary without relying on
+  // Map serialization. Rebuilt into a Map once, below.
+  quarterly: [string, QuarterlyFacts][];
+  priorQuarter: string;
 }) {
   const router = useRouter();
   // Pending state for the quarter switch: router.push runs a server round-trip
@@ -64,6 +117,14 @@ export function FaScannerClient({
     for (const u of universe) m.set(u.symbol, u.avg_volume_20d);
     return m;
   }, [universe]);
+
+  const rs1mBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const u of universe) m.set(u.symbol, u.rs_1m);
+    return m;
+  }, [universe]);
+
+  const quarterlyBySymbol = useMemo(() => new Map(quarterly), [quarterly]);
 
   // Reliable "as of" date: the most recent close-price date among the displayed
   // rows (current_price_date is refreshed daily by the FA score job).
@@ -92,6 +153,29 @@ export function FaScannerClient({
       return true;
     });
 
+    // Four of the six new columns live in side maps rather than on the FaScore
+    // row, so the sort value goes through a resolver (same shape as Signal Pro's
+    // `pick`). `?? null` matters: a Map miss yields undefined, which would slip
+    // past the `=== null` checks below and sort as though it were a value.
+    const pick = (r: FaScore): number | null => {
+      switch (sortKey) {
+        case "rev_yoy":
+          return r.c4_rev_yoy;
+        case "pe":
+          return r.current_pe;
+        case "rs_1m":
+          return rs1mBySymbol.get(r.symbol) ?? null;
+        case "rev_bn":
+          return quarterlyBySymbol.get(r.symbol)?.revenueBn ?? null;
+        case "npat_bn":
+          return quarterlyBySymbol.get(r.symbol)?.npatBn ?? null;
+        case "npat_yoy":
+          return quarterlyBySymbol.get(r.symbol)?.npatYoy ?? null;
+        default:
+          return r[sortKey as Exclude<SortKey, "symbol" | ExtraKey>];
+      }
+    };
+
     out.sort((a, b) => {
       let av: number | string;
       let bv: number | string;
@@ -100,8 +184,8 @@ export function FaScannerClient({
         bv = b.symbol;
       } else {
         // Nulls sort last regardless of direction.
-        const an = a[sortKey];
-        const bn = b[sortKey];
+        const an = pick(a);
+        const bn = pick(b);
         if (an === null && bn === null) return 0;
         if (an === null) return 1;
         if (bn === null) return -1;
@@ -113,7 +197,8 @@ export function FaScannerClient({
       return 0;
     });
     return out;
-  }, [rows, minScore, minAvgVolume, avgVolBySymbol, search, sortKey, sortAsc]);
+  }, [rows, minScore, minAvgVolume, avgVolBySymbol, rs1mBySymbol, quarterlyBySymbol,
+      search, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -227,21 +312,51 @@ export function FaScannerClient({
                 table rather than the cell, so Chrome drops them once the header
                 is sticky. */}
             <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#e5e7eb]">
+              {/* Group row. Only Symbol and Score span both rows. */}
               <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th className="px-4 py-3 font-medium cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
+                <th rowSpan={2} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
-                <th className="px-4 py-3 font-medium text-right cursor-pointer select-none border-r border-gray-200" onClick={() => toggleSort("total_score")}>
+                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none border-r border-gray-200" onClick={() => toggleSort("total_score")}>
                   {t(locale, "faTotalScore")}{sortIndicator("total_score")}
                 </th>
+                <th colSpan={FA_COMPONENTS.length} className="px-3 py-2 font-medium text-center">
+                  {t(locale, "faComponentsGroup")}
+                </th>
+                <th
+                  colSpan={N_QUARTERLY}
+                  // Name the comparison quarter: "YoY" is meaningless unless you
+                  // know which quarter it is measured against, and the selected
+                  // quarter is a dropdown.
+                  title={`${selectedQuarter} vs ${priorQuarter || "—"}`}
+                  className={`px-3 py-2 font-medium text-center ${BLOCK_HEAD} ${BLOCK_EDGE}`}
+                >
+                  {t(locale, "faQuarterlyGroup")}
+                </th>
+                <th colSpan={N_DAILY} className={`px-3 py-2 font-medium text-center ${BLOCK_HEAD} ${BLOCK_SPLIT}`}>
+                  {t(locale, "faDailyGroup")}
+                </th>
+              </tr>
+              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs">
                 {FA_COMPONENTS.map((c) => (
                   <th
                     key={c.pts}
                     title={locale === "vi" ? c.fVi : c.fEn}
-                    className="px-3 py-3 font-medium text-right cursor-pointer select-none whitespace-nowrap"
+                    className="px-3 py-2 font-medium text-right cursor-pointer select-none whitespace-nowrap"
                     onClick={() => toggleSort(c.pts)}
                   >
                     {locale === "vi" ? c.vi : c.en}{sortIndicator(c.pts)}
+                  </th>
+                ))}
+                {FA_EXTRA.map((c, i) => (
+                  <th
+                    key={c.key}
+                    title={locale === "vi" ? c.fVi : c.fEn}
+                    className={`px-3 py-2 font-medium text-right cursor-pointer select-none whitespace-nowrap ${BLOCK_HEAD}`
+                      + (i === 0 ? ` ${BLOCK_EDGE}` : c.group === "d" && FA_EXTRA[i - 1].group === "q" ? ` ${BLOCK_SPLIT}` : "")}
+                    onClick={() => toggleSort(c.key)}
+                  >
+                    {locale === "vi" ? c.vi : c.en}{sortIndicator(c.key)}
                   </th>
                 ))}
               </tr>
@@ -265,6 +380,36 @@ export function FaScannerClient({
                       </td>
                     );
                   })}
+                  {(() => {
+                    const q = quarterlyBySymbol.get(row.symbol);
+                    // "—" for a missing figure, never 0: roughly a quarter of rows
+                    // have no fa_quarterly revenue at all (banks and securities
+                    // firms don't report it in this format — the same reason they
+                    // score UNRATED). A zero here would read as "no sales".
+                    const cells: { key: ExtraKey; node: ReactNode; cls: string }[] = [
+                      { key: "rev_bn", node: formatBillions(q?.revenueBn ?? null), cls: "" },
+                      { key: "rev_yoy", node: formatPnl(row.c4_rev_yoy), cls: pnlColor(row.c4_rev_yoy) },
+                      {
+                        key: "npat_bn",
+                        node: formatBillions(q?.npatBn ?? null),
+                        // Loss quarters are common; flag them the same red the
+                        // YoY columns use rather than leaving a bare minus sign.
+                        cls: (q?.npatBn ?? 0) < 0 ? "text-red-600" : "",
+                      },
+                      { key: "npat_yoy", node: formatPnl(q?.npatYoy ?? null), cls: pnlColor(q?.npatYoy ?? null) },
+                      { key: "rs_1m", node: rs1mBySymbol.get(row.symbol) ?? "—", cls: "" },
+                      { key: "pe", node: fmtRatio(row.current_pe), cls: "" },
+                    ];
+                    return cells.map((cell, i) => (
+                      <td
+                        key={cell.key}
+                        className={`px-3 py-3 text-right font-mono whitespace-nowrap ${BLOCK_BODY} ${cell.cls}`
+                          + (i === 0 ? ` ${BLOCK_EDGE}` : cell.key === "rs_1m" ? ` ${BLOCK_SPLIT}` : "")}
+                      >
+                        {cell.node}
+                      </td>
+                    ));
+                  })()}
                 </tr>
               ))}
             </tbody>

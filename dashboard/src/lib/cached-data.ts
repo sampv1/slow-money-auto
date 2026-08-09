@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "./supabase";
-import type { FaScore } from "./fa";
+import type { FaScore, FaQuarterlyRaw } from "./fa";
+import { buildQuarterlyFacts, yearAgoPeriod } from "./fa";
 import type { DailyLog, Recommendation } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -141,20 +142,83 @@ export async function getFaRowsLatestPerSymbol(): Promise<FaScore[]> {
   );
 }
 
-// --- Universe liquidity (FA scanner's volume filter) ------------------------
+// --- Universe liquidity + RS1M (FA scanner) ---------------------------------
+
+export type UniverseLiquidityRow = {
+  symbol: string;
+  avg_volume_20d: number | null;
+  rs_1m: number | null;
+};
 
 export const getUniverseLiquidity = unstable_cache(
-  async (): Promise<{ symbol: string; avg_volume_20d: number | null }[]> =>
-    fetchAllPaged((from, to, withCount) =>
-      supabase
-        .from("ta_universe")
-        .select("symbol,avg_volume_20d", withCount ? { count: "exact" } : undefined)
-        .order("symbol", { ascending: true })
-        .range(from, to),
-    ),
-  ["universe-liquidity"],
+  async (): Promise<UniverseLiquidityRow[]> => {
+    try {
+      return await fetchAllPaged<UniverseLiquidityRow>((from, to, withCount) =>
+        supabase
+          .from("ta_universe")
+          .select("symbol,avg_volume_20d,rs_1m", withCount ? { count: "exact" } : undefined)
+          .order("symbol", { ascending: true })
+          .range(from, to),
+      );
+    } catch {
+      // rs_1m arrives with migration 044. Until it is applied, PostgREST 400s
+      // the whole select — which would take the entire FA Scanner down rather
+      // than blanking one column. Same pre-migration guard as
+      // getCorporateActions. Safe to delete once 044 is applied everywhere.
+      // (Select strings are repeated rather than parameterised: a non-literal
+      // passed to .select() loses Supabase's row-type inference.)
+      const rows = await fetchAllPaged<Omit<UniverseLiquidityRow, "rs_1m">>(
+        (from, to, withCount) =>
+          supabase
+            .from("ta_universe")
+            .select("symbol,avg_volume_20d", withCount ? { count: "exact" } : undefined)
+            .order("symbol", { ascending: true })
+            .range(from, to),
+      );
+      return rows.map((r) => ({ ...r, rs_1m: null }));
+    }
+  },
+  ["universe-liquidity-rs1m"], // key bumped: the Data Cache outlives a deploy
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
 );
+
+// --- Quarterly financials (FA scanner: revenue / NPAT block) ----------------
+
+// Paging is MANDATORY here: 2025-Q2 alone has 1,581 rows, past PostgREST's
+// silent 1000-row cap. Per-period cache entries on purpose — the year-ago entry
+// for one quarter is the current entry for another, so switching quarters reuses
+// cache instead of refetching (same reasoning as getFaRows/getFaRowsLatestPerSymbol).
+// Measured ~0.078 MB per 1000 rows, so an entry stays far under Vercel's 2 MB cap
+// and needs no chunking (unlike Signal Pro's universe read).
+export const getFaQuarterlyRaw = unstable_cache(
+  async (period: string): Promise<FaQuarterlyRaw[]> =>
+    fetchAllPaged<FaQuarterlyRaw>((from, to, withCount) =>
+      supabase
+        .from("fa_quarterly")
+        .select("symbol,revenue,net_margin", withCount ? { count: "exact" } : undefined)
+        .eq("period", period)
+        .order("symbol", { ascending: true }) // PK is (symbol, period) → unique within a period
+        .range(from, to),
+    ),
+  ["fa-quarterly-raw"],
+  // TAG_FA is right on both writers: fa-score-daily.yml revalidates it, and
+  // /api/fa-import calls revalidateTag(TAG_FA) — which is exactly when
+  // fa_quarterly changes.
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/**
+ * Revenue / NPAT / NPAT-YoY per symbol for `period`, joined against the same
+ * quarter a year earlier. Plain async over the cached primitives above, matching
+ * getFaRowsLatestPerSymbol's shape.
+ */
+export async function getFaQuarterlyFacts(period: string) {
+  const [current, prior] = await Promise.all([
+    getFaQuarterlyRaw(period),
+    getFaQuarterlyRaw(yearAgoPeriod(period)),
+  ]);
+  return buildQuarterlyFacts(current, prior);
+}
 
 // --- Active symbol list (Analysis search box) -------------------------------
 

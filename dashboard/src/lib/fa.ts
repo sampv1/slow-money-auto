@@ -42,6 +42,96 @@ export type FaScore = {
 export const FA_MAX_SCORE = 108;
 export const FA_NORMALIZED_MAX = 100;
 
+// --------------------------------------------------------------------------
+// Quarter arithmetic — the TS twin of scripts/fa/metrics.py's period_to_index /
+// index_to_period. Keep the two in sync (same pairing convention as
+// scripts/ta/registry.py <-> lib/ta-indicators.ts).
+// --------------------------------------------------------------------------
+
+/** "2026-Q2" -> year*4 + (quarter-1). NaN on a malformed period. */
+export function periodToIndex(period: string): number {
+  const m = /^(\d{4})-Q([1-4])$/.exec(period ?? "");
+  if (!m) return NaN;
+  return Number(m[1]) * 4 + (Number(m[2]) - 1);
+}
+
+export function indexToPeriod(idx: number): string {
+  const year = Math.floor(idx / 4);
+  return `${year}-Q${(idx % 4) + 1}`;
+}
+
+/** Shift a period by `k` quarters (negative = earlier). Returns "" if unparseable. */
+export function shiftPeriod(period: string, k: number): string {
+  const idx = periodToIndex(period);
+  return Number.isNaN(idx) ? "" : indexToPeriod(idx + k);
+}
+
+/** The same quarter one year earlier: "2026-Q2" -> "2025-Q2". */
+export function yearAgoPeriod(period: string): string {
+  return shiftPeriod(period, -4);
+}
+
+// --------------------------------------------------------------------------
+// Quarterly financials derived from fa_quarterly
+// --------------------------------------------------------------------------
+
+/** The two raw fa_quarterly columns the scanner needs (see cached-data.ts). */
+export type FaQuarterlyRaw = {
+  symbol: string;
+  revenue: number | null;
+  net_margin: number | null;
+};
+
+export type QuarterlyFacts = {
+  revenueBn: number | null;
+  npatBn: number | null;
+  npatYoy: number | null;
+};
+
+/**
+ * Per-symbol revenue / net profit after tax for one quarter, plus NPAT YoY.
+ *
+ * NPAT = net_margin x revenue. That is an EXACT reconstruction, not an estimate:
+ * `net_margin` is stored as a full-precision ratio (13-20 decimal places, it is
+ * net_profit/revenue as computed at import — see scripts/fa/excel_import.py) and
+ * the product reproduces the FiinProX export's column 18 "Lợi nhuận sau thuế thu
+ * nhập doanh nghiệp" to the VND. Verified on AAA 2026-Q2:
+ *   0.08233384182402692 x 2,456,840,826,696 = 202,281,144,012 exactly.
+ *
+ * This is TOTAL net profit after tax. Do NOT "correct" it to column 17.1
+ * ("phân bổ cho chủ sở hữu", parent-attributable, 194,892,215,558 for the same
+ * row) — that is a different figure, and it is the one EPS is built from.
+ *
+ * YoY mirrors _yoy_pct in scripts/fa/metrics.py exactly, including dividing by
+ * |prior| so a loss -> profit swing reads the same way C1 EPS YoY does, and
+ * returning null when prior is 0.
+ */
+export function buildQuarterlyFacts(
+  current: FaQuarterlyRaw[],
+  prior: FaQuarterlyRaw[],
+): Map<string, QuarterlyFacts> {
+  const npatOf = (r: FaQuarterlyRaw): number | null =>
+    r.revenue === null || r.net_margin === null ? null : r.net_margin * r.revenue;
+
+  const priorNpat = new Map<string, number | null>();
+  for (const r of prior) priorNpat.set(r.symbol, npatOf(r));
+
+  const out = new Map<string, QuarterlyFacts>();
+  for (const r of current) {
+    const npat = npatOf(r);
+    const prev = priorNpat.get(r.symbol) ?? null;
+    out.set(r.symbol, {
+      revenueBn: r.revenue === null ? null : r.revenue / 1e9,
+      npatBn: npat === null ? null : npat / 1e9,
+      npatYoy:
+        npat === null || prev === null || prev === 0
+          ? null
+          : ((npat - prev) / Math.abs(prev)) * 100,
+    });
+  }
+  return out;
+}
+
 // Normalized FA Score (0-100), rounded for display. Falls back to computing
 // from total_score if the stored normalized_score is missing (pre-backfill rows).
 export function faNormalizedScore(row: FaScore): number {
@@ -81,7 +171,9 @@ function fmtPp(v: number | null): string {
   return `${sign}${v.toFixed(2)} pp`;
 }
 
-function fmtRatio(v: number | null): string {
+// Exported so the FA Scanner's P/E column renders the identical string the
+// Analysis criteria panel already shows for the same number.
+export function fmtRatio(v: number | null): string {
   if (v === null || v === undefined) return "—";
   return v.toFixed(2);
 }

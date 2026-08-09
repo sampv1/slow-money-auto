@@ -21,6 +21,22 @@ export function formatPrice(price: number | null): string {
   return price.toLocaleString("en-US", { maximumFractionDigits: 1 });
 }
 
+/**
+ * VND billions for the FA Scanner's revenue / NPAT columns.
+ *
+ * Values span roughly 1 to 70,000 bn, so thousands separators matter. Drops the
+ * decimal above 100 (2,457 rather than 2,456.8 — the extra digit is noise at
+ * that size) and keeps one below it, so a small-cap's 12.3 bn stays readable.
+ * Negative is normal here: loss-making quarters are common in NPAT.
+ */
+export function formatBillions(v: number | null): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return "—";
+  return v.toLocaleString("en-US", {
+    minimumFractionDigits: Math.abs(v) >= 100 ? 0 : 1,
+    maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 1,
+  });
+}
+
 export function formatPnl(pnl: number | null): string {
   if (pnl === null) return "\u2014";
   const sign = pnl >= 0 ? "+" : "";
