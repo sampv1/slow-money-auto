@@ -2,9 +2,20 @@ name: Macro Daily
 
 on:
   schedule:
-    # 10:40 UTC (17:40 ICT) — after the SBV central rate is published and VCB's
-    # board has settled for the day. Weekdays only.
-    - cron: "40 10 * * 1-5"
+    # 13:30 UTC (20:30 ICT) — weekdays only. Every VN source (SBV central rate,
+    # VCB board, VN-Index close at 07:45 UTC, Vietstock OMO/VNIBOR) has settled
+    # hours earlier, so the binding constraint is the US leg: the NY Fed posts
+    # SOFR for day D at ~08:00 ET on D+1, i.e. 12:00 UTC in EDT and 13:00 UTC in
+    # EST, and FRED serves it a moment later.
+    #
+    # The old 10:40 UTC (06:40 ET) was ALWAYS before that, year round — the job
+    # only ever captured SOFR because GitHub's cron queue happened to delay the
+    # start past 12:00. That is luck, not a schedule, and the two runs that
+    # started early both lost the day: 2026-07-17 at 11:56 UTC (SOFR 07-16 not
+    # stored until 07-20) and 2026-08-07 at 11:29 UTC (SOFR 08-06 missed; it was
+    # on FRED ~29 min later). All 20 runs that started >= 12:05 UTC captured it.
+    # Queue delay is always positive, so moving later is monotonically safer.
+    - cron: "30 13 * * 1-5"
   workflow_dispatch:
     inputs:
       backfill:
