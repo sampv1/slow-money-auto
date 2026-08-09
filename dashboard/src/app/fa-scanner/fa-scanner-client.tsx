@@ -21,21 +21,21 @@ import { formatBillions, formatPnl, pnlColor } from "@/lib/format";
 const FA_COMPONENTS = [
   { pts: "c1_pts", en: "EPS YoY", vi: "EPS YoY",
     fEn: "Latest-quarter EPS ÷ EPS same quarter last year − 1", fVi: "EPS quý mới nhất ÷ EPS cùng kỳ năm trước − 1" },
-  { pts: "c2_pts", en: "EPS 3Q avg", vi: "EPS BQ 3Q",
+  { pts: "c2_pts", en: "EPS 3Q", vi: "EPS BQ 3Q",
     fEn: "Average EPS YoY growth over the last 3 quarters", fVi: "Trung bình tăng trưởng EPS YoY của 3 quý gần nhất" },
   { pts: "c3_pts", en: "EPS+ Qs", vi: "Số quý EPS+",
     fEn: "Number of the last 3 quarters with positive EPS YoY (0–3)", fVi: "Số quý trong 3 quý gần nhất có EPS YoY dương (0–3)" },
   { pts: "c4_pts", en: "Revenue YoY", vi: "DT YoY",
     fEn: "Latest-quarter revenue ÷ revenue same quarter last year − 1", fVi: "Doanh thu quý mới nhất ÷ doanh thu cùng kỳ năm trước − 1" },
-  { pts: "c5_pts", en: "Gross margin Δ", vi: "Biên gộp Δ",
+  { pts: "c5_pts", en: "GM Δ", vi: "Biên gộp Δ",
     fEn: "Gross margin − gross margin same quarter last year (pp)", fVi: "Biên LN gộp − biên LN gộp cùng kỳ năm trước (điểm %)" },
-  { pts: "c6_pts", en: "Net margin Δ", vi: "Biên ròng Δ",
+  { pts: "c6_pts", en: "NM Δ", vi: "Biên ròng Δ",
     fEn: "Net margin − net margin same quarter last year (pp)", fVi: "Biên LN ròng − biên LN ròng cùng kỳ năm trước (điểm %)" },
   { pts: "c7_pts", en: "ROE", vi: "ROE",
     fEn: "Net income (TTM) ÷ average equity", fVi: "LNST (TTM) ÷ vốn chủ sở hữu bình quân" },
   { pts: "c8_pts", en: "D/E", vi: "Nợ/VCSH",
     fEn: "Total debt ÷ equity", fVi: "Tổng nợ vay ÷ vốn chủ sở hữu" },
-  { pts: "c9_pts", en: "Valuation", vi: "Định giá",
+  { pts: "c9_pts", en: "Val", vi: "Định giá",
     fEn: "Current P/E vs 5-year median P/E", fVi: "P/E hiện tại so với trung vị P/E 5 năm" },
 ] as const;
 
@@ -311,10 +311,16 @@ export function FaScannerClient({
                 `border-collapse: collapse`, and collapsed borders belong to the
                 table rather than the cell, so Chrome drops them once the header
                 is sticky. */}
-            <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#e5e7eb]">
+            {/* Two sticky axes meet here, so the z-order is deliberate:
+                  thead        z-20  — beats every body cell on vertical scroll
+                  symbol <th>  z-30  — beats the rest of the header too
+                  symbol <td>  z-10  — beats sibling body cells, loses to thead
+                Give them all the same z and the body's symbol cell (later in the
+                DOM) paints OVER the frozen header. */}
+            <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_#e5e7eb]">
               {/* Group row. Only Symbol and Score span both rows. */}
               <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th rowSpan={2} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
+                <th rowSpan={2} className="sticky left-0 z-30 bg-white px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
                 <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none border-r border-gray-200" onClick={() => toggleSort("total_score")}>
@@ -363,8 +369,12 @@ export function FaScannerClient({
             </thead>
             <tbody>
               {filtered.map((row) => (
-                <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">
+                <tr key={row.symbol} className="group border-b border-gray-100 hover:bg-gray-50">
+                  {/* Frozen identity column. Needs its own opaque background —
+                      it paints over the cells scrolling beneath it — and
+                      group-hover so it tracks the row highlight instead of
+                      staying stubbornly white. */}
+                  <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50 px-4 py-3 font-medium">
                     <Link href={`/analysis/${row.symbol}`} className="text-blue-600 hover:underline">
                       {row.symbol}
                     </Link>

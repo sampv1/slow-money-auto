@@ -66,7 +66,7 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-gray-50 text-gray-900">
         <header className="bg-white border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-14">
               <Link href="/" className="font-semibold text-lg">
                 Lọc tín hiệu
@@ -79,7 +79,14 @@ export default async function RootLayout({
             <NavLinks links={navLinks} />
           </div>
         </header>
-        <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
+        {/* 1600px, not the old max-w-7xl (1280px). 1280 is a prose-reading
+            width, and every page that inherits this container is a data table:
+            the FA Scanner alone needs ~1434px for its 17 columns, so it was
+            forced into a horizontal scrollbar while a 1920px monitor showed
+            ~640px of empty margin either side. The genuinely text-shaped pages
+            (contact max-w-2xl, login max-w-sm, portfolio's note column) already
+            set their own narrower width, so widening here does not stretch them. */}
+        <main className="flex-1 max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
           {children}
         </main>
         {user && GA_MEASUREMENT_ID && <GAUserIdentify userId={user.id} />}
