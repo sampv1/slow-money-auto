@@ -98,18 +98,60 @@ export const getFaQuarters = unstable_cache(fetchFaQuarters, ["fa-quarters"], {
 
 // --- FA score rows for one quarter ------------------------------------------
 
+/**
+ * Every fa_scores column the UI reads — i.e. `select("*")` minus `computed_at`,
+ * which nothing renders. Spelled out rather than `*` because these rows are
+ * cached AND serialized to the client: at 1,070 rows a quarter is 0.794 MB, and
+ * Vercel silently drops a cache entry over 2 MB, so the margin is worth keeping.
+ * `normalized_score` looks unused but is not — faNormalizedScore() reads it.
+ */
+// ONE LITERAL, not a concatenation: supabase-js parses the select string at the
+// type level to infer the row shape, and `"a," + "b"` widens to plain `string`,
+// which collapses the result to GenericStringError[]. Same trap the FA Scanner's
+// universe read hit. Keep it on one line however long it gets.
+const FA_SCORE_COLS =
+  "symbol,as_of_period,c1_eps_yoy,c1_pts,c2_eps_3q_avg_yoy,c2_pts,c3_eps_pos_count,c3_pts,c4_rev_yoy,c4_pts,c5_gross_margin_delta,c5_pts,c6_net_margin_delta,c6_pts,c7_roe,c7_pts,c8_debt_to_equity,c8_pts,c9_current_pe,c9_pts,total_score,normalized_score,final_score,final_grade,rating,current_eps_ttm,current_pe,pe_5y_median,current_price,current_price_date,notes";
+
 export const getFaRows = unstable_cache(
   async (quarter: string): Promise<FaScore[]> =>
-    fetchAllPaged<FaScore>((from, to, withCount) =>
-      supabase
-        .from("fa_scores")
-        .select("*", withCount ? { count: "exact" } : undefined)
-        .eq("as_of_period", quarter)
-        .order("total_score", { ascending: false })
-        .order("symbol", { ascending: true }) // tie-break → deterministic paging
-        .range(from, to),
+    fetchAllPaged<FaScore>(
+      (from, to, withCount) =>
+        // Cast for the same reason as the RPC below: with an explicit column list
+        // (rather than "*") supabase-js infers a structural row type whose fields
+        // are `any`, which no longer unifies with PagedResult<FaScore>. The
+        // columns are FaScore's own, so the assertion restates the schema.
+        supabase
+          .from("fa_scores")
+          .select(FA_SCORE_COLS, withCount ? { count: "exact" } : undefined)
+          .eq("as_of_period", quarter)
+          .order("total_score", { ascending: false })
+          .order("symbol", { ascending: true }) // tie-break → deterministic paging
+          .range(from, to) as unknown as PromiseLike<PagedResult<FaScore>>,
     ),
-  ["fa-rows"],
+  ["fa-rows-v2"], // key bumped: the column set changed
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/**
+ * Latest row per symbol in ONE read, via the DISTINCT ON function from
+ * migration 047. Falls back to the per-quarter fan-out below if the function
+ * isn't there yet, so this can deploy before the migration is applied.
+ */
+const getFaRowsLatestViaRpc = unstable_cache(
+  async (): Promise<FaScore[]> =>
+    fetchAllPaged<FaScore>(
+      (from, to, withCount) =>
+        // Cast at the boundary: this project has no generated Database types, so
+        // supabase-js cannot know an RPC's row shape and infers GenericStringError.
+        // The function is declared `returns setof fa_scores`, so the rows really
+        // are FaScore — the assertion states what the SQL already guarantees.
+        supabase
+          .rpc("fa_scores_latest_per_symbol", {}, withCount ? { count: "exact" } : undefined)
+          .select(FA_SCORE_COLS)
+          .order("symbol", { ascending: true }) // unique → deterministic paging
+          .range(from, to) as unknown as PromiseLike<PagedResult<FaScore>>,
+    ),
+  ["fa-rows-latest-per-symbol"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
 );
 
@@ -127,7 +169,27 @@ export const getFaRows = unstable_cache(
  * each quarter stays its own cache entry (well under Vercel's 2 MB per-entry
  * limit) and is reused by the FA scanner, which still browses by quarter.
  */
+/** Display order for the latest-per-symbol set: best score first, symbol breaks ties. */
+const byScoreThenSymbol = (a: FaScore, b: FaScore) =>
+  b.total_score - a.total_score || a.symbol.localeCompare(b.symbol);
+
 export async function getFaRowsLatestPerSymbol(): Promise<FaScore[]> {
+  // Fast path: one read (migration 047). Mirrors the fa_quarters RPC-with-
+  // fallback in fetchFaQuarters above.
+  try {
+    const rows = await getFaRowsLatestViaRpc();
+    if (rows.length > 0) return [...rows].sort(byScoreThenSymbol);
+  } catch (e) {
+    console.warn(
+      "[fa] fa_scores_latest_per_symbol RPC unavailable — falling back to the " +
+        "per-quarter fan-out (apply supabase/047 to remove this):",
+      e instanceof Error ? e.message : e,
+    );
+  }
+
+  // Fallback: read every quarter and keep the newest row per symbol. Correct but
+  // wasteful — it fetches 4,202 rows to produce 1,569, and one more full-universe
+  // read for every quarter that lands.
   const quarters = await getFaQuarters(); // newest-first
   if (quarters.length === 0) return [];
   const perQuarter = await Promise.all(quarters.map((q) => getFaRows(q)));
@@ -137,9 +199,7 @@ export async function getFaRowsLatestPerSymbol(): Promise<FaScore[]> {
       if (!bySymbol.has(r.symbol)) bySymbol.set(r.symbol, r); // newest wins
     }
   }
-  return [...bySymbol.values()].sort(
-    (a, b) => b.total_score - a.total_score || a.symbol.localeCompare(b.symbol),
-  );
+  return [...bySymbol.values()].sort(byScoreThenSymbol);
 }
 
 // --- Universe liquidity + RS1M (FA scanner) ---------------------------------
