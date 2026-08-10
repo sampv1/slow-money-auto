@@ -13,6 +13,11 @@ load_dotenv(_ENV_PATH)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
+# Full-access key that bypasses RLS. Migration 045 revoked anon's write access
+# (the anon key ships to every browser, so it could rewrite the whole dataset),
+# which makes this the credential every WRITER now needs. Never expose it to a
+# client: CI secret / Vercel env / scripts/.env only, never NEXT_PUBLIC_*.
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 # vnstock data source. VCI works on vnstock 4.0.3+ without requiring the
 # proprietary vnstock_chart library; KBS triggers a charting-library import
@@ -32,16 +37,41 @@ def today_vn() -> date:
     return datetime.now(VN_TZ).date()
 
 
+def resolve_supabase_key() -> tuple[str, str]:
+    """(key, label) for the pipeline's Supabase credential.
+
+    Service role first — since migration 045 it is the only key that can WRITE.
+    The anon fallback keeps read-only tools working and covers the window between
+    deploying this code and setting the secret, but it is announced loudly: a
+    denied PostgREST write returns 204 with zero rows affected rather than an
+    error, so a job running on the anon key after 045 would report success while
+    persisting nothing. That exact failure shape (a silent partial write) has
+    already cost this project a night of RS data — never let it be quiet.
+    """
+    if SUPABASE_SERVICE_ROLE_KEY:
+        return SUPABASE_SERVICE_ROLE_KEY, "service_role"
+    print(
+        "WARNING: SUPABASE_SERVICE_ROLE_KEY is not set — falling back to the anon "
+        "key. Since migration 045 anon is READ-ONLY, so every write in this run "
+        "will be silently discarded (PostgREST answers a denied write with 204 / "
+        "0 rows, not an error). Set it in CI secrets or scripts/.env.",
+        file=sys.stderr,
+    )
+    return SUPABASE_ANON_KEY, "anon"
+
+
 def get_supabase_client():
     from supabase import create_client
 
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        print("Error: SUPABASE_URL and SUPABASE_ANON_KEY are not set.")
+    if not SUPABASE_URL or not (SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY):
+        print("Error: SUPABASE_URL and a Supabase key are not set.")
         print(f"  SUPABASE_URL is {'set' if SUPABASE_URL else 'EMPTY/MISSING'}")
+        print(f"  SUPABASE_SERVICE_ROLE_KEY is {'set' if SUPABASE_SERVICE_ROLE_KEY else 'EMPTY/MISSING'}")
         print(f"  SUPABASE_ANON_KEY is {'set' if SUPABASE_ANON_KEY else 'EMPTY/MISSING'}")
         print("  Set them via env vars (CI) or scripts/.env (local).")
         sys.exit(1)
-    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    key, _label = resolve_supabase_key()
+    return create_client(SUPABASE_URL, key)
 
 
 # Transient failures are matched on the exception TYPE, not on its message.

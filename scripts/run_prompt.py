@@ -60,10 +60,18 @@ WEB_SEARCH_TOOL_VERSION = "web_search_20260209"
 def get_supabase_client():
     from supabase import create_client
 
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        print("Error: SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env")
+    # Service role since migration 045 — anon is read-only. Shared resolver so
+    # the four standalone entry points can't drift from the pipeline's.
+    from ta.common import resolve_supabase_key
+
+    if not SUPABASE_URL:
+        print("Error: SUPABASE_URL must be set in .env")
         sys.exit(1)
-    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    key, _label = resolve_supabase_key()
+    if not key:
+        print("Error: no Supabase key set (SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY)")
+        sys.exit(1)
+    return create_client(SUPABASE_URL, key)
 
 
 def call_claude(prompt_text: str, model: str, max_searches: int) -> str:

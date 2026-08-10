@@ -1,5 +1,6 @@
 import { revalidateTag } from "next/cache";
 import { supabase } from "@/lib/supabase";
+import { supabaseAdmin, adminUnavailable } from "@/lib/supabase-admin";
 import { TAG_REC } from "@/lib/cached-data";
 import { todayVn } from "@/lib/format";
 import { getUserRole } from "@/lib/supabase-server";
@@ -165,7 +166,12 @@ async function buy(
     unrealized_pnl_pct: Number((((close.price - entry) / entry) * 100).toFixed(2)),
   };
 
-  const { data: inserted, error } = await supabase
+  // Service role: migration 045 made anon read-only. The reads in this file stay
+  // on the anon client — ta_ohlcv / recommendations are still publicly readable.
+  const admin = supabaseAdmin();
+  if (!admin) return adminUnavailable();
+
+  const { data: inserted, error } = await admin
     .from("recommendations")
     .insert(row)
     .select("id")
@@ -190,6 +196,9 @@ async function sell(
   // one. Each stays an independent transaction on the Active/History pages: it
   // closes at the same exit price but keeps its own entry, so its own P/L is
   // computed.
+  const admin = supabaseAdmin();
+  if (!admin) return adminUnavailable();
+
   const id = (body.id ?? "").toString().trim();
   let query = supabase
     .from("recommendations")
@@ -225,7 +234,7 @@ async function sell(
       const note = sellNote
         ? pos.note ? `${pos.note} | SELL: ${sellNote}` : `SELL: ${sellNote}`
         : pos.note;
-      return supabase
+      return admin
         .from("recommendations")
         .update({
           status: "CLOSED_MANUAL",

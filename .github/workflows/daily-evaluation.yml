@@ -32,6 +32,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           if [ -z "$SUPABASE_URL" ]; then
             echo "::error::SUPABASE_URL secret is not set in repo settings."
@@ -43,6 +44,9 @@ jobs:
             echo "Go to Settings > Secrets and variables > Actions and add SUPABASE_ANON_KEY."
             exit 1
           fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::warning::SUPABASE_SERVICE_ROLE_KEY not set. After migration 045 anon is READ-ONLY, so writes in this run are silently discarded (PostgREST answers a denied write with 204/0 rows, not an error)."
+          fi
           echo "Secrets OK: SUPABASE_URL length=${#SUPABASE_URL}, SUPABASE_ANON_KEY length=${#SUPABASE_ANON_KEY}"
 
       - name: Run price evaluation
@@ -50,6 +54,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python update_prices.py
 
       # Expire the dashboard's server-side data cache so today's P&L / status

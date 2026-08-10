@@ -77,14 +77,18 @@ def today_vn() -> date:
 def get_supabase_client():
     from supabase import create_client
 
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        print("Error: SUPABASE_URL and SUPABASE_ANON_KEY are not set.")
-        print(f"  SUPABASE_URL is {'set' if SUPABASE_URL else 'EMPTY/MISSING'}")
-        print(f"  SUPABASE_ANON_KEY is {'set' if SUPABASE_ANON_KEY else 'EMPTY/MISSING'}")
-        print("  Set them via env vars (CI) or scripts/.env (local).")
-        print("  In GitHub Actions, check Settings > Secrets and variables > Actions.")
+    # Service role since migration 045 — anon is read-only. Shared resolver so
+    # the four standalone entry points can't drift from the pipeline's.
+    from ta.common import resolve_supabase_key
+
+    if not SUPABASE_URL:
+        print("Error: SUPABASE_URL must be set in .env")
         sys.exit(1)
-    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    key, _label = resolve_supabase_key()
+    if not key:
+        print("Error: no Supabase key set (SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY)")
+        sys.exit(1)
+    return create_client(SUPABASE_URL, key)
 
 
 def fetch_price_history(symbol: str, start: date, end: date) -> dict[str, dict] | None:

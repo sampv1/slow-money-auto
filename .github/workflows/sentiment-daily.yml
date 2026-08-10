@@ -56,12 +56,16 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PYTHONUNBUFFERED: "1"  # stream Python stdout live to the Actions log
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
             echo "::error::SUPABASE_URL / SUPABASE_ANON_KEY not set."
             exit 1
+          fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::warning::SUPABASE_SERVICE_ROLE_KEY not set. After migration 045 anon is READ-ONLY, so writes in this run are silently discarded (PostgREST answers a denied write with 204/0 rows, not an error)."
           fi
           if [ -z "$GROQ_API_KEY" ]; then
             echo "::notice::GROQ_API_KEY not set — skipping catalyst refresh."

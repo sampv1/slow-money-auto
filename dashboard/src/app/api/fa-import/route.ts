@@ -1,5 +1,5 @@
 import { revalidateTag } from "next/cache";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin, adminUnavailable } from "@/lib/supabase-admin";
 import { TAG_FA } from "@/lib/cached-data";
 import { getUserRole } from "@/lib/supabase-server";
 import { parseWorkbook, type ParseResult } from "@/lib/fa-import";
@@ -21,13 +21,15 @@ function summarize(parsed: ParseResult) {
     : { ...base, years: parsed.years };
 }
 
-async function upsertAll(parsed: ParseResult): Promise<number> {
+// Service role: migration 045 made anon read-only, and fa_quarterly /
+// fa_annual_pe are pipeline tables.
+async function upsertAll(admin: NonNullable<ReturnType<typeof supabaseAdmin>>, parsed: ParseResult): Promise<number> {
   const table = parsed.type === "financials" ? "fa_quarterly" : "fa_annual_pe";
   const onConflict = parsed.type === "financials" ? "symbol,period" : "symbol,year";
   let n = 0;
   for (let i = 0; i < parsed.rows.length; i += CHUNK) {
     const chunk = parsed.rows.slice(i, i + CHUNK);
-    const { error } = await supabase.from(table).upsert(chunk, { onConflict });
+    const { error } = await admin.from(table).upsert(chunk, { onConflict });
     if (error) throw new Error(`${table}: ${error.message}`);
     n += chunk.length;
   }
@@ -71,7 +73,10 @@ export async function POST(request: Request) {
       return Response.json({ preview: true, summary: summarize(parsed) });
     }
 
-    const upserted = await upsertAll(parsed);
+    const admin = supabaseAdmin();
+    if (!admin) return adminUnavailable();
+
+    const upserted = await upsertAll(admin, parsed);
     // Fresh quarterly financials → drop cached FA reads. (Scores themselves are
     // recomputed by refresh_fa.py, whose workflow revalidates fa-data too.)
     revalidateTag(TAG_FA, { expire: 0 });

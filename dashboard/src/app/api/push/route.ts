@@ -1,5 +1,6 @@
 import { revalidateTag } from "next/cache";
 import { supabase } from "@/lib/supabase";
+import { supabaseAdmin, adminUnavailable } from "@/lib/supabase-admin";
 import { TAG_REC } from "@/lib/cached-data";
 import { getUserRole } from "@/lib/supabase-server";
 
@@ -314,7 +315,12 @@ export async function POST(request: Request) {
       (logRow as Record<string, unknown>).full_response = fullResponse;
     }
 
-    const { data: logResult, error: logError } = await supabase
+    // Writes go through the service role — migration 045 made anon read-only.
+    // Reads above stay on the anon client (those tables are still public).
+    const admin = supabaseAdmin();
+    if (!admin) return adminUnavailable();
+
+    const { data: logResult, error: logError } = await admin
       .from("daily_logs")
       .insert(logRow)
       .select("id")
@@ -331,7 +337,7 @@ export async function POST(request: Request) {
     let insertedCount = 0;
     if (recs.length > 0) {
       const rows = recs.map((rec) => buildRecRow(rec, dailyLogId, data.trading_date));
-      const { data: recResult, error: recError } = await supabase
+      const { data: recResult, error: recError } = await admin
         .from("recommendations")
         .insert(rows)
         .select("id");

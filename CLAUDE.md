@@ -19,7 +19,7 @@ Design docs (read these before touching a subsystem — they carry the settled d
 Three loosely-coupled components:
 
 1. **Python scripts** (`scripts/`) — the data pipeline. Parse Claude's JSON, push to Supabase, fetch prices via vnstock, compute TA/FA/RS/price-base/composite scores, evaluate P&L. Subpackages: `ta/` (indicators, RS, price base, S/R, trendlines, implied risk), `fa/` (Excel import, metrics, scoring, persist), `sentiment/` (catalyst scoring via Claude), `macro/`. Top-level `refresh_*.py` / `update_*.py` are the CLI/cron entry points.
-2. **Supabase** — PostgreSQL with auto-generated REST API. Schema is a sequence of numbered migrations in `supabase/` (`001…041+`), applied by hand in the Supabase SQL editor. Anon key + RLS (mostly anon-readable).
+2. **Supabase** — PostgreSQL with auto-generated REST API. Schema is a sequence of numbered migrations in `supabase/` (`001…041+`), applied by hand in the Supabase SQL editor. RLS: **anon is READ-ONLY** — every write needs `SUPABASE_SERVICE_ROLE_KEY`, which bypasses RLS (migration 045).
 3. **Next.js dashboard** (`dashboard/`) — frontend on Vercel: recommendation views + TA/FA scanners, per-symbol analysis, implied-risk chart, admin input/import pages.
 
 The pipeline is **DB-centric**: scripts read/write Supabase, the dashboard reads (and admin pages write) Supabase. Scripts and dashboard never call each other directly.
@@ -28,7 +28,7 @@ The pipeline is **DB-centric**: scripts read/write Supabase, the dashboard reads
 
 ### Python scripts
 
-Live in `scripts/`, use `scripts/.env` for credentials (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`). Python >= 3.10.
+Live in `scripts/`, use `scripts/.env` for credentials (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`). Python >= 3.10.
 
 ```bash
 cd scripts
@@ -153,6 +153,7 @@ Core: `daily_logs` (one row per trading day) + `recommendations` (individual pic
   - Tags: `ta-data`, `fa-data`, `macro-data` (pipeline-written) plus `rec-data` (recommendations/daily_logs) and `feedback-data`. The last two are also written *by the app*, so `/api/recommendations/manual` (BUY/SELL), `/api/push`, `/api/fa-import` and `/api/feedback` call `revalidateTag(...)` directly — a mutation must always invalidate its tag or the page will serve a stale write. `/realtime` is deliberately uncached (live prices).
   - **Any Supabase read that could exceed 1000 rows must page** via `fetchAllPaged` — PostgREST silently truncates at 1000, and with an ASC order that drops the *newest* rows. This broke the Analysis default-indicator selection once (a symbol has >1000 triggered signals). Pages need a deterministic tie-break column in the `order` too, or page boundaries can duplicate/skip rows.
 - Migrations are append-only and applied manually; add the next numbered file rather than editing an applied one.
+- **Writes need the service-role key.** Migration 045 revoked anon's write access: the anon key ships inside the client JS bundle, so `for all using (true)` let anyone rewrite the dataset through PostgREST (demonstrated 2026-08-10 — one unauthenticated PATCH overwrote all 1,902 `fx_central_rate` rows). Python resolves the key via `ta.common.resolve_supabase_key()` (service role, else a loud anon fallback); the dashboard writes through `src/lib/supabase-admin.ts`. The service key must never be `NEXT_PUBLIC_*`, never reach a client component, and never go in a query string. **A denied PostgREST write returns 204 with zero rows affected, not an error** — so a writer missing the key looks like it succeeded. That is why the fallback warns loudly and the workflows emit a `::warning::`.
 
 
 

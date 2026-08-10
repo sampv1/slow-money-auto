@@ -1,5 +1,5 @@
 import { revalidateTag } from "next/cache";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin, adminUnavailable } from "@/lib/supabase-admin";
 import { TAG_FEEDBACK } from "@/lib/cached-data";
 
 const MAX_MESSAGE_LEN = 5000;
@@ -21,7 +21,14 @@ export async function POST(request: Request) {
       return Response.json({ error: `Contact too long (max ${MAX_CONTACT_LEN} chars)` }, { status: 400 });
     }
 
-    const { error } = await supabase
+    // Migration 045 dropped the "Anyone can submit feedback" anon INSERT policy,
+    // which had let callers POST straight to PostgREST and skip the length checks
+    // above. This route is now the only way in — and so the single place to add
+    // rate limiting.
+    const admin = supabaseAdmin();
+    if (!admin) return adminUnavailable();
+
+    const { error } = await admin
       .from("feedbacks")
       .insert({
         message,
