@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { getLocaleFromCookie, t } from "@/lib/i18n";
@@ -7,7 +7,7 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 import { AuthButton } from "@/components/auth-button";
 import { NavLinks } from "@/components/nav-links";
 import { GAUserIdentify } from "@/components/ga-user-identify";
-import { getUserAndRole } from "@/lib/supabase-server";
+import { getUserAndRole, isStaff } from "@/lib/supabase-server";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 
@@ -34,6 +34,12 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
+  // Nonce minted per request by src/proxy.ts. GA emits an INLINE script, and
+  // @next/third-parties does not pick the nonce up on its own — without this
+  // the CSP blocks it ("Executing inline script violates ... script-src").
+  // Adding 'unsafe-inline' would not help: browsers ignore it whenever a
+  // nonce is present, which is the point of using one.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   const locale = getLocaleFromCookie(cookieStore.get("locale")?.value ?? null);
 
   // One auth pass for both the role (nav gating) and the user (email in the
@@ -55,7 +61,9 @@ export default async function RootLayout({
     { href: "/stats", label: t(locale, "navStats") },
     ...(role === "admin" ? [{ href: "/input", label: t(locale, "navInput") }] : []),
     { href: "/realtime", label: t(locale, "navRealtime") },
-    ...(role !== null ? [{ href: "/feedbacks", label: t(locale, "navFeedbacks") }] : []),
+    // Staff only, matching the page's own gate and the feedbacks RLS policy —
+    // it used to show for any logged-in user, who would then hit a redirect.
+    ...(isStaff(role) ? [{ href: "/feedbacks", label: t(locale, "navFeedbacks") }] : []),
     { href: "/contact", label: t(locale, "contact") },
   ];
 
@@ -91,7 +99,7 @@ export default async function RootLayout({
         </main>
         {user && GA_MEASUREMENT_ID && <GAUserIdentify userId={user.id} />}
       </body>
-      {GA_MEASUREMENT_ID && <GoogleAnalytics gaId={GA_MEASUREMENT_ID} />}
+      {GA_MEASUREMENT_ID && <GoogleAnalytics gaId={GA_MEASUREMENT_ID} nonce={nonce} />}
     </html>
   );
 }

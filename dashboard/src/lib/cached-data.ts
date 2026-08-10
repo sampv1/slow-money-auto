@@ -307,16 +307,38 @@ export const getDailyLogs = unstable_cache(
 
 // --- Feedbacks --------------------------------------------------------------
 
+/**
+ * All feedback messages, newest first.
+ *
+ * Reads with the SERVICE ROLE, not the anon client. feedbacks has been
+ * admin/viewer-gated by RLS since 007/012, and the anon client carries no
+ * session — so this returned [] for everyone, and the /feedbacks page has been
+ * showing "0 messages" while rows sat in the table (verified: service_role sees
+ * them, anon sees none). Not a security hole, just an invisible feature.
+ *
+ * Authorization is the PAGE's job, and it does it: /feedbacks calls getUserRole()
+ * and renders nothing for non-staff. Do not call this from an ungated route.
+ *
+ * The import is deferred rather than top-level because this module is also
+ * imported by a client component (fa-scanner-client, for a type). That import is
+ * `import type` and erased today, but a future value import would drag
+ * supabase-admin into the browser bundle, where its guard throws. Keeping it
+ * inside the function makes that impossible.
+ */
 export const getFeedbacks = unstable_cache(
-  async (): Promise<Record<string, unknown>[]> =>
-    fetchAllPaged((from, to, withCount) =>
-      supabase
+  async (): Promise<Record<string, unknown>[]> => {
+    const { supabaseAdmin } = await import("./supabase-admin");
+    const admin = supabaseAdmin();
+    if (!admin) throw new Error("feedbacks: SUPABASE_SERVICE_ROLE_KEY is not configured");
+    return fetchAllPaged((from, to, withCount) =>
+      admin
         .from("feedbacks")
         .select("*", withCount ? { count: "exact" } : undefined)
         .order("created_at", { ascending: false })
         .order("id", { ascending: true }) // tie-break → deterministic paging
         .range(from, to),
-    ),
+    );
+  },
   ["feedbacks-all"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FEEDBACK] },
 );

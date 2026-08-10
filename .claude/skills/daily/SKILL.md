@@ -113,7 +113,7 @@ cd /home/sampham/data/ai/slow-money-auto/scripts
 .venv/bin/python refresh_ta_score.py       # RS feeds TA Score
 .venv/bin/python refresh_final_score.py    # TA Score feeds Final Score
 set -a; . ./.env; set +a
-curl -fsSL -X POST "https://www.loctinhieu.com/api/revalidate?secret=${REVALIDATE_SECRET}&tags=ta-data,fa-data"
+curl -fsSL -X POST -H "x-revalidate-secret: ${REVALIDATE_SECRET}" "https://www.loctinhieu.com/api/revalidate?tags=ta-data,fa-data"
 ```
 
 Order matters — TA Score reads RS, Final Score reads TA Score. Skipping the last two

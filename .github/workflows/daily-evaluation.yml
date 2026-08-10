@@ -69,5 +69,5 @@ jobs:
             echo "::warning::REVALIDATE_SECRET not set — skipping cache revalidation."
             exit 0
           fi
-          curl -fsSL -X POST "https://www.loctinhieu.com/api/revalidate?secret=${REVALIDATE_SECRET}&tags=rec-data" \
+          curl -fsSL -X POST -H "x-revalidate-secret: ${REVALIDATE_SECRET}" "https://www.loctinhieu.com/api/revalidate?tags=rec-data" \
             || echo "::warning::Dashboard revalidate call failed (cache will expire via TTL)."

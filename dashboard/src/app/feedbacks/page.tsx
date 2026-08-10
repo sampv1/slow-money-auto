@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getFeedbacks } from "@/lib/cached-data";
-import { getUserRole } from "@/lib/supabase-server";
+import { getUserRole, isStaff } from "@/lib/supabase-server";
 import { getLocale, t } from "@/lib/i18n";
 import { DataError } from "@/components/data-error";
 
@@ -14,9 +14,16 @@ interface Feedback {
 }
 
 export default async function FeedbacksPage() {
-  // Logged-in users only — hidden from anonymous visitors.
+  // STAFF ONLY (admin + viewer) — this page is now the authorization boundary.
+  //
+  // It used to accept any logged-in user, which was harmless only because RLS
+  // silently returned [] to the anon client behind it. getFeedbacks() now reads
+  // with the service role (that empty result was a bug — real messages existed),
+  // so this check is what actually protects the data. Signup is open, so
+  // "logged in" is not a meaningful bar: anyone could self-register as `pro`.
+  // isStaff mirrors the feedbacks SELECT policy from 007/012 exactly.
   const role = await getUserRole();
-  if (role === null) {
+  if (!isStaff(role)) {
     redirect("/login");
   }
 

@@ -54,12 +54,30 @@ export async function getUserAndRole(): Promise<{
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { user: null, role: null };
 
-  const { data: profile } = await supabase
+  const { data: profile, error } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
+  // A FAILED lookup and a MISSING row are different things, and conflating them
+  // is how a broken RLS policy stayed invisible: migration 045 briefly made this
+  // query fail with 42P17 (recursive policy), the error was discarded, and every
+  // admin silently became `pro` — no error, no log, just vanished admin nav and
+  // /input redirecting to /login.
+  //
+  // On error: log it and fail CLOSED (role null). Denying on an unknown role is
+  // the safe direction, and null is visible — the admin nav disappears, which is
+  // a symptom someone reports, unlike a quiet demotion to a working-looking role.
+  if (error) {
+    console.error(
+      `[auth] profiles lookup failed for user ${user.id}: ${error.code ?? "?"} ${error.message}`,
+    );
+    return { user, role: null };
+  }
+
+  // No row is legitimate — the signup trigger may not have fired yet. `pro` is
+  // the least-privileged role, so this default grants nothing.
   return { user, role: (profile?.role as UserRole) ?? "pro" };
 }
 

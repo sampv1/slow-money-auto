@@ -1,12 +1,27 @@
 import { revalidateTag } from "next/cache";
 import { supabaseAdmin, adminUnavailable } from "@/lib/supabase-admin";
 import { TAG_FEEDBACK } from "@/lib/cached-data";
+import { rateLimit, clientKey } from "@/lib/rate-limit";
 
 const MAX_MESSAGE_LEN = 5000;
 const MAX_CONTACT_LEN = 200;
 
+// 5 submissions per 10 minutes per client. Generous for a human filling in a
+// form, tight enough that scripted spam needs real effort. Applied BEFORE the
+// body is parsed so a flood cannot make us do work first.
+const LIMIT = 5;
+const WINDOW_MS = 10 * 60 * 1000;
+
 export async function POST(request: Request) {
   try {
+    const gate = rateLimit(`feedback:${clientKey(request)}`, LIMIT, WINDOW_MS);
+    if (!gate.ok) {
+      return Response.json(
+        { error: "Too many submissions. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(gate.retryAfter) } },
+      );
+    }
+
     const body = await request.json();
     const message = typeof body.message === "string" ? body.message.trim() : "";
     const contact = typeof body.contact === "string" ? body.contact.trim() : "";

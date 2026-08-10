@@ -1,6 +1,10 @@
 # Environment secrets
 scripts/.env
 dashboard/.env.local
+# Claude Code local settings — the permission allowlist accumulates pasted
+# commands, including ones carrying REVALIDATE_SECRET. Never commit it.
+.claude/settings.local.json
+
 # Scratch file of hand-run commands — holds pasted secrets (revalidate URLs etc.)
 scripts/.manual_cmds
 

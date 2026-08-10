@@ -23,15 +23,33 @@ function summarize(parsed: ParseResult) {
 
 // Service role: migration 045 made anon read-only, and fa_quarterly /
 // fa_annual_pe are pipeline tables.
-async function upsertAll(admin: NonNullable<ReturnType<typeof supabaseAdmin>>, parsed: ParseResult): Promise<number> {
-  const table = parsed.type === "financials" ? "fa_quarterly" : "fa_annual_pe";
-  const onConflict = parsed.type === "financials" ? "symbol,period" : "symbol,year";
+//
+// The two branches are written out rather than sharing one `.from(table)` call.
+// supabase-js 2.112 tightened upsert typing (RejectExcessProperties), which
+// rejected the previous shape: it passed a QuarterlyRow[] | AnnualPeRow[] union
+// to a table name chosen at runtime, so the checker could only see "some union
+// going somewhere". Narrowing per branch is what makes each row type actually
+// checked against the table it lands in — the union was hiding that, not the
+// new types being awkward.
+async function upsertAll(
+  admin: NonNullable<ReturnType<typeof supabaseAdmin>>,
+  parsed: ParseResult,
+): Promise<number> {
   let n = 0;
-  for (let i = 0; i < parsed.rows.length; i += CHUNK) {
-    const chunk = parsed.rows.slice(i, i + CHUNK);
-    const { error } = await admin.from(table).upsert(chunk, { onConflict });
-    if (error) throw new Error(`${table}: ${error.message}`);
-    n += chunk.length;
+  if (parsed.type === "financials") {
+    for (let i = 0; i < parsed.rows.length; i += CHUNK) {
+      const chunk = parsed.rows.slice(i, i + CHUNK);
+      const { error } = await admin.from("fa_quarterly").upsert(chunk, { onConflict: "symbol,period" });
+      if (error) throw new Error(`fa_quarterly: ${error.message}`);
+      n += chunk.length;
+    }
+  } else {
+    for (let i = 0; i < parsed.rows.length; i += CHUNK) {
+      const chunk = parsed.rows.slice(i, i + CHUNK);
+      const { error } = await admin.from("fa_annual_pe").upsert(chunk, { onConflict: "symbol,year" });
+      if (error) throw new Error(`fa_annual_pe: ${error.message}`);
+      n += chunk.length;
+    }
   }
   return n;
 }
