@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
+import { timeAxisTicks } from "@/lib/chart-axis";
 
 // One quarterly point:
 // - margin: total market margin debt (nghìn tỷ VND / trillion VND); null on dates
@@ -16,8 +17,18 @@ export type MdRow = {
   vnindex: number | null;
 };
 
-type Range = "3y" | "all";
-const RANGE_DAYS: Record<Range, number> = { "3y": 1095, all: Infinity };
+// NOTE ON THE SHORT RANGES: this series is QUARTERLY (no daily source exists),
+// so the windows hold very few observations — roughly 1 on 1M, 2–3 on 6M, 4–5 on
+// 1Y. The range filter always keeps the newest row, so 1M degrades to a single
+// dot (the current quarter) rather than an empty chart, and the QoQ divergence
+// panel hides itself below two points. Kept because reading the latest quarter
+// in isolation is a legitimate use — but 1Y is the shortest range that still
+// draws a trend.
+type Range = "1m" | "6m" | "1y" | "3y" | "all";
+const RANGE_DAYS: Record<Range, number> = {
+  "1m": 30, "6m": 183, "1y": 365, "3y": 1095, all: Infinity,
+};
+const RANGES: Range[] = ["1m", "6m", "1y", "3y", "all"];
 
 const MD = "#7c3aed"; // violet — margin debt
 const VN_COLOR = "#2563eb"; // blue — VN-Index (context)
@@ -107,7 +118,8 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
   const H = xLabelY + 6;
 
   const t0 = ms(view[0].date), t1 = ms(view[view.length - 1].date);
-  const xAt = (d: string) => mL + (t1 <= t0 ? iw / 2 : ((ms(d) - t0) / (t1 - t0)) * iw);
+  const xAtMs = (m: number) => mL + (t1 <= t0 ? iw / 2 : ((m - t0) / (t1 - t0)) * iw);
+  const xAt = (d: string) => xAtMs(ms(d));
   const yAt = (v: number) => top + (1 - (v - dom.lo) / (dom.hi - dom.lo)) * h;
   const yVn = (v: number) => vnTop + (1 - (v - vnDom.lo) / (vnDom.hi - vnDom.lo)) * vnH;
   const yDiv = (v: number) => divTop + (1 - (v - divDom.lo) / (divDom.hi - divDom.lo)) * divH;
@@ -131,10 +143,9 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
 
   const yTicks = [dom.hi, (dom.lo + dom.hi) / 2, dom.lo];
   const vnTicks = [vnDom.hi, (vnDom.lo + vnDom.hi) / 2, vnDom.lo];
-  const y0 = new Date(t0).getUTCFullYear(), y1 = new Date(t1).getUTCFullYear();
-  const yearStep = Math.max(1, Math.ceil((y1 - y0) / 6));
-  const yearTicks: number[] = [];
-  for (let y = y0; y <= y1; y += yearStep) yearTicks.push(y);
+  // Granularity follows the visible span — year labels alone would leave the 1M
+  // and 6M views with no x-axis at all (see lib/chart-axis.ts).
+  const xTicks = timeAxisTicks(t0, t1);
 
   const fmtInt = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
   const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
@@ -203,7 +214,7 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
           )}
         </div>
         <div className="flex gap-1">
-          {(["3y", "all"] as Range[]).map((r) => (
+          {RANGES.map((r) => (
             <button
               key={r}
               onClick={() => setRange(r)}
@@ -211,7 +222,11 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
                 range === r ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              {r === "3y" ? t(locale, "irRange3y") : t(locale, "irRangeAll")}
+              {r === "1m" ? t(locale, "irRange1m")
+                : r === "6m" ? t(locale, "irRange6m")
+                : r === "1y" ? t(locale, "irRange1y")
+                : r === "3y" ? t(locale, "irRange3y")
+                : t(locale, "irRangeAll")}
             </button>
           ))}
         </div>
@@ -242,6 +257,8 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
               </g>
             ))}
             {vnPts.length > 1 && <polyline points={line(vnPts)} fill="none" stroke={VN_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />}
+            {/* one quarter in view (1M) — nothing to connect, so mark the point */}
+            {vnPts.length === 1 && <circle cx={vnPts[0].x} cy={vnPts[0].y} r={3} fill={VN_COLOR} />}
           </>
         )}
 
@@ -297,11 +314,11 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
           </>
         )}
 
-        {/* year axis labels */}
-        {yearTicks.map((y) => {
-          const x = xAt(`${y}-01-01`);
+        {/* x axis labels — day / month / year depending on the visible span */}
+        {xTicks.map((tk) => {
+          const x = xAtMs(tk.ms);
           if (x < mL - 1 || x > W - mR + 1) return null;
-          return <text key={`x${y}`} x={x} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">{y}</text>;
+          return <text key={`x${tk.ms}`} x={x} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">{tk.label}</text>;
         })}
 
         {/* vertical crosshair + readout */}

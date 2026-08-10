@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
+import { timeAxisTicks } from "@/lib/chart-axis";
 
 // One row on the union date grid. Series sit at different frequencies:
 // - deposit: all-bank 12M term-deposit board average (DAILY, CafeF).
@@ -22,8 +23,15 @@ export type BrRow = {
   vnindex: number | null;
 };
 
-type Range = "3y" | "10y" | "all";
-const RANGE_DAYS: Record<Range, number> = { "3y": 1095, "10y": 3650, all: Infinity };
+// Short ranges zoom into the DAILY deposit series. The other two series are far
+// coarser — lending is monthly (SBV) and the World Bank underlay is annual — so
+// on 1M they simply have no observation in window and drop out of the view. That
+// is intended: the panel becomes a clean read of recent deposit-board movement.
+type Range = "1m" | "6m" | "1y" | "3y" | "10y" | "all";
+const RANGE_DAYS: Record<Range, number> = {
+  "1m": 30, "6m": 183, "1y": 365, "3y": 1095, "10y": 3650, all: Infinity,
+};
+const RANGES: Range[] = ["1m", "6m", "1y", "3y", "10y", "all"];
 
 const DEP = "#0d9488"; // teal — deposit
 const LEND = "#d97706"; // amber — lending (band + midpoint)
@@ -109,7 +117,8 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
   const H = xLabelY + 6;
 
   const t0 = ms(view[0].date), t1 = ms(view[view.length - 1].date);
-  const xAt = (d: string) => mL + (t1 <= t0 ? iw / 2 : ((ms(d) - t0) / (t1 - t0)) * iw);
+  const xAtMs = (m: number) => mL + (t1 <= t0 ? iw / 2 : ((m - t0) / (t1 - t0)) * iw);
+  const xAt = (d: string) => xAtMs(ms(d));
   const yAt = (v: number) => top + (1 - (v - dom.lo) / (dom.hi - dom.lo)) * h;
   const yVn = (v: number) => vnTop + (1 - (v - vnDom.lo) / (vnDom.hi - vnDom.lo)) * vnH;
 
@@ -144,10 +153,9 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
 
   const yTicks = [dom.hi, (dom.lo + dom.hi) / 2, dom.lo];
   const vnTicks = [vnDom.hi, (vnDom.lo + vnDom.hi) / 2, vnDom.lo];
-  const y0 = new Date(t0).getUTCFullYear(), y1 = new Date(t1).getUTCFullYear();
-  const yearStep = Math.max(1, Math.ceil((y1 - y0) / 6));
-  const yearTicks: number[] = [];
-  for (let y = y0; y <= y1; y += yearStep) yearTicks.push(y);
+  // Granularity follows the visible span — year labels alone would leave the 1M
+  // and 6M views with no x-axis at all (see lib/chart-axis.ts).
+  const xTicks = timeAxisTicks(t0, t1);
 
   const fmtPct = (v: number) => `${v.toFixed(2)}%`;
   const fmtPct1 = (v: number) => `${v.toFixed(1)}%`;
@@ -198,7 +206,7 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
           )}
         </div>
         <div className="flex gap-1">
-          {(["3y", "10y", "all"] as Range[]).map((r) => (
+          {RANGES.map((r) => (
             <button
               key={r}
               onClick={() => setRange(r)}
@@ -206,7 +214,12 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
                 range === r ? "bg-amber-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              {r === "3y" ? t(locale, "irRange3y") : r === "10y" ? "10Y" : t(locale, "irRangeAll")}
+              {r === "1m" ? t(locale, "irRange1m")
+                : r === "6m" ? t(locale, "irRange6m")
+                : r === "1y" ? t(locale, "irRange1y")
+                : r === "3y" ? t(locale, "irRange3y")
+                : r === "10y" ? "10Y"
+                : t(locale, "irRangeAll")}
             </button>
           ))}
         </div>
@@ -252,8 +265,17 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
         {dot(wbDPts, WB_D)}
         {dot(wbLPts, WB_L)}
 
-        {/* Lending band (min–max) + midpoint */}
+        {/* Lending band (min–max) + midpoint. A short range can contain exactly
+            ONE monthly observation, which no polygon can express — draw the
+            min–max as a vertical tick so the range is still visible. */}
         {bandPoly && <polygon points={bandPoly} fill={LEND} opacity={0.14} />}
+        {bandPts.length === 1 && (
+          <line
+            x1={xAt(bandPts[0].d)} y1={yAt(bandPts[0].hi)}
+            x2={xAt(bandPts[0].d)} y2={yAt(bandPts[0].lo)}
+            stroke={LEND} strokeWidth={3} opacity={0.45} strokeLinecap="round"
+          />
+        )}
         {midPts.length > 1 && <polyline points={line(midPts)} fill="none" stroke={LEND} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />}
         {dot(midPts, LEND)}
 
@@ -261,11 +283,11 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
         {depPts.length > 1 && <polyline points={line(depPts)} fill="none" stroke={DEP} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />}
         {dot(depPts, DEP)}
 
-        {/* year axis labels */}
-        {yearTicks.map((y) => {
-          const x = xAt(`${y}-01-01`);
+        {/* x axis labels — day / month / year depending on the visible span */}
+        {xTicks.map((tk) => {
+          const x = xAtMs(tk.ms);
           if (x < mL - 1 || x > W - mR + 1) return null;
-          return <text key={`x${y}`} x={x} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">{y}</text>;
+          return <text key={`x${tk.ms}`} x={x} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">{tk.label}</text>;
         })}
 
         {/* ---- vertical crosshair + readout (spans both panels) ---- */}
