@@ -1,0 +1,53 @@
+-- Migration 046: fix infinite recursion in the profiles RLS policy (regression from 045).
+--
+-- 045 added:
+--
+--   create policy "Admin reads all profiles" on public.profiles
+--     for select using (
+--       exists (select 1 from public.profiles p
+--                where p.id = auth.uid() and p.role = 'admin')
+--     );
+--
+-- A policy ON profiles that SELECTs FROM profiles re-enters RLS on profiles to
+-- evaluate itself, forever. Postgres catches it and aborts the whole query with
+-- 42P17 "infinite recursion detected in policy for relation profiles".
+--
+-- Blast radius was wider than profiles: the feedbacks SELECT policy from 007/012
+-- also does `exists (select 1 from profiles ...)`, so every feedbacks read hit
+-- the same recursion. And getUserAndRole() ignores the error and destructures
+-- only `data`, so a failed profiles lookup silently degraded every signed-in
+-- admin to the default 'pro' role — losing the admin nav and locking /input.
+--
+-- THE FIX: drop the recursive policy. Own-row access is all the app actually
+-- needs — getUserAndRole() reads `.eq("id", user.id)` — and the feedbacks policy
+-- only ever looks up the CALLER's own row, which "Read own profile" already
+-- permits without recursion. The admin-reads-all-profiles rule was speculative
+-- ("keeps a future user-admin screen possible") and is not worth a self-
+-- referential policy.
+--
+-- If an admin ever does need to read every profile, do NOT reintroduce this
+-- shape. Use a SECURITY DEFINER helper, which runs as its owner and therefore
+-- does not re-enter RLS:
+--
+--   create function public.is_admin() returns boolean
+--     language sql stable security definer set search_path = public as
+--     $$ select exists (select 1 from profiles where id = auth.uid() and role = 'admin') $$;
+--
+--   create policy "Admin reads all profiles" on public.profiles
+--     for select using (public.is_admin());
+--
+-- (Marked SECURITY DEFINER + a pinned search_path, matching the pattern the
+-- signup trigger in 005 already uses.)
+
+drop policy if exists "Admin reads all profiles" on public.profiles;
+
+-- Left in place from 045 — non-recursive, and all the app needs:
+--   create policy "Read own profile" on public.profiles
+--     for select using (id = auth.uid());
+
+-- ---------------------------------------------------------------------------
+-- VERIFY
+--   * anon:  select on profiles  -> 200 with []   (not 500/42P17)
+--   * anon:  select on feedbacks -> 200 with []   (not 500/42P17)
+--   * admin: the admin nav and /input work again; /feedbacks resolves.
+-- ---------------------------------------------------------------------------
