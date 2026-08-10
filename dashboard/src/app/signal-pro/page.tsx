@@ -13,51 +13,26 @@ type UniverseRow = {
   avg_volume_20d: number | null;
   rs_3m: number | null;
   rs_composite: number | null;
-  rs_line_full: number[] | null;
   rs_line_score: number | null;
   rs_line_grade: string | null;
   base_score: number | null;
   base_grade: string | null;
   base_type: string | null;
   base_status: string | null;
-  base_chart: { o: number[]; h: number[]; l: number[]; c: number[]; lo: number; hi: number; s: number } | null;
   ta_score: number | null;
   catalyst_score: number | null;
 };
 
 const UNIVERSE_COLS =
-  "symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_full,rs_line_score,rs_line_grade,base_score,base_grade,base_type,base_status,base_chart,ta_score,catalyst_score";
+  "symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_score,rs_line_grade,base_score,base_grade,base_type,base_status,ta_score,catalyst_score";
 
-// The row sparkline only needs the recent tail of the RS line. The full
-// 250-point series × ~1,600 symbols was the dominant payload of this page; the
-// expanded RS-line view re-fetches the full series client-side on demand (see
-// signal-pro-client), so shipping it up front is pure waste. ~90 points ≈ one
-// quarter of sessions, rounded to 2dp (RS line is 0–100; more precision than
-// that is invisible in a 60px sparkline but ~20% of the bytes).
-//
-// INVARIANT: this must stay a TAIL SLICE at full daily resolution — the most
-// recent sessions are what the user reads the current trend from, so never
-// decimate (every-Nth-point) or smooth. Shrinking the payload further means
-// lowering SPARKLINE_POINTS (dropping the OLDEST days), never thinning recent
-// ones. Note RsSparkline colours the line via trendOf() = last vs FIRST of this
-// window, so this constant also defines what "trend" means on the row.
-const SPARKLINE_POINTS = 90;
-
-// Vercel's Data Cache rejects entries over 2 MB — an oversized entry is
-// silently NOT cached, so the page refetches the whole universe from Supabase
-// on every request (this cost ~20 s/request in production). The universe is
-// therefore cached in fixed-size chunks: each entry stays ~0.7 MB no matter how
-// large the universe grows, and the chunks are fetched in parallel.
+// rs_line_full and base_chart are NOT selected here. They were the row
+// sparklines' data and, at ~1.7 MB, the single biggest part of this page — the
+// whole universe's charts shipped to draw the ~124 rows the default filters
+// show. The client now requests them for the rows it actually renders, via
+// /api/sparklines (see src/lib/sparkline.ts). Everything the client FILTERS or
+// SORTS on must stay in this select, or filtering would need a round trip.
 const UNIVERSE_CHUNK = 400;
-
-function slimRow(r: UniverseRow): UniverseRow {
-  return {
-    ...r,
-    rs_line_full: r.rs_line_full
-      ? r.rs_line_full.slice(-SPARKLINE_POINTS).map((v) => Math.round(v * 100) / 100)
-      : null,
-  };
-}
 
 const getUniverseCount = unstable_cache(
   async (): Promise<number> => {
@@ -79,7 +54,7 @@ const getUniverseChunk = unstable_cache(
       .order("symbol", { ascending: true })
       .range(chunk * UNIVERSE_CHUNK, chunk * UNIVERSE_CHUNK + UNIVERSE_CHUNK - 1);
     if (error) throw new Error(error.message);
-    return ((data ?? []) as unknown as UniverseRow[]).map(slimRow);
+    return (data ?? []) as unknown as UniverseRow[];
   },
   ["signal-pro-universe-chunk"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },

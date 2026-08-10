@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, faNormalizedScore } from "@/lib/fa";
@@ -10,6 +10,7 @@ import { PriceBaseBreakdown, PriceBaseSparkline, PriceBaseChart, type BaseChart,
 import { CatalystDetail, type CatalystRow } from "./catalyst";
 import { TradeActions } from "./trade-actions";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
+import { SPARKLINE_BATCH, type SymbolCharts } from "@/lib/sparkline";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol" | "quarter";
@@ -108,14 +109,12 @@ export function SignalProClient({
     avg_volume_20d: number | null;
     rs_3m: number | null;
     rs_composite: number | null;
-    rs_line_full: number[] | null;
     rs_line_score: number | null;
     rs_line_grade: string | null;
     base_score: number | null;
     base_grade: string | null;
     base_type: string | null;
     base_status: string | null;
-    base_chart: BaseChart | null;
     ta_score: number | null;
     catalyst_score: number | null;
   }[];
@@ -164,11 +163,15 @@ export function SignalProClient({
     return m;
   }, [universe]);
 
+  // Sparkline data arrives AFTER first paint, for the filtered rows only — see
+  // the fetch effect below and /api/sparklines. Inline it was ~1.7 MB of page.
+  const [charts, setCharts] = useState<Map<string, SymbolCharts>>(new Map());
+
   const rsLineBySymbol = useMemo(() => {
     const m = new Map<string, number[] | null>();
-    for (const u of universe) m.set(u.symbol, u.rs_line_full);
+    for (const [sym, c] of charts) m.set(sym, c.rs);
     return m;
-  }, [universe]);
+  }, [charts]);
 
   const rsLineScoreBySymbol = useMemo(() => {
     const m = new Map<string, { score: number | null; grade: string | null }>();
@@ -200,9 +203,14 @@ export function SignalProClient({
 
   const baseBySymbol = useMemo(() => {
     const m = new Map<string, { score: number | null; grade: string | null; type: string | null; status: string | null; chart: BaseChart | null }>();
-    for (const u of universe) m.set(u.symbol, { score: u.base_score, grade: u.base_grade, type: u.base_type, status: u.base_status, chart: u.base_chart });
+    for (const u of universe) {
+      m.set(u.symbol, {
+        score: u.base_score, grade: u.base_grade, type: u.base_type, status: u.base_status,
+        chart: charts.get(u.symbol)?.base ?? null,
+      });
+    }
     return m;
-  }, [universe]);
+  }, [universe, charts]);
 
   const catalystBySymbol = useMemo(() => {
     const m = new Map<string, number | null>();
@@ -348,6 +356,60 @@ export function SignalProClient({
     });
     return out;
   }, [rows, rating, minScore, minAvgVolume, minNpatBn, avgVolBySymbol, npatBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, baseBySymbol, search, sortKey, sortAsc]);
+
+  // Fetch sparkline data for the rows currently on screen, once they are known.
+  //
+  // Only ever asks for symbols it does not already hold, so narrowing a filter
+  // or typing in the search box costs nothing, and widening one fetches just the
+  // newly-revealed rows. `requested` is a ref rather than state because it must
+  // update synchronously — two effect runs in the same tick would otherwise
+  // request the same symbols twice.
+  const requested = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const missing = filtered
+      .map((r) => r.symbol)
+      .filter((sym) => !requested.current.has(sym));
+    if (missing.length === 0) return;
+
+    // Debounced: `filtered` changes on every keystroke, and clearing a filter can
+    // reveal hundreds of rows at once. Waiting a beat coalesces that into one pass.
+    const timer = setTimeout(() => {
+      for (const sym of missing) requested.current.add(sym);
+
+      const batches: string[][] = [];
+      for (let i = 0; i < missing.length; i += SPARKLINE_BATCH) {
+        batches.push(missing.slice(i, i + SPARKLINE_BATCH));
+      }
+
+      Promise.all(
+        batches.map((symbols) =>
+          fetch("/api/sparklines", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbols }),
+          })
+            .then((r) => (r.ok ? r.json() : { charts: {} }))
+            .catch(() => ({ charts: {} })),
+        ),
+      ).then((results) => {
+        const merged = Object.assign({}, ...results.map((r) => r.charts ?? {})) as Record<string, SymbolCharts>;
+        if (Object.keys(merged).length === 0) {
+          // Nothing came back (offline, 500). Drop the reservation so a later
+          // render can retry instead of leaving those rows blank forever.
+          for (const sym of missing) requested.current.delete(sym);
+          return;
+        }
+        setCharts((prev) => {
+          const next = new Map(prev);
+          for (const [sym, c] of Object.entries(merged)) next.set(sym, c);
+          return next;
+        });
+      });
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [filtered]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
