@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { CACHE_TTL_SECONDS, TAG_TA, getFaRowsLatestPerSymbol } from "@/lib/cached-data";
+import { CACHE_TTL_SECONDS, TAG_TA, getFaRowsLatestPerSymbol, getNpatBnByRow } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import { SignalProClient } from "./signal-pro-client";
@@ -103,6 +103,10 @@ export default async function SignalProPage() {
   let universe: UniverseRow[] = [];
   let activeSymbols: string[] = [];
   let rows: Awaited<ReturnType<typeof getFaRowsLatestPerSymbol>> = [];
+  // Quarterly NPAT per symbol for the size filter. Derived HERE, not in the
+  // client: it needs a per-quarter join the client has no data for, and the
+  // client's `filtered` memo re-runs on every keystroke in the search box.
+  let npatBn: Map<string, number | null> = new Map();
   // Hold the ERROR ITSELF, not its message: a failed head:true count query
   // comes back with an empty message, and the old `string | null` + truthy
   // check swallowed it — during the 2026-07-27 Supabase outage this page
@@ -128,6 +132,9 @@ export default async function SignalProPage() {
         return Array.from(new Set((active ?? []).map((r) => r.symbol as string)));
       })(),
     ]);
+    // Keyed off each row's own as_of_period, so this has to follow the parallel
+    // block rather than join it. Cheap: one cached read per distinct quarter.
+    npatBn = await getNpatBnByRow(rows);
   } catch (e) {
     loadError = e ?? new Error("unknown error");
   }
@@ -168,6 +175,7 @@ export default async function SignalProPage() {
         locale={locale}
         isAdmin={isAdmin}
         activeSymbols={activeSymbols}
+        npatBn={Array.from(npatBn)}
       />
     </div>
   );

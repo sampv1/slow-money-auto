@@ -15,6 +15,11 @@ type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol" | "quarter";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
+// Minimum quarterly net profit after tax, in VND billion. Same default as the FA
+// Scanner so the two pages agree on what "worth looking at" means. Like the
+// volume filter, a symbol with NO figure is excluded rather than assumed to pass
+// — see the hint text in the filter bar for why that matters here.
+const DEFAULT_MIN_NPAT_BN = 35;
 
 // Score grades (A+/A/B/C/D) on the 90/80/70/60 bands — applied to FA, TA and
 // Final scores alike.
@@ -95,6 +100,7 @@ export function SignalProClient({
   locale,
   isAdmin = false,
   activeSymbols = [],
+  npatBn = [],
 }: {
   rows: FaScore[];
   universe: {
@@ -116,6 +122,8 @@ export function SignalProClient({
   locale: Locale;
   isAdmin?: boolean;
   activeSymbols?: string[];
+  /** [symbol, NPAT in bn VND] at each row's own quarter; null = not reported. */
+  npatBn?: [string, number | null][];
 }) {
   const activeSet = useMemo(() => new Set(activeSymbols), [activeSymbols]);
   // Reliable "as of" date: the most recent close-price date among displayed rows
@@ -131,7 +139,10 @@ export function SignalProClient({
   const [rating, setRating] = useState<RatingFilter>("all");
   const [minScore, setMinScore] = useState<string>("");
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
+  const [minNpatBn, setMinNpatBn] = useState<number>(DEFAULT_MIN_NPAT_BN);
   const [search, setSearch] = useState("");
+
+  const npatBySymbol = useMemo(() => new Map(npatBn), [npatBn]);
   const [sortKey, setSortKey] = useState<SortKey>("final_score");
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -289,6 +300,15 @@ export function SignalProClient({
         if (avgVol === null || avgVol === undefined) return false;
         if (avgVol < minAvgVolume) return false;
       }
+      // Quarterly NPAT floor, same shape as the volume filter above and as the
+      // FA Scanner's: an unknown figure is excluded rather than assumed to pass.
+      // Read at each row's OWN quarter (see getNpatBnByRow) — Signal Pro mixes
+      // quarters, unlike the FA Scanner where it is a dropdown.
+      if (minNpatBn > 0) {
+        const npat = npatBySymbol.get(r.symbol);
+        if (npat === null || npat === undefined) return false;
+        if (npat < minNpatBn) return false;
+      }
       if (q && !r.symbol.toUpperCase().includes(q)) return false;
       return true;
     });
@@ -327,7 +347,7 @@ export function SignalProClient({
       return 0;
     });
     return out;
-  }, [rows, rating, minScore, minAvgVolume, avgVolBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, baseBySymbol, search, sortKey, sortAsc]);
+  }, [rows, rating, minScore, minAvgVolume, minNpatBn, avgVolBySymbol, npatBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, baseBySymbol, search, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -354,10 +374,37 @@ export function SignalProClient({
           onChange={setMinAvgVolume}
           locale={locale}
         />
-        {minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D && (
+
+        <span className="hidden sm:block h-5 w-px bg-gray-200" aria-hidden />
+
+        <label htmlFor="sp-min-npat" className="text-sm text-gray-700">
+          {t(locale, "faMinNpat")}
+        </label>
+        <input
+          id="sp-min-npat"
+          type="number"
+          min={0}
+          step={5}
+          value={Number.isFinite(minNpatBn) ? minNpatBn : 0}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            setMinNpatBn(Number.isFinite(n) && n >= 0 ? n : 0);
+          }}
+          className="w-24 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+        />
+        {/* Same hint as the FA Scanner: a missing NPAT is SYSTEMATIC, not random
+            — banks and securities firms don't report revenue/net margin in this
+            statement format at all, so any threshold above 0 removes the whole
+            sector. Better said out loud than discovered later. */}
+        <span className="text-xs text-gray-500">{t(locale, "faMinNpatHint")}</span>
+
+        {(minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D || minNpatBn !== DEFAULT_MIN_NPAT_BN) && (
           <button
             type="button"
-            onClick={() => setMinAvgVolume(DEFAULT_MIN_AVG_VOLUME_20D)}
+            onClick={() => {
+              setMinAvgVolume(DEFAULT_MIN_AVG_VOLUME_20D);
+              setMinNpatBn(DEFAULT_MIN_NPAT_BN);
+            }}
             className="text-xs text-gray-500 hover:text-gray-900 ml-auto"
           >
             {t(locale, "reset")}

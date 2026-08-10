@@ -106,19 +106,29 @@ export type QuarterlyFacts = {
  * |prior| so a loss -> profit swing reads the same way C1 EPS YoY does, and
  * returning null when prior is 0.
  */
+/**
+ * Total net profit after tax for one quarterly row, in VND (not billions — the
+ * caller divides, so YoY ratios stay on the exact figure this returns).
+ *
+ * Exported because the Signal Pro NPAT filter needs the same number without the
+ * YoY join that buildQuarterlyFacts does. ONE definition of the formula: the
+ * derivation is exact but non-obvious (see the doc comment below), and two
+ * copies of it would be two things to get wrong.
+ */
+export function faNpat(r: FaQuarterlyRaw): number | null {
+  return r.revenue === null || r.net_margin === null ? null : r.net_margin * r.revenue;
+}
+
 export function buildQuarterlyFacts(
   current: FaQuarterlyRaw[],
   prior: FaQuarterlyRaw[],
 ): Map<string, QuarterlyFacts> {
-  const npatOf = (r: FaQuarterlyRaw): number | null =>
-    r.revenue === null || r.net_margin === null ? null : r.net_margin * r.revenue;
-
   const priorNpat = new Map<string, number | null>();
-  for (const r of prior) priorNpat.set(r.symbol, npatOf(r));
+  for (const r of prior) priorNpat.set(r.symbol, faNpat(r));
 
   const out = new Map<string, QuarterlyFacts>();
   for (const r of current) {
-    const npat = npatOf(r);
+    const npat = faNpat(r);
     const prev = priorNpat.get(r.symbol) ?? null;
     out.set(r.symbol, {
       revenueBn: r.revenue === null ? null : r.revenue / 1e9,

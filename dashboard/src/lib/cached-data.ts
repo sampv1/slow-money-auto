@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "./supabase";
 import type { FaScore, FaQuarterlyRaw } from "./fa";
-import { buildQuarterlyFacts, yearAgoPeriod } from "./fa";
+import { buildQuarterlyFacts, faNpat, yearAgoPeriod } from "./fa";
 import type { DailyLog, Recommendation } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -218,6 +218,37 @@ export async function getFaQuarterlyFacts(period: string) {
     getFaQuarterlyRaw(yearAgoPeriod(period)),
   ]);
   return buildQuarterlyFacts(current, prior);
+}
+
+/**
+ * NPAT in billions VND for each row, read at THAT ROW'S OWN quarter.
+ *
+ * Signal Pro shows every symbol at its own latest FA quarter rather than one
+ * global quarter, so a single-period map (what the FA Scanner uses, where the
+ * quarter is a dropdown) is wrong here: at the time of writing 1,070 symbols sit
+ * at 2026-Q2 and 499 at 2026-Q1, so keying on the newest quarter alone would
+ * report "no figure" for a third of the universe — and an NPAT floor excludes
+ * unknowns, so those 499 would silently vanish from the page.
+ *
+ * Costs one cached read per DISTINCT period (two today), and 2026-Q2's entry is
+ * usually already warm from the FA Scanner.
+ */
+export async function getNpatBnByRow(
+  rows: { symbol: string; as_of_period: string }[],
+): Promise<Map<string, number | null>> {
+  const periods = [...new Set(rows.map((r) => r.as_of_period))];
+  const raw = await Promise.all(periods.map((p) => getFaQuarterlyRaw(p)));
+  const byPeriod = new Map(
+    periods.map((p, i) => [p, new Map(raw[i].map((r) => [r.symbol, r]))]),
+  );
+
+  const out = new Map<string, number | null>();
+  for (const r of rows) {
+    const q = byPeriod.get(r.as_of_period)?.get(r.symbol);
+    const npat = q ? faNpat(q) : null;
+    out.set(r.symbol, npat === null ? null : npat / 1e9);
+  }
+  return out;
 }
 
 // --- Active symbol list (Analysis search box) -------------------------------
