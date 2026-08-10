@@ -9,6 +9,7 @@ import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import { PriceBaseBreakdown, PriceBaseSparkline, PriceBaseChart, type BaseChart, baseTypeLabel, baseStatusLabel } from "./price-base";
 import { CatalystDetail, type CatalystRow } from "./catalyst";
 import { TradeActions } from "./trade-actions";
+import { MinVolumeFilter } from "@/components/min-volume-filter";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol" | "quarter";
@@ -347,22 +348,12 @@ export function SignalProClient({
     <div>
       {/* Liquidity filter — its own bar at the top, matching the TA/FA scanners. */}
       <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
-        <label htmlFor="sp-min-avg-vol" className="text-sm text-gray-700">
-          {t(locale, "taMinAvgVolume")}
-        </label>
-        <input
+        <MinVolumeFilter
           id="sp-min-avg-vol"
-          type="number"
-          min={0}
-          step={50000}
-          value={Number.isFinite(minAvgVolume) ? minAvgVolume : 0}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            setMinAvgVolume(Number.isFinite(n) && n >= 0 ? n : 0);
-          }}
-          className="w-32 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+          value={minAvgVolume}
+          onChange={setMinAvgVolume}
+          locale={locale}
         />
-        <span className="text-xs text-gray-500">{t(locale, "taMinAvgVolumeHint")}</span>
         {minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D && (
           <button
             type="button"

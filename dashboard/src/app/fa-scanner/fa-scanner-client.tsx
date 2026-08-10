@@ -14,6 +14,7 @@ import {
 } from "@/lib/fa";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatBillions, formatPnl, pnlColor } from "@/lib/format";
+import { MinVolumeFilter } from "@/components/min-volume-filter";
 
 // Score components shown as columns: short word-label + formula tooltip, both
 // bilingual. This set is the manufacturing rubric; real estate / banks rubrics
@@ -233,22 +234,12 @@ export function FaScannerClient({
     <div>
       {/* Size filters — their own bar at the top, matching the TA scanner. */}
       <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
-        <label htmlFor="fa-min-avg-vol" className="text-sm text-gray-700">
-          {t(locale, "taMinAvgVolume")}
-        </label>
-        <input
+        <MinVolumeFilter
           id="fa-min-avg-vol"
-          type="number"
-          min={0}
-          step={50000}
-          value={Number.isFinite(minAvgVolume) ? minAvgVolume : 0}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            setMinAvgVolume(Number.isFinite(n) && n >= 0 ? n : 0);
-          }}
-          className="w-32 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+          value={minAvgVolume}
+          onChange={setMinAvgVolume}
+          locale={locale}
         />
-        <span className="text-xs text-gray-500">{t(locale, "taMinAvgVolumeHint")}</span>
 
         <span className="hidden sm:block h-5 w-px bg-gray-200" aria-hidden />
 
