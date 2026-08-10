@@ -23,6 +23,28 @@ export const revalidate = 0;
 
 const isOpen = (r: Recommendation) => (ACTIVE_STATUSES as string[]).includes(r.status);
 
+// Symbol stays frozen while everything else scrolls, so a row never loses the
+// one thing that says which position it is. Below ~1334px of viewport the table
+// still needs a scrollbar (16 columns), and this is what keeps that usable.
+//
+// SYMBOL ONLY, pinned at left-0 — Date scrolls away underneath it. Freezing the
+// Date+Symbol pair was the obvious first move and it does not work: sticky needs
+// a literal offset, so Symbol would carry a hardcoded `left` equal to the Date
+// column's width, and a table that overflows lays its columns out at MIN-CONTENT,
+// which quietly beats the `w-[100px]` hint (97px measured, not 100). The 3px
+// difference is a slit of moving content between two frozen cells. Pinning one
+// column at 0 has no offset to get wrong.
+//
+// Frozen cells paint over the columns sliding beneath them, so they need an
+// opaque background of their own — and `group-hover` so they track the row
+// highlight instead of staying stubbornly white. The right edge is a shadow, not
+// a border: Tailwind's preflight sets `border-collapse: collapse`, which hands
+// borders to the table rather than the cell and drops them once a cell is
+// sticky (the same trap the FA Scanner's sticky header hit).
+const FROZEN_TD = "sticky left-0 z-10 bg-white group-hover:bg-gray-50";
+const FROZEN_TH = "sticky left-0 z-20 bg-white";
+const FROZEN_EDGE = "shadow-[1px_0_0_0_#e5e7eb]";
+
 // Corporate actions (cash dividend / bonus / split) re-scale the market price
 // but NOT this row: entry/SL/TP are the nominal levels captured at trade time and
 // current_price is rebased back onto that same basis by update_prices.py, so P&L
@@ -43,6 +65,12 @@ const adjFactor = (r: Recommendation): number | null => {
 // The percentages beside SL/TP are deliberately NOT rescaled. They are ratios to
 // entry, and a corporate action scales entry and the level by the same k, so the
 // ratio is invariant — rescaling them would introduce an error, not fix one.
+//
+// The "market basis" caption sits on its OWN line rather than trailing the amber
+// number. Inline, it made Entry the third-widest column in the table (171px) for
+// a caption that repeats once per page — every other row paid for it in
+// horizontal scroll. Stacked, the column is sized by the wider of the price and
+// the caption instead of their sum.
 const marketBasis = (
   v: number | null | undefined,
   k: number | null,
@@ -50,9 +78,9 @@ const marketBasis = (
   withLabel = false,
 ) =>
   k !== null && typeof v === "number" && Number.isFinite(v) ? (
-    <span className="block text-[11px] text-amber-700 font-normal mt-0.5">
+    <span className="block text-[11px] text-amber-700 font-normal mt-0.5 leading-tight">
       {formatPrice(v * k)}
-      {withLabel && <span className="text-gray-400"> {t(locale, "adjMarketBasis")}</span>}
+      {withLabel && <span className="block text-gray-400">{t(locale, "adjMarketBasis")}</span>}
     </span>
   ) : null;
 
@@ -240,24 +268,30 @@ export default async function PortfolioPage({
         <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
+              {/* px-3, not px-4: 16 columns turn every extra 8px of gutter into
+                  128px of horizontal scroll, which is most of what was pushing
+                  this table past the viewport. */}
               <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th className="px-4 py-3 font-medium">{t(locale, "date")}</th>
-                <th className="px-4 py-3 font-medium">{t(locale, "symbol")}</th>
-                <th className="px-4 py-3 font-medium">{t(locale, "setup")}</th>
-                <th className="px-4 py-3 font-medium text-right">{t(locale, "entry")}</th>
-                <th className="px-4 py-3 font-medium text-right">{t(locale, "sl")}</th>
-                <th className="px-4 py-3 font-medium text-right">{t(locale, "tp1")}</th>
-                <th className="px-4 py-3 font-medium text-right">{t(locale, "tp2")}</th>
-                <th className="px-4 py-3 font-medium text-right whitespace-nowrap">{t(locale, "currentExit")}</th>
-                <th className="px-4 py-3 font-bold text-right">{t(locale, "pnl")}</th>
-                <th className="px-4 py-3 font-medium text-right">{t(locale, "maxDd")}</th>
-                <th className="px-4 py-3 font-medium text-right">{t(locale, "rMultiple")}</th>
-                <th className="px-4 py-3 font-medium text-right">{t(locale, "winRateEst")}</th>
-                <th className="px-4 py-3 font-medium text-right">{t(locale, "sharpe")}</th>
-                <th className="px-4 py-3 font-medium">{t(locale, "holding")}</th>
-                <th className="px-4 py-3 font-medium">{t(locale, "closed")}</th>
-                <th className="px-4 py-3 font-medium">{t(locale, "status")}</th>
-                {isAdmin && <th className="px-4 py-3 font-medium text-right">{t(locale, "actionCol")}</th>}
+                <th className="px-3 py-3 font-medium">{t(locale, "date")}</th>
+                <th className={`${FROZEN_TH} ${FROZEN_EDGE} px-3 py-3 font-medium`}>{t(locale, "symbol")}</th>
+                <th className="px-3 py-3 font-medium">{t(locale, "setup")}</th>
+                <th className="px-3 py-3 font-medium text-right">{t(locale, "entry")}</th>
+                <th className="px-3 py-3 font-medium text-right">{t(locale, "sl")}</th>
+                <th className="px-3 py-3 font-medium text-right">{t(locale, "tp1")}</th>
+                <th className="px-3 py-3 font-medium text-right">{t(locale, "tp2")}</th>
+                {/* Allowed to wrap. "Current / Exit" (and the longer VI
+                    "Hiện tại / Giá ra") held a 134px column open on one nowrap
+                    header for cells that only ever hold a price. */}
+                <th className="px-3 py-3 font-medium text-right">{t(locale, "currentExit")}</th>
+                <th className="px-3 py-3 font-bold text-right">{t(locale, "pnl")}</th>
+                <th className="px-3 py-3 font-medium text-right">{t(locale, "maxDd")}</th>
+                <th className="px-3 py-3 font-medium text-right">{t(locale, "rMultiple")}</th>
+                <th className="px-3 py-3 font-medium text-right">{t(locale, "winRateEst")}</th>
+                <th className="px-3 py-3 font-medium text-right">{t(locale, "sharpe")}</th>
+                <th className="px-3 py-3 font-medium">{t(locale, "holding")}</th>
+                <th className="px-3 py-3 font-medium">{t(locale, "closed")}</th>
+                <th className="px-3 py-3 font-medium">{t(locale, "status")}</th>
+                {isAdmin && <th className="px-3 py-3 font-medium text-right">{t(locale, "actionCol")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -273,9 +307,13 @@ export default async function PortfolioPage({
                 const badge = statusBadge(rec.status, locale);
                 const k = adjFactor(rec);
                 return (
-                  <tr key={rec.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{rec.trading_date}</td>
-                    <td className="px-4 py-3 font-medium">
+                  <tr key={rec.id} className="group border-b border-gray-100 hover:bg-gray-50">
+                    {/* Both date columns are text-xs, matching Setup and Holding:
+                        they are metadata, not figures you scan down, and at
+                        text-sm the two of them held ~195px of a table that had
+                        none to spare. */}
+                    <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">{rec.trading_date}</td>
+                    <td className={`${FROZEN_TD} ${FROZEN_EDGE} px-3 py-3 font-medium`}>
                       {rec.symbol}
                       {rec.source === "MANUAL" && (
                         <span className="ml-1.5 inline-block px-1 py-0.5 text-[10px] rounded bg-gray-100 text-gray-500 align-middle">M</span>
@@ -309,66 +347,80 @@ export default async function PortfolioPage({
                           {t(locale, "adjBadge")}
                         </span>
                       )}
+                      {/* Narrower than the 180px it used to claim: the note is
+                          truncated context, but it was setting the width of the
+                          frozen identity column and so of every row. The full
+                          text is still one hover away. */}
                       {rec.note && (
-                        <span className="block text-[11px] text-gray-400 font-normal mt-0.5 max-w-[180px] truncate" title={rec.note}>{rec.note}</span>
+                        <span className="block text-[11px] text-gray-400 font-normal mt-0.5 max-w-[112px] truncate" title={rec.note}>{rec.note}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
+                    <td className="px-3 py-3 text-gray-600 text-xs">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
                     {/* Entry carries the "market basis" label; the levels after it
                         repeat the amber figure without it, so the row explains
-                        itself once instead of five times. */}
-                    <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
+                        itself once instead of five times.
+
+                        The distance-to-entry percentages sit UNDER their price
+                        rather than beside it. Side by side, `24,500 (-7.0%)` is
+                        one unbreakable ~113px line per column; stacked, SL/TP1
+                        are sized by the price alone and the prices line up in a
+                        column you can scan straight down. */}
+                    <td className="px-3 py-3 text-right font-mono whitespace-nowrap">
                       {formatPrice(rec.entry_price)}
                       {marketBasis(rec.entry_price, k, locale, true)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-red-500 whitespace-nowrap">
+                    <td className="px-3 py-3 text-right font-mono text-red-500 whitespace-nowrap">
                       {formatPrice(rec.stop_loss)}
                       {rec.stop_loss_pct !== null && (
-                        <span className="ml-1 text-xs">({rec.stop_loss_pct > 0 ? "+" : ""}{rec.stop_loss_pct.toFixed(1)}%)</span>
+                        <span className="block text-xs">({rec.stop_loss_pct > 0 ? "+" : ""}{rec.stop_loss_pct.toFixed(1)}%)</span>
                       )}
                       {marketBasis(rec.stop_loss, k, locale)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-green-600 whitespace-nowrap">
+                    <td className="px-3 py-3 text-right font-mono text-green-600 whitespace-nowrap">
                       {formatPrice(rec.tp1)}
                       {rec.tp1_pct !== null && (
-                        <span className="ml-1 text-xs">({rec.tp1_pct > 0 ? "+" : ""}{rec.tp1_pct.toFixed(1)}%)</span>
+                        <span className="block text-xs">({rec.tp1_pct > 0 ? "+" : ""}{rec.tp1_pct.toFixed(1)}%)</span>
                       )}
                       {marketBasis(rec.tp1, k, locale)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-green-600 whitespace-nowrap">
+                    <td className="px-3 py-3 text-right font-mono text-green-600 whitespace-nowrap">
                       {formatPrice(rec.tp2)}
                       {rec.tp2_pct !== null && (
-                        <span className="ml-1 text-xs">({rec.tp2_pct > 0 ? "+" : ""}{rec.tp2_pct.toFixed(1)}%)</span>
+                        <span className="block text-xs">({rec.tp2_pct > 0 ? "+" : ""}{rec.tp2_pct.toFixed(1)}%)</span>
                       )}
                       {marketBasis(rec.tp2, k, locale)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
+                    <td className="px-3 py-3 text-right font-mono whitespace-nowrap">
                       {formatPrice(lastPrice)}
                       {/* Market basis, so the row reconciles against a broker
                           screen without altering what was actually recorded. */}
                       {marketBasis(lastPrice, k, locale)}
                     </td>
-                    <td className={`px-4 py-3 text-right font-mono font-bold ${pnlColor(pnl)}`}>
+                    <td className={`px-3 py-3 text-right font-mono font-bold ${pnlColor(pnl)}`}>
                       {formatPnl(pnl)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-red-600">
+                    <td className="px-3 py-3 text-right font-mono text-red-600">
                       {rec.max_drawdown_pct !== null ? `${rec.max_drawdown_pct.toFixed(1)}%` : ""}
                     </td>
-                    <td className="px-4 py-3 text-right">{rec.r_multiple !== null ? rec.r_multiple.toFixed(1) : "—"}</td>
-                    <td className="px-4 py-3 text-right">{rec.win_rate_est !== null ? `${rec.win_rate_est}%` : "—"}</td>
-                    <td className="px-4 py-3 text-right">{rec.sharpe !== null ? rec.sharpe.toFixed(1) : "—"}</td>
-                    <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                    <td className="px-3 py-3 text-right">{rec.r_multiple !== null ? rec.r_multiple.toFixed(1) : "—"}</td>
+                    <td className="px-3 py-3 text-right">{rec.win_rate_est !== null ? `${rec.win_rate_est}%` : "—"}</td>
+                    <td className="px-3 py-3 text-right">{rec.sharpe !== null ? rec.sharpe.toFixed(1) : "—"}</td>
+                    <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">
                       {rec.days_held !== null ? `${rec.days_held} ${t(locale, "sessions")}` : "—"}
                       {plan && <span className="block text-[11px] text-gray-400 mt-0.5">{plan}</span>}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{rec.closed_at ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${badge.className}`}>
+                    <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">{rec.closed_at ?? "—"}</td>
+                    <td className="px-3 py-3">
+                      {/* nowrap: a pill that breaks across two lines ("Đang /
+                          mở") reads as damage rather than as a badge, and the
+                          tighter gutters left this column narrow enough to do
+                          it in Vietnamese. Costs ~17px, still inside budget. */}
+                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 text-xs rounded-full font-medium ${badge.className}`}>
                         {badge.label}
                       </span>
                     </td>
                     {isAdmin && (
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-3 py-3 text-right">
                         {open && (
                           <TradeActions
                             symbol={rec.symbol}
