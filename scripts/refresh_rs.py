@@ -40,6 +40,13 @@ def main():
     print(f"Liquid universe: {stats['liquid']}    {verb}: {stats['scored']}    "
           f"rs_lines: {stats.get('rs_lines', 0)}    rs_line_scored: {stats.get('rs_scored', 0)}    "
           f"rs_date: {stats['rs_date']}")
+    # Each period is gated on its own data, so these differ from each other and
+    # from `scored`. Printed individually because one period collapsing is
+    # exactly the regression a single total would hide.
+    per = {k[len("rated_"):]: v for k, v in stats.items() if k.startswith("rated_")}
+    if per:
+        print("  coverage: " + "  ".join(f"{k}={v}" for k, v in per.items())
+              + f"    (rs_1m={stats.get('rs_1m', 0)})")
 
 
 if __name__ == "__main__":

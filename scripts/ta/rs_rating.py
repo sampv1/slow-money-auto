@@ -20,8 +20,16 @@ pass and stored as the latest snapshot on ta_universe (like avg_volume_20d).
 Ranking universe = active symbols whose 20-session avg volume ≥ the RS
 liquidity floor — a SEPARATE, configurable parameter ("Min 20-session avg
 volume for RS"), distinct from the scanner's display volume filter. Default 0,
-i.e. rank across ALL symbols in the market that have enough history. A symbol
-needs full ~12-month history to be rated; those without it are left null.
+i.e. rank across ALL symbols in the market that have enough history.
+
+Each period is gated on ITS OWN data: a symbol is ranked for rs_3m if it has a
+bar near the 3-month mark, whether or not its 12-month anchor exists. So the
+rs_3m / rs_6m / rs_9m / rs_12m populations differ, and any of them can be null
+on a row. `rs_composite` still requires all four, so TA Score and Final Score
+keep blending four real numbers.
+
+(Before 2026-08-11 one missing anchor voided the whole symbol, which cost ~60
+symbols their rs_3m for want of 12-month data the 3-month return never used.)
 """
 
 import time
@@ -140,11 +148,33 @@ RS_DEFAULTS = {
 }
 
 
-def _trailing_returns(closes: list[tuple[str, float]], periods: dict, tol_days: int) -> dict[str, float] | None:
+def _trailing_returns(closes: list[tuple[str, float]], periods: dict, tol_days: int,
+                      require_all: bool = True) -> dict[str, float] | None:
     """Return {period: pct_return}, where each period's prior price is the bar
-    nearest (by date) to `last_date − N months`. A period is skipped (whole
-    symbol returned None) if no bar lies within `tol_days` of its target, so a
-    symbol must have ≥ ~12 months of listing to be fully rated."""
+    nearest (by date) to `last_date − N months`.
+
+    A period is unavailable when no bar lies within `tol_days` of its target.
+    What happens then depends on `require_all`:
+
+      True  (legacy, still used by the single-period callers) — the WHOLE symbol
+            returns None. Harmless when `periods` has one entry; ruinous when it
+            has four, which is why the main pass no longer uses it.
+
+      False — the unavailable period is simply omitted from the returned dict.
+            The caller gets whatever is computable and decides per period.
+
+    WHY `require_all=False` IS NOW THE MAIN PASS'S CHOICE
+        The 3-month return does not depend on 12-month data in any way, yet the
+        all-or-nothing form discarded `rs_3m` for ~60 symbols purely because
+        their 12-month anchor was missing. And "missing" here rarely means young:
+        AMV has 230 bars over 777 days but a five-month hole straddling its
+        12-month anchor, because thinly-traded UPCOM names simply do not print
+        near every target date. Judging a 3-month rating on 12-month data
+        availability is not a rule anyone would write down on purpose.
+
+    Returns None only when nothing at all is computable (no bars, or — under
+    require_all — any period missing).
+    """
     if not closes:
         return None
     parsed = [(_date_cls.fromisoformat(d), c) for d, c in closes if c and c > 0]
@@ -161,9 +191,11 @@ def _trailing_returns(closes: list[tuple[str, float]], periods: dict, tol_days: 
             if best_diff is None or diff < best_diff:
                 best_diff, best = diff, c
         if best is None or best_diff > tol_days:
-            return None
+            if require_all:
+                return None
+            continue
         rets[key] = last / best - 1.0
-    return rets
+    return rets or None
 
 
 # RS Line = stock close ÷ VN-Index close over the trailing ~1 year. The full
@@ -467,7 +499,9 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
     rs_date = None
     for sym in liquid:
         series = closes_by_sym.get(sym) or []
-        r = _trailing_returns(series, periods, tol)
+        # require_all=False: rate each period on its OWN data availability. A
+        # symbol missing only its 12-month anchor still gets a real rs_3m.
+        r = _trailing_returns(series, periods, tol, require_all=False)
         if r is None:
             continue
         rets[sym] = r
@@ -478,15 +512,37 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
     if not rets:
         return stats
 
+    # Ragged by design now: a symbol appears with whatever periods it has, so
+    # any of these columns can be NaN. A period absent for EVERY symbol would not
+    # produce a column at all, hence the explicit reindex.
     df = pd.DataFrame.from_dict(rets, orient="index")  # cols: 3m,6m,9m,12m
+    for k in periods:
+        if k not in df.columns:
+            df[k] = float("nan")
 
     def pct(s: "pd.Series") -> "pd.Series":
         # Percentile rank → 1..99 (lowest→~1, highest→99). Average ties.
-        return (s.rank(method="average", pct=True) * 99).round().clip(1, 99).astype(int)
+        # Null in ⇒ null out, so each period is ranked over exactly the symbols
+        # that HAVE that period — the whole point of the per-period gate.
+        #
+        # The .astype(float) is load-bearing, not tidying. On pandas' NULLABLE
+        # dtypes (Int64/Float64) .rank() does NOT honour na_option="keep": it
+        # hands pd.NA a real rank. Measured on 2.3.3 — [30.0, <NA>, 59.4] ranks
+        # to [66, 33, 99], inventing a 33 out of nothing. Only numpy float64
+        # propagates NaN through rank(). Coercing here (rather than at each call
+        # site) means no caller can reintroduce the bug. It cost 99 symbols a
+        # fabricated rs_composite the first time round.
+        v = pd.to_numeric(s, errors="coerce").astype(float)
+        return (v.rank(method="average", pct=True) * 99).round().clip(1, 99).astype("Int64")
 
     for k in periods:
         df[f"rs_{k}"] = pct(df[k])
-    blend = sum(weights[k] * df[f"rs_{k}"] for k in periods)
+    # Composite still requires ALL FOUR periods: NaN propagates through the
+    # weighted sum, so a symbol missing any period drops out of the composite
+    # ranking entirely. That keeps rs_composite — and therefore TA Score and
+    # Final Score — a blend of four real numbers, never a partial one silently
+    # reweighted onto the same 1..99 scale as its fully-rated peers.
+    blend = sum(weights[k] * df[f"rs_{k}"].astype(float) for k in periods)
     df["rs_composite"] = pct(blend)
 
     # --- rs_1m: display-only, computed AFTER and OUTSIDE the blend -------------
@@ -495,13 +551,12 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
     #   * `blend` above is already fixed, so nothing here can move rs_composite,
     #     TA Score or Final Score. That invariance is the whole point (verified by
     #     an A/B diff of every symbol's rs_* and ta_score).
-    #   * _trailing_returns returns None for the WHOLE symbol when ANY requested
-    #     period lacks a bar within tolerance_days. Folding "1m" into the main
-    #     call could therefore drop symbols out of `rets` entirely — and because
-    #     RS is a CROSS-SECTIONAL rank, losing members silently shifts every other
-    #     symbol's rs_3m..rs_12m. Iterating df.index after the fact cannot.
-    #   * Ranking over df.index (the already-rated set) rather than all liquid
-    #     symbols is what makes rs_1m comparable to rs_3m — same population.
+    #   * Folding "1m" into the main call would make it a fifth member of
+    #     `periods`, and `blend` indexes weights[k] for every k in periods — a
+    #     KeyError that writes no RS at all.
+    #   * Ranking over df.index (every symbol with at least one rated period)
+    #     keeps rs_1m on the same footing as the other periods: like them, it is
+    #     ranked over exactly the symbols that have ITS anchor, no more.
     #
     # Kept in a plain dict, never assigned onto `df`: a NaN-bearing column would
     # upcast the int columns that the payload below reads with bare int(...).
@@ -516,6 +571,12 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
 
     stats["scored"] = len(df)
     stats["rs_date"] = rs_date
+    # Per-period coverage. These now differ from each other (and from `scored`),
+    # so the log has to show them individually — a drop in one period is exactly
+    # the kind of regression a single total would hide.
+    for k in periods:
+        stats[f"rated_{k}"] = int(df[f"rs_{k}"].notna().sum())
+    stats["rated_composite"] = int(df["rs_composite"].notna().sum())
 
     # RS Line (stock ÷ VN-Index) sparkline series for each rated symbol.
     from .benchmark import fetch_vnindex_closes
@@ -553,15 +614,23 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
         return stats
 
     exch = _exchange_map(client)
+
+    # Under the per-period gate any rs_* cell can be null, so a bare int() would
+    # raise on pd.NA. None must reach the payload as JSON null (the column is
+    # nullable) rather than as 0 — TA Score treats a missing component as 0, so
+    # coercing here would silently manufacture a real-looking score from nothing.
+    def _i(v) -> int | None:
+        return None if v is None or pd.isna(v) else int(v)
+
     payload = [
         {
             "symbol": sym,
             "exchange": exch.get(sym, "HOSE"),
-            "rs_3m": int(row["rs_3m"]),
-            "rs_6m": int(row["rs_6m"]),
-            "rs_9m": int(row["rs_9m"]),
-            "rs_12m": int(row["rs_12m"]),
-            "rs_composite": int(row["rs_composite"]),
+            "rs_3m": _i(row["rs_3m"]),
+            "rs_6m": _i(row["rs_6m"]),
+            "rs_9m": _i(row["rs_9m"]),
+            "rs_12m": _i(row["rs_12m"]),
+            "rs_composite": _i(row["rs_composite"]),
             # Plain .get — None when the symbol had no bar near the 1-month mark.
             "rs_1m": rs_1m.get(sym),
             "rs_date": rs_date,
