@@ -23,13 +23,23 @@ TA_SCORE_DEFAULTS = {
 
 def _read_components(client) -> list[dict]:
     """Paged read of the four TA-Score inputs + exchange (needed for the
-    INSERT…ON CONFLICT upsert's NOT NULL exchange column)."""
+    INSERT…ON CONFLICT upsert's NOT NULL exchange column).
+
+    ACTIVE SYMBOLS ONLY. Scoring every row regardless of is_active manufactured
+    phantom scores: RS is cleared when a symbol is retired, but `base_score`
+    survives, and "missing component = 0" then yields ta_score = BQS x 0.35 — a
+    plausible-looking number built from a price base months or years stale. That
+    is the same arithmetic that made VNM read 24 during the 2026-08-07 incident,
+    which is precisely why it must not be reachable by an ordinary retirement.
+    Inactive rows are nulled out below rather than left holding an old value.
+    """
     out: list[dict] = []
     offset, page = 0, 1000
     while True:
         rows = safe_execute(
             client.table("ta_universe")
             .select("symbol,exchange,rs_3m,rs_composite,rs_line_score,base_score")
+            .eq("is_active", True)
             # order() is required, not cosmetic: paging with range() over an
             # unordered select relies on Postgres heap order, which this table's
             # daily rewrites change — page boundaries would then duplicate or SKIP
@@ -82,4 +92,15 @@ def compute_ta_score(client, dry_run: bool = False) -> dict:
             client.table("ta_universe").upsert(payload[i:i + 500], on_conflict="symbol"),
             label="ta_score upsert",
         )
+
+    # An inactive symbol must not keep the score it held while active — otherwise
+    # retiring it leaves a stale TA Score on the row forever, since the read above
+    # will never visit it again. Scoped by is_active (not "everything we didn't
+    # just write"), so a short write can never be mistaken for a retirement.
+    cleared = safe_execute(
+        client.table("ta_universe").update({"ta_score": None})
+        .eq("is_active", False).not_.is_("ta_score", "null"),
+        label="ta_score clear inactive",
+    )
+    stats["cleared_inactive"] = len(cleared.data or [])
     return stats

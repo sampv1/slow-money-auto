@@ -40,7 +40,7 @@ from ta.ta_score import compute_ta_score
 from ta.final_score import compute_final_score
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
-from ta.universe import get_active_symbols
+from ta.universe import get_active_symbols, get_universe_symbols
 
 
 def log_step_failure(step: str) -> None:
@@ -87,14 +87,21 @@ def main():
     args = parser.parse_args()
 
     client = get_supabase_client()
-    symbols = get_active_symbols(client)
-    if not symbols:
+    # COLLECT for every member (Step 1), SCORE only the active ones (Steps 2+,
+    # which iterate `symbols`). Step 1 is a single bulk price_board snapshot, so the
+    # extra rows cost almost nothing — whereas collecting only the active set
+    # makes dormancy unobservable for anything excluded, and
+    # `excluded ⇒ no data ⇒ looks dormant ⇒ stays excluded` becomes a loop that
+    # no universe re-sync can open. See ta.universe.get_universe_symbols.
+    members = get_universe_symbols(client)   # collect prices for these
+    symbols = get_active_symbols(client)     # score/scan only these
+    if not members:
         print("ta_universe is empty. Run refresh_ta_universe.py first.")
         sys.exit(1)
 
     today_str = today_vn().isoformat()
     print(f"=== TA daily update for {today_str} ===")
-    print(f"Active universe: {len(symbols)} symbols")
+    print(f"Universe: {len(members)} members ({len(symbols)} active)")
     print(f"OHLCV lookback: {args.ohlcv_days} days")
     print()
 
@@ -112,17 +119,17 @@ def main():
     # repaired with `backfill_ta_ohlcv.py`, not here.
     recovered_count = 0
     if args.dry_run:
-        print(f"(dry-run) would fetch today's ({today_str}) snapshot for {len(symbols)} symbols")
+        print(f"(dry-run) would fetch today's ({today_str}) snapshot for {len(members)} members")
     else:
         t0 = time.time()
-        rows, snap_stats = fetch_today_snapshot(symbols, expected_date=today_str)
+        rows, snap_stats = fetch_today_snapshot(members, expected_date=today_str)
         # Chunked upsert keeps payloads well under PostgREST limits.
         for j in range(0, len(rows), 500):
             upsert_ohlcv(client, rows[j:j + 500])
         ohlcv_total = len(rows)
         written_syms = {r["symbol"] for r in rows}
         ohlcv_ok = len(written_syms)
-        print(f"OHLCV snapshot: {ohlcv_ok}/{len(symbols)} symbols, {ohlcv_total:,} rows in {time.time()-t0:.1f}s "
+        print(f"OHLCV snapshot: {ohlcv_ok}/{len(members)} members, {ohlcv_total:,} rows in {time.time()-t0:.1f}s "
               f"(no-price today: {snap_stats['skipped_no_price']}, stale skipped: {snap_stats['skipped_stale']})")
         if snap_stats["skipped_stale"]:
             print(f"  NOTE: snapshot trading_date(s) {sorted(snap_stats['stale_dates'])} != {today_str} "
@@ -130,6 +137,8 @@ def main():
 
         # Symbols with no fresh bar today (halted / untraded / stale). Not a
         # hard failure, but surfaced in the summary for visibility.
+        # Scoped to ACTIVE symbols: a dormant member legitimately has no bar
+        # today, and listing 100+ of them every night would bury a real failure.
         failed_first_pass = [s for s in symbols if s not in written_syms]
         final_failed = failed_first_pass
 
@@ -291,8 +300,8 @@ def main():
             "## TA Daily Update Summary",
             "",
             f"- **Trading date**: {today_str}",
-            f"- **Universe size**: {len(symbols)}",
-            f"- **OHLCV snapshot**: {ohlcv_ok}/{len(symbols)} symbols ({ohlcv_total:,} rows)",
+            f"- **Universe**: {len(members)} members, {len(symbols)} active (scored)",
+            f"- **OHLCV snapshot**: {ohlcv_ok}/{len(members)} members ({ohlcv_total:,} rows)",
         ]
         summary_lines.append(f"- **Adjustments repaired**: {adj_repaired}")
         summary_lines.append(f"- **Signals written**: {total_signals:,} ({triggered_total} triggered)")
