@@ -60,7 +60,6 @@ export default async function RootLayout({
     { href: "/portfolio", label: t(locale, "navPortfolio") },
     { href: "/stats", label: t(locale, "navStats") },
     ...(role === "admin" ? [{ href: "/input", label: t(locale, "navInput") }] : []),
-    { href: "/realtime", label: t(locale, "navRealtime") },
     // Staff only, matching the page's own gate and the feedbacks RLS policy —
     // it used to show for any logged-in user, who would then hit a redirect.
     ...(isStaff(role) ? [{ href: "/feedbacks", label: t(locale, "navFeedbacks") }] : []),

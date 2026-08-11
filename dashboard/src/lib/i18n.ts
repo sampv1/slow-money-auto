@@ -13,7 +13,6 @@ export const translations = {
     navScanner: "TA Scanner",
     navFAScanner: "FA Scanner",
     navSignalPro: "Signal Pro",
-    navRealtime: "Real-time",
     navImpliedRisk: "Implied Risk",
     navMacro: "Macro",
 
@@ -623,19 +622,6 @@ export const translations = {
     feedbackPlural: "feedbacks",
     noFeedbacks: "No feedbacks yet.",
 
-    // Real-time waitlist
-    realtimeTitle: "Real-time indicators via Telegram",
-    realtimeSubtitle: "Want to be notified the moment your setup fires? Leave your contact below — you'll be on the priority list when real-time alerts go live.",
-    realtimeEmailLabel: "Email",
-    realtimeEmailPlaceholder: "you@example.com",
-    realtimePhoneLabel: "Mobile phone",
-    realtimePhonePlaceholder: "0901234567",
-    realtimeContactHint: "Leave at least one — email or phone.",
-    realtimeAtLeastOne: "Please leave at least an email or a phone number.",
-    realtimeSubmit: "Join the priority list",
-    realtimeSubmitting: "Submitting...",
-    realtimeSuccess: "You're on the list. We'll reach out when real-time alerts go live.",
-
     // Regime labels
     regime1: "Uptrend + Low Vol",
     regime2: "Uptrend + High Vol",
@@ -681,7 +667,6 @@ export const translations = {
     navScanner: "Lọc kỹ thuật",
     navFAScanner: "Lọc cơ bản",
     navSignalPro: "Tín hiệu Pro",
-    navRealtime: "Thời gian thực",
     navImpliedRisk: "Rủi ro hàm ý",
     navMacro: "Vĩ mô",
 
@@ -1290,19 +1275,6 @@ export const translations = {
     feedbackSingular: "phản hồi",
     feedbackPlural: "phản hồi",
     noFeedbacks: "Chưa có phản hồi nào.",
-
-    // Real-time waitlist
-    realtimeTitle: "Tín hiệu thời gian thực qua Telegram",
-    realtimeSubtitle: "Muốn nhận thông báo ngay khi tín hiệu kích hoạt? Để lại thông tin liên hệ — bạn sẽ được ưu tiên khi cảnh báo thời gian thực ra mắt.",
-    realtimeEmailLabel: "Email",
-    realtimeEmailPlaceholder: "ban@example.com",
-    realtimePhoneLabel: "Số điện thoại",
-    realtimePhonePlaceholder: "0901234567",
-    realtimeContactHint: "Cần ít nhất một — email hoặc số điện thoại.",
-    realtimeAtLeastOne: "Vui lòng để lại email hoặc số điện thoại.",
-    realtimeSubmit: "Tham gia danh sách ưu tiên",
-    realtimeSubmitting: "Đang gửi...",
-    realtimeSuccess: "Bạn đã có trong danh sách. Chúng tôi sẽ liên hệ khi tính năng ra mắt.",
 
     // Regime labels
     regime1: "Tăng + Biến động thấp",
