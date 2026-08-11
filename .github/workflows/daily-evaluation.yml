@@ -2,15 +2,24 @@ name: Daily Price Evaluation
 
 on:
   schedule:
-    # Target: 3:30 PM GMT+7 (right after HOSE closes at 3:00 PM).
-    # MUST run AFTER market close so today's closing price is available
-    # from vnstock. Earliest safe time: 3:05 PM GMT+7 = 8:05 UTC.
-    # Using uncommon minute mark :07 (instead of :30 which is heavily
-    # contested on GitHub Actions free tier) to reduce queue delay.
-    # Monday–Friday only. Note: if the script runs before vnstock has
-    # today's data, symbols without today's price are simply skipped.
-    # - cron: "7 8 * * 1-5"
-    - cron: "12 6 * * 1-5"
+    # 15:43 GMT+7 — 58 minutes after HOSE's ATC close at 14:45 GMT+7 (07:45 UTC).
+    #
+    # MUST run AFTER the close. `update_prices.py` checks TP/SL and books P&L
+    # against "today's" bar, and its staleness guard (`_latest_today_bar`) only
+    # compares the bar's DATE to today — a mid-session bar is dated today and
+    # sails straight through. So running before 14:45 does not skip the symbol,
+    # it evaluates an INTRADAY price as if it were the close, which can trigger
+    # a stop that the closing price never hit.
+    #
+    # This was previously "12 6" = 13:12 GMT+7, i.e. during the afternoon
+    # session, contradicting the comment that has always sat here.
+    #
+    # The margin is deliberate and must NOT be shaved on the assumption that
+    # GitHub's queue delay (observed 50-75 min) will cover it — that delay is
+    # never negative but it is not a guarantee, which is exactly the trap the
+    # SOFR fix in macro-daily.yml had to undo. Uncommon minute mark (:43, not
+    # :00/:30) to dodge the contested slots on the free tier. Mon-Fri only.
+    - cron: "43 8 * * 1-5"
   workflow_dispatch: # Allow manual trigger from GitHub UI
 
 jobs:

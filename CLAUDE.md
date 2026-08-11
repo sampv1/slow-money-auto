@@ -96,7 +96,7 @@ Cron workflows in `.github/workflows/` (times in UTC; VN market closes ~07:45 UT
 |---|---|---|---|
 | `ta-daily.yml` | ~09:23 UTC (+ 13:47 backup) | `update_ta_daily.py` then `refresh_implied_risk.py`; the backup cron skips if the primary already succeeded | **active** |
 | `fa-score-daily.yml` | ~10:10 UTC | `refresh_fa.py score` then `refresh_final_score.py` | **active** |
-| `daily-evaluation.yml` | ~06:12 UTC | `update_prices.py` (P&L eval) | **active** |
+| `daily-evaluation.yml` | ~08:43 UTC (15:43 VN) | `update_prices.py` (P&L eval) — **must be after the 07:45 UTC close**; `_latest_today_bar` only compares the bar's *date* to today, so an intraday bar passes the guard and would be evaluated as if it were the close | **active** |
 | `macro-daily.yml` | ~10:40 UTC (Mon–Fri) | `refresh_macro.py` then `fetch_cpi.py --upsert` (CPI is `continue-on-error`) | **active** |
 | `daily-prompt.yml` | (23:37 UTC) | `run_prompt.py` | **commented out** |
 | `sentiment-daily.yml` | ~14:30 UTC (Mon–Fri) | `refresh_catalysts.py` (needs `GROQ_API_KEY`) | **active** — best-effort, see below |
