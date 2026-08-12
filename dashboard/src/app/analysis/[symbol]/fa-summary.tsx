@@ -19,7 +19,7 @@ export function FaSummary({
   selectedQuarter: string | null;
 }) {
   const heading = (
-    <h2 className="text-lg font-semibold border-b border-gray-200 pb-1 mb-3">
+    <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
       {t(locale, "faSection")}
     </h2>
   );
@@ -28,7 +28,7 @@ export function FaSummary({
     return (
       <section className="mt-6">
         {heading}
-        <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
+        <div className="bg-panel rounded-lg border border-line p-6 text-center text-fg-muted">
           {t(locale, "faNoData")}
         </div>
       </section>
@@ -48,27 +48,27 @@ export function FaSummary({
       {heading}
 
       {/* Score header */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-3">
+      <div className="bg-panel rounded-lg border border-line p-4 mb-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-3">
-            <span className="text-2xl font-mono font-semibold">
+            <span className="text-display font-mono font-semibold">
               {faNormalizedScore(row)}
-              <span className="text-gray-400 text-base"> / {FA_NORMALIZED_MAX}</span>
+              <span className="text-fg-label text-base"> / {FA_NORMALIZED_MAX}</span>
             </span>
-            <span className={`inline-flex items-center px-2.5 py-1 text-sm rounded font-medium ${badge.className}`}>
+            <span className={`inline-flex items-center px-2.5 py-1 text-body-lg rounded font-medium ${badge.className}`}>
               {badge.label}
             </span>
           </div>
           {quarters.length > 0 && selectedQuarter ? (
             <FaQuarterSelect quarters={quarters} selected={selectedQuarter} label={t(locale, "faAsOf")} />
           ) : (
-            <div className="text-xs text-gray-500">
+            <div className="text-data text-fg-muted">
               {t(locale, "faAsOf")} {row.as_of_period}
             </div>
           )}
         </div>
         {unrated && (
-          <p className="text-xs text-amber-600 mt-2">{t(locale, "faUnrated")}</p>
+          <p className="text-data text-amber-600 mt-2">{t(locale, "faUnrated")}</p>
         )}
       </div>
 
@@ -76,12 +76,12 @@ export function FaSummary({
       <FaBreakdownTable row={row} locale={locale} />
 
       {/* Valuation line */}
-      <div className="mt-3 text-sm text-gray-600 flex flex-wrap gap-x-6 gap-y-1">
-        <span className="font-medium text-gray-500">{t(locale, "faValuationLine")}:</span>
+      <div className="mt-3 text-body-lg text-fg-muted flex flex-wrap gap-x-6 gap-y-1">
+        <span className="font-medium text-fg-muted">{t(locale, "faValuationLine")}:</span>
         <span>
           {t(locale, "faPrice")}: <span className="font-mono">{formatPrice(row.current_price)}</span>
           {row.current_price_date && (
-            <span className="text-gray-400"> ({t(locale, "faCloseOn")} {row.current_price_date})</span>
+            <span className="text-fg-label"> ({t(locale, "faCloseOn")} {row.current_price_date})</span>
           )}
         </span>
         <span>{t(locale, "faEpsTtm")}: <span className="font-mono">{formatPrice(row.current_eps_ttm)}</span></span>

@@ -43,14 +43,14 @@ export default async function FeedbacksPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">{t(locale, "navFeedbacks")}</h1>
-        <span className="text-sm text-gray-500">
+        <h1 className="text-display font-semibold">{t(locale, "navFeedbacks")}</h1>
+        <span className="text-body-lg text-fg-muted">
           {feedbacks.length} {feedbacks.length !== 1 ? t(locale, "feedbackPlural") : t(locale, "feedbackSingular")}
         </span>
       </div>
 
       {feedbacks.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+        <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
           {t(locale, "noFeedbacks")}
         </div>
       ) : (
@@ -58,10 +58,10 @@ export default async function FeedbacksPage() {
           {feedbacks.map((fb) => (
             <div
               key={fb.id}
-              className="bg-white rounded-lg border border-gray-200 p-4"
+              className="bg-panel rounded-lg border border-line p-4"
             >
               <div className="flex items-start justify-between gap-3 mb-2">
-                <div className="text-xs text-gray-500">
+                <div className="text-data text-fg-muted">
                   {new Date(fb.created_at).toLocaleString("en-US", {
                     year: "numeric",
                     month: "short",
@@ -72,12 +72,12 @@ export default async function FeedbacksPage() {
                   })}
                 </div>
                 {fb.contact && (
-                  <div className="text-xs text-blue-600 font-mono">
+                  <div className="text-data text-accent font-mono">
                     {fb.contact}
                   </div>
                 )}
               </div>
-              <div className="text-sm text-gray-800 whitespace-pre-wrap">
+              <div className="text-body-lg text-fg whitespace-pre-wrap">
                 {fb.message}
               </div>
             </div>

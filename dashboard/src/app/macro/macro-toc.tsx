@@ -80,7 +80,7 @@ export function MacroToc({ items }: { items: TocItem[] }) {
   return (
     <nav
       aria-label="Charts"
-      className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2 mb-4 bg-gray-50/95 backdrop-blur border-b border-gray-200"
+      className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2 mb-4 bg-canvas/95 backdrop-blur border-b border-line"
     >
       <div ref={barRef} className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {items.map((it) => {
@@ -92,10 +92,10 @@ export function MacroToc({ items }: { items: TocItem[] }) {
               data-toc={it.id}
               onClick={() => jump(it.id)}
               aria-current={on ? "true" : undefined}
-              className={`shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+              className={`shrink-0 text-data px-2.5 py-1 rounded-full font-medium transition-colors ${
                 on
-                  ? "bg-gray-800 text-white"
-                  : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-100"
+                  ? "bg-accent text-white"
+                  : "bg-panel text-fg-muted border border-line hover:bg-panel-2"
               }`}
             >
               {it.label}

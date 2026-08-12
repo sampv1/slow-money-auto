@@ -55,7 +55,7 @@ export default async function HomePage() {
       <ScoreExplainer locale={locale} />
       <ToolCards locale={locale} />
 
-      <footer className="border-t border-gray-200 pt-4 text-xs text-gray-500 flex flex-col gap-1">
+      <footer className="border-t border-line pt-4 text-body text-fg-label flex flex-col gap-1">
         <p>
           {universeSize.toLocaleString("en-US")} {t(locale, "homeCoverageSymbols")} ·{" "}
           {t(locale, "homeCoverageExchanges")} · {t(locale, "homeCoverageUpdated")}

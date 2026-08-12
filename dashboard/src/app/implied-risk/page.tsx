@@ -41,8 +41,8 @@ export default async function ImpliedRiskPage() {
 
   const header = (
     <div className="mb-4">
-      <h1 className="text-xl font-semibold">{t(locale, "irTitle")}</h1>
-      <p className="text-sm text-gray-500">{t(locale, "irSubtitle")}</p>
+      <h1 className="text-display font-semibold">{t(locale, "irTitle")}</h1>
+      <p className="text-body-lg text-fg-muted">{t(locale, "irSubtitle")}</p>
     </div>
   );
 
@@ -64,7 +64,7 @@ export default async function ImpliedRiskPage() {
     return (
       <div>
         {header}
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+        <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
           {t(locale, "irNoData")}
         </div>
       </div>

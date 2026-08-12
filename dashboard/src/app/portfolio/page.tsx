@@ -41,9 +41,9 @@ const isOpen = (r: Recommendation) => (ACTIVE_STATUSES as string[]).includes(r.s
 // a border: Tailwind's preflight sets `border-collapse: collapse`, which hands
 // borders to the table rather than the cell and drops them once a cell is
 // sticky (the same trap the FA Scanner's sticky header hit).
-const FROZEN_TD = "sticky left-0 z-10 bg-white group-hover:bg-gray-50";
-const FROZEN_TH = "sticky left-0 z-20 bg-white";
-const FROZEN_EDGE = "shadow-[1px_0_0_0_#e5e7eb]";
+const FROZEN_TD = "sticky left-0 z-10 bg-panel group-hover:bg-canvas";
+const FROZEN_TH = "sticky left-0 z-20 bg-panel";
+const FROZEN_EDGE = "shadow-[1px_0_0_0_var(--color-line)]";
 
 // Corporate actions (cash dividend / bonus / split) re-scale the market price
 // but NOT this row: entry/SL/TP are the nominal levels captured at trade time and
@@ -80,7 +80,7 @@ const marketBasis = (
   k !== null && typeof v === "number" && Number.isFinite(v) ? (
     <span className="block text-[11px] text-amber-700 font-normal mt-0.5 leading-tight">
       {formatPrice(v * k)}
-      {withLabel && <span className="block text-gray-400">{t(locale, "adjMarketBasis")}</span>}
+      {withLabel && <span className="block text-fg-label">{t(locale, "adjMarketBasis")}</span>}
     </span>
   ) : null;
 
@@ -179,8 +179,8 @@ export default async function PortfolioPage({
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">{t(locale, "portfolio")}</h1>
-        <span className="text-sm text-gray-500">
+        <h1 className="text-display font-semibold">{t(locale, "portfolio")}</h1>
+        <span className="text-body-lg text-fg-muted">
           {recommendations.length} {recommendations.length !== 1 ? t(locale, "positions") : t(locale, "position")}
         </span>
       </div>
@@ -192,12 +192,12 @@ export default async function PortfolioPage({
           name="symbol"
           placeholder={t(locale, "symbolPlaceholder")}
           defaultValue={symbolFilter ?? ""}
-          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md w-24 bg-white"
+          className="px-3 py-1.5 text-body-lg border border-line rounded-md w-24 bg-panel"
         />
         <select
           name="status"
           defaultValue={statusFilter ?? ""}
-          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
+          className="px-3 py-1.5 text-body-lg border border-line rounded-md bg-panel"
         >
           <option value="">{t(locale, "allPositions")}</option>
           <option value="open">{t(locale, "statusOpen")}</option>
@@ -212,23 +212,23 @@ export default async function PortfolioPage({
           type="date"
           name="from"
           defaultValue={fromDate ?? ""}
-          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
+          className="px-3 py-1.5 text-body-lg border border-line rounded-md bg-panel"
         />
         <input
           type="date"
           name="to"
           defaultValue={toDate ?? ""}
-          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
+          className="px-3 py-1.5 text-body-lg border border-line rounded-md bg-panel"
         />
         <button
           type="submit"
-          className="px-4 py-1.5 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700"
+          className="px-4 py-1.5 text-body-lg bg-accent text-white rounded-md hover:bg-accent-hover"
         >
           {t(locale, "filter")}
         </button>
         <a
           href="/portfolio"
-          className="px-4 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+          className="px-4 py-1.5 text-body-lg border border-line rounded-md hover:bg-canvas"
         >
           {t(locale, "reset")}
         </a>
@@ -237,61 +237,61 @@ export default async function PortfolioPage({
       {/* Summary */}
       {recommendations.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t(locale, "statusOpen")}</div>
-            <div className="text-lg font-semibold">{openCount}</div>
+          <div className="bg-panel rounded-lg border border-line p-3">
+            <div className="text-data text-fg-muted">{t(locale, "statusOpen")}</div>
+            <div className="text-title font-semibold">{openCount}</div>
           </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t(locale, "winRate")}</div>
-            <div className="text-lg font-semibold">{withPnl.length > 0 ? `${winRate.toFixed(0)}%` : "—"}</div>
-            <div className="text-xs text-gray-400">{wins.length}W / {withPnl.length - wins.length}L</div>
+          <div className="bg-panel rounded-lg border border-line p-3">
+            <div className="text-data text-fg-muted">{t(locale, "winRate")}</div>
+            <div className="text-title font-semibold">{withPnl.length > 0 ? `${winRate.toFixed(0)}%` : "—"}</div>
+            <div className="text-data text-fg-label">{wins.length}W / {withPnl.length - wins.length}L</div>
           </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t(locale, "avgPnl")}</div>
-            <div className={`text-lg font-semibold ${withPnl.length > 0 ? pnlColor(avgPnl) : "text-gray-400"}`}>
+          <div className="bg-panel rounded-lg border border-line p-3">
+            <div className="text-data text-fg-muted">{t(locale, "avgPnl")}</div>
+            <div className={`text-title font-semibold ${withPnl.length > 0 ? pnlColor(avgPnl) : "text-fg-label"}`}>
               {withPnl.length > 0 ? formatPnl(avgPnl) : "—"}
             </div>
           </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t(locale, "statusClosed")}</div>
-            <div className="text-lg font-semibold">{recommendations.length - openCount}</div>
+          <div className="bg-panel rounded-lg border border-line p-3">
+            <div className="text-data text-fg-muted">{t(locale, "statusClosed")}</div>
+            <div className="text-title font-semibold">{recommendations.length - openCount}</div>
           </div>
         </div>
       )}
 
       {/* Table */}
       {recommendations.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+        <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
           {t(locale, "noPositions")}
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
+        <div className="bg-panel rounded-lg border border-line overflow-x-auto">
+          <table className="w-full text-body-lg">
+            <thead className="bg-panel-2 border-y border-line-strong">
               {/* px-3, not px-4: 16 columns turn every extra 8px of gutter into
                   128px of horizontal scroll, which is most of what was pushing
                   this table past the viewport. */}
-              <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th className="px-3 py-3 font-medium">{t(locale, "date")}</th>
-                <th className={`${FROZEN_TH} ${FROZEN_EDGE} px-3 py-3 font-medium`}>{t(locale, "symbol")}</th>
-                <th className="px-3 py-3 font-medium">{t(locale, "setup")}</th>
-                <th className="px-3 py-3 font-medium text-right">{t(locale, "entry")}</th>
-                <th className="px-3 py-3 font-medium text-right">{t(locale, "sl")}</th>
-                <th className="px-3 py-3 font-medium text-right">{t(locale, "tp1")}</th>
-                <th className="px-3 py-3 font-medium text-right">{t(locale, "tp2")}</th>
+              <tr className="border-b border-line text-left text-fg-muted">
+                <th className="px-3 py-3 label">{t(locale, "date")}</th>
+                <th className={`${FROZEN_TH} ${FROZEN_EDGE} px-3 py-3 label`}>{t(locale, "symbol")}</th>
+                <th className="px-3 py-3 label">{t(locale, "setup")}</th>
+                <th className="px-3 py-3 label text-right">{t(locale, "entry")}</th>
+                <th className="px-3 py-3 label text-right">{t(locale, "sl")}</th>
+                <th className="px-3 py-3 label text-right">{t(locale, "tp1")}</th>
+                <th className="px-3 py-3 label text-right">{t(locale, "tp2")}</th>
                 {/* Allowed to wrap. "Current / Exit" (and the longer VI
                     "Hiện tại / Giá ra") held a 134px column open on one nowrap
                     header for cells that only ever hold a price. */}
-                <th className="px-3 py-3 font-medium text-right">{t(locale, "currentExit")}</th>
+                <th className="px-3 py-3 label text-right">{t(locale, "currentExit")}</th>
                 <th className="px-3 py-3 font-bold text-right">{t(locale, "pnl")}</th>
-                <th className="px-3 py-3 font-medium text-right">{t(locale, "maxDd")}</th>
-                <th className="px-3 py-3 font-medium text-right">{t(locale, "rMultiple")}</th>
-                <th className="px-3 py-3 font-medium text-right">{t(locale, "winRateEst")}</th>
-                <th className="px-3 py-3 font-medium text-right">{t(locale, "sharpe")}</th>
-                <th className="px-3 py-3 font-medium">{t(locale, "holding")}</th>
-                <th className="px-3 py-3 font-medium">{t(locale, "closed")}</th>
-                <th className="px-3 py-3 font-medium">{t(locale, "status")}</th>
-                {isAdmin && <th className="px-3 py-3 font-medium text-right">{t(locale, "actionCol")}</th>}
+                <th className="px-3 py-3 label text-right">{t(locale, "maxDd")}</th>
+                <th className="px-3 py-3 label text-right">{t(locale, "rMultiple")}</th>
+                <th className="px-3 py-3 label text-right">{t(locale, "winRateEst")}</th>
+                <th className="px-3 py-3 label text-right">{t(locale, "sharpe")}</th>
+                <th className="px-3 py-3 label">{t(locale, "holding")}</th>
+                <th className="px-3 py-3 label">{t(locale, "closed")}</th>
+                <th className="px-3 py-3 label">{t(locale, "status")}</th>
+                {isAdmin && <th className="px-3 py-3 label text-right">{t(locale, "actionCol")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -307,16 +307,16 @@ export default async function PortfolioPage({
                 const badge = statusBadge(rec.status, locale);
                 const k = adjFactor(rec);
                 return (
-                  <tr key={rec.id} className="group border-b border-gray-100 hover:bg-gray-50">
-                    {/* Both date columns are text-xs, matching Setup and Holding:
+                  <tr key={rec.id} className="group border-b border-line-faint hover:bg-canvas">
+                    {/* Both date columns are text-data, matching Setup and Holding:
                         they are metadata, not figures you scan down, and at
-                        text-sm the two of them held ~195px of a table that had
+                        text-body-lg the two of them held ~195px of a table that had
                         none to spare. */}
-                    <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">{rec.trading_date}</td>
+                    <td className="px-3 py-3 text-data text-fg-muted whitespace-nowrap">{rec.trading_date}</td>
                     <td className={`${FROZEN_TD} ${FROZEN_EDGE} px-3 py-3 font-medium`}>
                       {rec.symbol}
                       {rec.source === "MANUAL" && (
-                        <span className="ml-1.5 inline-block px-1 py-0.5 text-[10px] rounded bg-gray-100 text-gray-500 align-middle">M</span>
+                        <span className="ml-1.5 inline-block px-1 py-0.5 text-[10px] rounded bg-panel-2 text-fg-muted align-middle">M</span>
                       )}
                       {k !== null && (
                         <span
@@ -352,10 +352,10 @@ export default async function PortfolioPage({
                           frozen identity column and so of every row. The full
                           text is still one hover away. */}
                       {rec.note && (
-                        <span className="block text-[11px] text-gray-400 font-normal mt-0.5 max-w-[112px] truncate" title={rec.note}>{rec.note}</span>
+                        <span className="block text-[11px] text-fg-label font-normal mt-0.5 max-w-[112px] truncate" title={rec.note}>{rec.note}</span>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-gray-600 text-xs">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
+                    <td className="px-3 py-3 text-fg-muted text-data">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
                     {/* Entry carries the "market basis" label; the levels after it
                         repeat the amber figure without it, so the row explains
                         itself once instead of five times.
@@ -372,21 +372,21 @@ export default async function PortfolioPage({
                     <td className="px-3 py-3 text-right font-mono text-red-500 whitespace-nowrap">
                       {formatPrice(rec.stop_loss)}
                       {rec.stop_loss_pct !== null && (
-                        <span className="block text-xs">({rec.stop_loss_pct > 0 ? "+" : ""}{rec.stop_loss_pct.toFixed(1)}%)</span>
+                        <span className="block text-data">({rec.stop_loss_pct > 0 ? "+" : ""}{rec.stop_loss_pct.toFixed(1)}%)</span>
                       )}
                       {marketBasis(rec.stop_loss, k, locale)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-green-600 whitespace-nowrap">
+                    <td className="px-3 py-3 text-right font-mono text-up whitespace-nowrap">
                       {formatPrice(rec.tp1)}
                       {rec.tp1_pct !== null && (
-                        <span className="block text-xs">({rec.tp1_pct > 0 ? "+" : ""}{rec.tp1_pct.toFixed(1)}%)</span>
+                        <span className="block text-data">({rec.tp1_pct > 0 ? "+" : ""}{rec.tp1_pct.toFixed(1)}%)</span>
                       )}
                       {marketBasis(rec.tp1, k, locale)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-green-600 whitespace-nowrap">
+                    <td className="px-3 py-3 text-right font-mono text-up whitespace-nowrap">
                       {formatPrice(rec.tp2)}
                       {rec.tp2_pct !== null && (
-                        <span className="block text-xs">({rec.tp2_pct > 0 ? "+" : ""}{rec.tp2_pct.toFixed(1)}%)</span>
+                        <span className="block text-data">({rec.tp2_pct > 0 ? "+" : ""}{rec.tp2_pct.toFixed(1)}%)</span>
                       )}
                       {marketBasis(rec.tp2, k, locale)}
                     </td>
@@ -399,23 +399,23 @@ export default async function PortfolioPage({
                     <td className={`px-3 py-3 text-right font-mono font-bold ${pnlColor(pnl)}`}>
                       {formatPnl(pnl)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-red-600">
+                    <td className="px-3 py-3 text-right font-mono text-down">
                       {rec.max_drawdown_pct !== null ? `${rec.max_drawdown_pct.toFixed(1)}%` : ""}
                     </td>
                     <td className="px-3 py-3 text-right">{rec.r_multiple !== null ? rec.r_multiple.toFixed(1) : "—"}</td>
                     <td className="px-3 py-3 text-right">{rec.win_rate_est !== null ? `${rec.win_rate_est}%` : "—"}</td>
                     <td className="px-3 py-3 text-right">{rec.sharpe !== null ? rec.sharpe.toFixed(1) : "—"}</td>
-                    <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">
+                    <td className="px-3 py-3 text-fg-muted text-data whitespace-nowrap">
                       {rec.days_held !== null ? `${rec.days_held} ${t(locale, "sessions")}` : "—"}
-                      {plan && <span className="block text-[11px] text-gray-400 mt-0.5">{plan}</span>}
+                      {plan && <span className="block text-[11px] text-fg-label mt-0.5">{plan}</span>}
                     </td>
-                    <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">{rec.closed_at ?? "—"}</td>
+                    <td className="px-3 py-3 text-data text-fg-muted whitespace-nowrap">{rec.closed_at ?? "—"}</td>
                     <td className="px-3 py-3">
                       {/* nowrap: a pill that breaks across two lines ("Đang /
                           mở") reads as damage rather than as a badge, and the
                           tighter gutters left this column narrow enough to do
                           it in Vietnamese. Costs ~17px, still inside budget. */}
-                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 text-xs rounded-full font-medium ${badge.className}`}>
+                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 text-data rounded-full font-medium ${badge.className}`}>
                         {badge.label}
                       </span>
                     </td>
@@ -445,7 +445,7 @@ export default async function PortfolioPage({
           always-on note about corporate actions would be noise on a page where
           they are rare. */}
       {recommendations.some((r) => adjFactor(r) !== null) && (
-        <p className="mt-3 text-xs text-gray-500 max-w-3xl">
+        <p className="mt-3 text-data text-fg-muted max-w-3xl">
           {t(locale, "adjFootnote")}
         </p>
       )}

@@ -15,9 +15,9 @@ interface LogEntry {
 }
 
 const conclusionStyle: Record<string, string> = {
-  KB1: "bg-green-100 text-green-700",
+  KB1: "bg-green-100 text-up",
   KB2: "bg-amber-100 text-amber-700",
-  KB3: "bg-red-100 text-red-700",
+  KB3: "bg-red-100 text-down",
 };
 
 export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Locale }) {
@@ -25,7 +25,7 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
 
   if (logs.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+      <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
         {t(locale, "noAnalysisYet")}
       </div>
     );
@@ -37,11 +37,11 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
     <div>
       {/* Day selector — wraps to multiple lines on mobile */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
-        <h1 className="text-lg sm:text-xl font-semibold">{t(locale, "dailyAnalysis")}</h1>
+        <h1 className="text-title sm:text-display font-semibold">{t(locale, "dailyAnalysis")}</h1>
         <select
           value={selectedIndex}
           onChange={(e) => setSelectedIndex(Number(e.target.value))}
-          className="flex-1 min-w-0 sm:flex-none px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
+          className="flex-1 min-w-0 sm:flex-none px-3 py-1.5 text-body-lg border border-line rounded-md bg-panel"
         >
           {logs.map((log, i) => (
             <option key={log.trading_date} value={i}>
@@ -53,7 +53,7 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
           <button
             onClick={() => setSelectedIndex(Math.min(selectedIndex + 1, logs.length - 1))}
             disabled={selectedIndex >= logs.length - 1}
-            className="px-2 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="px-2 py-1 text-body-lg border border-line rounded-md hover:bg-canvas disabled:opacity-30 disabled:cursor-not-allowed"
             title={t(locale, "previousDay")}
           >
             &larr;
@@ -61,7 +61,7 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
           <button
             onClick={() => setSelectedIndex(Math.max(selectedIndex - 1, 0))}
             disabled={selectedIndex <= 0}
-            className="px-2 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="px-2 py-1 text-body-lg border border-line rounded-md hover:bg-canvas disabled:opacity-30 disabled:cursor-not-allowed"
             title={t(locale, "nextDay")}
           >
             &rarr;
@@ -70,14 +70,14 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
       </div>
 
       {/* Header bar — stacks on mobile */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 text-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 text-body-lg">
         <div className="flex items-center flex-wrap gap-2 sm:gap-3">
-          <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${conclusionStyle[current.conclusion] ?? "bg-gray-100 text-gray-600"}`}>
+          <span className={`inline-block px-2 py-0.5 text-data rounded-full font-medium ${conclusionStyle[current.conclusion] ?? "bg-panel-2 text-fg-muted"}`}>
             {current.conclusion}
           </span>
-          <span className="text-gray-500">{current.num_recommendations} {t(locale, current.num_recommendations !== 1 ? "recommendations" : "recommendation")}</span>
+          <span className="text-fg-muted">{current.num_recommendations} {t(locale, current.num_recommendations !== 1 ? "recommendations" : "recommendation")}</span>
           {current.confidence !== null && (
-            <span className="text-gray-500">{t(locale, "confidence")}: {current.confidence}/10</span>
+            <span className="text-fg-muted">{t(locale, "confidence")}: {current.confidence}/10</span>
           )}
         </div>
 
@@ -87,17 +87,17 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-gradient-to-br from-amber-500 to-orange-600"></span>
           </span>
-          <span className="text-xs font-semibold bg-gradient-to-r from-amber-700 via-orange-700 to-rose-700 bg-clip-text text-transparent">
+          <span className="text-data font-semibold bg-gradient-to-r from-amber-700 via-orange-700 to-rose-700 bg-clip-text text-transparent">
             {t(locale, "poweredBy")}
           </span>
-          <span className="text-xs text-gray-400 hidden sm:inline">·</span>
-          <span className="text-xs text-gray-500 hidden sm:inline">{t(locale, "frontierModel")}</span>
+          <span className="text-data text-fg-label hidden sm:inline">·</span>
+          <span className="text-data text-fg-muted hidden sm:inline">{t(locale, "frontierModel")}</span>
         </div>
       </div>
 
       {/* Response content */}
       {current.full_response ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 prose prose-sm max-w-none break-words prose-headings:text-gray-800 prose-headings:break-words prose-p:text-gray-700 prose-strong:text-gray-800 prose-li:text-gray-700 prose-table:text-sm prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-1.5 prose-thead:border-b prose-thead:border-gray-300 prose-tr:border-b prose-tr:border-gray-100 prose-hr:border-gray-200 prose-pre:overflow-x-auto prose-pre:max-w-full prose-code:break-words">
+        <div className="bg-panel rounded-lg border border-line p-4 sm:p-6 prose prose-sm max-w-none break-words prose-headings:text-fg prose-headings:break-words prose-p:text-fg prose-strong:text-fg prose-li:text-fg prose-table:text-body-lg prose-th:bg-canvas prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-1.5 prose-thead:border-b prose-thead:border-line prose-tr:border-b prose-tr:border-line-faint prose-hr:border-line prose-pre:overflow-x-auto prose-pre:max-w-full prose-code:break-words">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -114,7 +114,7 @@ export function ResponseViewer({ logs, locale }: { logs: LogEntry[]; locale: Loc
           </ReactMarkdown>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
+        <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-label text-body-lg">
           {t(locale, "noFullResponse")}
         </div>
       )}

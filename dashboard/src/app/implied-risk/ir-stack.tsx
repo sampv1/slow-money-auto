@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
+import { CHART, VN_INDEX } from "@/lib/chart-theme";
 
 // One daily row. `ir` is the RAW signed log basis ln(F/S) (chart plots -ir);
 // `future` drives the daily log return; `vnindex` is the context panel.
@@ -19,7 +20,7 @@ export type IrRow = {
 type Range = "6m" | "1y" | "3y" | "all";
 const RANGE_DAYS: Record<Range, number> = { "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
 
-const VN_COLOR = "#2563eb"; // blue   — VN-Index (context)
+const VN_COLOR = VN_INDEX;
 const IR_COLOR = "#4f46e5"; // indigo — implied risk (-IR)
 const FR_COLOR = "#0891b2"; // cyan   — futures daily return
 
@@ -105,7 +106,7 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
   }, [all]);
 
   if (rows.length < 2) {
-    return <p className="text-sm text-gray-500">{t(locale, "irNoData")}</p>;
+    return <p className="text-body-lg text-fg-muted">{t(locale, "irNoData")}</p>;
   }
 
   // --- layout: VN-Index (optional) + Implied Risk + Futures Return, shared x ---
@@ -170,20 +171,20 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
   const isFear = latestIr ? latestIr.ir! < 0 : false;
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-panel rounded-lg border border-line p-4">
       {/* header: latest -IR + regime badge + shared range toggle */}
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         {latestIr && minusIr !== null && (
           <div>
-            <div className="text-xs text-gray-500">{t(locale, "irLatest")} · {latestIr.date}</div>
+            <div className="text-data text-fg-muted">{t(locale, "irLatest")} · {latestIr.date}</div>
             <div className="flex items-baseline gap-2">
-              <span className={`text-2xl font-semibold font-mono ${isFear ? "text-red-600" : "text-emerald-600"}`}>{fmtPct(minusIr)}</span>
-              <span className="text-xs text-gray-500">{t(locale, "irPerAnnum")}</span>
-              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${isFear ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
+              <span className={`text-display font-semibold font-mono ${isFear ? "text-down" : "text-emerald-600"}`}>{fmtPct(minusIr)}</span>
+              <span className="text-data text-fg-muted">{t(locale, "irPerAnnum")}</span>
+              <span className={`text-data font-medium px-1.5 py-0.5 rounded ${isFear ? "bg-red-50 text-down" : "bg-emerald-50 text-emerald-700"}`}>
                 {isFear ? t(locale, "irDiscount") : t(locale, "irPremium")}
               </span>
             </div>
-            <div className="text-xs text-gray-400 mt-0.5 font-mono">
+            <div className="text-data text-fg-label mt-0.5 font-mono">
               {t(locale, "irExpiryLabel")}: {latestIr.expiry} · {latestIr.r_days}d
             </div>
           </div>
@@ -193,8 +194,8 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`text-xs px-2 py-1 rounded font-medium ${
-                range === r ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              className={`text-data px-2 py-1 rounded font-medium ${
+                range === r ? "bg-accent text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {t(locale, r === "6m" ? "irRange6m" : r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
@@ -208,17 +209,17 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => { setHover(null); setHoverY(null); }} role="img">
         {/* ---- panel titles ---- */}
-        {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
-        <text x={mL} y={irTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "irTitle")}</text>
-        <text x={mL} y={frTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "frTitle")}</text>
+        {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
+        <text x={mL} y={irTop - 10} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "irTitle")}</text>
+        <text x={mL} y={frTop - 10} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "frTitle")}</text>
 
         {/* ---- VN-Index (context) ---- */}
         {hasVn && (
           <g>
             {vnTicks.map((v, k) => (
               <g key={`vt${k}`}>
-                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtInt(v)}</text>
               </g>
             ))}
             {vnSegs.map((pts, k) => (
@@ -230,11 +231,11 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
         {/* ---- Implied Risk (-IR) ---- */}
         {irTicks.map((v, k) => (
           <g key={`it${k}`}>
-            <line x1={mL} y1={yIr(v)} x2={W - mR} y2={yIr(v)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={mL - 6} y={yIr(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtPct(v)}</text>
+            <line x1={mL} y1={yIr(v)} x2={W - mR} y2={yIr(v)} stroke={CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yIr(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtPct(v)}</text>
           </g>
         ))}
-        <line x1={mL} y1={yIr(0)} x2={W - mR} y2={yIr(0)} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="4 3" />
+        <line x1={mL} y1={yIr(0)} x2={W - mR} y2={yIr(0)} stroke={CHART.neutral} strokeWidth={1} strokeDasharray="4 3" />
         {irSegs.map((pts, k) => (
           <polyline key={`ir${k}`} points={pts} fill="none" stroke={IR_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
         ))}
@@ -242,18 +243,18 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
         {/* ---- Futures Daily Return ---- */}
         {frTicks.map((v, k) => (
           <g key={`ft${k}`}>
-            <line x1={mL} y1={yFr(v)} x2={W - mR} y2={yFr(v)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={mL - 6} y={yFr(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtPct(v)}</text>
+            <line x1={mL} y1={yFr(v)} x2={W - mR} y2={yFr(v)} stroke={CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yFr(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtPct(v)}</text>
           </g>
         ))}
-        <line x1={mL} y1={yFr(0)} x2={W - mR} y2={yFr(0)} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="4 3" />
+        <line x1={mL} y1={yFr(0)} x2={W - mR} y2={yFr(0)} stroke={CHART.neutral} strokeWidth={1} strokeDasharray="4 3" />
         {frSegs.map((pts, k) => (
           <polyline key={`fr${k}`} points={pts} fill="none" stroke={FR_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
         ))}
 
         {/* ---- shared x-axis labels ---- */}
         {xTickIdx.map((i) => (
-          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">
+          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill={CHART.label} fontFamily="monospace">
             {fmtDay(view[i]?.date ?? "")}
           </text>
         ))}
@@ -261,11 +262,11 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
         {/* ---- one crosshair spanning every panel ---- */}
         {hover !== null && hv && (
           <g>
-            <line x1={hx} y1={hasVn ? vnTop : irTop} x2={hx} y2={frTop + frH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <line x1={hx} y1={hasVn ? vnTop : irTop} x2={hx} y2={frTop + frH} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
             {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
             {hv.irV !== null && <circle cx={hx} cy={yIr(hv.irV)} r={3} fill={IR_COLOR} />}
             {hv.frV !== null && <circle cx={hx} cy={yFr(hv.frV)} r={3} fill={FR_COLOR} />}
-            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill="#0f172a" fontFamily="monospace">
+            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill={CHART.text} fontFamily="monospace">
               {hv.date}
               {hasVn && hv.vnindex !== null && ` · VNI ${fmtInt(hv.vnindex)}`}
               {hv.irV !== null && ` · IR ${fmtPct(hv.irV)}`}
@@ -289,9 +290,9 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
           if (label === null) return null;
           return (
             <g>
-              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
-              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
-              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill={CHART.text} />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill={CHART.panel} fontFamily="monospace">{label}</text>
             </g>
           );
         })()}

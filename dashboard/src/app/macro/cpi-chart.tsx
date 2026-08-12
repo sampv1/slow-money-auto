@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
+import { CHART, VN_INDEX } from "@/lib/chart-theme";
 
 // One monthly point. yoy = headline CPI YoY (%, null before 12 months of history);
 // ytdAvg = running average of this year's YoY (the "CPI bình quân"); target =
@@ -25,10 +26,10 @@ const RANGE_DAYS: Record<Range, number> = { "1y": 365, "3y": 1095, all: Infinity
 
 const YOY_COLOR = "#4f46e5"; // indigo — CPI YoY
 const YTD_COLOR = "#0891b2"; // cyan   — YTD-average YoY
-const TARGET_COLOR = "#ef4444"; // red  — annual target
-const ROOM_POS = "#10b981"; // green  — headroom ≥ 0 (room to ease)
-const ROOM_NEG = "#ef4444"; // red    — headroom < 0 (budget blown)
-const VN_COLOR = "#2563eb"; // blue   — VN-Index (context), matches the FX chart
+const TARGET_COLOR = CHART.down; // red  — annual target
+const ROOM_POS = CHART.up; // green  — headroom ≥ 0 (room to ease)
+const ROOM_NEG = CHART.down; // red    — headroom < 0 (budget blown)
+const VN_COLOR = VN_INDEX;
 
 export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
   const [range, setRange] = useState<Range>("3y");
@@ -78,7 +79,7 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
   }, [view]);
 
   if (rows.length < 2) {
-    return <p className="text-sm text-gray-500">{t(locale, "cpiNoData")}</p>;
+    return <p className="text-body-lg text-fg-muted">{t(locale, "cpiNoData")}</p>;
   }
 
   // --- layout: VN-Index (optional) on top + YoY panel + headroom panel, shared x ---
@@ -168,22 +169,22 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
         : true;
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-panel rounded-lg border border-line p-4">
       {/* header: latest reading + room badge + range toggle */}
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         {latest && (
           <div>
-            <div className="text-xs text-gray-500">{t(locale, "macroFxLatest")} · {latest.date.slice(0, 7)}</div>
+            <div className="text-data text-fg-muted">{t(locale, "macroFxLatest")} · {latest.date.slice(0, 7)}</div>
             <div className="flex items-baseline gap-2">
-              <span className={`text-2xl font-semibold font-mono ${latest.yoy != null && latest.yoy > latest.target ? "text-red-600" : "text-emerald-600"}`}>
+              <span className={`text-display font-semibold font-mono ${latest.yoy != null && latest.yoy > latest.target ? "text-down" : "text-emerald-600"}`}>
                 {latest.yoy != null ? fmtPct(latest.yoy) : "—"}
               </span>
-              <span className="text-xs text-gray-500">{t(locale, "cpiYoy")}</span>
-              <span className="text-xs font-medium px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: roomOk ? ROOM_POS : ROOM_NEG }}>
+              <span className="text-data text-fg-muted">{t(locale, "cpiYoy")}</span>
+              <span className="text-data font-medium px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: roomOk ? ROOM_POS : ROOM_NEG }}>
                 {t(locale, roomOk ? "cpiRoomYes" : "cpiRoomNo")}
               </span>
             </div>
-            <div className="text-xs text-gray-400 mt-0.5 font-mono">
+            <div className="text-data text-fg-label mt-0.5 font-mono">
               {t(locale, "cpiTarget")} {fmtPct1(latest.target)}
               {latest.ytdAvg != null && <> · {t(locale, "cpiYtdAvg")} {fmtPct(latest.ytdAvg)}</>}
               {latest.headroom != null && <> · {t(locale, "cpiHeadroom")} {fmtSigned(latest.headroom)}</>}
@@ -196,8 +197,8 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`text-xs px-2 py-1 rounded font-medium ${
-                range === r ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              className={`text-data px-2 py-1 rounded font-medium ${
+                range === r ? "bg-accent text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {t(locale, r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
@@ -210,7 +211,7 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
       <ChartHowTo summary={t(locale, "chartHowSummary")} items={[t(locale, "macroCpiHowCalc"), t(locale, "macroCpiHowUse")]} />
 
       {/* legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-data text-fg-muted">
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: YOY_COLOR }} />{t(locale, "cpiYoy")}</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: YTD_COLOR }} />{t(locale, "cpiYtdAvg")}</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: TARGET_COLOR }} />{t(locale, "cpiTarget")}</span>
@@ -219,17 +220,17 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => { setHover(null); setHoverY(null); }} role="img">
         {/* ---- panel titles ---- */}
-        {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">VN-Index</text>}
-        <text x={mL} y={yoyTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "cpiPanelYoy")}</text>
-        <text x={mL} y={hrTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "cpiPanelHeadroom")}</text>
+        {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">VN-Index</text>}
+        <text x={mL} y={yoyTop - 10} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "cpiPanelYoy")}</text>
+        <text x={mL} y={hrTop - 10} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "cpiPanelHeadroom")}</text>
 
         {/* ---- panel: VN-Index (context) ---- */}
         {hasVn && (
           <>
             {vnTicks.map((v, k) => (
               <g key={`vt${k}`}>
-                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtInt(v)}</text>
               </g>
             ))}
             {vnSegs.map((pts, k) => (
@@ -241,8 +242,8 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
         {/* ---- panel: CPI YoY ---- */}
         {yoyTicks.map((v, k) => (
           <g key={`yt${k}`}>
-            <line x1={mL} y1={yYoy(v)} x2={W - mR} y2={yYoy(v)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={mL - 6} y={yYoy(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtPct1(v)}</text>
+            <line x1={mL} y1={yYoy(v)} x2={W - mR} y2={yYoy(v)} stroke={CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yYoy(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtPct1(v)}</text>
           </g>
         ))}
         <polyline points={targetPts} fill="none" stroke={TARGET_COLOR} strokeWidth={1} strokeDasharray="4 3" />
@@ -259,8 +260,8 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
         {/* ---- panel: inflation-budget headroom (bars from 0) ---- */}
         {hrTicks.map((v, k) => (
           <g key={`ht${k}`}>
-            <line x1={mL} y1={yHr(v)} x2={W - mR} y2={yHr(v)} stroke={v === 0 ? "#e2e8f0" : "#f1f5f9"} strokeWidth={1} />
-            <text x={mL - 6} y={yHr(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtSigned(v)}</text>
+            <line x1={mL} y1={yHr(v)} x2={W - mR} y2={yHr(v)} stroke={v === 0 ? CHART.axis : CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yHr(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtSigned(v)}</text>
           </g>
         ))}
         {view.map((r, i) =>
@@ -279,7 +280,7 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
 
         {/* ---- shared x-axis labels ---- */}
         {xTickIdx.map((i) => (
-          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">
+          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill={CHART.label} fontFamily="monospace">
             {fmtMonth(view[i]?.date ?? "")}
           </text>
         ))}
@@ -287,12 +288,12 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
         {/* ---- hover crosshair spanning both panels ---- */}
         {hover !== null && hv && (
           <g>
-            <line x1={hx} y1={hasVn ? vnTop : yoyTop} x2={hx} y2={hrTop + hrH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <line x1={hx} y1={hasVn ? vnTop : yoyTop} x2={hx} y2={hrTop + hrH} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
             {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
             {hv.yoy !== null && <circle cx={hx} cy={yYoy(hv.yoy)} r={3} fill={YOY_COLOR} />}
             {hv.ytdAvg !== null && <circle cx={hx} cy={yYoy(hv.ytdAvg)} r={2.5} fill={YTD_COLOR} />}
             {hv.headroom !== null && <circle cx={hx} cy={yHr(hv.headroom)} r={3} fill={hv.headroom >= 0 ? ROOM_POS : ROOM_NEG} />}
-            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill="#0f172a" fontFamily="monospace">
+            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill={CHART.text} fontFamily="monospace">
               {hv.date.slice(0, 7)}
               {hv.yoy !== null && ` · ${t(locale, "cpiYoy")} ${fmtPct(hv.yoy)}`}
               {hasVn && hv.vnindex !== null && ` · VNI ${fmtInt(hv.vnindex)}`}
@@ -316,9 +317,9 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
           if (label === null) return null;
           return (
             <g>
-              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
-              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
-              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill={CHART.text} />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill={CHART.panel} fontFamily="monospace">{label}</text>
             </g>
           );
         })()}

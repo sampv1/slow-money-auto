@@ -116,8 +116,8 @@ export default async function SignalProPage() {
 
   const header = (
     <div className="mb-4">
-      <h1 className="text-xl font-semibold">{t(locale, "signalProTitle")}</h1>
-      <p className="text-sm text-gray-500">{t(locale, "signalProSubtitle")}</p>
+      <h1 className="text-display font-semibold">{t(locale, "signalProTitle")}</h1>
+      <p className="text-body-lg text-fg-muted">{t(locale, "signalProSubtitle")}</p>
     </div>
   );
 
@@ -134,7 +134,7 @@ export default async function SignalProPage() {
     return (
       <div>
         {header}
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+        <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
           {t(locale, "faNoData")}
         </div>
       </div>

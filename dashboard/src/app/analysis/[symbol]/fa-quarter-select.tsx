@@ -24,12 +24,12 @@ export function FaQuarterSelect({
   }
 
   return (
-    <label className="text-xs text-gray-500 flex items-center gap-1">
+    <label className="text-data text-fg-muted flex items-center gap-1">
       {label}
       <select
         value={selected}
         onChange={onChange}
-        className="border border-gray-300 rounded px-1.5 py-0.5 text-xs"
+        className="border border-line rounded px-1.5 py-0.5 text-data"
       >
         {quarters.map((q) => (
           <option key={q} value={q}>{q}</option>

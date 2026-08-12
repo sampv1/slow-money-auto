@@ -262,9 +262,9 @@ function applyHysteresis(seq: Regime[], k: number): Regime[] {
 
 function StubCard({ title, note }: { title: string; note: string }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
-      <h2 className="text-sm font-semibold text-gray-700 mb-1">{title}</h2>
-      <div className="h-40 flex items-center justify-center text-sm text-gray-400 border border-dashed border-gray-200 rounded">
+    <div className="bg-panel rounded-lg border border-line p-4">
+      <h2 className="text-body-lg font-semibold text-fg mb-1">{title}</h2>
+      <div className="h-40 flex items-center justify-center text-body-lg text-fg-label border border-dashed border-line rounded">
         {note}
       </div>
     </div>
@@ -276,8 +276,8 @@ export default async function MacroPage() {
 
   const header = (
     <div className="mb-4">
-      <h1 className="text-xl font-semibold">{t(locale, "macroTitle")}</h1>
-      <p className="text-sm text-gray-500">{t(locale, "macroSubtitle")}</p>
+      <h1 className="text-display font-semibold">{t(locale, "macroTitle")}</h1>
+      <p className="text-body-lg text-fg-muted">{t(locale, "macroSubtitle")}</p>
     </div>
   );
 
@@ -565,10 +565,10 @@ export default async function MacroPage() {
       <section id="fci" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "mcTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "mcSubtitle")}</p>
+          <p className="text-data text-fg-muted">{t(locale, "mcSubtitle")}</p>
         </div>
         {error ? (
-          <p className="text-red-600 text-sm">Error loading FCI data: {error}</p>
+          <p className="text-down text-body-lg">Error loading FCI data: {error}</p>
         ) : fciRows.length < 2 ? (
           <StubCard title={t(locale, "mcTitle")} note={t(locale, "mcNoData")} />
         ) : (
@@ -579,10 +579,10 @@ export default async function MacroPage() {
       <section id="interbank" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroInterbankTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "macroInterbankSubtitle")}</p>
+          <p className="text-data text-fg-muted">{t(locale, "macroInterbankSubtitle")}</p>
         </div>
         {error ? (
-          <p className="text-red-600 text-sm">Error loading interbank-rate data: {error}</p>
+          <p className="text-down text-body-lg">Error loading interbank-rate data: {error}</p>
         ) : ibRows.length < 2 ? (
           <StubCard title={t(locale, "macroInterbankTitle")} note={t(locale, "macroInterbankNoData")} />
         ) : (
@@ -593,10 +593,10 @@ export default async function MacroPage() {
       <section id="bond" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "gbTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "gbSubtitle")}</p>
+          <p className="text-data text-fg-muted">{t(locale, "gbSubtitle")}</p>
         </div>
         {error ? (
-          <p className="text-red-600 text-sm">Error loading bond-yield data: {error}</p>
+          <p className="text-down text-body-lg">Error loading bond-yield data: {error}</p>
         ) : gbRows.length < 2 ? (
           <StubCard title={t(locale, "gbTitle")} note={t(locale, "gbNoData")} />
         ) : (
@@ -607,10 +607,10 @@ export default async function MacroPage() {
       <section id="bank" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "brTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "brSubtitle")}</p>
+          <p className="text-data text-fg-muted">{t(locale, "brSubtitle")}</p>
         </div>
         {error ? (
-          <p className="text-red-600 text-sm">Error loading bank-rate data: {error}</p>
+          <p className="text-down text-body-lg">Error loading bank-rate data: {error}</p>
         ) : brRows.length < 1 ? (
           <StubCard title={t(locale, "brTitle")} note={t(locale, "brNoData")} />
         ) : (
@@ -621,10 +621,10 @@ export default async function MacroPage() {
       <section id="margin" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "mdTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "mdSubtitle")}</p>
+          <p className="text-data text-fg-muted">{t(locale, "mdSubtitle")}</p>
         </div>
         {error ? (
-          <p className="text-red-600 text-sm">Error loading margin-debt data: {error}</p>
+          <p className="text-down text-body-lg">Error loading margin-debt data: {error}</p>
         ) : mdRows.length < 1 ? (
           <StubCard title={t(locale, "mdTitle")} note={t(locale, "mdNoData")} />
         ) : (
@@ -635,12 +635,12 @@ export default async function MacroPage() {
       <section id="external" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "epTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "epSubtitle")}</p>
+          <p className="text-data text-fg-muted">{t(locale, "epSubtitle")}</p>
         </div>
         {error ? (
-          <p className="text-red-600 text-sm">Error loading external-pressure data: {error}</p>
+          <p className="text-down text-body-lg">Error loading external-pressure data: {error}</p>
         ) : epRows.length < 2 ? (
-          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+          <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
             {t(locale, "macroNoData")}
           </div>
         ) : (
@@ -655,7 +655,7 @@ export default async function MacroPage() {
         <section id="exvic" className="mb-6 scroll-mt-20">
           <div className="mb-2">
             <h2 className="text-base font-semibold">{t(locale, "exTitle")}</h2>
-            <p className="text-xs text-gray-500">{t(locale, "exSubtitle")}</p>
+            <p className="text-data text-fg-muted">{t(locale, "exSubtitle")}</p>
           </div>
           <VnindexExChart rows={exRows} locale={locale} />
         </section>
@@ -664,12 +664,12 @@ export default async function MacroPage() {
       <section id="foreign" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "ffTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "ffSubtitle")}</p>
+          <p className="text-data text-fg-muted">{t(locale, "ffSubtitle")}</p>
         </div>
         {error ? (
-          <p className="text-red-600 text-sm">Error loading foreign-flow data: {error}</p>
+          <p className="text-down text-body-lg">Error loading foreign-flow data: {error}</p>
         ) : ffRows.length < 2 ? (
-          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+          <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
             {t(locale, "macroNoData")}
           </div>
         ) : (
@@ -680,12 +680,12 @@ export default async function MacroPage() {
       <section id="fx" className="mb-6 scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroFxTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "macroFxSubtitle")}</p>
+          <p className="text-data text-fg-muted">{t(locale, "macroFxSubtitle")}</p>
         </div>
         {error ? (
-          <p className="text-red-600 text-sm">Error loading macro data: {error}</p>
+          <p className="text-down text-body-lg">Error loading macro data: {error}</p>
         ) : rows.length < 2 ? (
-          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+          <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
             {t(locale, "macroNoData")}
           </div>
         ) : (
@@ -696,10 +696,10 @@ export default async function MacroPage() {
       <section id="cpi" className="scroll-mt-20">
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroCpiTitle")}</h2>
-          <p className="text-xs text-gray-500">{t(locale, "macroCpiSubtitle")}</p>
+          <p className="text-data text-fg-muted">{t(locale, "macroCpiSubtitle")}</p>
         </div>
         {error ? (
-          <p className="text-red-600 text-sm">Error loading CPI data: {error}</p>
+          <p className="text-down text-body-lg">Error loading CPI data: {error}</p>
         ) : cpiRows.length < 2 ? (
           <StubCard title={t(locale, "macroCpiTitle")} note={t(locale, "cpiNoData")} />
         ) : (

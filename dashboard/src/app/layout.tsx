@@ -13,14 +13,18 @@ import "./globals.css";
 
 const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 
+// "vietnamese" is not decoration: the default locale is vi, so most visible text
+// is diacritic-heavy. The glyphs already RENDER without it — Google Fonts emits
+// a U+1EA0-1EF9 @font-face block regardless — but without the subset listed they
+// are not preloaded, so the first paint of every Vietnamese page swaps.
 const geistSans = Geist({
   variable: "--font-geist-sans",
-  subsets: ["latin"],
+  subsets: ["latin", "vietnamese"],
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
-  subsets: ["latin"],
+  subsets: ["latin", "vietnamese"],
 });
 
 export const metadata: Metadata = {
@@ -71,11 +75,11 @@ export default async function RootLayout({
       lang={locale}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-gray-50 text-gray-900">
-        <header className="bg-white border-b border-gray-200">
+      <body className="min-h-full flex flex-col bg-canvas text-fg">
+        <header className="bg-panel border-b border-line">
           <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-14">
-              <Link href="/" className="font-semibold text-lg">
+              <Link href="/" className="font-semibold text-title tracking-tight">
                 Lọc tín hiệu
               </Link>
               <div className="flex items-center gap-2">

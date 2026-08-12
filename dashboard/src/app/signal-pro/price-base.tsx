@@ -2,20 +2,21 @@
 
 import { useState } from "react";
 import { type Locale, t } from "@/lib/i18n";
+import { CHART } from "@/lib/chart-theme";
 
 // Shared Price-Base (BQS V3) UI: the in-cell badge and the breakdown modal body.
 
 // Compact OHLC candle series + base-rectangle bounds for the in-cell chart.
 export type BaseChart = { o: number[]; h: number[]; l: number[]; c: number[]; lo: number; hi: number; s: number };
 
-const UP = "#16a34a";   // green-600
-const DOWN = "#dc2626"; // red-600
+const UP = CHART.up;   // green-600
+const DOWN = CHART.down; // red-600
 
 // In-cell candlestick chart with a shaded rectangle over the base region (the
 // base always ends at the right edge; `s` is where it begins, 0..1).
 export function PriceBaseSparkline({ chart, width, height }: { chart: BaseChart; width: number; height: number }) {
   const { o, h, l, c, lo, hi, s } = chart;
-  if (!c || c.length < 2) return <span className="text-gray-300">—</span>;
+  if (!c || c.length < 2) return <span className="text-fg-faint">—</span>;
   const n = c.length;
   const pad = 2;
   const min = Math.min(Math.min(...l), lo);
@@ -64,7 +65,7 @@ export function PriceBaseChart({
   const W = 680, H = 320, mL = 56, mR = 16, mT = 16, mB = 40;
   const iw = W - mL - mR, ih = H - mT - mB;
   const n = closes.length;
-  if (n < 2) return <p className="text-sm text-gray-500">No data.</p>;
+  if (n < 2) return <p className="text-body-lg text-fg-muted">No data.</p>;
 
   const min = Math.min(Math.min(...lows), baseLow);
   const max = Math.max(Math.max(...highs), baseHigh);
@@ -94,18 +95,18 @@ export function PriceBaseChart({
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img">
       {yTicks.map((v, k) => (
         <g key={`y${k}`}>
-          <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke="#f1f5f9" strokeWidth={1} />
-          <text x={mL - 6} y={yAt(v) + 3} textAnchor="end" fontSize={10} fill="#94a3b8" fontFamily="monospace">{fmtVal(v)}</text>
+          <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke={CHART.grid} strokeWidth={1} />
+          <text x={mL - 6} y={yAt(v) + 3} textAnchor="end" fontSize={10} fill={CHART.label} fontFamily="monospace">{fmtVal(v)}</text>
         </g>
       ))}
       {/* base rectangle */}
       <rect x={xAt(startIdx) - cw / 2} y={yAt(baseHigh)} width={xAt(endIdx) - xAt(startIdx) + cw} height={yAt(baseLow) - yAt(baseHigh)}
         fill="#3b82f6" fillOpacity={0.1} stroke="#3b82f6" strokeOpacity={0.5} strokeWidth={1} strokeDasharray="4 3" />
       {xTickIdx.map((i) => (
-        <text key={`x${i}`} x={xAt(i)} y={H - mB + 16} textAnchor="middle" fontSize={10} fill="#94a3b8" fontFamily="monospace">{fmtDay(dates[i] ?? "")}</text>
+        <text key={`x${i}`} x={xAt(i)} y={H - mB + 16} textAnchor="middle" fontSize={10} fill={CHART.label} fontFamily="monospace">{fmtDay(dates[i] ?? "")}</text>
       ))}
-      <line x1={mL} y1={mT} x2={mL} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} />
-      <line x1={mL} y1={H - mB} x2={W - mR} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} />
+      <line x1={mL} y1={mT} x2={mL} y2={H - mB} stroke={CHART.neutral} strokeWidth={1} />
+      <line x1={mL} y1={H - mB} x2={W - mR} y2={H - mB} stroke={CHART.neutral} strokeWidth={1} />
       {closes.map((cl, i) => {
         const col = cl >= opens[i] ? UP : DOWN;
         const x = xAt(i);
@@ -119,8 +120,8 @@ export function PriceBaseChart({
       })}
       {hover !== null && (
         <g>
-          <line x1={xAt(hover)} y1={mT} x2={xAt(hover)} y2={H - mB} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
-          <text x={Math.min(Math.max(xAt(hover), mL + 70), W - mR - 70)} y={mT + 12} textAnchor="middle" fontSize={11} fill="#0f172a" fontFamily="monospace">
+          <line x1={xAt(hover)} y1={mT} x2={xAt(hover)} y2={H - mB} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
+          <text x={Math.min(Math.max(xAt(hover), mL + 70), W - mR - 70)} y={mT + 12} textAnchor="middle" fontSize={11} fill={CHART.text} fontFamily="monospace">
             {dates[hover] ? `${dates[hover]} · ` : ""}O{fmtVal(opens[hover])} H{fmtVal(highs[hover])} L{fmtVal(lows[hover])} C{fmtVal(closes[hover])}
           </text>
         </g>
@@ -131,10 +132,10 @@ export function PriceBaseChart({
 
 export const GRADE_CLASS: Record<string, string> = {
   "A+": "bg-emerald-100 text-emerald-800",
-  A: "bg-green-100 text-green-800",
+  A: "bg-green-100 text-up",
   B: "bg-blue-100 text-blue-800",
   C: "bg-amber-100 text-amber-800",
-  D: "bg-gray-100 text-gray-600",
+  D: "bg-panel-2 text-fg-muted",
 };
 
 export function baseTypeLabel(type: string | null, locale: Locale): string {
@@ -146,10 +147,10 @@ export function baseTypeLabel(type: string | null, locale: Locale): string {
 // BQS V8 4-state base status (Trang_thai_nen). Colors follow the spec:
 // watch = gray, wait_buy = yellow, ready_buy = green, breakout_fail = red.
 const BASE_STATUS: Record<string, { vi: string; en: string; cls: string }> = {
-  watch: { vi: "Theo dõi", en: "Watch", cls: "text-gray-500" },
+  watch: { vi: "Theo dõi", en: "Watch", cls: "text-fg-muted" },
   wait_buy: { vi: "Chờ mua", en: "Wait to buy", cls: "text-amber-600" },
-  ready_buy: { vi: "Sẵn sàng mua", en: "Ready to buy", cls: "text-green-600" },
-  breakout_fail: { vi: "Breakout thất bại", en: "Breakout failed", cls: "text-red-600" },
+  ready_buy: { vi: "Sẵn sàng mua", en: "Ready to buy", cls: "text-up" },
+  breakout_fail: { vi: "Breakout thất bại", en: "Breakout failed", cls: "text-down" },
 };
 
 export function baseStatusLabel(status: string | null, locale: Locale): string {
@@ -159,7 +160,7 @@ export function baseStatusLabel(status: string | null, locale: Locale): string {
 }
 
 export function baseStatusClass(status: string | null): string {
-  return (status && BASE_STATUS[status]?.cls) || "text-gray-500";
+  return (status && BASE_STATUS[status]?.cls) || "text-fg-muted";
 }
 
 export function PriceBaseBadge({
@@ -175,13 +176,13 @@ export function PriceBaseBadge({
   status: string | null;
   locale: Locale;
 }) {
-  if (score === null || !grade) return <span className="text-gray-300">—</span>;
+  if (score === null || !grade) return <span className="text-fg-faint">—</span>;
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className={`inline-flex items-center px-1.5 py-0.5 text-xs rounded font-semibold ${GRADE_CLASS[grade] ?? GRADE_CLASS.D}`}>
+      <span className={`inline-flex items-center px-1.5 py-0.5 text-data rounded font-semibold ${GRADE_CLASS[grade] ?? GRADE_CLASS.D}`}>
         {grade} {score}
       </span>
-      <span className="text-xs text-gray-500 whitespace-nowrap">
+      <span className="text-data text-fg-muted whitespace-nowrap">
         {baseTypeLabel(type, locale)} ·{" "}
         <span className={baseStatusClass(status)}>{baseStatusLabel(status, locale)}</span>
       </span>
@@ -231,17 +232,17 @@ export function PriceBaseBreakdown({ detail, locale }: { detail: Detail; locale:
   ];
   return (
     <div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-600 mb-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-data text-fg-muted mb-3">
         {summary.map(([k, v]) => (
           <div key={k} className="flex justify-between gap-2">
-            <span className="text-gray-400">{k}</span>
+            <span className="text-fg-label">{k}</span>
             <span className="font-mono">{v}</span>
           </div>
         ))}
       </div>
-      <table className="w-full text-sm">
+      <table className="w-full text-body-lg">
         <thead>
-          <tr className="border-b border-gray-200 text-left text-gray-500">
+          <tr className="border-b border-line text-left text-fg-muted">
             <th className="px-2 py-1.5 font-medium">{t(locale, "faBreakdownCriterion")}</th>
             <th className="px-2 py-1.5 font-medium text-right">{t(locale, "faBreakdownValue")}</th>
             <th className="px-2 py-1.5 font-medium text-right">{t(locale, "faBreakdownPoints")}</th>
@@ -249,15 +250,15 @@ export function PriceBaseBreakdown({ detail, locale }: { detail: Detail; locale:
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.key} className="border-b border-gray-100">
-              <td className="px-2 py-1.5 text-gray-700">{locale === "vi" ? r.label_vi : r.label_en}</td>
+            <tr key={r.key} className="border-b border-line-faint">
+              <td className="px-2 py-1.5 text-fg">{locale === "vi" ? r.label_vi : r.label_en}</td>
               <td className="px-2 py-1.5 text-right font-mono">{fmtVal(r.value)}</td>
               <td className="px-2 py-1.5 text-right font-mono font-medium">{r.points} / {r.max}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
-          <tr className="border-t border-gray-300 font-semibold">
+          <tr className="border-t border-line font-semibold">
             <td className="px-2 py-1.5">{locale === "vi" ? "Tổng (raw / max)" : "Total (raw / max)"}</td>
             <td className="px-2 py-1.5"></td>
             <td className="px-2 py-1.5 text-right font-mono">{detail.raw ?? "?"} / {detail.max ?? "?"}</td>

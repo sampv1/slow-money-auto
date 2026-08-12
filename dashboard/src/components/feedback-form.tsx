@@ -42,7 +42,7 @@ export function FeedbackForm({ locale }: { locale: Locale }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="message" className="block text-body-lg font-medium text-fg mb-1">
           {t(locale, "feedbackTitle")}
         </label>
         <textarea
@@ -53,14 +53,14 @@ export function FeedbackForm({ locale }: { locale: Locale }) {
           rows={5}
           maxLength={5000}
           placeholder={t(locale, "feedbackPlaceholder")}
-          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+          className="w-full px-3 py-2 text-body-lg border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
         />
       </div>
 
       <div>
-        <label htmlFor="contact" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="contact" className="block text-body-lg font-medium text-fg mb-1">
           {t(locale, "feedbackContactLabel")}
-          <span className="ml-1 text-xs text-gray-400 font-normal">
+          <span className="ml-1 text-data text-fg-label font-normal">
             ({t(locale, "optional")})
           </span>
         </label>
@@ -71,7 +71,7 @@ export function FeedbackForm({ locale }: { locale: Locale }) {
           onChange={(e) => setContact(e.target.value)}
           maxLength={200}
           placeholder={t(locale, "feedbackContactPlaceholder")}
-          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 text-body-lg border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
@@ -79,16 +79,16 @@ export function FeedbackForm({ locale }: { locale: Locale }) {
         <button
           type="submit"
           disabled={status === "submitting" || !message.trim()}
-          className="px-4 py-2 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-2 text-body-lg bg-accent text-white rounded-md hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {status === "submitting" ? t(locale, "sending") : t(locale, "send")}
         </button>
 
         {status === "success" && (
-          <span className="text-sm text-green-600">{t(locale, "feedbackSuccess")}</span>
+          <span className="text-body-lg text-up">{t(locale, "feedbackSuccess")}</span>
         )}
         {status === "error" && error && (
-          <span className="text-sm text-red-600">{error}</span>
+          <span className="text-body-lg text-down">{error}</span>
         )}
       </div>
     </form>

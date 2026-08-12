@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
+import { CHART, VN_INDEX } from "@/lib/chart-theme";
 
 // One trading day of foreign (khối ngoại) activity on HOSE:
 // - net: daily net buy value, billion VND (negative = net foreign selling)
@@ -19,9 +20,9 @@ export type FfRow = {
 type Range = "1m" | "6m" | "1y" | "3y" | "all";
 const RANGE_DAYS: Record<Range, number> = { "1m": 30, "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
 
-const VN_COLOR = "#2563eb"; // blue    — VN-Index (context)
-const BUY = "#10b981"; // emerald — net buying
-const SELL = "#ef4444"; // red     — net selling
+const VN_COLOR = VN_INDEX;
+const BUY = CHART.up; // emerald — net buying
+const SELL = CHART.down; // red     — net selling
 const CUM_COLOR = "#4f46e5"; // indigo — 20-session cumulative line
 
 export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Locale }) {
@@ -68,7 +69,7 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
   }, [view]);
 
   if (rows.length < 2) {
-    return <p className="text-sm text-gray-500">{t(locale, "macroNoData")}</p>;
+    return <p className="text-body-lg text-fg-muted">{t(locale, "macroNoData")}</p>;
   }
 
   // --- layout: VN-Index (optional) + daily bars + 20d cumulative, shared x ---
@@ -141,22 +142,22 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
   const crossBottom = hasCum ? cumTop + cumH : netTop + netH;
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-panel rounded-lg border border-line p-4">
       {/* header: latest daily net + 20d cumulative + range toggle */}
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         {latest && (
           <div>
-            <div className="text-xs text-gray-500">
+            <div className="text-data text-fg-muted">
               {t(locale, "ffNetLabel")} · {t(locale, "macroFxLatest")} · {latest.date}
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-semibold font-mono" style={{ color: latest.net >= 0 ? BUY : SELL }}>
+              <span className="text-display font-semibold font-mono" style={{ color: latest.net >= 0 ? BUY : SELL }}>
                 {fmtSignedInt(latest.net)}
               </span>
-              <span className="text-xs text-gray-500">{t(locale, "ffBnVnd")}</span>
+              <span className="text-data text-fg-muted">{t(locale, "ffBnVnd")}</span>
               {latest.cum20 !== null && (
                 <span
-                  className="text-xs font-medium px-1.5 py-0.5 rounded text-white"
+                  className="text-data font-medium px-1.5 py-0.5 rounded text-white"
                   style={{ backgroundColor: latest.cum20 >= 0 ? BUY : SELL }}
                 >
                   {t(locale, "ffCumShort")} {fmtSignedInt(latest.cum20)}
@@ -170,8 +171,8 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`text-xs px-2 py-1 rounded font-medium ${
-                range === r ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              className={`text-data px-2 py-1 rounded font-medium ${
+                range === r ? "bg-accent text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {t(locale, r === "1m" ? "irRange1m" : r === "6m" ? "irRange6m" : r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
@@ -184,7 +185,7 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
       <ChartHowTo summary={t(locale, "chartHowSummary")} items={[t(locale, "ffHowCalc"), t(locale, "ffHowUse")]} />
 
       {/* legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-data text-fg-muted">
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: BUY }} />{t(locale, "ffNetBuy")}</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: SELL }} />{t(locale, "ffNetSell")}</span>
         {hasCum && <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: CUM_COLOR }} />{t(locale, "ffCumLegend")}</span>}
@@ -196,11 +197,11 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
         {hasVn && (
           <g>
             {/* y offset clears the two-line hover tooltip (down to y=24). */}
-            <text x={mL + 4} y={vnTop + 30} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>
+            <text x={mL + 4} y={vnTop + 30} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>
             {vnTicks.map((v, k) => (
               <g key={`vt${k}`}>
-                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtInt(v)}</text>
               </g>
             ))}
             {vnSegs.map((pts, k) => (
@@ -210,11 +211,11 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
         )}
 
         {/* ---- daily net bars ---- */}
-        <text x={mL} y={netTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "ffPanelNet")}</text>
+        <text x={mL} y={netTop - 8} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "ffPanelNet")}</text>
         {netTicks.map((v, k) => (
           <g key={`nt${k}`}>
-            <line x1={mL} y1={yNet(v)} x2={W - mR} y2={yNet(v)} stroke={v === 0 ? "#e2e8f0" : "#f1f5f9"} strokeWidth={1} />
-            <text x={mL - 6} y={yNet(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtSignedInt(v)}</text>
+            <line x1={mL} y1={yNet(v)} x2={W - mR} y2={yNet(v)} stroke={v === 0 ? CHART.axis : CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yNet(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtSignedInt(v)}</text>
           </g>
         ))}
         {view.map((r, i) =>
@@ -234,11 +235,11 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
         {/* ---- 20-session cumulative ---- */}
         {hasCum && (
           <g>
-            <text x={mL} y={cumTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "ffPanelCum")}</text>
+            <text x={mL} y={cumTop - 8} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "ffPanelCum")}</text>
             {cumTicks.map((v, k) => (
               <g key={`ct${k}`}>
-                <line x1={mL} y1={yCum(v)} x2={W - mR} y2={yCum(v)} stroke={v === 0 ? "#e2e8f0" : "#f1f5f9"} strokeWidth={1} />
-                <text x={mL - 6} y={yCum(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtSignedInt(v)}</text>
+                <line x1={mL} y1={yCum(v)} x2={W - mR} y2={yCum(v)} stroke={v === 0 ? CHART.axis : CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yCum(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtSignedInt(v)}</text>
               </g>
             ))}
             {cumSegs.map((pts, k) => (
@@ -249,7 +250,7 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
 
         {/* ---- shared x-axis labels ---- */}
         {xTickIdx.map((i) => (
-          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">
+          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill={CHART.label} fontFamily="monospace">
             {fmtDay(view[i]?.date ?? "")}
           </text>
         ))}
@@ -257,15 +258,15 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
         {/* ---- hover crosshair spanning all panels ---- */}
         {hover !== null && hv && (
           <g>
-            <line x1={hx} y1={hasVn ? vnTop : netTop} x2={hx} y2={crossBottom} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <line x1={hx} y1={hasVn ? vnTop : netTop} x2={hx} y2={crossBottom} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
             {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
             {hasCum && hv.cum20 !== null && <circle cx={hx} cy={yCum(hv.cum20)} r={3} fill={CUM_COLOR} />}
-            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill="#0f172a" fontFamily="monospace">
+            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill={CHART.text} fontFamily="monospace">
               {hv.date} · {fmtSignedInt(hv.net)} {t(locale, "ffBnVnd")}
               {hasVn && hv.vnindex !== null && ` · VNI ${fmtInt(hv.vnindex)}`}
             </text>
             {hv.cum20 !== null && (
-              <text x={tipX} y={24} textAnchor={tipAnchor} fontSize={10} fill="#475569" fontFamily="monospace">
+              <text x={tipX} y={24} textAnchor={tipAnchor} fontSize={10} fill={CHART.labelStrong} fontFamily="monospace">
                 {t(locale, "ffCumShort")} {fmtSignedInt(hv.cum20)} {t(locale, "ffBnVnd")}
               </text>
             )}
@@ -287,9 +288,9 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
           if (label === null) return null;
           return (
             <g>
-              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
-              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
-              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill={CHART.text} />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill={CHART.panel} fontFamily="monospace">{label}</text>
             </g>
           );
         })()}

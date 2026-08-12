@@ -87,8 +87,8 @@ export default function InputForm() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-4">{t(locale, "pushRecommendation")}</h1>
-      <p className="text-sm text-gray-500 mb-4">
+      <h1 className="text-display font-semibold mb-4">{t(locale, "pushRecommendation")}</h1>
+      <p className="text-body-lg text-fg-muted mb-4">
         {t(locale, "inputDescription")}
       </p>
 
@@ -97,7 +97,7 @@ export default function InputForm() {
           value={json}
           onChange={(e) => setJson(e.target.value)}
           placeholder='{"analysis_date": "2026-04-21", "trading_date": "2026-04-21", ...}'
-          className="w-full h-80 p-3 text-sm font-mono bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+          className="w-full h-80 p-3 text-body-lg font-mono bg-panel border border-line rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
           spellCheck={false}
         />
 
@@ -105,14 +105,14 @@ export default function InputForm() {
           <button
             type="button"
             onClick={handleValidate}
-            className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+            className="px-4 py-2 text-body-lg border border-line rounded-md hover:bg-canvas"
           >
             {t(locale, "validate")}
           </button>
           <button
             type="submit"
             disabled={status === "submitting" || !json.trim()}
-            className="px-4 py-2 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-body-lg bg-accent text-white rounded-md hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {status === "submitting" ? t(locale, "pushing") : t(locale, "pushToSupabase")}
           </button>
@@ -121,22 +121,22 @@ export default function InputForm() {
 
       {/* Result */}
       {result && status === "success" && "success" in result && result.success && (
-        <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4 text-sm">
-          <div className="font-medium text-green-700">{t(locale, "pushedSuccessfully")}</div>
-          <div className="text-green-600 mt-1">
+        <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4 text-body-lg">
+          <div className="font-medium text-up">{t(locale, "pushedSuccessfully")}</div>
+          <div className="text-up mt-1">
             {result.trading_date} | {result.conclusion} | {result.recommendations_inserted} {t(locale, "recommendations")}
           </div>
-          <a href="/logs" className="text-blue-600 hover:underline text-xs mt-2 inline-block">
+          <a href="/logs" className="text-accent hover:underline text-data mt-2 inline-block">
             {t(locale, "viewInDailyLogs")} &rarr;
           </a>
         </div>
       )}
 
       {result && status === "error" && "error" in result && (
-        <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4 text-sm">
-          <div className="font-medium text-red-700">{result.error}</div>
+        <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4 text-body-lg">
+          <div className="font-medium text-down">{result.error}</div>
           {"details" in result && result.details && (
-            <ul className="mt-2 text-red-600 text-xs space-y-1">
+            <ul className="mt-2 text-down text-data space-y-1">
               {result.details.map((d, i) => (
                 <li key={i}>- {d}</li>
               ))}

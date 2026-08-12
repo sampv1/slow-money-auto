@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
+import { CHART, VN_INDEX } from "@/lib/chart-theme";
 
 // VN-Index vs the same index with the Vingroup family removed.
 //
@@ -31,7 +32,7 @@ export type ExRow = {
 type Range = "1m" | "6m" | "1y" | "3y" | "all";
 const RANGE_DAYS: Record<Range, number> = { "1m": 30, "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
 
-const VN_COLOR = "#2563eb"; // blue — VN-Index (headline)
+const VN_COLOR = VN_INDEX;
 const EX_COLOR = "#0d9488"; // teal — the ex-VIC reconstruction
 const W_COLOR = "#c2410c"; // orange — family weight
 const PE_COLOR = "#7c3aed"; // violet — market P/E
@@ -91,7 +92,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
   }, [based]);
 
   if (rows.length < 2 || based.length < 2) {
-    return <p className="text-sm text-gray-500">{t(locale, "macroNoData")}</p>;
+    return <p className="text-body-lg text-fg-muted">{t(locale, "macroNoData")}</p>;
   }
 
   const W = 900, mL = 52, mR = 16; // mL fits 4-digit index levels
@@ -172,56 +173,56 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
   const hv = hover ? based.find((r) => r.date === hover) ?? null : null;
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-panel rounded-lg border border-line p-4">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         <div className="flex flex-wrap items-end gap-5">
           <div>
-            <div className="text-xs text-gray-500">{t(locale, "exLegend")} · {last.date}</div>
+            <div className="text-data text-fg-muted">{t(locale, "exLegend")} · {last.date}</div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-semibold font-mono" style={{ color: EX_COLOR }}>{fmt2(last.ex)}</span>
+              <span className="text-display font-semibold font-mono" style={{ color: EX_COLOR }}>{fmt2(last.ex)}</span>
               {last.vn !== null && (
                 <>
-                  <span className="text-xs text-gray-400">vs VN-Index</span>
-                  <span className="text-lg font-semibold font-mono" style={{ color: VN_COLOR }}>{fmt2(last.vn)}</span>
+                  <span className="text-data text-fg-label">vs VN-Index</span>
+                  <span className="text-title font-semibold font-mono" style={{ color: VN_COLOR }}>{fmt2(last.vn)}</span>
                 </>
               )}
             </div>
           </div>
           {gapPts !== null && (
             <div>
-              <div className="text-xs text-gray-500">{t(locale, "exSpread")}</div>
+              <div className="text-data text-fg-muted">{t(locale, "exSpread")}</div>
               <div
-                className="text-lg font-semibold font-mono"
-                style={{ color: gapPts >= 0 ? "#ef4444" : "#10b981" }}
+                className="text-title font-semibold font-mono"
+                style={{ color: gapPts >= 0 ? CHART.down : CHART.up }}
                 title={t(locale, gapPts >= 0 ? "exSpreadUp" : "exSpreadDown")}
               >
-                {gapPts >= 0 ? "+" : ""}{fmt2(gapPts)}<span className="text-xs text-gray-400"> {t(locale, "exPts")}</span>
+                {gapPts >= 0 ? "+" : ""}{fmt2(gapPts)}<span className="text-data text-fg-label"> {t(locale, "exPts")}</span>
               </div>
             </div>
           )}
           {exRet !== null && vnRet !== null && (
             <div>
-              <div className="text-xs text-gray-500">{t(locale, "exWindowRet")}</div>
-              <div className="text-lg font-semibold font-mono">
+              <div className="text-data text-fg-muted">{t(locale, "exWindowRet")}</div>
+              <div className="text-title font-semibold font-mono">
                 <span style={{ color: EX_COLOR }}>{fmtPct(exRet)}</span>
-                <span className="text-gray-300 mx-1.5">·</span>
+                <span className="text-fg-faint mx-1.5">·</span>
                 <span style={{ color: VN_COLOR }}>{fmtPct(vnRet)}</span>
                 {spread !== null && (
-                  <span className="text-xs text-gray-400 ml-1.5">({spread >= 0 ? "+" : ""}{spread.toFixed(1)}pp)</span>
+                  <span className="text-data text-fg-label ml-1.5">({spread >= 0 ? "+" : ""}{spread.toFixed(1)}pp)</span>
                 )}
               </div>
             </div>
           )}
           {latestPe !== null && (
             <div>
-              <div className="text-xs text-gray-500">{t(locale, "exPeLabel")}</div>
-              <div className="text-lg font-semibold font-mono">
+              <div className="text-data text-fg-muted">{t(locale, "exPeLabel")}</div>
+              <div className="text-title font-semibold font-mono">
                 <span style={{ color: PE_COLOR }}>{latestPe.toFixed(2)}</span>
                 {latestPeEx !== null && (
                   <>
-                    <span className="text-gray-300 mx-1.5">·</span>
+                    <span className="text-fg-faint mx-1.5">·</span>
                     <span style={{ color: PEX_COLOR }}>{latestPeEx.toFixed(2)}</span>
-                    <span className="text-xs text-gray-400 ml-1.5">({(latestPeEx - latestPe).toFixed(2)})</span>
+                    <span className="text-data text-fg-label ml-1.5">({(latestPeEx - latestPe).toFixed(2)})</span>
                   </>
                 )}
               </div>
@@ -229,8 +230,8 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
           )}
           {latestWeight !== null && (
             <div>
-              <div className="text-xs text-gray-500">{t(locale, "exWeightLabel")}</div>
-              <div className="text-lg font-semibold font-mono" style={{ color: W_COLOR }}>{latestWeight.toFixed(1)}%</div>
+              <div className="text-data text-fg-muted">{t(locale, "exWeightLabel")}</div>
+              <div className="text-title font-semibold font-mono" style={{ color: W_COLOR }}>{latestWeight.toFixed(1)}%</div>
             </div>
           )}
         </div>
@@ -239,8 +240,8 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`text-xs px-2 py-1 rounded font-medium ${
-                range === r ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              className={`text-data px-2 py-1 rounded font-medium ${
+                range === r ? "bg-teal-600 text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {r === "1m" ? "1M" : r === "6m" ? "6M" : r === "1y" ? "1Y" : r === "3y" ? "3Y" : t(locale, "irRangeAll")}
@@ -259,7 +260,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
         ]}
       />
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-data text-fg-muted">
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: VN_COLOR }} />VN-Index</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: EX_COLOR }} />{t(locale, "exLegend")}</span>
         {hasPe && (
@@ -273,11 +274,11 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => { setHover(null); setHoverY(null); }} role="img">
         {/* ---- rebased index panel (both lines = 100 at window start) ---- */}
-        <text x={mL} y={top - 6} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "exPanelIndex")}</text>
+        <text x={mL} y={top - 6} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "exPanelIndex")}</text>
         {yTicks.map((v, k) => (
           <g key={`y${k}`}>
-            <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={mL - 6} y={yAt(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmt1(v)}</text>
+            <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke={CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yAt(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmt1(v)}</text>
           </g>
         ))}
         {vnPts.length > 1 && <polyline points={line(vnPts)} fill="none" stroke={VN_COLOR} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />}
@@ -286,11 +287,11 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
         {/* ---- P/E panel: market vs market-without-the-family, one shared axis ---- */}
         {hasPe && (
           <>
-            <text x={mL} y={peTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "exPanelPe")}</text>
+            <text x={mL} y={peTop - 8} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "exPanelPe")}</text>
             {peTicks.map((v, k) => (
               <g key={`pt${k}`}>
-                <line x1={mL} y1={yPe(v)} x2={W - mR} y2={yPe(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yPe(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{v.toFixed(1)}</text>
+                <line x1={mL} y1={yPe(v)} x2={W - mR} y2={yPe(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yPe(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{v.toFixed(1)}</text>
               </g>
             ))}
             {pePts.length > 1 && <polyline points={line(pePts)} fill="none" stroke={PE_COLOR} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />}
@@ -301,11 +302,11 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
         {/* ---- family weight panel: how much is being removed ---- */}
         {hasWeight && (
           <>
-            <text x={mL} y={wTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "exPanelWeight")}</text>
+            <text x={mL} y={wTop - 8} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "exPanelWeight")}</text>
             {wTicks.map((v, k) => (
               <g key={`w${k}`}>
-                <line x1={mL} y1={yW(v)} x2={W - mR} y2={yW(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yW(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{v.toFixed(0)}%</text>
+                <line x1={mL} y1={yW(v)} x2={W - mR} y2={yW(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yW(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{v.toFixed(0)}%</text>
               </g>
             ))}
             {wPts.length > 1 && (
@@ -321,7 +322,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
         {yearTicks.map((y) => {
           const x = xAt(`${y}-01-01`);
           if (x < mL - 1 || x > W - mR + 1) return null;
-          return <text key={`x${y}`} x={x} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">{y}</text>;
+          return <text key={`x${y}`} x={x} y={xLabelY} textAnchor="middle" fontSize={9} fill={CHART.label} fontFamily="monospace">{y}</text>;
         })}
 
         {/* vertical crosshair + readout */}
@@ -337,13 +338,13 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
           if (hv.weight !== null) parts.push(`${t(locale, "exWeightLabel")} ${hv.weight.toFixed(1)}%`);
           return (
             <g>
-              <line x1={hx} y1={top} x2={hx} y2={lastBottom} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+              <line x1={hx} y1={top} x2={hx} y2={lastBottom} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
               {hv.vn !== null && <circle cx={hx} cy={yAt(hv.vn)} r={3} fill={VN_COLOR} />}
               <circle cx={hx} cy={yAt(hv.ex)} r={3} fill={EX_COLOR} />
               {hasPe && hv.pe !== null && <circle cx={hx} cy={yPe(hv.pe)} r={2.5} fill={PE_COLOR} />}
               {hasPe && hv.peEx !== null && <circle cx={hx} cy={yPe(hv.peEx)} r={2.5} fill={PEX_COLOR} />}
               {hv.weight !== null && <circle cx={hx} cy={yW(hv.weight)} r={2.5} fill={W_COLOR} />}
-              <text x={tx} y={readoutY} textAnchor={anchor} fontSize={10} fill="#0f172a" fontFamily="monospace">{parts.join(" · ")}</text>
+              <text x={tx} y={readoutY} textAnchor={anchor} fontSize={10} fill={CHART.text} fontFamily="monospace">{parts.join(" · ")}</text>
             </g>
           );
         })()}
@@ -358,9 +359,9 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
           if (label === null) return null;
           return (
             <g>
-              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
-              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
-              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill={CHART.text} />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill={CHART.panel} fontFamily="monospace">{label}</text>
             </g>
           );
         })()}

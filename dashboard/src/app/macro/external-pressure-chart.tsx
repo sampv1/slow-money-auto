@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
+import { CHART, VN_INDEX } from "@/lib/chart-theme";
 
 // Overnight VND–SOFR spread regime (thresholds fixed by spec):
 //   positive: spread >= 0        — VND funding pays more than USD
@@ -32,16 +33,16 @@ export type EpRow = {
 type Range = "1m" | "6m" | "1y" | "3y" | "all";
 const RANGE_DAYS: Record<Range, number> = { "1m": 30, "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
 
-const VN_COLOR = "#2563eb"; // blue   — VN-Index (context)
-const DXY_COLOR = "#64748b"; // slate — DXY (context backdrop)
+const VN_COLOR = VN_INDEX;
+const DXY_COLOR = CHART.labelStrong; // slate — DXY (context backdrop)
 const FED_COLOR = "#c2410c"; // orange — Fed target range (US policy rate)
 const SPREAD_COLOR = "#4f46e5"; // indigo — the spread line
-const DEEP_LINE = "#ef4444"; // red — the -1.5 intervention threshold
+const DEEP_LINE = CHART.down; // red — the -1.5 intervention threshold
 
 const REGIME: Record<EpRegime, { color: string; label: TranslationKey }> = {
-  positive: { color: "#10b981", label: "epRegimePositive" },
+  positive: { color: CHART.up, label: "epRegimePositive" },
   mild: { color: "#eab308", label: "epRegimeMild" },
-  deep: { color: "#ef4444", label: "epRegimeDeep" },
+  deep: { color: CHART.down, label: "epRegimeDeep" },
 };
 
 export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale: Locale }) {
@@ -101,7 +102,7 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
   }, [view]);
 
   if (rows.length < 2) {
-    return <p className="text-sm text-gray-500">{t(locale, "macroNoData")}</p>;
+    return <p className="text-body-lg text-fg-muted">{t(locale, "macroNoData")}</p>;
   }
 
   // --- layout: VN-Index (opt) + DXY + Fed target (opt) + spread + ribbon, shared x ---
@@ -207,24 +208,24 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
   const tipX = tipAnchor === "end" ? W - mR : tipAnchor === "start" ? mL : hx;
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-panel rounded-lg border border-line p-4">
       {/* header: latest spread + regime badge + range toggle */}
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         {latest && (
           <div>
-            <div className="text-xs text-gray-500">
+            <div className="text-data text-fg-muted">
               {t(locale, "epSpreadLabel")} · {t(locale, "macroFxLatest")} · {latest.date}
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-semibold font-mono" style={{ color: REGIME[latest.regime].color }}>
+              <span className="text-display font-semibold font-mono" style={{ color: REGIME[latest.regime].color }}>
                 {fmtS2(latest.spread)}
               </span>
-              <span className="text-xs text-gray-500">pp</span>
-              <span className="text-xs font-medium px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: REGIME[latest.regime].color }}>
+              <span className="text-data text-fg-muted">pp</span>
+              <span className="text-data font-medium px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: REGIME[latest.regime].color }}>
                 {t(locale, REGIME[latest.regime].label)}
               </span>
             </div>
-            <div className="text-xs text-gray-400 mt-0.5 font-mono">
+            <div className="text-data text-fg-label mt-0.5 font-mono">
               VNIBOR {fmt2(latest.vnibor)}% · SOFR {fmt2(latest.sofr)}%
               {latest.dxy !== null && <> · DXY {fmt2(latest.dxy)}</>}
               {latest.fedLo !== null && latest.fedHi !== null && (
@@ -238,8 +239,8 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`text-xs px-2 py-1 rounded font-medium ${
-                range === r ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              className={`text-data px-2 py-1 rounded font-medium ${
+                range === r ? "bg-accent text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {t(locale, r === "1m" ? "irRange1m" : r === "6m" ? "irRange6m" : r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
@@ -268,7 +269,7 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
       />
 
       {/* regime legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-data text-fg-muted">
         {(Object.keys(REGIME) as EpRegime[]).map((r) => (
           <span key={r} className="flex items-center gap-1.5">
             <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: REGIME[r].color }} />
@@ -287,11 +288,11 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
                 tooltip always has a second line (VNIBOR/SOFR/DXY detail) down
                 to y=24, so the label needs more clearance to avoid sitting
                 under it. */}
-            <text x={mL + 4} y={vnTop + 30} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>
+            <text x={mL + 4} y={vnTop + 30} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>
             {vnTicks.map((v, k) => (
               <g key={`vt${k}`}>
-                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtInt(v)}</text>
               </g>
             ))}
             {vnSegs.map((pts, k) => (
@@ -303,11 +304,11 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
         {/* ---- DXY panel (context backdrop) ---- */}
         {hasDxy && (
           <g>
-            <text x={mL + 4} y={dxyTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "epPanelDxy")}</text>
+            <text x={mL + 4} y={dxyTop + 12} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "epPanelDxy")}</text>
             {dxyTicks.map((v, k) => (
               <g key={`dt${k}`}>
-                <line x1={mL} y1={yDxy(v)} x2={W - mR} y2={yDxy(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yDxy(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmt2(v)}</text>
+                <line x1={mL} y1={yDxy(v)} x2={W - mR} y2={yDxy(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yDxy(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmt2(v)}</text>
               </g>
             ))}
             {dxySegs.map((pts, k) => (
@@ -319,11 +320,11 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
         {/* ---- Fed target range panel (US policy rate, declared by the FOMC) ---- */}
         {hasFed && (
           <g>
-            <text x={mL + 4} y={fedTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "epPanelFed")}</text>
+            <text x={mL + 4} y={fedTop + 12} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "epPanelFed")}</text>
             {fedTicks.map((v, k) => (
               <g key={`ft${k}`}>
-                <line x1={mL} y1={yFed(v)} x2={W - mR} y2={yFed(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yFed(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmt2(v)}</text>
+                <line x1={mL} y1={yFed(v)} x2={W - mR} y2={yFed(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yFed(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmt2(v)}</text>
               </g>
             ))}
             {/* the 25bp corridor, then both declared limits on top of it */}
@@ -334,14 +335,14 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
         )}
 
         {/* ---- spread panel: regime tint bands + refs + line ---- */}
-        <text x={mL} y={spTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "epPanelSpread")}</text>
+        <text x={mL} y={spTop - 8} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "epPanelSpread")}</text>
         <rect x={mL} y={spTop} width={iw} height={Math.max(0, ySp(0) - spTop)} fill={REGIME.positive.color} opacity={0.05} />
         <rect x={mL} y={ySp(0)} width={iw} height={Math.max(0, ySp(-1.5) - ySp(0))} fill={REGIME.mild.color} opacity={0.07} />
         <rect x={mL} y={ySp(-1.5)} width={iw} height={Math.max(0, spTop + spH - ySp(-1.5))} fill={REGIME.deep.color} opacity={0.06} />
         {spTicks.map((v, k) => (
           <g key={`st${k}`}>
-            <line x1={mL} y1={ySp(v)} x2={W - mR} y2={ySp(v)} stroke={v === 0 ? "#cbd5e1" : "#f1f5f9"} strokeWidth={1} strokeDasharray={v === 0 ? "4 3" : undefined} />
-            <text x={mL - 6} y={ySp(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtS2(v)}</text>
+            <line x1={mL} y1={ySp(v)} x2={W - mR} y2={ySp(v)} stroke={v === 0 ? CHART.neutral : CHART.grid} strokeWidth={1} strokeDasharray={v === 0 ? "4 3" : undefined} />
+            <text x={mL - 6} y={ySp(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtS2(v)}</text>
           </g>
         ))}
         <line x1={mL} y1={ySp(-1.5)} x2={W - mR} y2={ySp(-1.5)} stroke={DEEP_LINE} strokeWidth={1} strokeDasharray="4 3" />
@@ -351,14 +352,14 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
         <polyline points={spPoints} fill="none" stroke={SPREAD_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
 
         {/* ---- regime ribbon ---- */}
-        <text x={mL} y={ribTop - 6} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelRegime")}</text>
+        <text x={mL} y={ribTop - 6} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelRegime")}</text>
         {ribbon.map((seg, k) => (
           <rect key={`rib${k}`} x={seg.x} y={ribTop} width={seg.w} height={ribH} fill={REGIME[seg.regime].color} />
         ))}
 
         {/* ---- shared x-axis labels ---- */}
         {xTickIdx.map((i) => (
-          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">
+          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill={CHART.label} fontFamily="monospace">
             {fmtDay(view[i]?.date ?? "")}
           </text>
         ))}
@@ -366,15 +367,15 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
         {/* ---- hover crosshair spanning all panels + ribbon ---- */}
         {hover !== null && hv && (
           <g>
-            <line x1={hx} y1={hasVn ? vnTop : dxyTop} x2={hx} y2={ribTop + ribH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <line x1={hx} y1={hasVn ? vnTop : dxyTop} x2={hx} y2={ribTop + ribH} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
             {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
             {hasDxy && hv.dxy !== null && <circle cx={hx} cy={yDxy(hv.dxy)} r={3} fill={DXY_COLOR} />}
             {hasFed && hv.fedHi !== null && <circle cx={hx} cy={yFed(hv.fedHi)} r={3} fill={FED_COLOR} />}
             <circle cx={hx} cy={ySp(hv.spread)} r={3} fill={SPREAD_COLOR} />
-            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill="#0f172a" fontFamily="monospace">
+            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill={CHART.text} fontFamily="monospace">
               {hv.date} · Δ {fmtS2(hv.spread)} · {t(locale, REGIME[hv.regime].label)}
             </text>
-            <text x={tipX} y={24} textAnchor={tipAnchor} fontSize={10} fill="#475569" fontFamily="monospace">
+            <text x={tipX} y={24} textAnchor={tipAnchor} fontSize={10} fill={CHART.labelStrong} fontFamily="monospace">
               VNIBOR {fmt2(hv.vnibor)} · SOFR {fmt2(hv.sofr)}
               {hv.dxy !== null && ` · DXY ${fmt2(hv.dxy)}`}
               {hv.fedLo !== null && hv.fedHi !== null && ` · FED ${fmt2(hv.fedLo)}-${fmt2(hv.fedHi)}`}
@@ -398,9 +399,9 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
           if (label === null) return null;
           return (
             <g>
-              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
-              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
-              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill={CHART.text} />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill={CHART.panel} fontFamily="monospace">{label}</text>
             </g>
           );
         })()}

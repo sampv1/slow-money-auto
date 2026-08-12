@@ -74,27 +74,27 @@ export function TaSearch({
             autoFocus={autoFocus}
             autoComplete="off"
             spellCheck={false}
-            className="w-32 sm:w-40 min-w-0 rounded border border-gray-300 px-2.5 py-1.5 text-sm font-mono uppercase bg-white focus:outline-none focus:border-blue-500"
+            className="w-32 sm:w-40 min-w-0 rounded border border-line px-2.5 py-1.5 text-body-lg font-mono uppercase bg-panel focus:outline-none focus:border-accent"
           />
           <button
             type="submit"
             disabled={!upper}
-            className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm disabled:bg-gray-300 disabled:cursor-not-allowed cursor-pointer"
+            className="px-3 py-1.5 rounded bg-accent text-white text-body-lg disabled:bg-line disabled:cursor-not-allowed cursor-pointer"
           >
             {t(locale, "taSearchButton")}
           </button>
         </div>
 
         {suggestions.length > 0 && (
-          <ul className="absolute z-30 mt-1 w-full max-w-40 bg-white border border-gray-200 rounded divide-y divide-gray-100 shadow-lg">
+          <ul className="absolute z-30 mt-1 w-full max-w-40 bg-panel border border-line rounded divide-y divide-line-faint shadow-lg">
             {suggestions.map((sym, i) => (
               <li key={sym}>
                 <button
                   type="button"
                   onMouseEnter={() => setHighlight(i)}
                   onClick={() => go(sym)}
-                  className={`w-full text-left px-3 py-1.5 text-sm font-mono cursor-pointer ${
-                    i === highlight ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"
+                  className={`w-full text-left px-3 py-1.5 text-body-lg font-mono cursor-pointer ${
+                    i === highlight ? "bg-accent-soft text-accent" : "hover:bg-canvas"
                   }`}
                 >
                   {sym}
@@ -108,8 +108,8 @@ export function TaSearch({
   }
 
   return (
-    <form onSubmit={onSubmit} className="bg-white rounded-lg border border-gray-200 p-4">
-      <label className="block text-sm font-medium mb-2" htmlFor="ta-symbol-input">
+    <form onSubmit={onSubmit} className="bg-panel rounded-lg border border-line p-4">
+      <label className="block text-body-lg font-medium mb-2" htmlFor="ta-symbol-input">
         {t(locale, "taSymbolLabel")}
       </label>
       <div className="flex gap-2">
@@ -126,27 +126,27 @@ export function TaSearch({
           autoFocus
           autoComplete="off"
           spellCheck={false}
-          className="flex-1 min-w-0 rounded border border-gray-300 px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:border-blue-500"
+          className="flex-1 min-w-0 rounded border border-line px-3 py-2 text-body-lg font-mono uppercase focus:outline-none focus:border-accent"
         />
         <button
           type="submit"
           disabled={!upper}
-          className="px-4 py-2 rounded bg-blue-600 text-white text-sm disabled:bg-gray-300 disabled:cursor-not-allowed cursor-pointer"
+          className="px-4 py-2 rounded bg-accent text-white text-body-lg disabled:bg-line disabled:cursor-not-allowed cursor-pointer"
         >
           {t(locale, "taSearchButton")}
         </button>
       </div>
 
       {suggestions.length > 0 && (
-        <ul className="mt-2 border border-gray-200 rounded divide-y divide-gray-100">
+        <ul className="mt-2 border border-line rounded divide-y divide-line-faint">
           {suggestions.map((sym, i) => (
             <li key={sym}>
               <button
                 type="button"
                 onMouseEnter={() => setHighlight(i)}
                 onClick={() => go(sym)}
-                className={`w-full text-left px-3 py-1.5 text-sm font-mono cursor-pointer ${
-                  i === highlight ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"
+                className={`w-full text-left px-3 py-1.5 text-body-lg font-mono cursor-pointer ${
+                  i === highlight ? "bg-accent-soft text-accent" : "hover:bg-canvas"
                 }`}
               >
                 {sym}
@@ -157,10 +157,10 @@ export function TaSearch({
       )}
 
       {upper && suggestions.length === 0 && (
-        <p className="mt-2 text-xs text-gray-500">{t(locale, "taSymbolNoSuggestion")}</p>
+        <p className="mt-2 text-data text-fg-muted">{t(locale, "taSymbolNoSuggestion")}</p>
       )}
 
-      <p className="mt-3 text-xs text-gray-400">{t(locale, "taSearchHint")}</p>
+      <p className="mt-3 text-data text-fg-label">{t(locale, "taSearchHint")}</p>
     </form>
   );
 }

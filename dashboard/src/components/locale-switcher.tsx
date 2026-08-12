@@ -16,7 +16,7 @@ export function LocaleSwitcher({ locale }: { locale: Locale }) {
   return (
     <button
       onClick={() => handleChange(locale === "en" ? "vi" : "en")}
-      className="px-2 py-1 text-xs border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
+      className="px-2 py-1 text-data border border-line rounded-md hover:bg-panel-2 transition-colors"
       title={locale === "en" ? "Switch to Vietnamese" : "Switch to English"}
     >
       {locale === "en" ? "VI" : "EN"}

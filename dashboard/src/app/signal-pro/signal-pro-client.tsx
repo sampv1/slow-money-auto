@@ -27,9 +27,9 @@ const DEFAULT_MIN_NPAT_BN = 35;
 // renders identical grade badges (imported at the top of this file).
 
 function GradeBadge({ grade }: { grade: string | null }) {
-  if (!grade) return <span className="text-gray-300">—</span>;
+  if (!grade) return <span className="text-fg-faint">—</span>;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-medium ${scoreGradeClass(grade)}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 text-data rounded font-medium ${scoreGradeClass(grade)}`}>
       {grade}
     </span>
   );
@@ -46,7 +46,7 @@ function ScoreCell({ score, highlight = false, grade = false }: { score: number 
           {grade && <GradeBadge grade={gradeOf(score)} />}
         </div>
       ) : (
-        <div className="text-right text-gray-300">—</div>
+        <div className="text-right text-fg-faint">—</div>
       )}
     </td>
   );
@@ -414,7 +414,7 @@ export function SignalProClient({
   return (
     <div>
       {/* Liquidity filter — its own bar at the top, matching the TA/FA scanners. */}
-      <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
+      <div className="bg-panel rounded-lg border border-line px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
         <MinVolumeFilter
           id="sp-min-avg-vol"
           value={minAvgVolume}
@@ -422,9 +422,9 @@ export function SignalProClient({
           locale={locale}
         />
 
-        <span className="hidden sm:block h-5 w-px bg-gray-200" aria-hidden />
+        <span className="hidden sm:block h-5 w-px bg-line" aria-hidden />
 
-        <label htmlFor="sp-min-npat" className="text-sm text-gray-700">
+        <label htmlFor="sp-min-npat" className="text-body-lg text-fg">
           {t(locale, "faMinNpat")}
         </label>
         <input
@@ -437,13 +437,13 @@ export function SignalProClient({
             const n = Number(e.target.value);
             setMinNpatBn(Number.isFinite(n) && n >= 0 ? n : 0);
           }}
-          className="w-24 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+          className="w-24 rounded border border-line px-2 py-1 text-body-lg font-mono"
         />
         {/* Same hint as the FA Scanner: a missing NPAT is SYSTEMATIC, not random
             — banks and securities firms don't report revenue/net margin in this
             statement format at all, so any threshold above 0 removes the whole
             sector. Better said out loud than discovered later. */}
-        <span className="text-xs text-gray-500">{t(locale, "faMinNpatHint")}</span>
+        <span className="text-data text-fg-muted">{t(locale, "faMinNpatHint")}</span>
 
         {(minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D || minNpatBn !== DEFAULT_MIN_NPAT_BN) && (
           <button
@@ -452,7 +452,7 @@ export function SignalProClient({
               setMinAvgVolume(DEFAULT_MIN_AVG_VOLUME_20D);
               setMinNpatBn(DEFAULT_MIN_NPAT_BN);
             }}
-            className="text-xs text-gray-500 hover:text-gray-900 ml-auto"
+            className="text-data text-fg-muted hover:text-fg ml-auto"
           >
             {t(locale, "reset")}
           </button>
@@ -461,12 +461,12 @@ export function SignalProClient({
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-4 mb-3">
-        <label className="text-sm">
-          <span className="block text-gray-500 mb-1">{t(locale, "spMinFinalRating")}</span>
+        <label className="text-body-lg">
+          <span className="block text-fg-muted mb-1">{t(locale, "spMinFinalRating")}</span>
           <select
             value={rating}
             onChange={(e) => setRating(e.target.value as RatingFilter)}
-            className="border border-gray-300 rounded px-2 py-1"
+            className="border border-line rounded px-2 py-1"
           >
             <option value="all">{t(locale, "faRatingAll")}</option>
             <option value="A">{t(locale, "faRatingAOnly")}</option>
@@ -474,36 +474,36 @@ export function SignalProClient({
             <option value="ABC">{t(locale, "faRatingABC")}</option>
           </select>
         </label>
-        <label className="text-sm">
-          <span className="block text-gray-500 mb-1">{t(locale, "spMinFinalScore")}</span>
+        <label className="text-body-lg">
+          <span className="block text-fg-muted mb-1">{t(locale, "spMinFinalScore")}</span>
           <input
             type="number"
             value={minScore}
             onChange={(e) => setMinScore(e.target.value)}
             placeholder="0"
-            className="border border-gray-300 rounded px-2 py-1 w-24"
+            className="border border-line rounded px-2 py-1 w-24"
           />
         </label>
-        <label className="text-sm flex-1 min-w-[160px]">
-          <span className="block text-gray-500 mb-1">{t(locale, "symbol")}</span>
+        <label className="text-body-lg flex-1 min-w-[160px]">
+          <span className="block text-fg-muted mb-1">{t(locale, "symbol")}</span>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t(locale, "faSearchPlaceholder")}
-            className="border border-gray-300 rounded px-2 py-1 w-full"
+            className="border border-line rounded px-2 py-1 w-full"
           />
         </label>
-        <div className="self-center text-sm text-gray-500 ml-auto text-right">
+        <div className="self-center text-body-lg text-fg-muted ml-auto text-right">
           <div>{filtered.length} {t(locale, "faResults")}</div>
           {latestData && (
-            <div className="text-xs">{t(locale, "taLastUpdated")} <span className="font-mono">{latestData}</span></div>
+            <div className="text-data">{t(locale, "taLastUpdated")} <span className="font-mono">{latestData}</span></div>
           )}
         </div>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+        <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
           {t(locale, "faNoRows")}
         </div>
       ) : (
@@ -512,8 +512,8 @@ export function SignalProClient({
         // spec, a non-visible overflow on one axis computes the other to `auto`),
         // which meant a `sticky` header anchored to it and never moved while the
         // PAGE scrolled. Capping the height gives it something to scroll against.
-        <div className="bg-white rounded-lg border border-gray-200 overflow-auto max-h-[calc(100vh-12rem)]">
-          <table className="w-full text-sm">
+        <div className="bg-panel rounded-lg border border-line overflow-auto max-h-[calc(100vh-12rem)]">
+          <table className="w-full text-body-lg">
             {/* Sticky on <thead>, not per-<th>: this header is two rows deep with
                 rowSpan/colSpan cells, and freezing the whole thead keeps them
                 aligned without hardcoding a `top` offset for the sub-header row.
@@ -521,48 +521,48 @@ export function SignalProClient({
                 `border-collapse: collapse`, and collapsed borders belong to the
                 table rather than the cell, so Chrome drops them once the header
                 is sticky. */}
-            <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#e5e7eb]">
+            <thead className="sticky top-0 z-10 bg-panel-2 shadow-[0_1px_0_0_var(--color-line-strong)]">
               {/* Group row */}
-              <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th rowSpan={2} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
+              <tr className="border-b border-line text-left text-fg-muted">
+                <th rowSpan={2} className="px-4 py-2 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
                 {/* Each symbol is shown at its OWN latest FA quarter */}
-                <th rowSpan={2} className="px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("quarter")}>
+                <th rowSpan={2} className="px-4 py-2 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("quarter")}>
                   {t(locale, "faQuarter")}{sortIndicator("quarter")}
                 </th>
-                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
+                <th rowSpan={2} className="px-4 py-2 label text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
                   {t(locale, "spFaScore")} (100){sortIndicator("total_score")}
                 </th>
-                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
+                <th rowSpan={2} className="px-4 py-2 label text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
                   {t(locale, "spTaScore")} (100){sortIndicator("ta_score")}
                 </th>
-                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none bg-amber-50" onClick={() => toggleSort("final_score")}>
+                <th rowSpan={2} className="px-4 py-2 label text-right align-bottom cursor-pointer select-none bg-amber-50" onClick={() => toggleSort("final_score")}>
                   <div>{t(locale, "spFinalScore")} (100)</div>
-                  <div className="text-xs font-normal text-gray-400">{t(locale, "spOverallGrade")}{sortIndicator("final_score")}</div>
+                  <div className="text-data font-normal text-fg-label">{t(locale, "spOverallGrade")}{sortIndicator("final_score")}</div>
                 </th>
-                <th colSpan={3} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spTaComponents")}</th>
-                <th colSpan={4} className="px-4 py-2 font-medium text-center border-l border-gray-200">{t(locale, "spBaseGroup")}</th>
-                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom border-l border-gray-200" title={t(locale, "spCatalystTitle")}>{t(locale, "spCatalyst")}</th>
+                <th colSpan={3} className="px-4 py-2 label text-center border-l border-line">{t(locale, "spTaComponents")}</th>
+                <th colSpan={4} className="px-4 py-2 label text-center border-l border-line">{t(locale, "spBaseGroup")}</th>
+                <th rowSpan={2} className="px-4 py-2 label text-right align-bottom border-l border-line" title={t(locale, "spCatalystTitle")}>{t(locale, "spCatalyst")}</th>
                 {isAdmin && (
-                  <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom border-l border-gray-200">{t(locale, "spTrade")}</th>
+                  <th rowSpan={2} className="px-4 py-2 label text-right align-bottom border-l border-line">{t(locale, "spTrade")}</th>
                 )}
               </tr>
               {/* Sub-header row */}
-              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs">
-                <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
+              <tr className="border-b border-line text-left text-fg-muted text-data">
+                <th className="px-4 py-2 label text-right border-l border-line cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
                   {t(locale, "taRs3m")}{sortIndicator("rs_3m")}
                 </th>
-                <th className="px-4 py-2 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
+                <th className="px-4 py-2 label text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
                   {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
                 </th>
-                <th className="px-4 py-2 font-medium">{t(locale, "taRsLine")}</th>
-                <th className="px-4 py-2 font-medium text-right border-l border-gray-200 cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
+                <th className="px-4 py-2 label">{t(locale, "taRsLine")}</th>
+                <th className="px-4 py-2 label text-right border-l border-line cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
                   {t(locale, "spBaseScore")}{sortIndicator("base_score")}
                 </th>
-                <th className="px-4 py-2 font-medium">{t(locale, "spBaseChart")}</th>
-                <th className="px-4 py-2 font-medium">{t(locale, "spBaseType")}</th>
-                <th className="px-4 py-2 font-medium">{t(locale, "spBaseStatus")}</th>
+                <th className="px-4 py-2 label">{t(locale, "spBaseChart")}</th>
+                <th className="px-4 py-2 label">{t(locale, "spBaseType")}</th>
+                <th className="px-4 py-2 label">{t(locale, "spBaseStatus")}</th>
               </tr>
             </thead>
             <tbody>
@@ -576,19 +576,19 @@ export function SignalProClient({
                 const base = baseBySymbol.get(row.symbol);
                 const catScore = catalystBySymbol.get(row.symbol) ?? null;
                 return (
-                  <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
+                  <tr key={row.symbol} className="border-b border-line-faint hover:bg-canvas">
                     <td className="px-4 py-3 font-medium">
-                      <Link href={`/analysis/${row.symbol}`} className="text-blue-600 hover:underline">
+                      <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
                         {row.symbol}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">
+                    <td className="px-4 py-3 font-mono text-data text-fg-muted whitespace-nowrap">
                       {quarterBySymbol.get(row.symbol) ?? row.as_of_period}
                     </td>
                     <ScoreCell score={faNormalizedScore(row)} />
                     <ScoreCell score={taScore} />
                     <ScoreCell score={finalScore} highlight grade />
-                    <td className="px-4 py-3 text-right font-mono border-l border-gray-100">{rs3m ?? "—"}</td>
+                    <td className="px-4 py-3 text-right font-mono border-l border-line-faint">{rs3m ?? "—"}</td>
                         <td className="px-4 py-3 text-right font-mono">{rs ?? "—"}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -599,7 +599,7 @@ export function SignalProClient({
                                 title={t(locale, "spRsLineScore")}
                               />
                             ) : (
-                              <span className="min-w-[2rem] text-center text-gray-300">—</span>
+                              <span className="min-w-[2rem] text-center text-fg-faint">—</span>
                             )}
                             {rsLine && rsLine.length >= 2 ? (
                               <button
@@ -611,22 +611,22 @@ export function SignalProClient({
                                 <RsSparkline series={rsLine} width={96} height={28} />
                               </button>
                             ) : (
-                              <span className="text-gray-300">—</span>
+                              <span className="text-fg-faint">—</span>
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right font-mono border-l border-gray-100">
+                        <td className="px-4 py-3 text-right font-mono border-l border-line-faint">
                           {base && base.score !== null ? (
                             <button
                               type="button"
                               onClick={() => openBase(row.symbol)}
-                              className="cursor-pointer text-blue-600 hover:underline"
+                              className="cursor-pointer text-accent hover:underline"
                               title={t(locale, "spBaseCol")}
                             >
                               {base.score}
                             </button>
                           ) : (
-                            <span className="text-gray-300">—</span>
+                            <span className="text-fg-faint">—</span>
                           )}
                         </td>
                         <td className="px-4 py-3">
@@ -640,31 +640,31 @@ export function SignalProClient({
                               <PriceBaseSparkline chart={base.chart} width={110} height={30} />
                             </button>
                           ) : (
-                            <span className="text-gray-300">—</span>
+                            <span className="text-fg-faint">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
-                          {base && base.score !== null ? baseTypeLabel(base.type, locale) : <span className="text-gray-300">—</span>}
+                        <td className="px-4 py-3 text-fg whitespace-nowrap">
+                          {base && base.score !== null ? baseTypeLabel(base.type, locale) : <span className="text-fg-faint">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
-                          {base && base.score !== null ? baseStatusLabel(base.status, locale) : <span className="text-gray-300">—</span>}
+                        <td className="px-4 py-3 text-fg whitespace-nowrap">
+                          {base && base.score !== null ? baseStatusLabel(base.status, locale) : <span className="text-fg-faint">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-right font-mono border-l border-gray-100">
+                        <td className="px-4 py-3 text-right font-mono border-l border-line-faint">
                           {catScore !== null ? (
                             <button
                               type="button"
                               onClick={() => openCatalyst(row.symbol)}
-                              className="cursor-pointer text-blue-600 hover:underline"
+                              className="cursor-pointer text-accent hover:underline"
                               title={t(locale, "spCatalystTitle")}
                             >
                               {catScore.toFixed(1)}
                             </button>
                           ) : (
-                            <span className="text-gray-300">—</span>
+                            <span className="text-fg-faint">—</span>
                           )}
                     </td>
                     {isAdmin && (
-                      <td className="px-4 py-3 text-right border-l border-gray-100">
+                      <td className="px-4 py-3 text-right border-l border-line-faint">
                         <TradeActions symbol={row.symbol} isActive={activeSet.has(row.symbol)} locale={locale} />
                       </td>
                     )}
@@ -678,20 +678,20 @@ export function SignalProClient({
 
       {/* Legend + formula footer */}
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <div className="text-xs font-medium text-gray-500 mb-2">{t(locale, "spGradeLegend")}</div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <div className="bg-panel rounded-lg border border-line p-4">
+          <div className="text-data font-medium text-fg-muted mb-2">{t(locale, "spGradeLegend")}</div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-data">
             {([["A+", "90 - 100"], ["A", "80 - 89"], ["B", "70 - 79"], ["C", "60 - 69"], ["D", "< 60"]] as const).map(([g, r]) => (
               <span key={g} className="inline-flex items-center gap-1.5">
                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded font-medium ${SCORE_GRADE_CLASS[g]}`}>{g}</span>
-                <span className="text-gray-500">{r}</span>
+                <span className="text-fg-muted">{r}</span>
               </span>
             ))}
           </div>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <div className="text-xs font-medium text-gray-500 mb-2">{t(locale, "spFormula")}</div>
-          <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside font-mono">
+        <div className="bg-panel rounded-lg border border-line p-4">
+          <div className="text-data font-medium text-fg-muted mb-2">{t(locale, "spFormula")}</div>
+          <ul className="text-data text-fg-muted space-y-1 list-disc list-inside font-mono">
             <li>{t(locale, "spFormulaTa")}</li>
             <li>{t(locale, "spFormulaFinal")}</li>
           </ul>
@@ -702,20 +702,20 @@ export function SignalProClient({
       {rsModal && (() => {
         const { symbol, loading, values, dates } = rsModal;
         const netChg = values.length >= 2 ? (values[values.length - 1] / values[0] - 1) * 100 : 0;
-        const chgColor = netChg > 5 ? "text-green-600" : netChg < -5 ? "text-red-600" : "text-gray-500";
+        const chgColor = netChg > 5 ? "text-up" : netChg < -5 ? "text-down" : "text-fg-muted";
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
             onClick={() => setRsModal(null)}
           >
             <div
-              className="bg-white rounded-lg shadow-xl border border-gray-200 p-5 w-full max-w-3xl"
+              className="bg-panel rounded-lg shadow-xl border border-line p-5 w-full max-w-3xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-start justify-between mb-1">
                 <div>
-                  <h3 className="text-lg font-semibold">{symbol} — {t(locale, "taRsLine")}</h3>
-                  <p className="text-xs text-gray-500">
+                  <h3 className="text-title font-semibold">{symbol} — {t(locale, "taRsLine")}</h3>
+                  <p className="text-data text-fg-muted">
                     {t(locale, "taRsLineCaption")} ·{" "}
                     <span className={`font-mono ${chgColor}`}>{netChg >= 0 ? "+" : ""}{netChg.toFixed(1)}%</span>
                   </p>
@@ -723,7 +723,7 @@ export function SignalProClient({
                 <button
                   type="button"
                   onClick={() => setRsModal(null)}
-                  className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+                  className="text-fg-label hover:text-fg text-display leading-none"
                   aria-label="Close"
                 >
                   ×
@@ -731,7 +731,7 @@ export function SignalProClient({
               </div>
               <div className="mt-3 w-full">
                 {loading && dates.length === 0 ? (
-                  <div className="h-[280px] flex items-center justify-center text-sm text-gray-400">
+                  <div className="h-[280px] flex items-center justify-center text-body-lg text-fg-label">
                     {t(locale, "loading")}…
                   </div>
                 ) : (
@@ -750,22 +750,22 @@ export function SignalProClient({
           onClick={() => setBaseModal(null)}
         >
           <div
-            className="bg-white rounded-lg shadow-xl border border-gray-200 p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            className="bg-panel rounded-lg shadow-xl border border-line p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-3">
-              <h3 className="text-lg font-semibold">{baseModal.symbol} — {t(locale, "spBaseCol")}</h3>
+              <h3 className="text-title font-semibold">{baseModal.symbol} — {t(locale, "spBaseCol")}</h3>
               <button
                 type="button"
                 onClick={() => setBaseModal(null)}
-                className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+                className="text-fg-label hover:text-fg text-display leading-none"
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
             {baseModal.loading ? (
-              <div className="h-32 flex items-center justify-center text-sm text-gray-400">{t(locale, "loading")}…</div>
+              <div className="h-32 flex items-center justify-center text-body-lg text-fg-label">{t(locale, "loading")}…</div>
             ) : baseModal.detail ? (
               <div className="space-y-4">
                 {baseModal.ohlc.closes.length >= 2 && baseModal.detail.base_start && baseModal.detail.base_end
@@ -785,7 +785,7 @@ export function SignalProClient({
                 <PriceBaseBreakdown detail={baseModal.detail as Parameters<typeof PriceBaseBreakdown>[0]["detail"]} locale={locale} />
               </div>
             ) : (
-              <p className="text-sm text-gray-500">{t(locale, "faNoData")}</p>
+              <p className="text-body-lg text-fg-muted">{t(locale, "faNoData")}</p>
             )}
           </div>
         </div>
@@ -798,22 +798,22 @@ export function SignalProClient({
           onClick={() => setCatModal(null)}
         >
           <div
-            className="bg-white rounded-lg shadow-xl border border-gray-200 p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            className="bg-panel rounded-lg shadow-xl border border-line p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-3">
-              <h3 className="text-lg font-semibold">{catModal.symbol} — {t(locale, "spCatalystTitle")}</h3>
+              <h3 className="text-title font-semibold">{catModal.symbol} — {t(locale, "spCatalystTitle")}</h3>
               <button
                 type="button"
                 onClick={() => setCatModal(null)}
-                className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+                className="text-fg-label hover:text-fg text-display leading-none"
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
             {catModal.loading ? (
-              <div className="h-32 flex items-center justify-center text-sm text-gray-400">{t(locale, "loading")}…</div>
+              <div className="h-32 flex items-center justify-center text-body-lg text-fg-label">{t(locale, "loading")}…</div>
             ) : (
               <CatalystDetail rows={catModal.rows} locale={locale} />
             )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CHART } from "@/lib/chart-theme";
 
 // RS Line rendering: a compact in-cell sparkline plus a detailed click-to-open
 // chart. The series is stock-close ÷ VN-Index ratios (oldest → newest); only
@@ -20,9 +21,9 @@ export function trendOf(series: number[]): Trend {
 }
 
 const TREND_COLOR: Record<Trend, string> = {
-  up: "#16a34a",   // green-600
-  down: "#dc2626", // red-600
-  side: "#6b7280", // gray-500
+  up: CHART.up,   // green-600
+  down: CHART.down, // red-600
+  side: CHART.labelStrong,
 };
 
 // Simple moving average of `series`; entries before the window is full are null.
@@ -56,7 +57,7 @@ export function DetailedRsChart({
   const ih = H - mT - mB;
   const n = values.length;
 
-  if (n < 2) return <p className="text-sm text-gray-500">No data.</p>;
+  if (n < 2) return <p className="text-body-lg text-fg-muted">No data.</p>;
 
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -99,8 +100,8 @@ export function DetailedRsChart({
         const y = yAt(v);
         return (
           <g key={`y${k}`}>
-            <line x1={mL} y1={y} x2={W - mR} y2={y} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={mL - 6} y={y + 3} textAnchor="end" fontSize={10} fill="#94a3b8" fontFamily="monospace">
+            <line x1={mL} y1={y} x2={W - mR} y2={y} stroke={CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={y + 3} textAnchor="end" fontSize={10} fill={CHART.label} fontFamily="monospace">
               {fmtVal(v)}
             </text>
           </g>
@@ -108,13 +109,13 @@ export function DetailedRsChart({
       })}
       {/* x labels */}
       {xTickIdx.map((i) => (
-        <text key={`x${i}`} x={xAt(i)} y={H - mB + 16} textAnchor="middle" fontSize={10} fill="#94a3b8" fontFamily="monospace">
+        <text key={`x${i}`} x={xAt(i)} y={H - mB + 16} textAnchor="middle" fontSize={10} fill={CHART.label} fontFamily="monospace">
           {fmtDay(dates[i] ?? "")}
         </text>
       ))}
       {/* axes */}
-      <line x1={mL} y1={mT} x2={mL} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} />
-      <line x1={mL} y1={H - mB} x2={W - mR} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} />
+      <line x1={mL} y1={mT} x2={mL} y2={H - mB} stroke={CHART.neutral} strokeWidth={1} />
+      <line x1={mL} y1={H - mB} x2={W - mR} y2={H - mB} stroke={CHART.neutral} strokeWidth={1} />
       {/* MA50 — drawn first (underneath) and muted so the RS line stands out */}
       {maPts && (
         <polyline
@@ -132,21 +133,21 @@ export function DetailedRsChart({
       {/* legend */}
       <g fontFamily="monospace" fontSize={10}>
         <line x1={W - mR - 92} y1={mT + 4} x2={W - mR - 76} y2={mT + 4} stroke={color} strokeWidth={2} />
-        <text x={W - mR - 72} y={mT + 7} fill="#64748b">RS</text>
+        <text x={W - mR - 72} y={mT + 7} fill={CHART.labelStrong}>RS</text>
         <line x1={W - mR - 50} y1={mT + 4} x2={W - mR - 34} y2={mT + 4} stroke="#1e3a8a" strokeWidth={1.5} strokeDasharray="5 3" />
         <text x={W - mR - 30} y={mT + 7} fill="#1e3a8a">MA20</text>
       </g>
       {/* hover guide + dot + tooltip */}
       {hover !== null && (
         <g>
-          <line x1={xAt(hover)} y1={mT} x2={xAt(hover)} y2={H - mB} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="3 3" />
+          <line x1={xAt(hover)} y1={mT} x2={xAt(hover)} y2={H - mB} stroke={CHART.neutral} strokeWidth={1} strokeDasharray="3 3" />
           <circle cx={xAt(hover)} cy={yAt(values[hover])} r={3} fill={color} />
           <text
             x={Math.min(Math.max(xAt(hover), mL + 40), W - mR - 40)}
             y={mT + 12}
             textAnchor="middle"
             fontSize={11}
-            fill="#0f172a"
+            fill={CHART.text}
             fontFamily="monospace"
           >
             {dates[hover] ? `${dates[hover]} · ` : ""}{fmtVal(values[hover])}
@@ -159,11 +160,11 @@ export function DetailedRsChart({
 
 // Color for an RS-Line-Score grade (A+/A/B/C/D).
 const RS_GRADE_CLASS: Record<string, string> = {
-  "A+": "bg-green-100 text-green-800",
-  A: "bg-green-100 text-green-700",
-  B: "bg-blue-100 text-blue-700",
+  "A+": "bg-green-100 text-up",
+  A: "bg-green-100 text-up",
+  B: "bg-blue-100 text-accent",
   C: "bg-amber-100 text-amber-700",
-  D: "bg-gray-100 text-gray-500",
+  D: "bg-panel-2 text-fg-muted",
 };
 
 // Compact RS-Line-Score chip shown to the left of the sparkline.
@@ -176,11 +177,11 @@ export function RsLineScore({
   grade: string | null;
   title?: string;
 }) {
-  const cls = (grade && RS_GRADE_CLASS[grade]) || "bg-gray-100 text-gray-600";
+  const cls = (grade && RS_GRADE_CLASS[grade]) || "bg-panel-2 text-fg-muted";
   return (
     <span
       title={title}
-      className={`inline-flex items-center justify-center min-w-[2rem] px-1.5 py-0.5 rounded text-xs font-mono font-medium ${cls}`}
+      className={`inline-flex items-center justify-center min-w-[2rem] px-1.5 py-0.5 rounded text-data font-mono font-medium ${cls}`}
     >
       {score}
     </span>
@@ -201,7 +202,7 @@ export function RsSparkline({
   className?: string;
 }) {
   if (!series || series.length < 2) {
-    return <span className="text-gray-300">—</span>;
+    return <span className="text-fg-faint">—</span>;
   }
   const pad = strokeWidth + 1;
   const min = Math.min(...series);

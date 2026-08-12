@@ -126,8 +126,8 @@ export default async function ScannerPage({
   if (!data || !selectedDate) {
     return (
       <div>
-        <h1 className="text-xl font-semibold mb-4">{t(locale, "taScanner")}</h1>
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+        <h1 className="text-display font-semibold mb-4">{t(locale, "taScanner")}</h1>
+        <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
           {t(locale, "taNoData")}
         </div>
       </div>

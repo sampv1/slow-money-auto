@@ -42,7 +42,7 @@ export function MinVolumeFilter({
 
   return (
     <>
-      <label htmlFor={id} className="text-sm text-gray-700">
+      <label htmlFor={id} className="text-body-lg text-fg">
         {t(locale, "taMinAvgVolume")}
       </label>
       <select
@@ -54,7 +54,7 @@ export function MinVolumeFilter({
           if (e.target.value === CUSTOM) return;
           onChange(Number(e.target.value));
         }}
-        className="rounded border border-gray-300 px-2 py-1 text-sm font-mono bg-white"
+        className="rounded border border-line px-2 py-1 text-body-lg font-mono bg-panel"
       >
         {/* Only present while it applies, so it can't be picked from a clean state. */}
         {!isPreset && <option value={CUSTOM}>{t(locale, "taMinAvgVolumeCustom")}</option>}
@@ -74,9 +74,9 @@ export function MinVolumeFilter({
           const n = Number(e.target.value);
           onChange(Number.isFinite(n) && n >= 0 ? n : 0);
         }}
-        className="w-32 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+        className="w-32 rounded border border-line px-2 py-1 text-body-lg font-mono"
       />
-      <span className="text-xs text-gray-500">{t(locale, "taMinAvgVolumeHint")}</span>
+      <span className="text-data text-fg-muted">{t(locale, "taMinAvgVolumeHint")}</span>
     </>
   );
 }

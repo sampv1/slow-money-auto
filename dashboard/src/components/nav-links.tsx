@@ -25,10 +25,11 @@ export function NavLinks({ links }: { links: NavLink[] }) {
           <Link
             key={link.href}
             href={link.href}
-            className={`whitespace-nowrap px-2.5 py-1.5 text-sm rounded-md transition-colors ${
+            aria-current={isActive ? "page" : undefined}
+            className={`whitespace-nowrap px-2.5 py-1.5 text-body rounded-md transition-colors ${
               isActive
-                ? "text-gray-900 font-semibold bg-gray-100"
-                : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                ? "text-accent font-semibold bg-accent-soft"
+                : "text-fg-muted hover:text-fg hover:bg-panel-2"
             }`}
           >
             {link.label}

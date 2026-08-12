@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { timeAxisTicks } from "@/lib/chart-axis";
+import { CHART, VN_INDEX } from "@/lib/chart-theme";
 
 // One quarterly point:
 // - margin: total market margin debt (nghìn tỷ VND / trillion VND); null on dates
@@ -31,9 +32,9 @@ const RANGE_DAYS: Record<Range, number> = {
 const RANGES: Range[] = ["1m", "6m", "1y", "3y", "all"];
 
 const MD = "#7c3aed"; // violet — margin debt
-const VN_COLOR = "#2563eb"; // blue — VN-Index (context)
-const DIV_POS = "#ef4444"; // red — margin outpacing prices (leverage building)
-const DIV_NEG = "#10b981"; // emerald — margin lagging prices (deleveraging)
+const VN_COLOR = VN_INDEX;
+const DIV_POS = CHART.down; // red — margin outpacing prices (leverage building)
+const DIV_NEG = CHART.up; // emerald — margin lagging prices (deleveraging)
 const GAP_MS = 130 * 86400000; // > ~1 quarter apart ⇒ break the line
 
 const ms = (d: string) => new Date(d + "T00:00:00Z").getTime();
@@ -103,7 +104,7 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
   }, [growthView]);
 
   if (rows.length < 1) {
-    return <p className="text-sm text-gray-500">{t(locale, "mdNoData")}</p>;
+    return <p className="text-body-lg text-fg-muted">{t(locale, "mdNoData")}</p>;
   }
 
   const hasVn = view.some((r) => r.vnindex !== null);
@@ -172,17 +173,17 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-panel rounded-lg border border-line p-4">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         <div className="flex flex-wrap items-end gap-5">
           {latest && latest.margin !== null && (
             <div>
-              <div className="text-xs text-gray-500">{t(locale, "mdLabel")} · {quarterOf(latest.date)}</div>
+              <div className="text-data text-fg-muted">{t(locale, "mdLabel")} · {quarterOf(latest.date)}</div>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-semibold font-mono" style={{ color: MD }}>{fmtInt(latest.margin)}</span>
-                <span className="text-sm text-gray-400">{t(locale, "mdUnit")}</span>
+                <span className="text-display font-semibold font-mono" style={{ color: MD }}>{fmtInt(latest.margin)}</span>
+                <span className="text-body-lg text-fg-label">{t(locale, "mdUnit")}</span>
                 {chg !== null && Math.abs(chg) >= 1 && (
-                  <span className={`text-xs font-mono ${chg > 0 ? "text-emerald-600" : "text-red-600"}`}>
+                  <span className={`text-data font-mono ${chg > 0 ? "text-emerald-600" : "text-down"}`}>
                     {chg > 0 ? "+" : ""}{fmtInt(chg)}
                   </span>
                 )}
@@ -193,21 +194,21 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
           {latestGrowth && (
             <>
               <div>
-                <div className="text-xs text-gray-500">{t(locale, "mdQoQ")} · {t(locale, "mdVnQoQ")}</div>
-                <div className="text-lg font-semibold font-mono">
+                <div className="text-data text-fg-muted">{t(locale, "mdQoQ")} · {t(locale, "mdVnQoQ")}</div>
+                <div className="text-title font-semibold font-mono">
                   <span style={{ color: MD }}>{fmtPct(latestGrowth.mQoQ)}</span>
-                  <span className="text-gray-300 mx-1.5">·</span>
+                  <span className="text-fg-faint mx-1.5">·</span>
                   <span style={{ color: VN_COLOR }}>{fmtPct(latestGrowth.vQoQ)}</span>
                 </div>
               </div>
               <div>
-                <div className="text-xs text-gray-500">{t(locale, "mdDivergence")}</div>
+                <div className="text-data text-fg-muted">{t(locale, "mdDivergence")}</div>
                 <div
-                  className="text-lg font-semibold font-mono"
+                  className="text-title font-semibold font-mono"
                   style={{ color: latestGrowth.div >= 0 ? DIV_POS : DIV_NEG }}
                   title={t(locale, latestGrowth.div >= 0 ? "mdLeverageUp" : "mdLeverageDown")}
                 >
-                  {fmtPp(latestGrowth.div)}<span className="text-xs text-gray-400"> pp</span>
+                  {fmtPp(latestGrowth.div)}<span className="text-data text-fg-label"> pp</span>
                 </div>
               </div>
             </>
@@ -218,8 +219,8 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`text-xs px-2 py-1 rounded font-medium ${
-                range === r ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              className={`text-data px-2 py-1 rounded font-medium ${
+                range === r ? "bg-violet-600 text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {r === "1m" ? t(locale, "irRange1m")
@@ -234,7 +235,7 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
 
       <ChartHowTo summary={t(locale, "chartHowSummary")} items={[t(locale, "mdHowCalc"), t(locale, "mdHowUse")]} />
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-data text-fg-muted">
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: MD }} />{t(locale, "mdLabel")} ({t(locale, "mdUnit")})</span>
         {hasVn && <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: VN_COLOR }} />VN-Index</span>}
         {hasDiv && (
@@ -249,11 +250,11 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
         {/* ---- VN-Index panel (context) ---- */}
         {hasVn && (
           <>
-            <text x={mL + 2} y={vnTop + 10} fontSize={11} fill="#475569" fontFamily="monospace">VN-Index</text>
+            <text x={mL + 2} y={vnTop + 10} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">VN-Index</text>
             {vnTicks.map((v, k) => (
               <g key={`vt${k}`}>
-                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtInt(v)}</text>
               </g>
             ))}
             {vnPts.length > 1 && <polyline points={line(vnPts)} fill="none" stroke={VN_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />}
@@ -263,11 +264,11 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
         )}
 
         {/* ---- margin panel ---- */}
-        <text x={mL} y={top - 6} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "mdLabel")} ({t(locale, "mdUnit")})</text>
+        <text x={mL} y={top - 6} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "mdLabel")} ({t(locale, "mdUnit")})</text>
         {yTicks.map((v, k) => (
           <g key={`y${k}`}>
-            <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={mL - 6} y={yAt(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+            <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke={CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yAt(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtInt(v)}</text>
           </g>
         ))}
         {segs.map((seg, k) => (
@@ -289,11 +290,11 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
         {/* ---- divergence panel: margin QoQ growth − VN-Index QoQ growth (pp) ---- */}
         {hasDiv && (
           <>
-            <text x={mL} y={divTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "mdPanelDiv")}</text>
+            <text x={mL} y={divTop - 8} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "mdPanelDiv")}</text>
             {[divDom.hi, 0, divDom.lo].map((v, k) => (
               <g key={`dt${k}`}>
-                <line x1={mL} y1={yDiv(v)} x2={W - mR} y2={yDiv(v)} stroke={v === 0 ? "#e2e8f0" : "#f1f5f9"} strokeWidth={1} />
-                <text x={mL - 6} y={yDiv(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{v.toFixed(0)}</text>
+                <line x1={mL} y1={yDiv(v)} x2={W - mR} y2={yDiv(v)} stroke={v === 0 ? CHART.axis : CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yDiv(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{v.toFixed(0)}</text>
               </g>
             ))}
             {growthView.map((g) => {
@@ -318,7 +319,7 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
         {xTicks.map((tk) => {
           const x = xAtMs(tk.ms);
           if (x < mL - 1 || x > W - mR + 1) return null;
-          return <text key={`x${tk.ms}`} x={x} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">{tk.label}</text>;
+          return <text key={`x${tk.ms}`} x={x} y={xLabelY} textAnchor="middle" fontSize={9} fill={CHART.label} fontFamily="monospace">{tk.label}</text>;
         })}
 
         {/* vertical crosshair + readout */}
@@ -333,10 +334,10 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
           if (g) parts.push(`${t(locale, "mdQoQ")} ${fmtPct(g.mQoQ)} vs ${fmtPct(g.vQoQ)} → ${fmtPp(g.div)}pp`);
           return (
             <g>
-              <line x1={hx} y1={hasVn ? vnTop : top} x2={hx} y2={hasDiv ? divTop + divH : top + h} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+              <line x1={hx} y1={hasVn ? vnTop : top} x2={hx} y2={hasDiv ? divTop + divH : top + h} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
               {hv.margin !== null && <circle cx={hx} cy={yAt(hv.margin)} r={3.5} fill={MD} />}
               {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
-              <text x={tx} y={10} textAnchor={anchor} fontSize={10} fill="#0f172a" fontFamily="monospace">{parts.join(" · ")}</text>
+              <text x={tx} y={10} textAnchor={anchor} fontSize={10} fill={CHART.text} fontFamily="monospace">{parts.join(" · ")}</text>
             </g>
           );
         })()}
@@ -351,9 +352,9 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
           if (label === null) return null;
           return (
             <g>
-              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
-              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
-              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill={CHART.text} />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill={CHART.panel} fontFamily="monospace">{label}</text>
             </g>
           );
         })()}

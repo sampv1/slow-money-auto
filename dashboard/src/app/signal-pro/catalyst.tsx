@@ -52,34 +52,34 @@ function fmt(n: number | null | undefined, digits = 2): string {
 // scoring math so "how it was scored" is transparent.
 export function CatalystDetail({ rows, locale }: { rows: CatalystRow[]; locale: Locale }) {
   if (rows.length === 0) {
-    return <p className="text-sm text-gray-500">{t(locale, "catNone")}</p>;
+    return <p className="text-body-lg text-fg-muted">{t(locale, "catNone")}</p>;
   }
   return (
     <div className="space-y-3">
       {rows.map((r, i) => {
         const upcoming = r.status === "upcoming";
         return (
-          <div key={i} className="rounded-lg border border-gray-200 p-3">
+          <div key={i} className="rounded-lg border border-line p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                  <span className="text-data font-medium px-1.5 py-0.5 rounded bg-accent-soft text-accent">
                     {catalystCategoryLabel(r.category, locale)}
                   </span>
                   <span
-                    className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                      upcoming ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
+                    className={`text-data font-medium px-1.5 py-0.5 rounded ${
+                      upcoming ? "bg-emerald-50 text-emerald-700" : "bg-panel-2 text-fg-muted"
                     }`}
                   >
                     {STATUS_LABEL[locale][r.status] ?? r.status}
                   </span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-data text-fg-label">
                     {t(locale, "catMateriality")}: {r.raw_points}
                   </span>
                 </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
+                <div className="mt-1 text-body-lg font-medium text-fg">
                   {r.source_url ? (
-                    <a href={r.source_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                    <a href={r.source_url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
                       {r.headline}
                     </a>
                   ) : (
@@ -87,28 +87,28 @@ export function CatalystDetail({ rows, locale }: { rows: CatalystRow[]; locale: 
                   )}
                 </div>
                 {r.reasoning && (
-                  <div className="mt-1 text-xs text-gray-500">
+                  <div className="mt-1 text-data text-fg-muted">
                     <span className="font-medium">{t(locale, "catWhy")}:</span> {r.reasoning}
                   </div>
                 )}
               </div>
               <div className="text-right shrink-0">
-                <div className="text-lg font-semibold font-mono text-gray-900">{fmt(r.effective, 2)}</div>
-                <div className="text-[10px] text-gray-400">{t(locale, "catEffective")}</div>
+                <div className="text-title font-semibold font-mono text-fg">{fmt(r.effective, 2)}</div>
+                <div className="text-[10px] text-fg-label">{t(locale, "catEffective")}</div>
               </div>
             </div>
             {/* Scoring math — raw × time-decay × (1 − priced-in) × status */}
-            <div className="mt-2 pt-2 border-t border-gray-100 text-[11px] text-gray-500 font-mono flex flex-wrap gap-x-3 gap-y-0.5">
+            <div className="mt-2 pt-2 border-t border-line-faint text-[11px] text-fg-muted font-mono flex flex-wrap gap-x-3 gap-y-0.5">
               <span>{t(locale, "catScoring")}:</span>
               <span>raw {r.raw_points}</span>
               <span>× decay {fmt(r.decay_factor, 3)}</span>
               <span>× (1−pricedIn {fmt(r.priced_in, 3)})</span>
               <span>× status {upcoming ? "1.0" : "0.3"}</span>
-              <span className="text-gray-700">= {fmt(r.effective, 2)}</span>
+              <span className="text-fg">= {fmt(r.effective, 2)}</span>
               {r.price_move_pct !== null && (
-                <span className="text-gray-400">· move {fmt(r.price_move_pct, 1)}%</span>
+                <span className="text-fg-label">· move {fmt(r.price_move_pct, 1)}%</span>
               )}
-              <span className="text-gray-400">
+              <span className="text-fg-label">
                 · {t(locale, "catPublished")} {r.published_date ?? r.first_seen}
               </span>
             </div>

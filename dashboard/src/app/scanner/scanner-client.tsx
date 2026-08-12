@@ -395,16 +395,16 @@ export function ScannerClient({
     <div>
       <div className="flex items-baseline justify-between mb-4">
         <div>
-          <h1 className="text-xl font-semibold">{t(locale, "taScanner")}</h1>
-          <p className="text-sm text-gray-500">{t(locale, "taScannerSubtitle")}</p>
+          <h1 className="text-display font-semibold">{t(locale, "taScanner")}</h1>
+          <p className="text-body-lg text-fg-muted">{t(locale, "taScannerSubtitle")}</p>
         </div>
-        <label className="text-sm text-gray-500 flex items-center gap-2">
+        <label className="text-body-lg text-fg-muted flex items-center gap-2">
           <span>{t(locale, "taDataDate")}</span>
           <select
             value={activeDate}
             disabled={dateLoading}
             onChange={(e) => onDateChange(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 font-mono text-gray-700 disabled:opacity-60"
+            className="border border-line rounded px-2 py-1 font-mono text-fg disabled:opacity-60"
           >
             {dates.map((d) => (
               <option key={d} value={d}>
@@ -412,13 +412,13 @@ export function ScannerClient({
               </option>
             ))}
           </select>
-          {dateLoading && <span className="text-xs text-gray-400">{t(locale, "loading")}</span>}
-          {dateError && <span className="text-xs text-red-600">{t(locale, "taDateLoadError")}</span>}
+          {dateLoading && <span className="text-data text-fg-label">{t(locale, "loading")}</span>}
+          {dateError && <span className="text-data text-down">{t(locale, "taDateLoadError")}</span>}
         </label>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
-        <label htmlFor="min-avg-vol" className="text-sm text-gray-700">
+      <div className="bg-panel rounded-lg border border-line px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
+        <label htmlFor="min-avg-vol" className="text-body-lg text-fg">
           {t(locale, "taMinAvgVolume")}
         </label>
         <input
@@ -431,22 +431,22 @@ export function ScannerClient({
             const n = Number(e.target.value);
             setMinAvgVolume(Number.isFinite(n) && n >= 0 ? n : 0);
           }}
-          className="w-32 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+          className="w-32 rounded border border-line px-2 py-1 text-body-lg font-mono"
         />
-        <span className="text-xs text-gray-500">{t(locale, "taMinAvgVolumeHint")}</span>
+        <span className="text-data text-fg-muted">{t(locale, "taMinAvgVolumeHint")}</span>
         {minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D && (
           <button
             type="button"
             onClick={() => setMinAvgVolume(DEFAULT_MIN_AVG_VOLUME_20D)}
-            className="text-xs text-gray-500 hover:text-gray-900"
+            className="text-data text-fg-muted hover:text-fg"
           >
             {t(locale, "reset")}
           </button>
         )}
 
-        <span className="h-5 w-px bg-gray-200 mx-1" aria-hidden />
+        <span className="h-5 w-px bg-line mx-1" aria-hidden />
 
-        <label htmlFor="min-composite-rs" className="text-sm text-gray-700">
+        <label htmlFor="min-composite-rs" className="text-body-lg text-fg">
           {t(locale, "taMinCompositeRs")}
         </label>
         <input
@@ -460,14 +460,14 @@ export function ScannerClient({
             const n = Number(e.target.value);
             setMinCompositeRs(Number.isFinite(n) && n >= 0 ? Math.min(n, 99) : 0);
           }}
-          className="w-20 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+          className="w-20 rounded border border-line px-2 py-1 text-body-lg font-mono"
         />
-        <span className="text-xs text-gray-500">{t(locale, "taMinCompositeRsHint")}</span>
+        <span className="text-data text-fg-muted">{t(locale, "taMinCompositeRsHint")}</span>
         {minCompositeRs !== DEFAULT_MIN_COMPOSITE_RS && (
           <button
             type="button"
             onClick={() => setMinCompositeRs(DEFAULT_MIN_COMPOSITE_RS)}
-            className="text-xs text-gray-500 hover:text-gray-900"
+            className="text-data text-fg-muted hover:text-fg"
           >
             {t(locale, "reset")}
           </button>
@@ -476,14 +476,14 @@ export function ScannerClient({
 
       <div className="grid grid-cols-1 md:grid-cols-[380px_1fr] gap-4">
         {/* Indicator multi-select panel */}
-        <aside className="bg-white rounded-lg border border-gray-200 p-4 self-start">
+        <aside className="bg-panel rounded-lg border border-line p-4 self-start">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-medium">{t(locale, "taIndicators")}</h2>
             {selected.size > 0 && (
               <button
                 type="button"
                 onClick={clearAll}
-                className="text-xs text-gray-500 hover:text-gray-900"
+                className="text-data text-fg-muted hover:text-fg"
               >
                 {t(locale, "taClearAll")} ({selected.size})
               </button>
@@ -492,9 +492,9 @@ export function ScannerClient({
 
           {/* Combos — fixed style presets + user's localStorage combos.
               Each row is one line; description shows on hover. */}
-          <div className="mb-4 pb-4 border-b border-gray-100">
+          <div className="mb-4 pb-4 border-b border-line-faint">
             <div className="mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <span className="text-data font-semibold uppercase tracking-wide text-fg-muted">
                 {t(locale, "taCombos")}
               </span>
             </div>
@@ -505,7 +505,7 @@ export function ScannerClient({
                 type="button"
                 onClick={() => setStylePresetsExpanded((v) => !v)}
                 aria-expanded={stylePresetsExpanded}
-                className="w-full flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400 mb-1 cursor-pointer"
+                className="w-full flex items-center gap-1 text-[10px] uppercase tracking-wide text-fg-label mb-1 cursor-pointer"
               >
                 <span className="flex-shrink-0 font-mono w-3 text-center">{stylePresetsExpanded ? "−" : "+"}</span>
                 <span>{t(locale, "taStylePresets")}</span>
@@ -520,16 +520,16 @@ export function ScannerClient({
                         type="button"
                         onClick={() => applyPreset(preset)}
                         aria-pressed={active}
-                        className={`group w-full flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50 cursor-pointer ${active ? "bg-blue-50" : ""}`}
+                        className={`group w-full flex items-center gap-2 text-body-lg rounded px-1 py-0.5 hover:bg-canvas cursor-pointer ${active ? "bg-accent-soft" : ""}`}
                         title={presetDescription(preset, locale)}
                       >
                         <span className={directionColor(preset.direction)}>
                           {preset.direction === "bullish" ? "▲" : "▼"}
                         </span>
-                        <span className={`text-blue-600 truncate flex-1 text-left group-hover:underline ${active ? "font-bold" : ""}`}>
+                        <span className={`text-accent truncate flex-1 text-left group-hover:underline ${active ? "font-bold" : ""}`}>
                           {presetName(preset, locale)}
                         </span>
-                        <span className="text-xs text-gray-500 flex-shrink-0">
+                        <span className="text-data text-fg-muted flex-shrink-0">
                           ({preset.indicators.length})
                         </span>
                       </button>
@@ -546,7 +546,7 @@ export function ScannerClient({
                 type="button"
                 onClick={() => setMyCombosExpanded((v) => !v)}
                 aria-expanded={myCombosExpanded}
-                className="w-full flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400 mb-1 cursor-pointer"
+                className="w-full flex items-center gap-1 text-[10px] uppercase tracking-wide text-fg-label mb-1 cursor-pointer"
               >
                 <span className="flex-shrink-0 font-mono w-3 text-center">{myCombosExpanded ? "−" : "+"}</span>
                 <span>{t(locale, "taMyCombos")}</span>
@@ -554,7 +554,7 @@ export function ScannerClient({
               {myCombosExpanded && (
               <>
               {savedCombos.length === 0 ? (
-                <p className="text-xs text-gray-400 italic mb-2">{t(locale, "taNoSavedCombos")}</p>
+                <p className="text-data text-fg-label italic mb-2">{t(locale, "taNoSavedCombos")}</p>
               ) : (
                 <ul className="space-y-0.5 mb-2">
                   {savedCombos.map((combo) => {
@@ -562,7 +562,7 @@ export function ScannerClient({
                     return (
                     <li
                       key={combo.id}
-                      className={`flex items-center justify-between gap-2 text-sm rounded px-1 py-0.5 hover:bg-gray-50 ${active ? "bg-blue-50" : ""}`}
+                      className={`flex items-center justify-between gap-2 text-body-lg rounded px-1 py-0.5 hover:bg-canvas ${active ? "bg-accent-soft" : ""}`}
                     >
                       <button
                         type="button"
@@ -571,15 +571,15 @@ export function ScannerClient({
                         className="group flex items-center gap-2 text-left flex-1 min-w-0 cursor-pointer"
                         title={`${combo.indicators.length} ${t(locale, "taIndicatorsLower")} • min vol ${combo.minAvgVolume.toLocaleString()}`}
                       >
-                        <span className={`text-blue-600 truncate group-hover:underline ${active ? "font-bold" : ""}`}>{combo.name}</span>
-                        <span className="text-xs text-gray-500 flex-shrink-0">
+                        <span className={`text-accent truncate group-hover:underline ${active ? "font-bold" : ""}`}>{combo.name}</span>
+                        <span className="text-data text-fg-muted flex-shrink-0">
                           ({combo.indicators.length})
                         </span>
                       </button>
                       <button
                         type="button"
                         onClick={() => deleteCombo(combo.id)}
-                        className="text-xs text-gray-400 hover:text-red-600 flex-shrink-0"
+                        className="text-data text-fg-label hover:text-down flex-shrink-0"
                         aria-label={t(locale, "taDeleteCombo")}
                         title={t(locale, "taDeleteCombo")}
                       >
@@ -606,13 +606,13 @@ export function ScannerClient({
                   }}
                   placeholder={t(locale, "taComboNamePlaceholder")}
                   autoFocus
-                  className="flex-1 min-w-0 rounded border border-gray-300 px-2 py-1 text-xs"
+                  className="flex-1 min-w-0 rounded border border-line px-2 py-1 text-data"
                 />
                 <button
                   type="button"
                   onClick={commitSaveCombo}
                   disabled={!newComboName.trim() || selected.size === 0}
-                  className="text-xs px-2 py-1 rounded bg-blue-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  className="text-data px-2 py-1 rounded bg-accent text-white disabled:bg-line disabled:cursor-not-allowed"
                 >
                   {t(locale, "save")}
                 </button>
@@ -622,7 +622,7 @@ export function ScannerClient({
                     setShowSaveForm(false);
                     setNewComboName("");
                   }}
-                  className="text-xs px-2 py-1 text-gray-500 hover:text-gray-900"
+                  className="text-data px-2 py-1 text-fg-muted hover:text-fg"
                 >
                   {t(locale, "cancel")}
                 </button>
@@ -632,7 +632,7 @@ export function ScannerClient({
                 type="button"
                 onClick={() => setShowSaveForm(true)}
                 disabled={selected.size === 0}
-                className="text-xs text-blue-600 hover:underline disabled:text-gray-300 disabled:no-underline disabled:cursor-not-allowed"
+                className="text-data text-accent hover:underline disabled:text-fg-faint disabled:no-underline disabled:cursor-not-allowed"
                 title={selected.size === 0 ? t(locale, "taSaveComboHintEmpty") : undefined}
               >
                 + {t(locale, "taSaveCurrent")} ({selected.size})
@@ -668,17 +668,17 @@ export function ScannerClient({
 
               const renderItem = (spec: IndicatorSpec) => (
                 <li key={spec.key}>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
+                  <label className="flex items-center gap-2 text-body-lg cursor-pointer hover:bg-canvas rounded px-1 py-0.5">
                     <input
                       type="checkbox"
                       checked={selected.has(spec.key)}
                       onChange={() => toggle(spec.key)}
-                      className="rounded border-gray-300"
+                      className="rounded border-line"
                     />
                     <span className={directionColor(spec.direction)}>
                       {spec.direction === "bullish" ? "▲" : spec.direction === "bearish" ? "▼" : "●"}
                     </span>
-                    <span className="text-gray-700">{indicatorLabel(spec, locale)}</span>
+                    <span className="text-fg">{indicatorLabel(spec, locale)}</span>
                   </label>
                 </li>
               );
@@ -686,7 +686,7 @@ export function ScannerClient({
               return (
                 <div key={cat}>
                   <div className="mb-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <span className="text-data font-semibold uppercase tracking-wide text-fg-muted">
                       {t(locale, CATEGORY_LABEL_KEY[cat])}
                     </span>
                   </div>
@@ -706,44 +706,44 @@ export function ScannerClient({
           <div className="flex items-baseline justify-between mb-2">
             <h2 className="font-medium">{t(locale, "taResults")}</h2>
             {selected.size > 0 && (
-              <span className="text-sm text-gray-500">
+              <span className="text-body-lg text-fg-muted">
                 {results.length} {results.length === 1 ? t(locale, "taSymbolMatched") : t(locale, "taSymbolsMatched")}
               </span>
             )}
           </div>
 
           {selected.size === 0 ? (
-            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+            <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
               {t(locale, "taNoSelection")}
             </div>
           ) : results.length === 0 ? (
-            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+            <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
               {t(locale, "taNoMatches")}
             </div>
           ) : (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 text-left text-gray-500">
-                    <th className="px-4 py-3 font-medium">{t(locale, "symbol")}</th>
+            <div className="bg-panel rounded-lg border border-line overflow-x-auto">
+              <table className="w-full text-body-lg">
+                <thead className="bg-panel-2 border-y border-line-strong">
+                  <tr className="border-b border-line text-left text-fg-muted">
+                    <th className="px-4 py-3 label">{t(locale, "symbol")}</th>
                     <th
                       className="px-4 py-3 font-medium text-right"
                       title="TA Score = RS3M·20% + RS Composite·25% + RS Line·20% + BQS·35%"
                     >
                       {t(locale, "spTaScore")}
                     </th>
-                    <th className="px-4 py-3 font-medium text-right">{t(locale, "taCompositeRs")}</th>
-                    <th className="px-4 py-3 font-medium text-right">{t(locale, "taClose")}</th>
-                    <th className="px-4 py-3 font-medium">{t(locale, "taSignalsFired")}</th>
+                    <th className="px-4 py-3 label text-right">{t(locale, "taCompositeRs")}</th>
+                    <th className="px-4 py-3 label text-right">{t(locale, "taClose")}</th>
+                    <th className="px-4 py-3 label">{t(locale, "taSignalsFired")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {results.map((row) => (
-                    <tr key={row.symbol} className="border-b border-gray-100 hover:bg-gray-50">
+                    <tr key={row.symbol} className="border-b border-line-faint hover:bg-canvas">
                       <td className="px-4 py-3 font-medium">
                         <Link
                           href={`/analysis/${row.symbol}?ind=${encodeURIComponent([...selected].join(","))}`}
-                          className="text-blue-600 hover:underline"
+                          className="text-accent hover:underline"
                         >
                           {row.symbol}
                         </Link>
@@ -774,11 +774,11 @@ export function ScannerClient({
                                 <span
                                   key={isMcdx ? "mcdx_banker" : spec.key}
                                   title={label}
-                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded ${spec.direction === "bullish"
-                                      ? "bg-green-50 text-green-700"
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-data rounded ${spec.direction === "bullish"
+                                      ? "bg-green-50 text-up"
                                       : spec.direction === "bearish"
-                                        ? "bg-red-50 text-red-700"
-                                        : "bg-gray-100 text-gray-600"
+                                        ? "bg-red-50 text-down"
+                                        : "bg-panel-2 text-fg-muted"
                                     }`}
                                 >
                                   {label}

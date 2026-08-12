@@ -15,9 +15,9 @@ import { pnlColor } from "@/lib/format";
  * -0.036 reads "Neutral" rather than flipping to "Easing" on noise.
  */
 function fciRegime(v: number): { key: "homeFciEasing" | "homeFciNeutral" | "homeFciTight"; cls: string } {
-  if (v <= -0.5) return { key: "homeFciEasing", cls: "text-green-600" };
-  if (v >= 0.5) return { key: "homeFciTight", cls: "text-red-600" };
-  return { key: "homeFciNeutral", cls: "text-gray-600" };
+  if (v <= -0.5) return { key: "homeFciEasing", cls: "text-up" };
+  if (v >= 0.5) return { key: "homeFciTight", cls: "text-down" };
+  return { key: "homeFciNeutral", cls: "text-fg-muted" };
 }
 
 function Cell({
@@ -33,10 +33,10 @@ function Cell({
 }) {
   return (
     <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-[11px] uppercase tracking-wide text-gray-500 truncate">{label}</span>
+      <span className="label truncate">{label}</span>
       <span className="flex items-baseline gap-1.5 min-w-0">
-        <span className="text-base font-semibold tabular-nums text-gray-900">{value}</span>
-        {sub && <span className={`text-xs tabular-nums ${subClass ?? "text-gray-500"}`}>{sub}</span>}
+        <span className="text-title font-semibold tnum text-fg">{value}</span>
+        {sub && <span className={`text-data font-mono tnum ${subClass ?? "text-fg-muted"}`}>{sub}</span>}
       </span>
     </div>
   );
@@ -55,10 +55,10 @@ export function MarketStrip({ data, locale }: { data: MacroHeadline; locale: Loc
     .pop();
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white px-4 py-3 sm:px-5">
+    <section className="rounded-lg border border-line bg-panel px-4 py-3 sm:px-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-3">
-        <h2 className="text-sm font-semibold text-gray-700">{t(locale, "homeMarketToday")}</h2>
-        {asOf && <span className="text-xs tabular-nums text-gray-400">{asOf}</span>}
+        <h2 className="text-body font-semibold text-fg">{t(locale, "homeMarketToday")}</h2>
+        {asOf && <span className="label tnum">{asOf}</span>}
       </div>
       {/* 2-up on phones, 4-up from sm. Long Vietnamese labels truncate rather
           than wrapping the row into uneven heights. */}

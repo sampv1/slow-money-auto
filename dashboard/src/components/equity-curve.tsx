@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import type { Locale } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import { CHART_LITERAL, VN_INDEX } from "@/lib/chart-theme";
 
 export interface EquityPoint {
   date: string;
@@ -23,7 +24,7 @@ export interface EquityPoint {
 export function EquityCurve({ data, locale = "en" }: { data: EquityPoint[]; locale?: Locale }) {
   if (data.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500 text-sm">
+      <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted text-body-lg">
         {t(locale, "noEquityData")}
       </div>
     );
@@ -34,30 +35,30 @@ export function EquityCurve({ data, locale = "en" }: { data: EquityPoint[]; loca
   const padding = Math.max(Math.abs(maxPnl - minPnl) * 0.1, 1);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
-      <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "equityCurve")}</h2>
+    <div className="bg-panel rounded-lg border border-line p-4">
+      <h2 className="text-body-lg font-semibold text-fg mb-3">{t(locale, "equityCurve")}</h2>
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_LITERAL.grid} />
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 11, fill: "#6b7280" }}
+              tick={{ fontSize: 11, fill: CHART_LITERAL.label }}
               tickFormatter={(v: string) => v.slice(5)}
             />
             <YAxis
-              tick={{ fontSize: 11, fill: "#6b7280" }}
+              tick={{ fontSize: 11, fill: CHART_LITERAL.label }}
               tickFormatter={(v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`}
               domain={[minPnl - padding, maxPnl + padding]}
             />
             <Tooltip content={<CustomTooltip locale={locale} />} />
-            <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
+            <ReferenceLine y={0} stroke={CHART_LITERAL.axis} strokeDasharray="3 3" />
             <Line
               type="monotone"
               dataKey="cumPnl"
-              stroke="#2563eb"
+              stroke={VN_INDEX}
               strokeWidth={2}
-              dot={{ r: 3, fill: "#2563eb" }}
+              dot={{ r: 3, fill: VN_INDEX }}
               activeDot={{ r: 5 }}
             />
           </LineChart>
@@ -71,10 +72,10 @@ function CustomTooltip({ active, payload, locale = "en" }: { active?: boolean; p
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-2 text-xs">
-      <div className="font-medium text-gray-700">{d.date}</div>
-      <div className="text-gray-500">{d.symbol}: {d.pnl >= 0 ? "+" : ""}{d.pnl.toFixed(1)}%</div>
-      <div className={`font-semibold ${d.cumPnl >= 0 ? "text-green-600" : "text-red-600"}`}>
+    <div className="bg-panel border border-line rounded-lg shadow-sm p-2 text-data">
+      <div className="font-medium text-fg">{d.date}</div>
+      <div className="text-fg-muted">{d.symbol}: {d.pnl >= 0 ? "+" : ""}{d.pnl.toFixed(1)}%</div>
+      <div className={`font-semibold ${d.cumPnl >= 0 ? "text-up" : "text-down"}`}>
         {t(locale, "cumulative")}: {d.cumPnl >= 0 ? "+" : ""}{d.cumPnl.toFixed(1)}%
       </div>
     </div>

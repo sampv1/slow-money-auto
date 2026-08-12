@@ -20,18 +20,18 @@ const TOOLS: { href: string; title: TranslationKey; body: TranslationKey }[] = [
 export function ToolCards({ locale }: { locale: Locale }) {
   return (
     <section>
-      <h2 className="text-lg font-semibold text-gray-900 mb-3">{t(locale, "homeToolsTitle")}</h2>
+      <h2 className="text-title font-semibold text-fg tracking-tight mb-3">{t(locale, "homeToolsTitle")}</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {TOOLS.map((tool) => (
           <Link
             key={tool.href}
             href={tool.href}
-            className="group rounded-lg border border-gray-200 bg-white p-4 hover:border-indigo-300 hover:shadow-sm transition-colors"
+            className="group rounded-lg border border-line bg-panel p-4 hover:border-accent hover:bg-accent-soft transition-colors"
           >
-            <h3 className="text-sm font-semibold text-gray-900 group-hover:text-indigo-700">
+            <h3 className="text-body font-semibold text-fg group-hover:text-accent">
               {t(locale, tool.title)}
             </h3>
-            <p className="mt-1 text-sm text-gray-600">{t(locale, tool.body)}</p>
+            <p className="mt-1 text-body text-fg-muted">{t(locale, tool.body)}</p>
           </Link>
         ))}
       </div>

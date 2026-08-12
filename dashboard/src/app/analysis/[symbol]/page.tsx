@@ -199,9 +199,9 @@ export default async function SymbolDrillDown({
       <div>
         <div className="flex items-center gap-3 sm:gap-4 mb-4">
           <TaSearch symbols={universe} locale={locale} compact />
-          <h1 className="text-xl font-semibold">{symbol}</h1>
+          <h1 className="text-display font-semibold">{symbol}</h1>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+        <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
           {t(locale, "taSymbolNotFound")}
         </div>
       </div>
@@ -243,7 +243,7 @@ export default async function SymbolDrillDown({
   const latest = candles[candles.length - 1];
   const prev = candles.length > 1 ? candles[candles.length - 2] : null;
   const dayChangePct = prev && prev.close ? ((latest.close - prev.close) / prev.close) * 100 : null;
-  const dayChangeColor = dayChangePct === null ? "text-gray-500" : dayChangePct >= 0 ? "text-green-600" : "text-red-600";
+  const dayChangeColor = dayChangePct === null ? "text-fg-muted" : dayChangePct >= 0 ? "text-up" : "text-down";
 
   return (
     <div>
@@ -251,12 +251,12 @@ export default async function SymbolDrillDown({
           landing page so it doesn't jump when you navigate here), the symbol
           title, and the latest price. Sticks to the top so the box stays put
           as the (long) analysis page scrolls. */}
-      <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2 bg-gray-50/95 backdrop-blur border-b border-gray-200 flex items-baseline justify-between gap-4 mb-4">
+      <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2 bg-canvas/95 backdrop-blur border-b border-line flex items-baseline justify-between gap-4 mb-4">
         <div className="flex items-baseline gap-3 sm:gap-4 min-w-0">
           <div className="self-center">
             <TaSearch symbols={universe} locale={locale} compact />
           </div>
-          <h1 className="text-2xl font-semibold shrink-0">{symbol}</h1>
+          <h1 className="text-display font-semibold shrink-0">{symbol}</h1>
         </div>
         <div className="shrink-0 flex items-center gap-3 sm:gap-4">
           {/* Admin-only paper-trade controls — identical behaviour to the
@@ -264,36 +264,36 @@ export default async function SymbolDrillDown({
               open; both open the same confirmation popup). */}
           {isAdmin && <TradeActions symbol={symbol} isActive={hasOpenPosition} locale={locale} />}
           <div className="text-right">
-            <div className="text-xl font-mono">{formatPrice(latest.close)}</div>
+            <div className="text-display font-mono">{formatPrice(latest.close)}</div>
             {dayChangePct !== null && (
-              <div className={`text-sm font-mono ${dayChangeColor}`}>
+              <div className={`text-body-lg font-mono ${dayChangeColor}`}>
                 {dayChangePct >= 0 ? "+" : ""}{dayChangePct.toFixed(2)}%
               </div>
             )}
-            <div className="text-xs text-gray-500 font-mono">{latest.date}</div>
+            <div className="text-data text-fg-muted font-mono">{latest.date}</div>
           </div>
         </div>
       </div>
 
-      <h2 className="text-lg font-semibold border-b border-gray-200 pb-1 mb-3">
+      <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
         {t(locale, "taSection")}
       </h2>
 
-      <div className="bg-white rounded-lg border border-gray-200 p-2">
+      <div className="bg-panel rounded-lg border border-line p-2">
         <ChartClient symbol={symbol} candles={candles} selected={selected} chartSignals={chartSignals} srLevels={srLevels} trendlines={trendlines} rsHist={rsHist} locale={locale} />
       </div>
 
       <section className="mt-6">
         <h3 className="font-medium mb-2">{t(locale, "taRecentSignals")}</h3>
         {signals.length === 0 ? (
-          <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
+          <div className="bg-panel rounded-lg border border-line p-6 text-center text-fg-muted">
             {t(locale, "taNoRecentSignals")}
           </div>
         ) : (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="bg-panel rounded-lg border border-line overflow-x-auto">
+            <table className="w-full text-body-lg">
               <thead>
-                <tr className="border-b border-gray-200 text-left text-gray-500">
+                <tr className="border-b border-line text-left text-fg-muted">
                   <th className="px-4 py-2 font-medium">{t(locale, "date")}</th>
                   <th className="px-4 py-2 font-medium">{t(locale, "taSignalsFired")}</th>
                 </tr>
@@ -305,7 +305,7 @@ export default async function SymbolDrillDown({
                     return acc;
                   }, {})
                 ).map(([date, rows]) => (
-                  <tr key={date} className="border-b border-gray-100">
+                  <tr key={date} className="border-b border-line-faint">
                     <td className="px-4 py-2 font-mono whitespace-nowrap">{date}</td>
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap gap-1">
@@ -315,11 +315,11 @@ export default async function SymbolDrillDown({
                           return (
                             <span
                               key={s.indicator}
-                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded ${spec.direction === "bullish"
-                                  ? "bg-green-50 text-green-700"
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-data rounded ${spec.direction === "bullish"
+                                  ? "bg-green-50 text-up"
                                   : spec.direction === "bearish"
-                                    ? "bg-red-50 text-red-700"
-                                    : "bg-gray-100 text-gray-600"
+                                    ? "bg-red-50 text-down"
+                                    : "bg-panel-2 text-fg-muted"
                                 }`}
                             >
                               <span className={directionColor(spec.direction)}>

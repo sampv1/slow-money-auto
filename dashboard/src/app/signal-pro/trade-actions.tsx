@@ -172,7 +172,7 @@ export function TradeActions({
           <button
             type="button"
             onClick={openBuy}
-            className="px-2 py-0.5 text-xs rounded bg-green-600 text-white hover:bg-green-700"
+            className="px-2 py-0.5 text-data rounded bg-green-600 text-white hover:bg-green-700"
           >
             {t(locale, "spBuy")}
           </button>
@@ -182,7 +182,7 @@ export function TradeActions({
           onClick={openSell}
           disabled={!isActive}
           title={!isActive ? t(locale, "spSellDisabled") : undefined}
-          className="px-2 py-0.5 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-red-600"
+          className="px-2 py-0.5 text-data rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-red-600"
         >
           {t(locale, "spSell")}
         </button>
@@ -199,34 +199,34 @@ export function TradeActions({
       {mode && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={cancel}>
           <div
-            className="bg-white rounded-lg shadow-xl border border-gray-200 p-5 w-full max-w-md max-h-[90vh] overflow-y-auto"
+            className="bg-panel rounded-lg shadow-xl border border-line p-5 w-full max-w-md max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-3">
-              <h3 className="text-lg font-semibold">
-                <span className={mode === "BUY" ? "text-green-700" : "text-red-700"}>
+              <h3 className="text-title font-semibold">
+                <span className={mode === "BUY" ? "text-up" : "text-down"}>
                   {mode === "BUY" ? t(locale, "spBuy") : t(locale, "spSell")}
                 </span>{" "}
                 {symbol}
               </h3>
-              <button type="button" onClick={cancel} className="text-gray-400 hover:text-gray-700 text-2xl leading-none" aria-label="Close">×</button>
+              <button type="button" onClick={cancel} className="text-fg-label hover:text-fg text-display leading-none" aria-label="Close">×</button>
             </div>
 
             {/* Entry (BUY) / Exit (SELL) — editable, prefilled with latest close. */}
-            <div className="bg-gray-50 rounded border border-gray-200 px-3 py-2 mb-4">
+            <div className="bg-canvas rounded border border-line px-3 py-2 mb-4">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-gray-500">{mode === "BUY" ? t(locale, "entry") : t(locale, "spExit")}</span>
+                <span className="text-body-lg text-fg-muted">{mode === "BUY" ? t(locale, "entry") : t(locale, "spExit")}</span>
                 {loading ? (
-                  <span className="text-sm text-gray-400">{t(locale, "loading")}…</span>
+                  <span className="text-body-lg text-fg-label">{t(locale, "loading")}…</span>
                 ) : (
                   <span className="flex items-center gap-2">
                     <input
                       type="number"
                       value={price}
                       onChange={(e) => setPrice(e.target.value)}
-                      className="w-28 border border-gray-300 rounded px-2 py-1 text-sm font-mono text-right"
+                      className="w-28 border border-line rounded px-2 py-1 text-body-lg font-mono text-right"
                     />
-                    {close && <span className="text-xs text-gray-400 font-mono whitespace-nowrap">{close.date}</span>}
+                    {close && <span className="text-data text-fg-label font-mono whitespace-nowrap">{close.date}</span>}
                   </span>
                 )}
               </div>
@@ -234,25 +234,25 @@ export function TradeActions({
                   the trade itself happens TODAY (VN). Showing both stops the
                   two being read as one. Same value the server stores — computed
                   from the same formula, just off the browser clock. */}
-              <div className="mt-1 flex items-center justify-between text-sm">
-                <span className="text-gray-500">
+              <div className="mt-1 flex items-center justify-between text-body-lg">
+                <span className="text-fg-muted">
                   {t(locale, mode === "BUY" ? "spEntryDate" : "spExitDate")}
                 </span>
-                <span className="font-mono text-gray-600">{todayVn()}</span>
+                <span className="font-mono text-fg-muted">{todayVn()}</span>
               </div>
               {mode === "SELL" && entry !== null && (
-                <div className="mt-1 flex items-center justify-between text-sm">
-                  <span className="text-gray-500">
+                <div className="mt-1 flex items-center justify-between text-body-lg">
+                  <span className="text-fg-muted">
                     {posCount > 1
                       ? `${t(locale, "spAvgEntry")} (${posCount} ${t(locale, "positions")})`
                       : t(locale, "entry")}
                   </span>
-                  <span className="font-mono text-gray-600">{formatPrice(entry)}</span>
+                  <span className="font-mono text-fg-muted">{formatPrice(entry)}</span>
                 </div>
               )}
               {mode === "SELL" && pnl !== null && (
-                <div className="mt-1 flex items-center justify-between text-sm">
-                  <span className="text-gray-500">{t(locale, "pnl")}</span>
+                <div className="mt-1 flex items-center justify-between text-body-lg">
+                  <span className="text-fg-muted">{t(locale, "pnl")}</span>
                   <span className={`font-mono font-semibold ${pnlColor(pnl)}`}>{formatPnl(pnl)}</span>
                 </div>
               )}
@@ -270,25 +270,25 @@ export function TradeActions({
             )}
 
             {buyIssues.length > 0 && (
-              <ul className="mt-2 text-xs text-red-600 list-disc list-inside">
+              <ul className="mt-2 text-data text-down list-disc list-inside">
                 {[...new Set(buyIssues)].map((msg) => <li key={msg}>{msg}</li>)}
               </ul>
             )}
 
             <div className="mt-3">
-              <label className="block text-xs text-gray-500 mb-1">{t(locale, "spNote")}</label>
+              <label className="block text-data text-fg-muted mb-1">{t(locale, "spNote")}</label>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={2}
-                className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                className="w-full border border-line rounded px-2 py-1 text-body-lg"
                 placeholder={t(locale, "spNotePlaceholder")}
               />
             </div>
 
-            {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+            {error && <p className="mt-3 text-body-lg text-down">{error}</p>}
 
-            <p className="mt-4 text-sm text-gray-600">
+            <p className="mt-4 text-body-lg text-fg-muted">
               {mode === "BUY" ? t(locale, "spConfirmAdd") : t(locale, "spConfirmSell")}
             </p>
             <div className="mt-3 flex justify-end gap-2">
@@ -296,7 +296,7 @@ export function TradeActions({
                 type="button"
                 onClick={cancel}
                 disabled={submitting}
-                className="px-3 py-1.5 text-sm rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                className="px-3 py-1.5 text-body-lg rounded border border-line text-fg-muted hover:bg-canvas disabled:opacity-50"
               >
                 {t(locale, "no")}
               </button>
@@ -304,7 +304,7 @@ export function TradeActions({
                 type="button"
                 onClick={submit}
                 disabled={submitting || loading || !close || !priceValid || buyIssues.length > 0}
-                className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                className="px-3 py-1.5 text-body-lg rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
               >
                 {submitting ? `${t(locale, "loading")}…` : t(locale, "yes")}
               </button>
@@ -329,13 +329,13 @@ function Field({
   type: "number" | "text";
 }) {
   return (
-    <label className="block text-sm">
-      <span className="block text-xs text-gray-500 mb-1">{label}</span>
+    <label className="block text-body-lg">
+      <span className="block text-data text-fg-muted mb-1">{label}</span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full border border-gray-300 rounded px-2 py-1 text-sm font-mono"
+        className="w-full border border-line rounded px-2 py-1 text-body-lg font-mono"
       />
     </label>
   );

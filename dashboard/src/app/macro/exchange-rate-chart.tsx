@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
+import { CHART, VN_INDEX } from "@/lib/chart-theme";
 
 // 2×2 SBV regime: pressure (pct_to_ceiling) × policy velocity (central Δ5).
 export type Regime = "stable" | "leading" | "compressed" | "release";
@@ -25,18 +26,18 @@ export type FxRow = {
 type Range = "1m" | "6m" | "1y" | "3y" | "all";
 const RANGE_DAYS: Record<Range, number> = { "1m": 30, "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
 
-const VN_COLOR = "#2563eb"; // blue  — VN-Index (context)
-const CEILING_COLOR = "#ef4444"; // red    — SBV ceiling (the cap)
-const CENTRAL_COLOR = "#64748b"; // slate  — SBV central reference rate
+const VN_COLOR = VN_INDEX;
+const CEILING_COLOR = CHART.down; // red    — SBV ceiling (the cap)
+const CENTRAL_COLOR = CHART.labelStrong; // slate  — SBV central reference rate
 const VCB_COLOR = "#4f46e5"; // indigo — VCB sell (market rate)
 const PCT_COLOR = "#4f46e5"; // indigo — pct line
 const CHG_FAST = "#d97706"; // amber  — Δ5 bar above threshold
-const CHG_SLOW = "#cbd5e1"; // slate  — Δ5 bar normal
+const CHG_SLOW = CHART.neutral; // slate  — Δ5 bar normal
 const REGIME: Record<Regime, { color: string; label: TranslationKey }> = {
-  stable: { color: "#10b981", label: "macroRegimeStable" },
+  stable: { color: CHART.up, label: "macroRegimeStable" },
   leading: { color: "#eab308", label: "macroRegimeLeading" },
   compressed: { color: "#f97316", label: "macroRegimeCompressed" },
-  release: { color: "#ef4444", label: "macroRegimeRelease" },
+  release: { color: CHART.down, label: "macroRegimeRelease" },
 };
 
 function quantile(sorted: number[], q: number): number {
@@ -110,7 +111,7 @@ export function ExchangeRateChart({
   }, [view]);
 
   if (rows.length < 2) {
-    return <p className="text-sm text-gray-500">{t(locale, "macroNoData")}</p>;
+    return <p className="text-body-lg text-fg-muted">{t(locale, "macroNoData")}</p>;
   }
 
   // --- layout: VN-Index (optional) + FX rate + pct + Δ5 panels + regime ribbon, shared x ---
@@ -192,22 +193,22 @@ export function ExchangeRateChart({
   const chgThrY = yChg(Math.min(chg5dFast, chgDom.hi));
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-panel rounded-lg border border-line p-4">
       {/* header: latest reading + regime badge + range toggle */}
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         {latest && (
           <div>
-            <div className="text-xs text-gray-500">{t(locale, "macroFxLatest")} · {latest.date}</div>
+            <div className="text-data text-fg-muted">{t(locale, "macroFxLatest")} · {latest.date}</div>
             <div className="flex items-baseline gap-2">
-              <span className={`text-2xl font-semibold font-mono ${latest.pct < pctNearCeiling ? "text-red-600" : "text-emerald-600"}`}>
+              <span className={`text-display font-semibold font-mono ${latest.pct < pctNearCeiling ? "text-down" : "text-emerald-600"}`}>
                 {fmtPct(latest.pct)}
               </span>
-              <span className="text-xs text-gray-500">{t(locale, "macroFxHeadroom")}</span>
-              <span className="text-xs font-medium px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: REGIME[latest.regime].color }}>
+              <span className="text-data text-fg-muted">{t(locale, "macroFxHeadroom")}</span>
+              <span className="text-data font-medium px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: REGIME[latest.regime].color }}>
                 {t(locale, REGIME[latest.regime].label)}
               </span>
             </div>
-            <div className="text-xs text-gray-400 mt-0.5 font-mono">
+            <div className="text-data text-fg-label mt-0.5 font-mono">
               {t(locale, "macroCentral")} {fmtInt(latest.central)} · {t(locale, "macroCeiling")} {fmtInt(latest.ceiling)} ·{" "}
               {t(locale, "macroVcbSell")} {fmtInt(latest.vcbSell)} · {t(locale, "macroBand")} {(latest.band * 100).toFixed(1)}%
               {latest.chg5d !== null && <> · {t(locale, "macroChg5d")} {fmtSigned(latest.chg5d)} VND</>}
@@ -219,8 +220,8 @@ export function ExchangeRateChart({
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`text-xs px-2 py-1 rounded font-medium ${
-                range === r ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              className={`text-data px-2 py-1 rounded font-medium ${
+                range === r ? "bg-accent text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {t(locale, r === "1m" ? "irRange1m" : r === "6m" ? "irRange6m" : r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
@@ -243,11 +244,11 @@ export function ExchangeRateChart({
       />
 
       {/* FX-line + regime legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-data text-fg-muted">
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: CEILING_COLOR }} />{t(locale, "macroCeiling")}</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: VCB_COLOR }} />{t(locale, "macroVcbSell")}</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: CENTRAL_COLOR }} />{t(locale, "macroCentral")}</span>
-        <span className="text-gray-300">|</span>
+        <span className="text-fg-faint">|</span>
         {(Object.keys(REGIME) as Regime[]).map((r) => (
           <span key={r} className="flex items-center gap-1.5">
             <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: REGIME[r].color }} />
@@ -258,19 +259,19 @@ export function ExchangeRateChart({
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => { setHover(null); setHoverY(null); }} role="img">
         {/* ---- panel titles ---- */}
-        {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
-        <text x={mL} y={fxTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelFx")}</text>
-        <text x={mL} y={pctTop - 10} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelPct")}</text>
-        <text x={mL} y={chgTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelChg")}</text>
-        <text x={mL} y={ribTop - 6} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelRegime")}</text>
+        {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
+        <text x={mL} y={fxTop - 8} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelFx")}</text>
+        <text x={mL} y={pctTop - 10} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelPct")}</text>
+        <text x={mL} y={chgTop - 8} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelChg")}</text>
+        <text x={mL} y={ribTop - 6} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelRegime")}</text>
 
         {/* ---- panel: VN-Index (context) ---- */}
         {hasVn && (
           <g>
             {vnTicks.map((v, k) => (
               <g key={`vt${k}`}>
-                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtInt(v)}</text>
               </g>
             ))}
             {vnSegs.map((pts, k) => (
@@ -282,8 +283,8 @@ export function ExchangeRateChart({
         {/* ---- panel: original USD/VND rate (ceiling / VCB sell / central) ---- */}
         {fxTicks.map((v, k) => (
           <g key={`fxt${k}`}>
-            <line x1={mL} y1={yFx(v)} x2={W - mR} y2={yFx(v)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={mL - 6} y={yFx(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+            <line x1={mL} y1={yFx(v)} x2={W - mR} y2={yFx(v)} stroke={CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yFx(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtInt(v)}</text>
           </g>
         ))}
         <polyline points={centralPoints} fill="none" stroke={CENTRAL_COLOR} strokeWidth={1.25} strokeDasharray="4 3" strokeLinejoin="round" strokeLinecap="round" />
@@ -293,12 +294,12 @@ export function ExchangeRateChart({
         {/* ---- panel: pct_to_ceiling ---- */}
         {pctTicks.map((v, k) => (
           <g key={`pt${k}`}>
-            <line x1={mL} y1={yPct(v)} x2={W - mR} y2={yPct(v)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={mL - 6} y={yPct(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtPct(v)}</text>
+            <line x1={mL} y1={yPct(v)} x2={W - mR} y2={yPct(v)} stroke={CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yPct(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtPct(v)}</text>
           </g>
         ))}
-        <line x1={mL} y1={nearCeilY} x2={W - mR} y2={nearCeilY} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" />
-        <text x={W - mR} y={nearCeilY - 3} textAnchor="end" fontSize={9} fill="#ef4444" fontFamily="monospace">
+        <line x1={mL} y1={nearCeilY} x2={W - mR} y2={nearCeilY} stroke={CHART.down} strokeWidth={1} strokeDasharray="4 3" />
+        <text x={W - mR} y={nearCeilY - 3} textAnchor="end" fontSize={9} fill={CHART.down} fontFamily="monospace">
           {t(locale, "macroNearCeiling")} {pctNearCeiling}%
         </text>
         <polyline points={pctPoints} fill="none" stroke={PCT_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
@@ -306,8 +307,8 @@ export function ExchangeRateChart({
         {/* ---- panel: central Δ5 bars ---- */}
         {chgTicks.map((v, k) => (
           <g key={`ct${k}`}>
-            <line x1={mL} y1={yChg(v)} x2={W - mR} y2={yChg(v)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={mL - 6} y={yChg(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtSigned(v)}</text>
+            <line x1={mL} y1={yChg(v)} x2={W - mR} y2={yChg(v)} stroke={CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yChg(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtSigned(v)}</text>
           </g>
         ))}
         {view.map((r, i) =>
@@ -332,7 +333,7 @@ export function ExchangeRateChart({
 
         {/* ---- shared x-axis labels ---- */}
         {xTickIdx.map((i) => (
-          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">
+          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill={CHART.label} fontFamily="monospace">
             {fmtDay(view[i]?.date ?? "")}
           </text>
         ))}
@@ -340,14 +341,14 @@ export function ExchangeRateChart({
         {/* ---- hover crosshair spanning all panels + ribbon ---- */}
         {hover !== null && hv && (
           <g>
-            <line x1={hx} y1={hasVn ? vnTop : fxTop} x2={hx} y2={ribTop + ribH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <line x1={hx} y1={hasVn ? vnTop : fxTop} x2={hx} y2={ribTop + ribH} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
             {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
             <circle cx={hx} cy={yFx(hv.ceiling)} r={3} fill={CEILING_COLOR} />
             <circle cx={hx} cy={yFx(hv.vcbSell)} r={3} fill={VCB_COLOR} />
             <circle cx={hx} cy={yFx(hv.central)} r={3} fill={CENTRAL_COLOR} />
             <circle cx={hx} cy={yPct(hv.pct)} r={3} fill={PCT_COLOR} />
-            {hv.chg5d !== null && <circle cx={hx} cy={yChg(hv.chg5d)} r={3} fill={hv.chg5d > chg5dFast ? CHG_FAST : "#64748b"} />}
-            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill="#0f172a" fontFamily="monospace">
+            {hv.chg5d !== null && <circle cx={hx} cy={yChg(hv.chg5d)} r={3} fill={hv.chg5d > chg5dFast ? CHG_FAST : CHART.labelStrong} />}
+            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill={CHART.text} fontFamily="monospace">
               {hv.date}
               {hasVn && hv.vnindex !== null && ` · VNI ${fmtInt(hv.vnindex)}`}
               {" · VCB "}{fmtInt(hv.vcbSell)}{" / "}{fmtInt(hv.ceiling)}
@@ -374,9 +375,9 @@ export function ExchangeRateChart({
           if (label === null) return null;
           return (
             <g>
-              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
-              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
-              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill={CHART.text} />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill={CHART.panel} fontFamily="monospace">{label}</text>
             </g>
           );
         })()}

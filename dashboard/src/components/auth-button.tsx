@@ -25,7 +25,7 @@ export function AuthButton({
     return (
       <a
         href="/login"
-        className="px-3 py-1.5 text-sm rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+        className="px-3 py-1.5 text-body-lg rounded-md text-fg-muted hover:text-fg hover:bg-panel-2 transition-colors"
       >
         {t(locale, "login")}
       </a>
@@ -34,10 +34,10 @@ export function AuthButton({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-gray-400">{email}</span>
+      <span className="text-data text-fg-label">{email}</span>
       <button
         onClick={handleLogout}
-        className="px-3 py-1.5 text-sm rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+        className="px-3 py-1.5 text-body-lg rounded-md text-fg-muted hover:text-fg hover:bg-panel-2 transition-colors"
       >
         {t(locale, "logout")}
       </button>

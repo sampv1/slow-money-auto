@@ -43,11 +43,23 @@ export function formatPnl(pnl: number | null): string {
   return `${sign}${pnl.toFixed(1)}%`;
 }
 
+/**
+ * The board colour for a signed figure — the most-repeated styling decision in
+ * the app, so it has exactly one definition.
+ *
+ * Returns the `up`/`down` TOKENS rather than Tailwind's green-600/red-600. Those
+ * two scored 2.96:1 and 4.34:1 against the table-header ground, i.e. below WCAG
+ * AA for the 12px P&L figures they were colouring. The tokens are the same hues
+ * at AA-passing lightness (see the board semantics block in globals.css).
+ *
+ * Zero is deliberately NOT green: an unchanged price is `tham chiếu` on a
+ * Vietnamese board, so it takes the neutral, never the up colour.
+ */
 export function pnlColor(pnl: number | null): string {
-  if (pnl === null) return "text-gray-400";
-  if (pnl > 0) return "text-green-600";
-  if (pnl < 0) return "text-red-600";
-  return "text-gray-600";
+  if (pnl === null) return "text-fg-faint";
+  if (pnl > 0) return "text-up";
+  if (pnl < 0) return "text-down";
+  return "text-fg-muted";
 }
 
 export function statusBadge(status: string, locale: Locale = "en"): { label: string; className: string } {

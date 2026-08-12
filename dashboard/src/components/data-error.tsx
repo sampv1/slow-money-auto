@@ -22,18 +22,18 @@ export function DataError({
 
   if (compact) {
     return (
-      <p className="text-sm text-gray-500">
+      <p className="text-body-lg text-fg-muted">
         {t(locale, "dataUnavailable")}{" "}
-        <span className="text-xs text-gray-400 font-mono break-words">({detail})</span>
+        <span className="text-data text-fg-label font-mono break-words">({detail})</span>
       </p>
     );
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-      <p className="font-medium text-gray-700">{t(locale, "dataUnavailable")}</p>
-      <p className="mt-1 text-sm text-gray-500">{t(locale, "dataUnavailableHint")}</p>
-      <p className="mt-3 text-xs text-gray-400 font-mono break-words">{detail}</p>
+    <div className="bg-panel rounded-lg border border-line p-8 text-center">
+      <p className="font-medium text-fg">{t(locale, "dataUnavailable")}</p>
+      <p className="mt-1 text-body-lg text-fg-muted">{t(locale, "dataUnavailableHint")}</p>
+      <p className="mt-3 text-data text-fg-label font-mono break-words">{detail}</p>
     </div>
   );
 }

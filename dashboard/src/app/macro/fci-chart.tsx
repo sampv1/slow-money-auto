@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
+import { CHART, VN_INDEX } from "@/lib/chart-theme";
 
 // Financial Conditions Index — FCI (MACRO_COMPOSITE_DESIGN.md, frozen
 // W=504/DXY-level). Regime per the design's §6 state machine, computed
@@ -34,19 +35,19 @@ export type FciRow = {
 type Range = "1m" | "6m" | "1y" | "3y" | "all";
 const RANGE_DAYS: Record<Range, number> = { "1m": 30, "6m": 183, "1y": 365, "3y": 1095, all: Infinity };
 
-const VN_COLOR = "#2563eb"; // blue   — VN-Index (context)
+const VN_COLOR = VN_INDEX;
 // teal — VN-Index ex-VIC, same teal the Market P/E panel uses for this series so
 // it reads as the same line across the page. Validated against VN_COLOR:
 // deutan ΔE 20.7, normal-vision 22.6 (scripts/validate_palette.js).
 const VNEX_COLOR = "#0d9488";
 const FULL_COLOR = "#4f46e5"; // indigo — the FCI line
-const OFF_COLOR = "#ef4444"; // red    — risk-off zone / ribbon
-const ON_COLOR = "#10b981"; // green   — supportive zone / ribbon
-const NEUTRAL_COLOR = "#cbd5e1"; // light slate — neutral ribbon
+const OFF_COLOR = CHART.down; // red    — risk-off zone / ribbon
+const ON_COLOR = CHART.up; // green   — supportive zone / ribbon
+const NEUTRAL_COLOR = CHART.neutral; // light slate — neutral ribbon
 
 const REGIME: Record<FciRegime, { color: string; label: TranslationKey }> = {
   riskoff: { color: OFF_COLOR, label: "mcRegimeRiskoff" },
-  neutral: { color: "#64748b", label: "mcRegimeNeutral" },
+  neutral: { color: CHART.labelStrong, label: "mcRegimeNeutral" },
   supportive: { color: ON_COLOR, label: "mcRegimeSupportive" },
 };
 
@@ -138,7 +139,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
   }, [view]);
 
   if (rows.length < 2) {
-    return <p className="text-sm text-gray-500">{t(locale, "mcNoData")}</p>;
+    return <p className="text-body-lg text-fg-muted">{t(locale, "mcNoData")}</p>;
   }
 
   // --- layout: VN-Index + FCI + component bars + ribbon, shared x ---
@@ -219,20 +220,20 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
   const latestRegime = latest?.regime ?? "neutral";
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-panel rounded-lg border border-line p-4">
       {/* header: latest FCI + regime badge + range toggle */}
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         {latest && latest.full !== null && (
           <div>
-            <div className="text-xs text-gray-500">
+            <div className="text-data text-fg-muted">
               {t(locale, "mcLatestLabel")} · {t(locale, "macroFxLatest")} · {latest.date}
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-semibold font-mono" style={{ color: REGIME[latestRegime].color }}>
+              <span className="text-display font-semibold font-mono" style={{ color: REGIME[latestRegime].color }}>
                 {fmtS2(latest.full)}
               </span>
               <span
-                className="text-xs font-medium px-1.5 py-0.5 rounded text-white"
+                className="text-data font-medium px-1.5 py-0.5 rounded text-white"
                 style={{ backgroundColor: REGIME[latestRegime].color }}
               >
                 {t(locale, REGIME[latestRegime].label)}
@@ -245,8 +246,8 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`text-xs px-2 py-1 rounded font-medium ${
-                range === r ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              className={`text-data px-2 py-1 rounded font-medium ${
+                range === r ? "bg-accent text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {t(locale, r === "1m" ? "irRange1m" : r === "6m" ? "irRange6m" : r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}
@@ -256,8 +257,8 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
       </div>
 
       {/* how-to explainer — the user-facing methodology & usage notes */}
-      <details className="mb-2 text-xs text-gray-600">
-        <summary className="cursor-pointer select-none text-indigo-700 hover:text-indigo-900 font-medium">
+      <details className="mb-2 text-data text-fg-muted">
+        <summary className="cursor-pointer select-none text-accent hover:text-accent-hover font-medium">
           ⓘ {t(locale, "mcHowSummary")}
         </summary>
         <ul className="list-disc ml-5 mt-2 space-y-1.5">
@@ -278,7 +279,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
       </details>
 
       {/* legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-data text-fg-muted">
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-0.5" style={{ backgroundColor: FULL_COLOR }} />
           {t(locale, "mcFull")}
@@ -309,11 +310,11 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
           <g>
             {/* label at vnTop+30: this chart's tooltip has a second detail line
                 down to y=24, same clearance as the other macro charts. */}
-            <text x={mL + 4} y={vnTop + 30} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>
+            <text x={mL + 4} y={vnTop + 30} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>
             {vnTicks.map((v, k) => (
               <g key={`vt${k}`}>
-                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtInt(v)}</text>
               </g>
             ))}
             {vnSegs.map((pts, k) => (
@@ -326,13 +327,13 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
         )}
 
         {/* ---- FCI panel: regime zones + refs + core/full lines ---- */}
-        <text x={mL} y={zTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "mcPanelComposite")}</text>
+        <text x={mL} y={zTop - 8} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "mcPanelComposite")}</text>
         <rect x={mL} y={zTop} width={iw} height={Math.max(0, yZc(1) - zTop)} fill={OFF_COLOR} opacity={0.05} />
         <rect x={mL} y={yZc(-0.5)} width={iw} height={Math.max(0, zTop + zH - yZc(-0.5))} fill={ON_COLOR} opacity={0.05} />
         {zTicks.map((v, k) => (
           <g key={`zt${k}`}>
-            <line x1={mL} y1={yZ(v)} x2={W - mR} y2={yZ(v)} stroke={v === 0 ? "#cbd5e1" : "#f1f5f9"} strokeWidth={1} strokeDasharray={v === 0 ? "4 3" : undefined} />
-            <text x={mL - 6} y={yZ(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtS2(v)}</text>
+            <line x1={mL} y1={yZ(v)} x2={W - mR} y2={yZ(v)} stroke={v === 0 ? CHART.neutral : CHART.grid} strokeWidth={1} strokeDasharray={v === 0 ? "4 3" : undefined} />
+            <text x={mL - 6} y={yZ(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtS2(v)}</text>
           </g>
         ))}
         {1 >= zDom.lo && 1 <= zDom.hi && (
@@ -352,9 +353,9 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
         ))}
 
         {/* ---- component contribution bars ---- */}
-        <text x={mL} y={pTop - 8} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "mcPanelPillars")}</text>
-        <text x={W - mR} y={pTop - 8} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">⌕ {t(locale, "mcLensHint")}</text>
-        <line x1={mL} y1={y0p} x2={W - mR} y2={y0p} stroke="#cbd5e1" strokeWidth={1} />
+        <text x={mL} y={pTop - 8} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "mcPanelPillars")}</text>
+        <text x={W - mR} y={pTop - 8} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">⌕ {t(locale, "mcLensHint")}</text>
+        <line x1={mL} y1={y0p} x2={W - mR} y2={y0p} stroke={CHART.neutral} strokeWidth={1} />
         {view.map((r, i) => {
           if (r.full === null) return null;
           let up = y0p, dn = y0p;
@@ -374,7 +375,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
         })}
 
         {/* ---- regime ribbon (§6 state machine) ---- */}
-        <text x={mL} y={ribTop - 6} fontSize={11} fill="#475569" fontFamily="monospace">{t(locale, "macroPanelRegime")}</text>
+        <text x={mL} y={ribTop - 6} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelRegime")}</text>
         {ribbon.map((seg, k) => (
           <rect
             key={`rib${k}`}
@@ -382,13 +383,13 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
             y={ribTop}
             width={seg.w}
             height={ribH}
-            fill={seg.regime === null ? "#f1f5f9" : seg.regime === "neutral" ? NEUTRAL_COLOR : REGIME[seg.regime].color}
+            fill={seg.regime === null ? CHART.grid : seg.regime === "neutral" ? NEUTRAL_COLOR : REGIME[seg.regime].color}
           />
         ))}
 
         {/* ---- shared x-axis labels ---- */}
         {xTickIdx.map((i) => (
-          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">
+          <text key={`x${i}`} x={xAt(i)} y={xLabelY} textAnchor="middle" fontSize={9} fill={CHART.label} fontFamily="monospace">
             {fmtDay(view[i]?.date ?? "")}
           </text>
         ))}
@@ -396,11 +397,11 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
         {/* ---- hover crosshair spanning all panels + ribbon ---- */}
         {hover !== null && hv && (
           <g>
-            <line x1={hx} y1={hasVn ? vnTop : zTop} x2={hx} y2={ribTop + ribH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <line x1={hx} y1={hasVn ? vnTop : zTop} x2={hx} y2={ribTop + ribH} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
             {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
             {hasVnEx && hv.vnindexEx !== null && <circle cx={hx} cy={yVn(hv.vnindexEx)} r={3} fill={VNEX_COLOR} />}
             {hv.full !== null && <circle cx={hx} cy={yZ(hv.full)} r={3} fill={FULL_COLOR} />}
-            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill="#0f172a" fontFamily="monospace">
+            <text x={tipX} y={10} textAnchor={tipAnchor} fontSize={11} fill={CHART.text} fontFamily="monospace">
               {hv.date}
               {hv.full !== null && <> · FCI {fmtS2(hv.full)}</>}
               {hv.regime !== null && <> · {t(locale, REGIME[hv.regime].label)}</>}
@@ -411,7 +412,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
             </text>
             {/* per-component contribution readout (short codes; the legend maps
                 each code's colour to its full name) */}
-            <text x={tipX} y={24} textAnchor={tipAnchor} fontSize={10} fill="#475569" fontFamily="monospace">
+            <text x={tipX} y={24} textAnchor={tipAnchor} fontSize={10} fill={CHART.labelStrong} fontFamily="monospace">
               {COMPONENTS.filter((p) => hv[p.key] !== null)
                 .map((p) => `${p.short} ${fmtS2(hv[p.key]!)}`)
                 .join(" · ")}
@@ -434,9 +435,9 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
           if (label === null) return null;
           return (
             <g>
-              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
-              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
-              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill={CHART.text} />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill={CHART.panel} fontFamily="monospace">{label}</text>
             </g>
           );
         })()}
@@ -512,23 +513,23 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
 
           return (
             <g>
-              <rect x={lensX} y={lensY} width={lensW} height={lensH} rx={5} fill="#ffffff" stroke="#cbd5e1" strokeWidth={1} opacity={0.98} />
-              <text x={lensX + 10} y={lensY + 16} fontSize={10} fill="#475569" fontFamily="monospace">{t(locale, "mcLensTitle")}</text>
-              <text x={lensX + lensW - 10} y={lensY + 16} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">
+              <rect x={lensX} y={lensY} width={lensW} height={lensH} rx={5} fill={CHART.panel} stroke={CHART.neutral} strokeWidth={1} opacity={0.98} />
+              <text x={lensX + 10} y={lensY + 16} fontSize={10} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "mcLensTitle")}</text>
+              <text x={lensX + lensW - 10} y={lensY + 16} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">
                 {fmtDay(win[0].date)} – {fmtDay(win[m - 1].date)}
               </text>
               {/* hovered-day summary line */}
-              <text x={lensX + 10} y={lensY + 32} fontSize={10} fill="#0f172a" fontFamily="monospace">
+              <text x={lensX + 10} y={lensY + 32} fontSize={10} fill={CHART.text} fontFamily="monospace">
                 {hv.date}{hv.full !== null && ` · FCI ${fmtS2(hv.full)}`}
               </text>
               {lTicks.map((v, k) => (
                 <g key={`lt${k}`}>
-                  <line x1={px0} y1={yL(v)} x2={px1} y2={yL(v)} stroke={v === 0 ? "#cbd5e1" : "#f1f5f9"} strokeWidth={1} strokeDasharray={v === 0 ? "3 2" : undefined} />
-                  <text x={px0 - 5} y={yL(v) + 3} textAnchor="end" fontSize={8} fill="#94a3b8" fontFamily="monospace">{fmtS2(v)}</text>
+                  <line x1={px0} y1={yL(v)} x2={px1} y2={yL(v)} stroke={v === 0 ? CHART.neutral : CHART.grid} strokeWidth={1} strokeDasharray={v === 0 ? "3 2" : undefined} />
+                  <text x={px0 - 5} y={yL(v) + 3} textAnchor="end" fontSize={8} fill={CHART.label} fontFamily="monospace">{fmtS2(v)}</text>
                 </g>
               ))}
               {/* highlight the hovered (centre) day */}
-              <rect x={lx(hover - lo) - slot / 2} y={py0} width={slot} height={plotH} fill="#0f172a" opacity={0.06} />
+              <rect x={lx(hover - lo) - slot / 2} y={py0} width={slot} height={plotH} fill={CHART.text} opacity={0.06} />
               {/* zoomed stacked bars */}
               {win.map((r, wI) => {
                 if (r.full === null) return null;
@@ -551,8 +552,8 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
               {valRows.map((row, k) => (
                 <g key={`vl${k}`}>
                   <rect x={vlX} y={vlY0 + k * rowH - 7} width={8} height={8} rx={1.5} fill={row.color} />
-                  <text x={vlX + 13} y={vlY0 + k * rowH} fontSize={9} fill="#475569" fontFamily="monospace">{row.label}</text>
-                  <text x={lensX + lensW - 10} y={vlY0 + k * rowH} textAnchor="end" fontSize={9} fill="#0f172a" fontFamily="monospace">{row.val}</text>
+                  <text x={vlX + 13} y={vlY0 + k * rowH} fontSize={9} fill={CHART.labelStrong} fontFamily="monospace">{row.label}</text>
+                  <text x={lensX + lensW - 10} y={vlY0 + k * rowH} textAnchor="end" fontSize={9} fill={CHART.text} fontFamily="monospace">{row.val}</text>
                 </g>
               ))}
             </g>

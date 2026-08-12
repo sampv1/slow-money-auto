@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { timeAxisTicks } from "@/lib/chart-axis";
+import { CHART, VN_INDEX } from "@/lib/chart-theme";
 
 // One row on the union date grid. Series sit at different frequencies:
 // - deposit: all-bank 12M term-deposit board average (DAILY, CafeF).
@@ -35,9 +36,9 @@ const RANGES: Range[] = ["1m", "6m", "1y", "3y", "10y", "all"];
 
 const DEP = "#0d9488"; // teal — deposit
 const LEND = "#d97706"; // amber — lending (band + midpoint)
-const WB_L = "#94a3b8"; // slate — World Bank lending (annual, dashed)
-const WB_D = "#cbd5e1"; // light slate — World Bank deposit (annual, dashed)
-const VN_COLOR = "#2563eb"; // blue — VN-Index (context), matches the other macro charts
+const WB_L = CHART.label; // slate — World Bank lending (annual, dashed)
+const WB_D = CHART.neutral; // light slate — World Bank deposit (annual, dashed)
+const VN_COLOR = VN_INDEX;
 
 const ms = (d: string) => new Date(d + "T00:00:00Z").getTime();
 
@@ -102,7 +103,7 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
   }, [view]);
 
   if (rows.length < 1) {
-    return <p className="text-sm text-gray-500">{t(locale, "brNoData")}</p>;
+    return <p className="text-body-lg text-fg-muted">{t(locale, "brNoData")}</p>;
   }
 
   const hasVn = view.some((r) => r.vnindex !== null);
@@ -180,28 +181,28 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
     pts.length === 1 ? <circle cx={pts[0].x} cy={pts[0].y} r={3} fill={color} /> : null;
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-panel rounded-lg border border-line p-4">
       {/* header: latest deposit / lending / spread + range toggle */}
       <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         <div className="flex flex-wrap items-end gap-5">
           {latest.deposit && (
             <div>
-              <div className="text-xs text-gray-500">{t(locale, "brDeposit")} · {latest.deposit.date}</div>
-              <div className="text-2xl font-semibold font-mono" style={{ color: DEP }}>{fmtPct(latest.deposit.v)}</div>
+              <div className="text-data text-fg-muted">{t(locale, "brDeposit")} · {latest.deposit.date}</div>
+              <div className="text-display font-semibold font-mono" style={{ color: DEP }}>{fmtPct(latest.deposit.v)}</div>
             </div>
           )}
           {latest.lendMin && latest.lendMax && (
             <div>
-              <div className="text-xs text-gray-500">{t(locale, "brLending")} · {latest.lendMin.date.slice(0, 7)}</div>
-              <div className="text-2xl font-semibold font-mono" style={{ color: LEND }}>
+              <div className="text-data text-fg-muted">{t(locale, "brLending")} · {latest.lendMin.date.slice(0, 7)}</div>
+              <div className="text-display font-semibold font-mono" style={{ color: LEND }}>
                 {fmtPct1(latest.lendMin.v)}–{fmtPct1(latest.lendMax.v)}
               </div>
             </div>
           )}
           {spread !== null && (
             <div>
-              <div className="text-xs text-gray-500">{t(locale, "brSpread")}</div>
-              <div className="text-2xl font-semibold font-mono text-gray-800">{spread.toFixed(2)}<span className="text-sm text-gray-400"> pp</span></div>
+              <div className="text-data text-fg-muted">{t(locale, "brSpread")}</div>
+              <div className="text-display font-semibold font-mono text-fg">{spread.toFixed(2)}<span className="text-body-lg text-fg-label"> pp</span></div>
             </div>
           )}
         </div>
@@ -210,8 +211,8 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`text-xs px-2 py-1 rounded font-medium ${
-                range === r ? "bg-amber-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              className={`text-data px-2 py-1 rounded font-medium ${
+                range === r ? "bg-amber-600 text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {r === "1m" ? t(locale, "irRange1m")
@@ -228,7 +229,7 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
       <ChartHowTo summary={t(locale, "chartHowSummary")} items={[t(locale, "brHowCalc"), t(locale, "brHowUse")]} />
 
       {/* legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-gray-600">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-data text-fg-muted">
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: DEP }} />{t(locale, "brDeposit")}</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: LEND }} />{t(locale, "brRange")}</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-4 h-0.5" style={{ borderTop: `2px dashed ${WB_L}` }} />{t(locale, "brWb")}</span>
@@ -239,11 +240,11 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
         {/* ---- VN-Index panel (context) ---- */}
         {hasVn && (
           <>
-            <text x={mL + 2} y={vnTop + 10} fontSize={11} fill="#475569" fontFamily="monospace">VN-Index</text>
+            <text x={mL + 2} y={vnTop + 10} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">VN-Index</text>
             {vnTicks.map((v, k) => (
               <g key={`vt${k}`}>
-                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke="#f1f5f9" strokeWidth={1} />
-                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtInt(v)}</text>
+                <line x1={mL} y1={yVn(v)} x2={W - mR} y2={yVn(v)} stroke={CHART.grid} strokeWidth={1} />
+                <text x={mL - 6} y={yVn(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtInt(v)}</text>
               </g>
             ))}
             {vnPts.length > 1 && <polyline points={line(vnPts)} fill="none" stroke={VN_COLOR} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />}
@@ -254,8 +255,8 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
         {/* ---- rates panel ---- */}
         {yTicks.map((v, k) => (
           <g key={`y${k}`}>
-            <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={mL - 6} y={yAt(v) + 3} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="monospace">{fmtPct1(v)}</text>
+            <line x1={mL} y1={yAt(v)} x2={W - mR} y2={yAt(v)} stroke={CHART.grid} strokeWidth={1} />
+            <text x={mL - 6} y={yAt(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{fmtPct1(v)}</text>
           </g>
         ))}
 
@@ -287,7 +288,7 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
         {xTicks.map((tk) => {
           const x = xAtMs(tk.ms);
           if (x < mL - 1 || x > W - mR + 1) return null;
-          return <text key={`x${tk.ms}`} x={x} y={xLabelY} textAnchor="middle" fontSize={9} fill="#94a3b8" fontFamily="monospace">{tk.label}</text>;
+          return <text key={`x${tk.ms}`} x={x} y={xLabelY} textAnchor="middle" fontSize={9} fill={CHART.label} fontFamily="monospace">{tk.label}</text>;
         })}
 
         {/* ---- vertical crosshair + readout (spans both panels) ---- */}
@@ -302,11 +303,11 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
           if (hasVn && hv.vnindex !== null) parts.push(`VNI ${fmtInt(hv.vnindex)}`);
           return (
             <g>
-              <line x1={hx} y1={hasVn ? vnTop : top} x2={hx} y2={top + h} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+              <line x1={hx} y1={hasVn ? vnTop : top} x2={hx} y2={top + h} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
               {hasVn && hv.vnindex !== null && <circle cx={hx} cy={yVn(hv.vnindex)} r={3} fill={VN_COLOR} />}
               {hv.deposit !== null && <circle cx={hx} cy={yAt(hv.deposit)} r={3} fill={DEP} />}
               {hv.lendingMid !== null && <circle cx={hx} cy={yAt(hv.lendingMid)} r={3} fill={LEND} />}
-              <text x={tx} y={10} textAnchor={anchor} fontSize={10} fill="#0f172a" fontFamily="monospace">{parts.join(" · ")}</text>
+              <text x={tx} y={10} textAnchor={anchor} fontSize={10} fill={CHART.text} fontFamily="monospace">{parts.join(" · ")}</text>
             </g>
           );
         })()}
@@ -324,9 +325,9 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
           if (label === null) return null;
           return (
             <g>
-              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
-              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill="#0f172a" />
-              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill="#ffffff" fontFamily="monospace">{label}</text>
+              <line x1={mL} y1={hoverY} x2={W - mR} y2={hoverY} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
+              <rect x={0} y={hoverY - 7} width={mL - 4} height={14} rx={2} fill={CHART.text} />
+              <text x={mL - 8} y={hoverY + 3} textAnchor="end" fontSize={9} fill={CHART.panel} fontFamily="monospace">{label}</text>
             </g>
           );
         })()}

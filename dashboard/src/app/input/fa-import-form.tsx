@@ -58,9 +58,9 @@ export default function FaImportForm({ locale }: { locale: Locale }) {
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 mt-6">
+    <div className="bg-panel rounded-lg border border-line p-4 mt-6">
       <h2 className="font-semibold">{t(locale, "faImportTitle")}</h2>
-      <p className="text-sm text-gray-500 mb-3">{t(locale, "faImportSubtitle")}</p>
+      <p className="text-body-lg text-fg-muted mb-3">{t(locale, "faImportSubtitle")}</p>
 
       <div className="flex flex-wrap items-end gap-3 mb-3">
         <input
@@ -68,11 +68,11 @@ export default function FaImportForm({ locale }: { locale: Locale }) {
           type="file"
           accept=".xlsx"
           onChange={() => { setSummary(null); setError(null); setDone(null); }}
-          className="text-sm"
+          className="text-body-lg"
         />
-        <label className="text-sm">
-          <span className="block text-gray-500 mb-1">{t(locale, "faImportType")}</span>
-          <select value={type} onChange={(e) => setType(e.target.value as typeof type)} className="border border-gray-300 rounded px-2 py-1">
+        <label className="text-body-lg">
+          <span className="block text-fg-muted mb-1">{t(locale, "faImportType")}</span>
+          <select value={type} onChange={(e) => setType(e.target.value as typeof type)} className="border border-line rounded px-2 py-1">
             <option value="">{t(locale, "faImportTypeAuto")}</option>
             <option value="financials">{t(locale, "faImportTypeFin")}</option>
             <option value="pe">{t(locale, "faImportTypePe")}</option>
@@ -81,37 +81,37 @@ export default function FaImportForm({ locale }: { locale: Locale }) {
         <button
           onClick={() => send(false)}
           disabled={busy !== ""}
-          className="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+          className="px-3 py-1.5 text-body-lg rounded bg-panel-2 hover:bg-line disabled:opacity-50"
         >
           {busy === "preview" ? t(locale, "faImportPreviewing") : t(locale, "faImportPreview")}
         </button>
         <button
           onClick={() => send(true)}
           disabled={busy !== "" || !summary || (summary?.rowCount ?? 0) === 0}
-          className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+          className="px-3 py-1.5 text-body-lg rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
         >
           {busy === "commit" ? t(locale, "faImportImporting") : t(locale, "faImportConfirm")}
         </button>
       </div>
 
-      {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
-      {done && <div className="text-sm text-green-700 mb-2">✓ {done} · {t(locale, "faImportNote")}</div>}
+      {error && <div className="text-body-lg text-down mb-2">{error}</div>}
+      {done && <div className="text-body-lg text-up mb-2">✓ {done} · {t(locale, "faImportNote")}</div>}
 
       {summary && (
-        <div className="text-sm border-t border-gray-100 pt-3">
+        <div className="text-body-lg border-t border-line-faint pt-3">
           <div className="mb-2">
             <span className="font-medium">{summary.type}</span> · {summary.symbolCount} {t(locale, "faImportSymbols")} · {summary.rowCount} {t(locale, "faImportRows")}
             {summary.periods && <> · {summary.periods.join(", ")}</>}
             {summary.years && <> · {summary.years.join(", ")}</>}
           </div>
-          <div className="text-xs text-gray-500 mb-1">{t(locale, "faImportDetected")}:</div>
-          <ul className="text-xs font-mono text-gray-700 grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+          <div className="text-data text-fg-muted mb-1">{t(locale, "faImportDetected")}:</div>
+          <ul className="text-data font-mono text-fg grid grid-cols-1 sm:grid-cols-2 gap-x-6">
             {summary.detected.map((d) => (
               <li key={d.field}>{d.field} ← {d.sheet} ({d.columns})</li>
             ))}
           </ul>
           {summary.warnings.length > 0 && (
-            <div className="mt-2 text-xs text-amber-700">
+            <div className="mt-2 text-data text-amber-700">
               {t(locale, "faImportWarnings")}: {summary.warnings.join("; ")}
             </div>
           )}

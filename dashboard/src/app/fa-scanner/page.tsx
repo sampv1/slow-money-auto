@@ -57,8 +57,8 @@ export default async function FaScannerPage({
 
   const header = (
     <div className="mb-4">
-      <h1 className="text-xl font-semibold">{t(locale, "faScannerTitle")}</h1>
-      <p className="text-sm text-gray-500">{t(locale, "faScannerSubtitle")}</p>
+      <h1 className="text-display font-semibold tracking-tight">{t(locale, "faScannerTitle")}</h1>
+      <p className="text-body-lg text-fg-muted">{t(locale, "faScannerSubtitle")}</p>
     </div>
   );
 
@@ -75,7 +75,7 @@ export default async function FaScannerPage({
     return (
       <div>
         {header}
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+        <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
           {t(locale, "faNoData")}
         </div>
       </div>

@@ -17,19 +17,20 @@ import type { Candle, RsHist } from "./page";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import { t, type Locale } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
+import { CHART_LITERAL, VN_INDEX } from "@/lib/chart-theme";
 
 const UP_COLOR = "#16a34a";
 const DOWN_COLOR = "#dc2626";
 
 const MA_COLOR: Record<number, string> = {
-  20: "#2563eb",  // blue
+  20: VN_INDEX,  // blue
   50: "#ea580c",  // orange
   150: "#0d9488", // teal
   200: "#9333ea", // purple
 };
 
 const RSI_COLOR = "#7c3aed";
-const MACD_LINE_COLOR = "#2563eb";
+const MACD_LINE_COLOR = VN_INDEX;
 const MACD_SIGNAL_COLOR = "#ea580c";
 const VOLUME_MA_COLOR = "#6b7280";
 
@@ -505,18 +506,18 @@ export function ChartClient({
     const chart = createChart(container, {
       autoSize: true,
       layout: {
-        background: { color: "#ffffff" },
-        textColor: "#374151",
+        background: { color: CHART_LITERAL.panel },
+        textColor: CHART_LITERAL.text,
         fontSize: 12,
-        panes: { separatorColor: "#e5e7eb", separatorHoverColor: "#d1d5db" },
+        panes: { separatorColor: CHART_LITERAL.axis, separatorHoverColor: CHART_LITERAL.label },
       },
       grid: {
-        vertLines: { color: "#f3f4f6" },
-        horzLines: { color: "#f3f4f6" },
+        vertLines: { color: CHART_LITERAL.grid },
+        horzLines: { color: CHART_LITERAL.grid },
       },
-      rightPriceScale: { borderColor: "#e5e7eb" },
+      rightPriceScale: { borderColor: CHART_LITERAL.axis },
       timeScale: {
-        borderColor: "#e5e7eb",
+        borderColor: CHART_LITERAL.axis,
         timeVisible: false,
         secondsVisible: false,
       },
@@ -974,7 +975,7 @@ export function ChartClient({
       />
       {/* Display-overlay group — always available, ON by default. Click to
           toggle each overlay (MA/MCDX lines, RS-rating lines) on the chart. */}
-      <div className="flex items-center flex-wrap gap-1 px-2 text-xs">
+      <div className="flex items-center flex-wrap gap-1 px-2 text-data">
         {displayChips
           .filter((c) => c.show)
           .map((c) => {
@@ -986,7 +987,7 @@ export function ChartClient({
                 onClick={() => toggleDisplay(c.key)}
                 aria-pressed={on}
                 title={on ? "Click to hide on chart" : "Click to show on chart"}
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${on ? "bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100" : "bg-transparent text-gray-400 border-dashed border-gray-300 hover:text-gray-600"}`}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${on ? "bg-canvas text-fg border-line hover:bg-panel-2" : "bg-transparent text-fg-label border-dashed border-line hover:text-fg-muted"}`}
               >
                 <span className="inline-block w-3 h-0.5" style={{ backgroundColor: on ? c.color : "#cbd5e1" }} />
                 {c.label}
@@ -994,9 +995,9 @@ export function ChartClient({
             );
           })}
       </div>
-      <div className="flex items-center justify-between flex-wrap gap-2 px-2 pb-2 text-xs">
+      <div className="flex items-center justify-between flex-wrap gap-2 px-2 pb-2 text-data">
         {/* Legend for whichever MAs are drawn */}
-        <div className="flex items-center gap-4 text-gray-500 flex-wrap">
+        <div className="flex items-center gap-4 text-fg-muted flex-wrap">
           {features.maPeriods.map((period) => (
             <span key={period} className="flex items-center gap-1">
               <span className="inline-block w-3 h-0.5" style={{ backgroundColor: MA_COLOR[period] }} />
@@ -1086,10 +1087,10 @@ export function ChartClient({
                 const on = isMcdx ? displayOn.has("mcdx") : keys.some((k) => activeSet.has(k));
                 const onClasses =
                   spec.direction === "bullish"
-                    ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                    ? "bg-green-50 text-up border-green-200 hover:bg-green-100"
                     : spec.direction === "bearish"
-                      ? "bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
-                      : "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200";
+                      ? "bg-red-50 text-down border-red-200 hover:bg-red-100"
+                      : "bg-panel-2 text-fg-muted border-line hover:bg-line";
                 return (
                   <button
                     type="button"
@@ -1097,7 +1098,7 @@ export function ChartClient({
                     onClick={() => (isMcdx ? toggleDisplay("mcdx") : toggleKeys(keys))}
                     aria-pressed={on}
                     title={on ? "Click to hide on chart" : "Click to show on chart"}
-                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${on ? onClasses : "bg-transparent text-gray-400 border-dashed border-gray-300 hover:text-gray-600"}`}
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${on ? onClasses : "bg-transparent text-fg-label border-dashed border-line hover:text-fg-muted"}`}
                   >
                     {spec.direction === "bullish" ? "▲" : spec.direction === "bearish" ? "▼" : "●"}
                     {isMcdx ? formatMcdxBanker(mcdxBankerPct) : indicatorLabel(spec, locale)}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { HomeTopScore } from "@/lib/cached-data";
 import { type Locale, t } from "@/lib/i18n";
 import { scoreGradeClass } from "@/lib/format";
+import { TABLE, TABLE_SCROLL, TD, TD_NUM, TD_SYMBOL, TH, TH_NUM, THEAD, TR } from "@/lib/table";
 
 /**
  * The homepage hook: the highest Final Scores among liquid names.
@@ -22,10 +23,10 @@ function baseLabel(type: string | null, locale: Locale): string {
 }
 
 function Grade({ grade }: { grade: string | null }) {
-  if (!grade) return <span className="text-gray-300">—</span>;
+  if (!grade) return <span className="text-fg-faint">—</span>;
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-medium ${scoreGradeClass(grade)}`}
+      className={`inline-flex items-center px-2 py-0.5 text-label rounded-sm font-medium ${scoreGradeClass(grade)}`}
     >
       {grade}
     </span>
@@ -33,7 +34,7 @@ function Grade({ grade }: { grade: string | null }) {
 }
 
 const num = (v: number | null) =>
-  v === null ? <span className="text-gray-300">—</span> : v.toFixed(0);
+  v === null ? <span className="text-fg-faint">—</span> : v.toFixed(0);
 
 export function TopScores({
   rows,
@@ -47,7 +48,7 @@ export function TopScores({
   const seeAll = (
     <Link
       href="/signal-pro"
-      className="inline-flex items-center gap-1 text-sm font-medium text-indigo-700 hover:text-indigo-900"
+      className="inline-flex items-center gap-1 text-body font-medium text-accent hover:text-accent-hover"
     >
       {t(locale, "homeSeeAllPrefix")} {universeSize.toLocaleString("en-US")}{" "}
       {t(locale, "homeSeeAllSuffix")} <span aria-hidden="true">→</span>
@@ -55,57 +56,46 @@ export function TopScores({
   );
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-      <div className="px-4 py-4 sm:px-5 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900">{t(locale, "homeTopScoresTitle")}</h2>
-        <p className="mt-1 text-sm text-gray-600">{t(locale, "homeTopScoresSub")}</p>
+    <section className="rounded-lg border border-line bg-panel overflow-hidden">
+      <div className="px-4 py-4 sm:px-5 border-b border-line">
+        <h2 className="text-title font-semibold text-fg tracking-tight">{t(locale, "homeTopScoresTitle")}</h2>
+        <p className="mt-1 text-body-lg text-fg-muted">{t(locale, "homeTopScoresSub")}</p>
       </div>
 
       {rows.length === 0 ? (
-        <p className="px-4 py-8 sm:px-5 text-sm text-gray-500">{t(locale, "homeNoScores")}</p>
+        <p className="px-4 py-8 sm:px-5 text-body-lg text-fg-muted">{t(locale, "homeNoScores")}</p>
       ) : (
         <>
           {/* Table — sm and up */}
-          <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
-                  <th className="text-left font-medium px-5 py-2">{t(locale, "symbol")}</th>
-                  <th className="text-left font-medium px-3 py-2">{t(locale, "homeColGrade")}</th>
-                  <th className="text-right font-medium px-3 py-2">{t(locale, "homeColFinal")}</th>
-                  <th className="text-right font-medium px-3 py-2">{t(locale, "homeColTa")}</th>
-                  <th className="text-right font-medium px-3 py-2">{t(locale, "homeColFa")}</th>
-                  <th className="text-right font-medium px-3 py-2">RS 3M</th>
-                  <th className="text-left font-medium px-5 py-2">{t(locale, "homeColBase")}</th>
+          <div className={`hidden sm:block ${TABLE_SCROLL}`}>
+            <table className={TABLE}>
+              <thead className={THEAD}>
+                <tr>
+                  <th className={`${TH} pl-5`}>{t(locale, "symbol")}</th>
+                  <th className={TH}>{t(locale, "homeColGrade")}</th>
+                  <th className={TH_NUM}>{t(locale, "homeColFinal")}</th>
+                  <th className={TH_NUM}>{t(locale, "homeColTa")}</th>
+                  <th className={TH_NUM}>{t(locale, "homeColFa")}</th>
+                  <th className={TH_NUM}>RS 3M</th>
+                  <th className={`${TH} pr-5`}>{t(locale, "homeColBase")}</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.symbol} className="border-t border-gray-100 hover:bg-gray-50">
-                    <td className="px-5 py-2.5">
-                      <Link
-                        href={`/analysis/${r.symbol}`}
-                        className="font-semibold text-indigo-700 hover:text-indigo-900"
-                      >
+                  <tr key={r.symbol} className={TR}>
+                    <td className={`${TD_SYMBOL} pl-5`}>
+                      <Link href={`/analysis/${r.symbol}`} className="hover:text-accent-hover">
                         {r.symbol}
                       </Link>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className={TD}>
                       <Grade grade={r.final_grade} />
                     </td>
-                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums">
-                      {r.final_score.toFixed(0)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
-                      {num(r.ta_score)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
-                      {num(r.fa_normalized)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
-                      {num(r.rs_3m)}
-                    </td>
-                    <td className="px-5 py-2.5 text-gray-600">{baseLabel(r.base_type, locale)}</td>
+                    <td className={`${TD_NUM} font-semibold`}>{r.final_score.toFixed(0)}</td>
+                    <td className={`${TD_NUM} text-fg-muted`}>{num(r.ta_score)}</td>
+                    <td className={`${TD_NUM} text-fg-muted`}>{num(r.fa_normalized)}</td>
+                    <td className={`${TD_NUM} text-fg-muted`}>{num(r.rs_3m)}</td>
+                    <td className={`${TD} pr-5`}>{baseLabel(r.base_type, locale)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -113,17 +103,17 @@ export function TopScores({
           </div>
 
           {/* Cards — below sm */}
-          <ul className="sm:hidden divide-y divide-gray-100">
+          <ul className="sm:hidden divide-y divide-line-faint">
             {rows.map((r) => (
               <li key={r.symbol} className="px-4 py-3">
                 <Link href={`/analysis/${r.symbol}`} className="flex items-center gap-3">
-                  <span className="font-semibold text-indigo-700 w-14 shrink-0">{r.symbol}</span>
+                  <span className="font-semibold text-accent w-14 shrink-0">{r.symbol}</span>
                   <Grade grade={r.final_grade} />
-                  <span className="ml-auto text-lg font-semibold tabular-nums text-gray-900">
+                  <span className="ml-auto text-title font-semibold tnum text-fg">
                     {r.final_score.toFixed(0)}
                   </span>
                 </Link>
-                <p className="mt-1 text-xs text-gray-500 tabular-nums">
+                <p className="mt-1 text-label text-fg-label tnum normal-case tracking-normal">
                   {t(locale, "homeColTa")} {num(r.ta_score)} · {t(locale, "homeColFa")}{" "}
                   {num(r.fa_normalized)} · RS 3M {num(r.rs_3m)} · {baseLabel(r.base_type, locale)}
                 </p>
@@ -133,7 +123,7 @@ export function TopScores({
         </>
       )}
 
-      <div className="px-4 py-3 sm:px-5 border-t border-gray-200 bg-gray-50">{seeAll}</div>
+      <div className="px-4 py-3 sm:px-5 border-t border-line bg-panel-2">{seeAll}</div>
     </section>
   );
 }

@@ -132,17 +132,17 @@ export default async function StatsPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-4">{t(locale, "performanceStats")}</h1>
+      <h1 className="text-display font-semibold mb-4">{t(locale, "performanceStats")}</h1>
 
       {/* Overview Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <StatCard label={t(locale, "totalRecs")} value={allRecs.length.toString()} sub={`${active.length} ${t(locale, "active")}, ${closed.length} ${t(locale, "closedLower")}`} />
-        <StatCard label={t(locale, "winRate")} value={`${winRate.toFixed(0)}%`} sub={`${wins.length}W / ${losses.length}L`} color={winRate >= 50 ? "text-green-600" : "text-red-600"} />
+        <StatCard label={t(locale, "winRate")} value={`${winRate.toFixed(0)}%`} sub={`${wins.length}W / ${losses.length}L`} color={winRate >= 50 ? "text-up" : "text-down"} />
         <StatCard label={t(locale, "avgPnl")} value={formatPnl(avgPnl)} color={pnlColor(avgPnl)} />
         <StatCard label={t(locale, "avgRMultiple")} value={avgR.toFixed(2)} color={pnlColor(avgR)} />
-        <StatCard label={t(locale, "profitFactor")} value={profitFactor === Infinity ? "\u221E" : profitFactor.toFixed(2)} color={profitFactor >= 1 ? "text-green-600" : "text-red-600"} />
-        <StatCard label={t(locale, "avgWin")} value={formatPnl(avgWin)} color="text-green-600" />
-        <StatCard label={t(locale, "avgLoss")} value={formatPnl(avgLoss)} color="text-red-600" />
+        <StatCard label={t(locale, "profitFactor")} value={profitFactor === Infinity ? "\u221E" : profitFactor.toFixed(2)} color={profitFactor >= 1 ? "text-up" : "text-down"} />
+        <StatCard label={t(locale, "avgWin")} value={formatPnl(avgWin)} color="text-up" />
+        <StatCard label={t(locale, "avgLoss")} value={formatPnl(avgLoss)} color="text-down" />
         <StatCard label={t(locale, "avgDaysHeld")} value={avgDaysHeld.toFixed(1)} />
         <StatCard label={t(locale, "tradingDays")} value={totalDays.toString()} sub={`KB1: ${kb1Days} / KB2: ${kb2Days} / KB3: ${kb3Days}`} />
         <StatCard label={t(locale, "standAsideRate")} value={totalDays > 0 ? `${((kb3Days / totalDays) * 100).toFixed(0)}%` : "0%"} sub={`${kb3Days} / ${totalDays} ${t(locale, "tradingDays")}`} />
@@ -156,22 +156,22 @@ export default async function StatsPage() {
 
       {/* Status Breakdown */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "statusBreakdown")}</h2>
+        <div className="bg-panel rounded-lg border border-line p-4">
+          <h2 className="text-body-lg font-semibold text-fg mb-3">{t(locale, "statusBreakdown")}</h2>
           <div className="space-y-2">
             {["OPEN", "TP1_HIT", "TP2_HIT", "STOPPED", "EXPIRED", "CLOSED_MANUAL"].map((status) => {
               const count = statusCounts[status] ?? 0;
               const pct = allRecs.length > 0 ? (count / allRecs.length) * 100 : 0;
               return (
-                <div key={status} className="flex items-center gap-2 text-sm">
-                  <span className="w-28 text-gray-600">{status.replace(/_/g, " ")}</span>
-                  <div className="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
+                <div key={status} className="flex items-center gap-2 text-body-lg">
+                  <span className="w-28 text-fg-muted">{status.replace(/_/g, " ")}</span>
+                  <div className="flex-1 bg-panel-2 rounded-full h-4 overflow-hidden">
                     <div
                       className={`h-full rounded-full ${statusBarColor(status)}`}
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <span className="w-16 text-right text-gray-500 text-xs">{count} ({pct.toFixed(0)}%)</span>
+                  <span className="w-16 text-right text-fg-muted text-data">{count} ({pct.toFixed(0)}%)</span>
                 </div>
               );
             })}
@@ -179,27 +179,27 @@ export default async function StatsPage() {
         </div>
 
         {/* Setup Breakdown */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "bySetupType")}</h2>
+        <div className="bg-panel rounded-lg border border-line p-4">
+          <h2 className="text-body-lg font-semibold text-fg mb-3">{t(locale, "bySetupType")}</h2>
           {setupRows.length === 0 ? (
-            <p className="text-sm text-gray-500">{t(locale, "noClosedRecsYet")}</p>
+            <p className="text-body-lg text-fg-muted">{t(locale, "noClosedRecsYet")}</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 text-xs">
-                    <th className="pb-2 font-medium">{t(locale, "setup")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "count")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "avgPnl")}</th>
+              <table className="w-full text-body-lg">
+                <thead className="bg-panel-2 border-y border-line-strong">
+                  <tr className="text-left text-fg-muted text-data">
+                    <th className="pb-2 label">{t(locale, "setup")}</th>
+                    <th className="pb-2 label text-right">{t(locale, "count")}</th>
+                    <th className="pb-2 label text-right">{t(locale, "winPct")}</th>
+                    <th className="pb-2 label text-right">{t(locale, "avgPnl")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {setupRows.map(([setup, stats]) => {
                     const setupAvgPnl = stats.totalPnl / stats.count;
                     return (
-                    <tr key={setup} className="border-t border-gray-100">
-                      <td className="py-1.5 text-gray-700">{setup}</td>
+                    <tr key={setup} className="border-t border-line-faint">
+                      <td className="py-1.5 text-fg">{setup}</td>
                       <td className="py-1.5 text-right">{stats.count}</td>
                       <td className="py-1.5 text-right">{((stats.wins / stats.count) * 100).toFixed(0)}%</td>
                       <td className={`py-1.5 text-right font-mono ${pnlColor(setupAvgPnl)}`}>{formatPnl(setupAvgPnl)}</td>
@@ -215,25 +215,25 @@ export default async function StatsPage() {
 
       {/* Symbol Leaderboard */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "topSymbols")}</h2>
+        <div className="bg-panel rounded-lg border border-line p-4">
+          <h2 className="text-body-lg font-semibold text-fg mb-3">{t(locale, "topSymbols")}</h2>
           {topSymbols.length === 0 ? (
-            <p className="text-sm text-gray-500">{t(locale, "noClosedRecsYet")}</p>
+            <p className="text-body-lg text-fg-muted">{t(locale, "noClosedRecsYet")}</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-500 text-xs">
-                  <th className="pb-2 font-medium">{t(locale, "symbol")}</th>
-                  <th className="pb-2 font-medium text-right">{t(locale, "trades")}</th>
-                  <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
-                  <th className="pb-2 font-medium text-right">{t(locale, "avgPnl")}</th>
+            <table className="w-full text-body-lg">
+              <thead className="bg-panel-2 border-y border-line-strong">
+                <tr className="text-left text-fg-muted text-data">
+                  <th className="pb-2 label">{t(locale, "symbol")}</th>
+                  <th className="pb-2 label text-right">{t(locale, "trades")}</th>
+                  <th className="pb-2 label text-right">{t(locale, "winPct")}</th>
+                  <th className="pb-2 label text-right">{t(locale, "avgPnl")}</th>
                 </tr>
               </thead>
               <tbody>
                 {topSymbols.map(([symbol, stats]) => {
                   const symbolAvgPnl = stats.totalPnl / stats.count;
                   return (
-                  <tr key={symbol} className="border-t border-gray-100">
+                  <tr key={symbol} className="border-t border-line-faint">
                     <td className="py-1.5 font-medium">{symbol}</td>
                     <td className="py-1.5 text-right">{stats.count}</td>
                     <td className="py-1.5 text-right">{((stats.wins / stats.count) * 100).toFixed(0)}%</td>
@@ -246,25 +246,25 @@ export default async function StatsPage() {
           )}
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "worstSymbols")}</h2>
+        <div className="bg-panel rounded-lg border border-line p-4">
+          <h2 className="text-body-lg font-semibold text-fg mb-3">{t(locale, "worstSymbols")}</h2>
           {bottomSymbols.length === 0 ? (
-            <p className="text-sm text-gray-500">{t(locale, "noClosedRecsYet")}</p>
+            <p className="text-body-lg text-fg-muted">{t(locale, "noClosedRecsYet")}</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-500 text-xs">
-                  <th className="pb-2 font-medium">{t(locale, "symbol")}</th>
-                  <th className="pb-2 font-medium text-right">{t(locale, "trades")}</th>
-                  <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
-                  <th className="pb-2 font-medium text-right">{t(locale, "avgPnl")}</th>
+            <table className="w-full text-body-lg">
+              <thead className="bg-panel-2 border-y border-line-strong">
+                <tr className="text-left text-fg-muted text-data">
+                  <th className="pb-2 label">{t(locale, "symbol")}</th>
+                  <th className="pb-2 label text-right">{t(locale, "trades")}</th>
+                  <th className="pb-2 label text-right">{t(locale, "winPct")}</th>
+                  <th className="pb-2 label text-right">{t(locale, "avgPnl")}</th>
                 </tr>
               </thead>
               <tbody>
                 {bottomSymbols.map(([symbol, stats]) => {
                   const symbolAvgPnl = stats.totalPnl / stats.count;
                   return (
-                  <tr key={symbol} className="border-t border-gray-100">
+                  <tr key={symbol} className="border-t border-line-faint">
                     <td className="py-1.5 font-medium">{symbol}</td>
                     <td className="py-1.5 text-right">{stats.count}</td>
                     <td className="py-1.5 text-right">{((stats.wins / stats.count) * 100).toFixed(0)}%</td>
@@ -280,28 +280,28 @@ export default async function StatsPage() {
 
       {/* Regime & Sector Breakdown */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "byRegime")}</h2>
+        <div className="bg-panel rounded-lg border border-line p-4">
+          <h2 className="text-body-lg font-semibold text-fg mb-3">{t(locale, "byRegime")}</h2>
           {regimeRows.length === 0 ? (
-            <p className="text-sm text-gray-500">{t(locale, "noClosedRecsYet")}</p>
+            <p className="text-body-lg text-fg-muted">{t(locale, "noClosedRecsYet")}</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 text-xs">
-                    <th className="pb-2 font-medium">{t(locale, "regime")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "count")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "avgR")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "avgPnl")}</th>
+              <table className="w-full text-body-lg">
+                <thead className="bg-panel-2 border-y border-line-strong">
+                  <tr className="text-left text-fg-muted text-data">
+                    <th className="pb-2 label">{t(locale, "regime")}</th>
+                    <th className="pb-2 label text-right">{t(locale, "count")}</th>
+                    <th className="pb-2 label text-right">{t(locale, "winPct")}</th>
+                    <th className="pb-2 label text-right">{t(locale, "avgR")}</th>
+                    <th className="pb-2 label text-right">{t(locale, "avgPnl")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {regimeRows.map(([regime, stats]) => {
                     const regimeAvgPnl = stats.totalPnl / stats.count;
                     return (
-                    <tr key={regime} className="border-t border-gray-100">
-                      <td className="py-1.5 text-gray-700">{regime}</td>
+                    <tr key={regime} className="border-t border-line-faint">
+                      <td className="py-1.5 text-fg">{regime}</td>
                       <td className="py-1.5 text-right">{stats.count}</td>
                       <td className="py-1.5 text-right">{((stats.wins / stats.count) * 100).toFixed(0)}%</td>
                       <td className={`py-1.5 text-right ${pnlColor(stats.rSum / stats.count)}`}>{(stats.rSum / stats.count).toFixed(2)}</td>
@@ -315,27 +315,27 @@ export default async function StatsPage() {
           )}
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t(locale, "bySector")}</h2>
+        <div className="bg-panel rounded-lg border border-line p-4">
+          <h2 className="text-body-lg font-semibold text-fg mb-3">{t(locale, "bySector")}</h2>
           {sectorRows.length === 0 ? (
-            <p className="text-sm text-gray-500">{t(locale, "noClosedRecsYet")}</p>
+            <p className="text-body-lg text-fg-muted">{t(locale, "noClosedRecsYet")}</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 text-xs">
-                    <th className="pb-2 font-medium">{t(locale, "bySector")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "count")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "winPct")}</th>
-                    <th className="pb-2 font-medium text-right">{t(locale, "avgPnl")}</th>
+              <table className="w-full text-body-lg">
+                <thead className="bg-panel-2 border-y border-line-strong">
+                  <tr className="text-left text-fg-muted text-data">
+                    <th className="pb-2 label">{t(locale, "bySector")}</th>
+                    <th className="pb-2 label text-right">{t(locale, "count")}</th>
+                    <th className="pb-2 label text-right">{t(locale, "winPct")}</th>
+                    <th className="pb-2 label text-right">{t(locale, "avgPnl")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sectorRows.map(([sector, stats]) => {
                     const sectorAvgPnl = stats.totalPnl / stats.count;
                     return (
-                    <tr key={sector} className="border-t border-gray-100">
-                      <td className="py-1.5 text-gray-700">{sector}</td>
+                    <tr key={sector} className="border-t border-line-faint">
+                      <td className="py-1.5 text-fg">{sector}</td>
                       <td className="py-1.5 text-right">{stats.count}</td>
                       <td className="py-1.5 text-right">{((stats.wins / stats.count) * 100).toFixed(0)}%</td>
                       <td className={`py-1.5 text-right font-mono ${pnlColor(sectorAvgPnl)}`}>{formatPnl(sectorAvgPnl)}</td>
@@ -364,10 +364,10 @@ function StatCard({
   color?: string;
 }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-3">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className={`text-lg font-semibold ${color ?? ""}`}>{value}</div>
-      {sub && <div className="text-xs text-gray-400">{sub}</div>}
+    <div className="bg-panel rounded-lg border border-line p-3">
+      <div className="text-data text-fg-muted">{label}</div>
+      <div className={`text-title font-semibold ${color ?? ""}`}>{value}</div>
+      {sub && <div className="text-data text-fg-label">{sub}</div>}
     </div>
   );
 }
@@ -379,7 +379,7 @@ function statusBarColor(status: string): string {
     case "TP2_HIT": return "bg-green-500";
     case "STOPPED": return "bg-red-400";
     case "EXPIRED": return "bg-amber-400";
-    case "CLOSED_MANUAL": return "bg-gray-400";
-    default: return "bg-gray-300";
+    case "CLOSED_MANUAL": return "bg-fg-label";
+    default: return "bg-fg-faint";
   }
 }

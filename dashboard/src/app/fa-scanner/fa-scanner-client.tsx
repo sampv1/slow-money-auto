@@ -233,7 +233,7 @@ export function FaScannerClient({
   return (
     <div>
       {/* Size filters — their own bar at the top, matching the TA scanner. */}
-      <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
+      <div className="bg-panel rounded-lg border border-line px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
         <MinVolumeFilter
           id="fa-min-avg-vol"
           value={minAvgVolume}
@@ -241,9 +241,9 @@ export function FaScannerClient({
           locale={locale}
         />
 
-        <span className="hidden sm:block h-5 w-px bg-gray-200" aria-hidden />
+        <span className="hidden sm:block h-5 w-px bg-line" aria-hidden />
 
-        <label htmlFor="fa-min-npat" className="text-sm text-gray-700">
+        <label htmlFor="fa-min-npat" className="text-body text-fg">
           {t(locale, "faMinNpat")}
         </label>
         <input
@@ -256,14 +256,14 @@ export function FaScannerClient({
             const n = Number(e.target.value);
             setMinNpatBn(Number.isFinite(n) && n >= 0 ? n : 0);
           }}
-          className="w-24 rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+          className="w-24 rounded border border-line px-2 py-1 text-data font-mono tnum"
         />
         {/* The hint names the exclusion explicitly. Unlike volume, a missing NPAT
             is SYSTEMATIC rather than random — banks and securities firms don't
             report revenue/net margin in this statement format at all, so ~26 of
             the liquid names have no figure and any threshold above 0 removes the
             whole sector. Better said out loud than discovered later. */}
-        <span className="text-xs text-gray-500">{t(locale, "faMinNpatHint")}</span>
+        <span className="text-body text-fg-label">{t(locale, "faMinNpatHint")}</span>
 
         {(minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D || minNpatBn !== DEFAULT_MIN_NPAT_BN) && (
           <button
@@ -272,7 +272,7 @@ export function FaScannerClient({
               setMinAvgVolume(DEFAULT_MIN_AVG_VOLUME_20D);
               setMinNpatBn(DEFAULT_MIN_NPAT_BN);
             }}
-            className="text-xs text-gray-500 hover:text-gray-900 ml-auto"
+            className="text-body text-fg-muted hover:text-fg ml-auto"
           >
             {t(locale, "reset")}
           </button>
@@ -281,8 +281,8 @@ export function FaScannerClient({
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-4 mb-3">
-        <label className="text-sm">
-          <span className="block text-gray-500 mb-1">{t(locale, "faQuarter")}</span>
+        <label className="text-body-lg">
+          <span className="label block mb-1">{t(locale, "faQuarter")}</span>
           <select
             value={selectedQuarter}
             disabled={isPending}
@@ -290,44 +290,44 @@ export function FaScannerClient({
               const q = e.target.value;
               startTransition(() => router.push(`/fa-scanner?q=${encodeURIComponent(q)}`));
             }}
-            className="border border-gray-300 rounded px-2 py-1 disabled:opacity-60"
+            className="border border-line rounded px-2 py-1 disabled:opacity-60"
           >
             {quarters.map((q) => (
               <option key={q} value={q}>{q}</option>
             ))}
           </select>
-          {isPending && <span className="ml-2 text-xs text-gray-400">{t(locale, "loading")}</span>}
+          {isPending && <span className="ml-2 text-body text-fg-label">{t(locale, "loading")}</span>}
         </label>
-        <label className="text-sm">
-          <span className="block text-gray-500 mb-1">{t(locale, "faMinScore")}</span>
+        <label className="text-body-lg">
+          <span className="label block mb-1">{t(locale, "faMinScore")}</span>
           <input
             type="number"
             value={minScore}
             onChange={(e) => setMinScore(e.target.value)}
             placeholder="0"
-            className="border border-gray-300 rounded px-2 py-1 w-24"
+            className="border border-line rounded px-2 py-1 w-24"
           />
         </label>
-        <label className="text-sm flex-1 min-w-[160px]">
-          <span className="block text-gray-500 mb-1">{t(locale, "symbol")}</span>
+        <label className="text-body-lg flex-1 min-w-[160px]">
+          <span className="label block mb-1">{t(locale, "symbol")}</span>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t(locale, "faSearchPlaceholder")}
-            className="border border-gray-300 rounded px-2 py-1 w-full"
+            className="border border-line rounded px-2 py-1 w-full"
           />
         </label>
-        <div className="self-center text-sm text-gray-500 ml-auto text-right">
+        <div className="self-center text-body text-fg-muted ml-auto text-right">
           <div>{filtered.length} {t(locale, "faResults")}</div>
           {latestData && (
-            <div className="text-xs">{t(locale, "taLastUpdated")} <span className="font-mono">{latestData}</span></div>
+            <div className="text-data">{t(locale, "taLastUpdated")} <span className="font-mono">{latestData}</span></div>
           )}
         </div>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+        <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
           {t(locale, "faNoRows")}
         </div>
       ) : (
@@ -336,8 +336,8 @@ export function FaScannerClient({
         // spec, a non-visible overflow on one axis computes the other to `auto`),
         // which meant a `sticky` header anchored to it and never moved while the
         // PAGE scrolled. Capping the height gives it something to scroll against.
-        <div className={`bg-white rounded-lg border border-gray-200 overflow-auto max-h-[calc(100vh-12rem)]${isPending ? " opacity-50 transition-opacity" : ""}`}>
-          <table className="w-full text-sm">
+        <div className={`bg-panel rounded-lg border border-line overflow-auto max-h-[calc(100vh-12rem)]${isPending ? " opacity-50 transition-opacity" : ""}`}>
+          <table className="w-full border-collapse">
             {/* Sticky on <thead> rather than each <th>: it keeps multi-row headers
                 aligned without hardcoding a `top` offset per row. The divider is a
                 shadow, not a border — Tailwind's preflight sets
@@ -350,16 +350,16 @@ export function FaScannerClient({
                   symbol <td>  z-10  — beats sibling body cells, loses to thead
                 Give them all the same z and the body's symbol cell (later in the
                 DOM) paints OVER the frozen header. */}
-            <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_#e5e7eb]">
+            <thead className="sticky top-0 z-20 bg-panel-2 shadow-[0_1px_0_0_var(--color-line-strong)]">
               {/* Group row. Only Symbol and Score span both rows. */}
-              <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th rowSpan={2} className="sticky left-0 z-30 bg-white px-4 py-2 font-medium align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
+              <tr className="border-b border-line text-left">
+                <th rowSpan={2} className="label sticky left-0 z-30 bg-panel-2 px-4 py-2 align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
-                <th rowSpan={2} className="px-4 py-2 font-medium text-right align-bottom cursor-pointer select-none border-r border-gray-200" onClick={() => toggleSort("total_score")}>
+                <th rowSpan={2} className="label px-4 py-2 text-right align-bottom cursor-pointer select-none border-r border-line" onClick={() => toggleSort("total_score")}>
                   {t(locale, "faTotalScore")}{sortIndicator("total_score")}
                 </th>
-                <th colSpan={FA_COMPONENTS.length} className="px-3 py-2 font-medium text-center">
+                <th colSpan={FA_COMPONENTS.length} className="label px-3 py-2 text-center">
                   {t(locale, "faComponentsGroup")}
                 </th>
                 <th
@@ -368,20 +368,20 @@ export function FaScannerClient({
                   // know which quarter it is measured against, and the selected
                   // quarter is a dropdown.
                   title={`${selectedQuarter} vs ${priorQuarter || "—"}`}
-                  className={`px-3 py-2 font-medium text-center ${BLOCK_HEAD} ${BLOCK_EDGE}`}
+                  className={`label px-3 py-2 text-center ${BLOCK_HEAD} ${BLOCK_EDGE}`}
                 >
                   {t(locale, "faQuarterlyGroup")}
                 </th>
-                <th colSpan={N_DAILY} className={`px-3 py-2 font-medium text-center ${BLOCK_HEAD} ${BLOCK_SPLIT}`}>
+                <th colSpan={N_DAILY} className={`label px-3 py-2 text-center ${BLOCK_HEAD} ${BLOCK_SPLIT}`}>
                   {t(locale, "faDailyGroup")}
                 </th>
               </tr>
-              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs">
+              <tr className="border-b border-line text-left">
                 {FA_COMPONENTS.map((c) => (
                   <th
                     key={c.pts}
                     title={locale === "vi" ? c.fVi : c.fEn}
-                    className="px-3 py-2 font-medium text-right cursor-pointer select-none whitespace-nowrap"
+                    className="label px-3 py-2 text-right cursor-pointer select-none whitespace-nowrap"
                     onClick={() => toggleSort(c.pts)}
                   >
                     {locale === "vi" ? c.vi : c.en}{sortIndicator(c.pts)}
@@ -391,7 +391,7 @@ export function FaScannerClient({
                   <th
                     key={c.key}
                     title={locale === "vi" ? c.fVi : c.fEn}
-                    className={`px-3 py-2 font-medium text-right cursor-pointer select-none whitespace-nowrap ${BLOCK_HEAD}`
+                    className={`label px-3 py-2 text-right cursor-pointer select-none whitespace-nowrap ${BLOCK_HEAD}`
                       + (i === 0 ? ` ${BLOCK_EDGE}` : c.group === "d" && FA_EXTRA[i - 1].group === "q" ? ` ${BLOCK_SPLIT}` : "")}
                     onClick={() => toggleSort(c.key)}
                   >
@@ -402,17 +402,17 @@ export function FaScannerClient({
             </thead>
             <tbody>
               {filtered.map((row) => (
-                <tr key={row.symbol} className="group border-b border-gray-100 hover:bg-gray-50">
+                <tr key={row.symbol} className="group border-b border-line-faint hover:bg-canvas">
                   {/* Frozen identity column. Needs its own opaque background —
                       it paints over the cells scrolling beneath it — and
                       group-hover so it tracks the row highlight instead of
                       staying stubbornly white. */}
-                  <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50 px-4 py-3 font-medium">
-                    <Link href={`/analysis/${row.symbol}`} className="text-blue-600 hover:underline">
+                  <td className="sticky left-0 z-10 bg-panel group-hover:bg-canvas px-4 py-3 text-body font-semibold text-accent">
+                    <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
                       {row.symbol}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-right font-mono whitespace-nowrap border-r border-gray-100">
+                  <td className="px-4 py-3 text-data font-mono tnum text-right whitespace-nowrap border-r border-line-faint">
                     {faNormalizedScore(row)} / {FA_NORMALIZED_MAX}
                   </td>
                   {FA_COMPONENTS.map((c) => {
@@ -437,7 +437,7 @@ export function FaScannerClient({
                         node: formatBillions(q?.npatBn ?? null),
                         // Loss quarters are common; flag them the same red the
                         // YoY columns use rather than leaving a bare minus sign.
-                        cls: (q?.npatBn ?? 0) < 0 ? "text-red-600" : "",
+                        cls: (q?.npatBn ?? 0) < 0 ? "text-down" : "",
                       },
                       { key: "npat_yoy", node: formatPnl(q?.npatYoy ?? null), cls: pnlColor(q?.npatYoy ?? null) },
                       { key: "rs_1m", node: rs1mBySymbol.get(row.symbol) ?? "—", cls: "" },
