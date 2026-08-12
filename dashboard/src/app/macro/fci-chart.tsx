@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber } from "@/lib/format";
 
 // Financial Conditions Index — FCI (MACRO_COMPOSITE_DESIGN.md, frozen
 // W=504/DXY-level). Regime per the design's §6 state machine, computed
@@ -200,7 +201,7 @@ export function FciChart({ rows, locale }: { rows: FciRow[]; locale: Locale }) {
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
   ).filter((i) => i >= 0 && i < n);
 
-  const fmtInt = (v: number) => Math.round(v).toLocaleString("en-US");
+  const fmtInt = (v: number) => formatNumber(Math.round(v));
   const fmtS2 = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
   const fmtDay = (d: string) => d.slice(2);
 

@@ -1,5 +1,5 @@
 import { getCorporateActions, getRecommendations, type CorporateAction } from "@/lib/cached-data";
-import { formatPrice, formatPnl, pnlColor, statusBadge } from "@/lib/format";
+import { formatPrice, formatPnl, pnlColor, statusBadge, formatPercent } from "@/lib/format";
 import { getLocale, t, type Locale } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import type { Recommendation } from "@/lib/types";
@@ -243,7 +243,7 @@ export default async function PortfolioPage({
           </div>
           <div className="bg-panel rounded-lg border border-line p-3">
             <div className="text-data text-fg-muted">{t(locale, "winRate")}</div>
-            <div className="text-title font-semibold">{withPnl.length > 0 ? `${winRate.toFixed(0)}%` : "—"}</div>
+            <div className="text-title font-semibold">{withPnl.length > 0 ? `${formatPercent(winRate, 0)}` : "—"}</div>
             <div className="text-data text-fg-label">{wins.length}W / {withPnl.length - wins.length}L</div>
           </div>
           <div className="bg-panel rounded-lg border border-line p-3">
@@ -272,26 +272,26 @@ export default async function PortfolioPage({
                   128px of horizontal scroll, which is most of what was pushing
                   this table past the viewport. */}
               <tr className="border-b border-line text-left text-fg-muted">
-                <th className="px-3 py-3 label">{t(locale, "date")}</th>
-                <th className={`${FROZEN_TH} ${FROZEN_EDGE} px-3 py-3 label`}>{t(locale, "symbol")}</th>
-                <th className="px-3 py-3 label">{t(locale, "setup")}</th>
-                <th className="px-3 py-3 label text-right">{t(locale, "entry")}</th>
-                <th className="px-3 py-3 label text-right">{t(locale, "sl")}</th>
-                <th className="px-3 py-3 label text-right">{t(locale, "tp1")}</th>
-                <th className="px-3 py-3 label text-right">{t(locale, "tp2")}</th>
+                <th className="row-h px-2 label">{t(locale, "date")}</th>
+                <th className={`${FROZEN_TH} ${FROZEN_EDGE} row-h px-2 label`}>{t(locale, "symbol")}</th>
+                <th className="row-h px-2 label">{t(locale, "setup")}</th>
+                <th className="row-h px-2 label text-right">{t(locale, "entry")}</th>
+                <th className="row-h px-2 label text-right">{t(locale, "sl")}</th>
+                <th className="row-h px-2 label text-right">{t(locale, "tp1")}</th>
+                <th className="row-h px-2 label text-right">{t(locale, "tp2")}</th>
                 {/* Allowed to wrap. "Current / Exit" (and the longer VI
                     "Hiện tại / Giá ra") held a 134px column open on one nowrap
                     header for cells that only ever hold a price. */}
-                <th className="px-3 py-3 label text-right">{t(locale, "currentExit")}</th>
-                <th className="px-3 py-3 font-bold text-right">{t(locale, "pnl")}</th>
-                <th className="px-3 py-3 label text-right">{t(locale, "maxDd")}</th>
-                <th className="px-3 py-3 label text-right">{t(locale, "rMultiple")}</th>
-                <th className="px-3 py-3 label text-right">{t(locale, "winRateEst")}</th>
-                <th className="px-3 py-3 label text-right">{t(locale, "sharpe")}</th>
-                <th className="px-3 py-3 label">{t(locale, "holding")}</th>
-                <th className="px-3 py-3 label">{t(locale, "closed")}</th>
-                <th className="px-3 py-3 label">{t(locale, "status")}</th>
-                {isAdmin && <th className="px-3 py-3 label text-right">{t(locale, "actionCol")}</th>}
+                <th className="row-h px-2 label text-right">{t(locale, "currentExit")}</th>
+                <th className="row-h px-2 font-bold text-right">{t(locale, "pnl")}</th>
+                <th className="row-h px-2 label text-right">{t(locale, "maxDd")}</th>
+                <th className="row-h px-2 label text-right">{t(locale, "rMultiple")}</th>
+                <th className="row-h px-2 label text-right">{t(locale, "winRateEst")}</th>
+                <th className="row-h px-2 label text-right">{t(locale, "sharpe")}</th>
+                <th className="row-h px-2 label">{t(locale, "holding")}</th>
+                <th className="row-h px-2 label">{t(locale, "closed")}</th>
+                <th className="row-h px-2 label">{t(locale, "status")}</th>
+                {isAdmin && <th className="row-h px-2 label text-right">{t(locale, "actionCol")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -312,8 +312,8 @@ export default async function PortfolioPage({
                         they are metadata, not figures you scan down, and at
                         text-body-lg the two of them held ~195px of a table that had
                         none to spare. */}
-                    <td className="px-3 py-3 text-data text-fg-muted whitespace-nowrap">{rec.trading_date}</td>
-                    <td className={`${FROZEN_TD} ${FROZEN_EDGE} px-3 py-3 font-medium`}>
+                    <td className="row-h px-2 text-data text-fg-muted whitespace-nowrap">{rec.trading_date}</td>
+                    <td className={`${FROZEN_TD} ${FROZEN_EDGE} row-h px-2 font-medium`}>
                       {rec.symbol}
                       {rec.source === "MANUAL" && (
                         <span className="ml-1.5 inline-block px-1 py-0.5 text-[10px] rounded bg-panel-2 text-fg-muted align-middle">M</span>
@@ -355,7 +355,7 @@ export default async function PortfolioPage({
                         <span className="block text-[11px] text-fg-label font-normal mt-0.5 max-w-[112px] truncate" title={rec.note}>{rec.note}</span>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-fg-muted text-data">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
+                    <td className="row-h px-2 text-fg-muted text-data">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
                     {/* Entry carries the "market basis" label; the levels after it
                         repeat the amber figure without it, so the row explains
                         itself once instead of five times.
@@ -365,52 +365,52 @@ export default async function PortfolioPage({
                         one unbreakable ~113px line per column; stacked, SL/TP1
                         are sized by the price alone and the prices line up in a
                         column you can scan straight down. */}
-                    <td className="px-3 py-3 text-right font-mono whitespace-nowrap">
+                    <td className="row-h px-2 text-right font-mono whitespace-nowrap">
                       {formatPrice(rec.entry_price)}
                       {marketBasis(rec.entry_price, k, locale, true)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-red-500 whitespace-nowrap">
+                    <td className="row-h px-2 text-right font-mono text-red-500 whitespace-nowrap">
                       {formatPrice(rec.stop_loss)}
                       {rec.stop_loss_pct !== null && (
-                        <span className="block text-data">({rec.stop_loss_pct > 0 ? "+" : ""}{rec.stop_loss_pct.toFixed(1)}%)</span>
+                        <span className="block text-data">({rec.stop_loss_pct > 0 ? "+" : ""}{formatPercent(rec.stop_loss_pct, 1)})</span>
                       )}
                       {marketBasis(rec.stop_loss, k, locale)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-up whitespace-nowrap">
+                    <td className="row-h px-2 text-right font-mono text-up whitespace-nowrap">
                       {formatPrice(rec.tp1)}
                       {rec.tp1_pct !== null && (
-                        <span className="block text-data">({rec.tp1_pct > 0 ? "+" : ""}{rec.tp1_pct.toFixed(1)}%)</span>
+                        <span className="block text-data">({rec.tp1_pct > 0 ? "+" : ""}{formatPercent(rec.tp1_pct, 1)})</span>
                       )}
                       {marketBasis(rec.tp1, k, locale)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-up whitespace-nowrap">
+                    <td className="row-h px-2 text-right font-mono text-up whitespace-nowrap">
                       {formatPrice(rec.tp2)}
                       {rec.tp2_pct !== null && (
-                        <span className="block text-data">({rec.tp2_pct > 0 ? "+" : ""}{rec.tp2_pct.toFixed(1)}%)</span>
+                        <span className="block text-data">({rec.tp2_pct > 0 ? "+" : ""}{formatPercent(rec.tp2_pct, 1)})</span>
                       )}
                       {marketBasis(rec.tp2, k, locale)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono whitespace-nowrap">
+                    <td className="row-h px-2 text-right font-mono whitespace-nowrap">
                       {formatPrice(lastPrice)}
                       {/* Market basis, so the row reconciles against a broker
                           screen without altering what was actually recorded. */}
                       {marketBasis(lastPrice, k, locale)}
                     </td>
-                    <td className={`px-3 py-3 text-right font-mono font-bold ${pnlColor(pnl)}`}>
+                    <td className={`row-h px-2 text-right font-mono font-bold ${pnlColor(pnl)}`}>
                       {formatPnl(pnl)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-down">
-                      {rec.max_drawdown_pct !== null ? `${rec.max_drawdown_pct.toFixed(1)}%` : ""}
+                    <td className="row-h px-2 text-right font-mono text-down">
+                      {rec.max_drawdown_pct !== null ? `${formatPercent(rec.max_drawdown_pct, 1)}` : ""}
                     </td>
-                    <td className="px-3 py-3 text-right">{rec.r_multiple !== null ? rec.r_multiple.toFixed(1) : "—"}</td>
-                    <td className="px-3 py-3 text-right">{rec.win_rate_est !== null ? `${rec.win_rate_est}%` : "—"}</td>
-                    <td className="px-3 py-3 text-right">{rec.sharpe !== null ? rec.sharpe.toFixed(1) : "—"}</td>
-                    <td className="px-3 py-3 text-fg-muted text-data whitespace-nowrap">
+                    <td className="row-h px-2 text-right">{rec.r_multiple !== null ? rec.r_multiple.toFixed(1) : "—"}</td>
+                    <td className="row-h px-2 text-right">{rec.win_rate_est !== null ? `${rec.win_rate_est}%` : "—"}</td>
+                    <td className="row-h px-2 text-right">{rec.sharpe !== null ? rec.sharpe.toFixed(1) : "—"}</td>
+                    <td className="row-h px-2 text-fg-muted text-data whitespace-nowrap">
                       {rec.days_held !== null ? `${rec.days_held} ${t(locale, "sessions")}` : "—"}
                       {plan && <span className="block text-[11px] text-fg-label mt-0.5">{plan}</span>}
                     </td>
-                    <td className="px-3 py-3 text-data text-fg-muted whitespace-nowrap">{rec.closed_at ?? "—"}</td>
-                    <td className="px-3 py-3">
+                    <td className="row-h px-2 text-data text-fg-muted whitespace-nowrap">{rec.closed_at ?? "—"}</td>
+                    <td className="row-h px-2">
                       {/* nowrap: a pill that breaks across two lines ("Đang /
                           mở") reads as damage rather than as a badge, and the
                           tighter gutters left this column narrow enough to do
@@ -420,7 +420,7 @@ export default async function PortfolioPage({
                       </span>
                     </td>
                     {isAdmin && (
-                      <td className="px-3 py-3 text-right">
+                      <td className="row-h px-2 text-right">
                         {open && (
                           <TradeActions
                             symbol={rec.symbol}

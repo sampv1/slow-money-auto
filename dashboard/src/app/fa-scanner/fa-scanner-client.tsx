@@ -353,13 +353,13 @@ export function FaScannerClient({
             <thead className="sticky top-0 z-20 bg-panel-2 shadow-[0_1px_0_0_var(--color-line-strong)]">
               {/* Group row. Only Symbol and Score span both rows. */}
               <tr className="border-b border-line text-left">
-                <th rowSpan={2} className="label sticky left-0 z-30 bg-panel-2 px-4 py-2 align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
+                <th rowSpan={2} className="label sticky left-0 z-30 bg-panel-2 row-h px-2 align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
-                <th rowSpan={2} className="label px-4 py-2 text-right align-bottom cursor-pointer select-none border-r border-line" onClick={() => toggleSort("total_score")}>
+                <th rowSpan={2} className="label row-h px-2 text-right align-bottom cursor-pointer select-none border-r border-line" onClick={() => toggleSort("total_score")}>
                   {t(locale, "faTotalScore")}{sortIndicator("total_score")}
                 </th>
-                <th colSpan={FA_COMPONENTS.length} className="label px-3 py-2 text-center">
+                <th colSpan={FA_COMPONENTS.length} className="label row-h px-2 text-center">
                   {t(locale, "faComponentsGroup")}
                 </th>
                 <th
@@ -372,7 +372,7 @@ export function FaScannerClient({
                 >
                   {t(locale, "faQuarterlyGroup")}
                 </th>
-                <th colSpan={N_DAILY} className={`label px-3 py-2 text-center ${BLOCK_HEAD} ${BLOCK_SPLIT}`}>
+                <th colSpan={N_DAILY} className={`label row-h px-2 text-center ${BLOCK_HEAD} ${BLOCK_SPLIT}`}>
                   {t(locale, "faDailyGroup")}
                 </th>
               </tr>
@@ -407,18 +407,18 @@ export function FaScannerClient({
                       it paints over the cells scrolling beneath it — and
                       group-hover so it tracks the row highlight instead of
                       staying stubbornly white. */}
-                  <td className="sticky left-0 z-10 bg-panel group-hover:bg-canvas px-4 py-3 text-body font-semibold text-accent">
+                  <td className="sticky left-0 z-10 bg-panel group-hover:bg-canvas row-h px-2 text-body font-semibold text-accent">
                     <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
                       {row.symbol}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-data font-mono tnum text-right whitespace-nowrap border-r border-line-faint">
+                  <td className="row-h px-2 text-data font-mono tnum text-right whitespace-nowrap border-r border-line-faint">
                     {faNormalizedScore(row)} / {FA_NORMALIZED_MAX}
                   </td>
                   {FA_COMPONENTS.map((c) => {
                     const pts = row[c.pts];
                     return (
-                      <td key={c.pts} className={`px-3 py-3 text-right font-mono ${pointsColor(pts)}`}>
+                      <td key={c.pts} className={`row-h px-2 text-right font-mono ${pointsColor(pts)}`}>
                         {pts}
                       </td>
                     );

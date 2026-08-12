@@ -11,6 +11,7 @@ import { MarketStrip } from "./home/market-strip";
 import { TopScores } from "./home/top-scores";
 import { ScoreExplainer } from "./home/score-explainer";
 import { ToolCards } from "./home/tool-cards";
+import { formatNumber } from "@/lib/format";
 
 // Reads come from the Data Cache (unstable_cache, tags ta-data / fa-data /
 // macro-data), so the route itself is uncached and the pipelines' revalidate
@@ -57,7 +58,7 @@ export default async function HomePage() {
 
       <footer className="border-t border-line pt-4 text-body text-fg-label flex flex-col gap-1">
         <p>
-          {universeSize.toLocaleString("en-US")} {t(locale, "homeCoverageSymbols")} ·{" "}
+          {formatNumber(universeSize)} {t(locale, "homeCoverageSymbols")} ·{" "}
           {t(locale, "homeCoverageExchanges")} · {t(locale, "homeCoverageUpdated")}
         </p>
         <p>{t(locale, "homeDisclaimer")}</p>

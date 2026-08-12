@@ -62,7 +62,7 @@ export default async function FeedbacksPage() {
             >
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="text-data text-fg-muted">
-                  {new Date(fb.created_at).toLocaleString("en-US", {
+                  {new Date(fb.created_at).toLocaleString("vi-VN", {
                     year: "numeric",
                     month: "short",
                     day: "numeric",

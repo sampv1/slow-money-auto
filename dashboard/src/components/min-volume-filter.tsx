@@ -1,6 +1,7 @@
 "use client";
 
 import { t, type Locale } from "@/lib/i18n";
+import { formatNumber } from "@/lib/format";
 
 // The liquidity floor (20-session average volume) as a preset dropdown PLUS the
 // free-text box it has always had. The presets cover the rungs people actually
@@ -24,7 +25,7 @@ const CUSTOM = "custom";
 // Grouped with commas ("200,000"), matching formatPrice and the mono figures in
 // the tables, rather than locale-grouped — the box beside it takes bare digits,
 // and switching separators between the two controls reads as an error.
-const fmt = (v: number) => v.toLocaleString("en-US");
+const fmt = (v: number) => formatNumber(v);
 
 export function MinVolumeFilter({
   id,

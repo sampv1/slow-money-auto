@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 // One daily row. `ir` is the RAW signed log basis ln(F/S) (chart plots -ir);
 // `future` drives the daily log return; `vnindex` is the context panel.
@@ -149,8 +150,8 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
   ).filter((i) => i >= 0 && i < n);
 
-  const fmtPct = (v: number) => `${v >= 0 ? "" : "-"}${Math.abs(v).toFixed(2)}%`;
-  const fmtInt = (v: number) => Math.round(v).toLocaleString("en-US");
+  const fmtPct = (v: number) => `${v >= 0 ? "" : "-"}${formatPercent(Math.abs(v), 2)}`;
+  const fmtInt = (v: number) => formatNumber(Math.round(v));
   const fmtDay = (d: string) => d.slice(2);
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {

@@ -1,6 +1,6 @@
 import type { MacroHeadline } from "@/lib/cached-data";
 import { type Locale, t } from "@/lib/i18n";
-import { pnlColor } from "@/lib/format";
+import { pnlColor, formatNumber, formatPercent } from "@/lib/format";
 
 /**
  * The four-number band at the top of the homepage.
@@ -65,10 +65,10 @@ export function MarketStrip({ data, locale }: { data: MacroHeadline; locale: Loc
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
         <Cell
           label="VN-Index"
-          value={vnindex ? vnindex.value.toLocaleString("en-US", { maximumFractionDigits: 2 }) : DASH}
+          value={vnindex ? formatNumber(vnindex.value, 2) : DASH}
           sub={
             vnindex?.changePct !== null && vnindex?.changePct !== undefined
-              ? `${vnindex.changePct >= 0 ? "+" : ""}${vnindex.changePct.toFixed(2)}%`
+              ? `${vnindex.changePct >= 0 ? "+" : ""}${formatPercent(vnindex.changePct, 2)}`
               : undefined
           }
           subClass={pnlColor(vnindex?.changePct ?? null)}
@@ -81,11 +81,11 @@ export function MarketStrip({ data, locale }: { data: MacroHeadline; locale: Loc
         />
         <Cell
           label={t(locale, "homeUsdVnd")}
-          value={usdvnd ? usdvnd.value.toLocaleString("en-US", { maximumFractionDigits: 0 }) : DASH}
+          value={usdvnd ? formatNumber(usdvnd.value, 0) : DASH}
         />
         <Cell
           label={t(locale, "homeInterbank")}
-          value={interbank ? `${interbank.value.toFixed(2)}%` : DASH}
+          value={interbank ? `${formatPercent(interbank.value, 2)}` : DASH}
         />
       </div>
     </section>

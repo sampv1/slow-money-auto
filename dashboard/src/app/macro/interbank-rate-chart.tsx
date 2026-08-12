@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 // One daily point on the union grid of the two series:
 // - rate: SBV overnight interbank average (VNIBOR, %/year); null on days where
@@ -137,11 +138,11 @@ export function InterbankRateChart({ rows, locale }: { rows: IbRow[]; locale: Lo
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
   ).filter((i) => i >= 0 && i < n);
 
-  const fmtPct = (v: number) => `${v.toFixed(2)}%`;
+  const fmtPct = (v: number) => `${formatPercent(v, 2)}`;
   const fmtSigned = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
-  const fmtInt = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const fmtInt = (v: number) => formatNumber(v, 0);
   const fmtSignedInt = (v: number) =>
-    `${v > 0 ? "+" : v < 0 ? "-" : ""}${Math.abs(Math.round(v)).toLocaleString("en-US")}`;
+    `${v > 0 ? "+" : v < 0 ? "-" : ""}${formatNumber(Math.abs(Math.round(v)))}`;
   const fmtDay = (d: string) => d.slice(2); // YY-MM-DD
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 // 2×2 SBV regime: pressure (pct_to_ceiling) × policy velocity (central Δ5).
 export type Regime = "stable" | "leading" | "compressed" | "release";
@@ -172,9 +173,9 @@ export function ExchangeRateChart({
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
   ).filter((i) => i >= 0 && i < n);
 
-  const fmtPct = (v: number) => `${v.toFixed(2)}%`;
-  const fmtInt = (v: number) => Math.round(v).toLocaleString("en-US");
-  const fmtSigned = (v: number) => `${v > 0 ? "+" : v < 0 ? "-" : ""}${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
+  const fmtPct = (v: number) => `${formatPercent(v, 2)}`;
+  const fmtInt = (v: number) => formatNumber(Math.round(v));
+  const fmtSigned = (v: number) => `${v > 0 ? "+" : v < 0 ? "-" : ""}${formatNumber(Math.round(Math.abs(v)))}`;
   const fmtDay = (d: string) => d.slice(2);
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {

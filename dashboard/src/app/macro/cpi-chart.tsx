@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 // One monthly point. yoy = headline CPI YoY (%, null before 12 months of history);
 // ytdAvg = running average of this year's YoY (the "CPI bình quân"); target =
@@ -140,11 +141,11 @@ export function CpiChart({ rows, locale }: { rows: CpiRow[]; locale: Locale }) {
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
   ).filter((i) => i >= 0 && i < n);
 
-  const fmtPct = (v: number) => `${v.toFixed(2)}%`;
-  const fmtPct1 = (v: number) => `${v.toFixed(1)}%`;
-  const fmtSigned = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+  const fmtPct = (v: number) => `${formatPercent(v, 2)}`;
+  const fmtPct1 = (v: number) => `${formatPercent(v, 1)}`;
+  const fmtSigned = (v: number) => `${v >= 0 ? "+" : ""}${formatPercent(v, 2)}`;
   const fmtMonth = (d: string) => d.slice(2, 7);
-  const fmtInt = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const fmtInt = (v: number) => formatNumber(v, 0);
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();

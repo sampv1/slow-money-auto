@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 // VN-Index vs the same index with the Vingroup family removed.
 //
@@ -154,9 +155,9 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
   const yearTicks: number[] = [];
   for (let y = y0; y <= y1; y += yearStep) yearTicks.push(y);
 
-  const fmt1 = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  const fmt2 = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+  const fmt1 = (v: number) => formatNumber(v, 0);
+  const fmt2 = (v: number) => formatNumber(v, 2);
+  const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${formatPercent(v, 1)}`;
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -231,7 +232,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
           {latestWeight !== null && (
             <div>
               <div className="text-data text-fg-muted">{t(locale, "exWeightLabel")}</div>
-              <div className="text-title font-semibold font-mono" style={{ color: W_COLOR }}>{latestWeight.toFixed(1)}%</div>
+              <div className="text-title font-semibold font-mono" style={{ color: W_COLOR }}>{formatPercent(latestWeight, 1)}</div>
             </div>
           )}
         </div>
@@ -306,7 +307,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
             {wTicks.map((v, k) => (
               <g key={`w${k}`}>
                 <line x1={mL} y1={yW(v)} x2={W - mR} y2={yW(v)} stroke={CHART.grid} strokeWidth={1} />
-                <text x={mL - 6} y={yW(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{v.toFixed(0)}%</text>
+                <text x={mL - 6} y={yW(v) + 3} textAnchor="end" fontSize={9} fill={CHART.label} fontFamily="monospace">{formatPercent(v, 0)}</text>
               </g>
             ))}
             {wPts.length > 1 && (
@@ -335,7 +336,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
           parts.push(`${t(locale, "exLegend")} ${fmt2(hv.ex)}`);
           if (hv.vn !== null) parts.push(`${t(locale, "exSpread")} ${fmt2(hv.vn - hv.ex)}`);
           if (hv.pe !== null) parts.push(`P/E ${hv.pe.toFixed(2)}${hv.peEx !== null ? ` / ${hv.peEx.toFixed(2)}` : ""}`);
-          if (hv.weight !== null) parts.push(`${t(locale, "exWeightLabel")} ${hv.weight.toFixed(1)}%`);
+          if (hv.weight !== null) parts.push(`${t(locale, "exWeightLabel")} ${formatPercent(hv.weight, 1)}`);
           return (
             <g>
               <line x1={hx} y1={top} x2={hx} y2={lastBottom} stroke={CHART.label} strokeWidth={1} strokeDasharray="3 3" />
@@ -355,7 +356,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
           let label: string | null = null;
           if (hoverY >= top && hoverY <= top + h) label = fmt1(inv(top, h, dom.lo, dom.hi));
           else if (hasPe && hoverY >= peTop && hoverY <= peTop + peH) label = inv(peTop, peH, peDom.lo, peDom.hi).toFixed(1);
-          else if (hasWeight && hoverY >= wTop && hoverY <= wTop + wH) label = `${inv(wTop, wH, wDom.lo, wDom.hi).toFixed(1)}%`;
+          else if (hasWeight && hoverY >= wTop && hoverY <= wTop + wH) label = `${formatPercent(inv(wTop, wH, wDom.lo, wDom.hi), 1)}`;
           if (label === null) return null;
           return (
             <g>

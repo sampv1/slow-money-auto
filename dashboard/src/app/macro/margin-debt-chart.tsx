@@ -5,6 +5,7 @@ import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { timeAxisTicks } from "@/lib/chart-axis";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 // One quarterly point:
 // - margin: total market margin debt (nghìn tỷ VND / trillion VND); null on dates
@@ -148,8 +149,8 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
   // and 6M views with no x-axis at all (see lib/chart-axis.ts).
   const xTicks = timeAxisTicks(t0, t1);
 
-  const fmtInt = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+  const fmtInt = (v: number) => formatNumber(v, 0);
+  const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${formatPercent(v, 1)}`;
   const fmtPp = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`; // percentage points (unit shown separately)
   const chg = latest && prev && latest.margin !== null && prev.margin !== null ? latest.margin - prev.margin : null;
 

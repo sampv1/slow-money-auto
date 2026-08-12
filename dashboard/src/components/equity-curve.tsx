@@ -13,6 +13,7 @@ import {
 import type { Locale } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import { CHART_LITERAL, VN_INDEX } from "@/lib/chart-theme";
+import { formatPercent } from "@/lib/format";
 
 export interface EquityPoint {
   date: string;
@@ -48,7 +49,7 @@ export function EquityCurve({ data, locale = "en" }: { data: EquityPoint[]; loca
             />
             <YAxis
               tick={{ fontSize: 11, fill: CHART_LITERAL.label }}
-              tickFormatter={(v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`}
+              tickFormatter={(v: number) => `${v >= 0 ? "+" : ""}${formatPercent(v, 1)}`}
               domain={[minPnl - padding, maxPnl + padding]}
             />
             <Tooltip content={<CustomTooltip locale={locale} />} />
@@ -74,9 +75,9 @@ function CustomTooltip({ active, payload, locale = "en" }: { active?: boolean; p
   return (
     <div className="bg-panel border border-line rounded-lg shadow-sm p-2 text-data">
       <div className="font-medium text-fg">{d.date}</div>
-      <div className="text-fg-muted">{d.symbol}: {d.pnl >= 0 ? "+" : ""}{d.pnl.toFixed(1)}%</div>
+      <div className="text-fg-muted">{d.symbol}: {d.pnl >= 0 ? "+" : ""}{formatPercent(d.pnl, 1)}</div>
       <div className={`font-semibold ${d.cumPnl >= 0 ? "text-up" : "text-down"}`}>
-        {t(locale, "cumulative")}: {d.cumPnl >= 0 ? "+" : ""}{d.cumPnl.toFixed(1)}%
+        {t(locale, "cumulative")}: {d.cumPnl >= 0 ? "+" : ""}{formatPercent(d.cumPnl, 1)}
       </div>
     </div>
   );

@@ -655,6 +655,11 @@ export const translations = {
     spConfirmAdd: "Are you sure you want to add this to the Active list?",
     spConfirmSell: "Are you sure you want to sell and finalize this position?",
 
+    // Masthead / footer
+    tagline: "Vietnam macro board & market screener",
+    footerDisclaimer: "Lọc tín hiệu · Analysis tool, not investment advice",
+    footerSources: "Sources: SBV · HOSE · ADB/AsianBondsOnline · CafeF · GSO",
+
     // Homepage
     homeMarketToday: "Market today",
     homeFci: "Financial conditions",
@@ -1352,6 +1357,11 @@ export const translations = {
     spSlMustBeBelowEntry: "Cắt lỗ phải thấp hơn giá vào lệnh",
     spConfirmAdd: "Bạn có chắc muốn thêm vào danh sách Đang mở?",
     spConfirmSell: "Bạn có chắc muốn bán và chốt vị thế này?",
+
+    // Masthead / footer
+    tagline: "Bảng vĩ mô & bộ lọc thị trường Việt Nam",
+    footerDisclaimer: "Lọc tín hiệu · Công cụ phân tích, không phải khuyến nghị đầu tư",
+    footerSources: "Nguồn: NHNN · HOSE · ADB/AsianBondsOnline · CafeF · GSO",
 
     // Homepage
     homeMarketToday: "Thị trường hôm nay",

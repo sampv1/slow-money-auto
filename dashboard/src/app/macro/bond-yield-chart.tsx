@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 // One daily point:
 // - yield10y: Vietnam 10Y local-currency government bond yield (%/year); null
@@ -115,9 +116,9 @@ export function BondYieldChart({ rows, locale }: { rows: GbRow[]; locale: Locale
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
   ).filter((i) => i >= 0 && i < n);
 
-  const fmtPct = (v: number) => `${v.toFixed(2)}%`;
+  const fmtPct = (v: number) => `${formatPercent(v, 2)}`;
   const fmtSigned = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
-  const fmtInt = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const fmtInt = (v: number) => formatNumber(v, 0);
   const fmtDay = (d: string) => d.slice(2); // YY-MM-DD
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
