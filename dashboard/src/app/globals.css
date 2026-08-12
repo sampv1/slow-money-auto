@@ -14,6 +14,23 @@
    than a rewrite. Do NOT reintroduce raw hex in components.
    =========================================================================== */
 @theme {
+  /* --- Fonts --------------------------------------------------------------
+     next/font declares --font-geist-sans / --font-geist-mono on <html>, but
+     NOTHING consumed them: Tailwind's own --font-sans and --font-mono still
+     held the system stacks, so the entire site rendered in the browser's
+     default face while both Geist webfonts were downloaded and never drawn.
+     That is why the UI read as unstyled — and why the mono labels introduced
+     with this design system fell back to system Courier.
+
+     Mapping the two namespaces here is what actually puts Geist on screen:
+     Tailwind's preflight sets html's font-family from --font-sans, and every
+     font-mono / .label / .tnum utility resolves through --font-mono.
+     The system stacks stay behind them as fallbacks for the swap window. */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    Consolas, "Liberation Mono", monospace;
+
   /* --- Radius -------------------------------------------------------------
      The app had FIVE radii across 194 call sites (rounded-lg 77, rounded 70,
      rounded-md 22, rounded-sm 17, rounded-full 8) with no system behind the
