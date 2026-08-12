@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Source_Serif_4, Be_Vietnam_Pro, IBM_Plex_Mono } from "next/font/google";
 import Link from "next/link";
 import { getLocaleFromCookie, t } from "@/lib/i18n";
 import { LocaleSwitcher } from "@/components/locale-switcher";
@@ -17,14 +17,33 @@ const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 // is diacritic-heavy. The glyphs already RENDER without it — Google Fonts emits
 // a U+1EA0-1EF9 @font-face block regardless — but without the subset listed they
 // are not preloaded, so the first paint of every Vietnamese page swaps.
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Three roles, three families. The variable names are ROLE names, not family
+// names — globals.css maps them onto Tailwind's --font-serif/--font-sans/
+// --font-mono, and a role name means swapping a family later touches one line
+// here instead of every reference.
+//
+// Weights are pinned rather than left variable: Source Serif ships a variable
+// font whose full axis is far larger than the three weights this design uses.
+const editorial = Source_Serif_4({
+  variable: "--font-editorial",
   subsets: ["latin", "vietnamese"],
+  weight: ["400", "600", "700"],
+  style: ["normal", "italic"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const ui = Be_Vietnam_Pro({
+  variable: "--font-ui",
   subsets: ["latin", "vietnamese"],
+  weight: ["400", "500", "600"],
+  display: "swap",
+});
+
+const figure = IBM_Plex_Mono({
+  variable: "--font-figure",
+  subsets: ["latin", "vietnamese"],
+  weight: ["400", "500", "600"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -73,33 +92,59 @@ export default async function RootLayout({
   return (
     <html
       lang={locale}
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${editorial.variable} ${ui.variable} ${figure.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-canvas text-fg">
-        <header className="bg-panel border-b border-line">
-          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-14">
-              <Link href="/" className="font-semibold text-title tracking-tight">
-                Lọc tín hiệu
-              </Link>
-              <div className="flex items-center gap-2">
-                <AuthButton email={user?.email ?? null} locale={locale} />
-                <LocaleSwitcher locale={locale} />
+      {/* The desk the sheet sits on. `bg-desk` is also set on body in
+          globals.css so the tonal step survives even if this class is lost. */}
+      <body className="min-h-full bg-desk text-fg">
+        {/* The sheet. A 1px rule and a lighter ground are what separate it from
+            the desk — there is no shadow anywhere in this design.
+            1600px, not a 1280 prose width: every page inheriting this container
+            is a data table, and the FA Scanner alone needs ~1434px for its 17
+            columns. The genuinely text-shaped pages (contact max-w-2xl, login
+            max-w-sm) set their own narrower width, so this does not stretch them. */}
+        <div className="min-h-full flex flex-col max-w-[1600px] mx-auto bg-canvas border-x border-line">
+          <header>
+            <div className="px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-between gap-4 pt-4 pb-3">
+                <div className="flex items-baseline gap-3 min-w-0">
+                  {/* The 38px editorial wordmark crowds the auth controls on a
+                      375px screen, so it steps down there. */}
+                  <Link
+                    href="/"
+                    className="font-serif text-title sm:text-display font-semibold tracking-tight whitespace-nowrap"
+                  >
+                    Lọc tín hiệu
+                  </Link>
+                  <span className="label hidden sm:inline truncate">
+                    {t(locale, "tagline")}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <AuthButton email={user?.email ?? null} locale={locale} />
+                  <LocaleSwitcher locale={locale} />
+                </div>
               </div>
             </div>
-            <NavLinks links={navLinks} />
-          </div>
-        </header>
-        {/* 1600px, not the old max-w-7xl (1280px). 1280 is a prose-reading
-            width, and every page that inherits this container is a data table:
-            the FA Scanner alone needs ~1434px for its 17 columns, so it was
-            forced into a horizontal scrollbar while a 1920px monitor showed
-            ~640px of empty margin either side. The genuinely text-shaped pages
-            (contact max-w-2xl, login max-w-sm, portfolio's note column) already
-            set their own narrower width, so widening here does not stretch them. */}
-        <main className="flex-1 max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
-          {children}
-        </main>
+            {/* The signature masthead bar: 3px of near-ink under the wordmark,
+                with the nav sitting below it as inked tabs. */}
+            <div className="h-[3px] bg-line-strong" />
+            <div className="px-4 sm:px-6 lg:px-8 border-b border-line">
+              <NavLinks links={navLinks} />
+            </div>
+          </header>
+          <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 w-full">
+            {children}
+          </main>
+          {/* Closing rule + provenance. Mirrors the masthead bar so the sheet
+              reads as a printed page, and states the sources once for the whole
+              site rather than per chart. */}
+          <div className="h-[3px] bg-line-strong mt-2" />
+          <footer className="px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap justify-between gap-x-6 gap-y-1">
+            <span className="label">{t(locale, "footerDisclaimer")}</span>
+            <span className="label">{t(locale, "footerSources")}</span>
+          </footer>
+        </div>
         {user && GA_MEASUREMENT_ID && <GAUserIdentify userId={user.id} />}
       </body>
       {GA_MEASUREMENT_ID && <GoogleAnalytics gaId={GA_MEASUREMENT_ID} nonce={nonce} />}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { HomeTopScore } from "@/lib/cached-data";
 import { type Locale, t } from "@/lib/i18n";
-import { scoreGradeClass } from "@/lib/format";
+import { scoreGradeClass, formatNumber } from "@/lib/format";
 import { TABLE, TABLE_SCROLL, TD, TD_NUM, TD_SYMBOL, TH, TH_NUM, THEAD, TR } from "@/lib/table";
 
 /**
@@ -50,7 +50,7 @@ export function TopScores({
       href="/signal-pro"
       className="inline-flex items-center gap-1 text-body font-medium text-accent hover:text-accent-hover"
     >
-      {t(locale, "homeSeeAllPrefix")} {universeSize.toLocaleString("en-US")}{" "}
+      {t(locale, "homeSeeAllPrefix")} {formatNumber(universeSize)}{" "}
       {t(locale, "homeSeeAllSuffix")} <span aria-hidden="true">→</span>
     </Link>
   );

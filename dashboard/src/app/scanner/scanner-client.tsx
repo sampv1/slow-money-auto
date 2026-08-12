@@ -725,22 +725,22 @@ export function ScannerClient({
               <table className="w-full text-body-lg">
                 <thead className="bg-panel-2 border-y border-line-strong">
                   <tr className="border-b border-line text-left text-fg-muted">
-                    <th className="px-4 py-3 label">{t(locale, "symbol")}</th>
+                    <th className="row-h px-2 label">{t(locale, "symbol")}</th>
                     <th
                       className="px-4 py-3 font-medium text-right"
                       title="TA Score = RS3M·20% + RS Composite·25% + RS Line·20% + BQS·35%"
                     >
                       {t(locale, "spTaScore")}
                     </th>
-                    <th className="px-4 py-3 label text-right">{t(locale, "taCompositeRs")}</th>
-                    <th className="px-4 py-3 label text-right">{t(locale, "taClose")}</th>
-                    <th className="px-4 py-3 label">{t(locale, "taSignalsFired")}</th>
+                    <th className="row-h px-2 label text-right">{t(locale, "taCompositeRs")}</th>
+                    <th className="row-h px-2 label text-right">{t(locale, "taClose")}</th>
+                    <th className="row-h px-2 label">{t(locale, "taSignalsFired")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {results.map((row) => (
                     <tr key={row.symbol} className="border-b border-line-faint hover:bg-canvas">
-                      <td className="px-4 py-3 font-medium">
+                      <td className="row-h px-2 font-medium">
                         <Link
                           href={`/analysis/${row.symbol}?ind=${encodeURIComponent([...selected].join(","))}`}
                           className="text-accent hover:underline"
@@ -748,14 +748,14 @@ export function ScannerClient({
                           {row.symbol}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono">
+                      <td className="row-h px-2 text-right font-mono">
                         {row.taScore ?? "—"}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono">
+                      <td className="row-h px-2 text-right font-mono">
                         {row.rsComposite ?? "—"}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono">{formatPrice(row.close)}</td>
-                      <td className="px-4 py-3">
+                      <td className="row-h px-2 text-right font-mono">{formatPrice(row.close)}</td>
+                      <td className="row-h px-2">
                         <div className="flex flex-wrap gap-1">
                           {(() => {
                             // Collapse MCDX Banker bands into a single chip that

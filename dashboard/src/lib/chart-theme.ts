@@ -60,11 +60,16 @@ export const CHART = {
  * tell which line it is being asked to read.
  *
  * VN-Index is CONTEXT, not a series, so it takes a neutral and lets the coloured
- * hues mean something. Measured: ΔE 14.8 from the central-rate grey on the FX
- * chart (which is also dashed, so the two never read alike) and 3.64:1 against
- * the panel, comfortably past the 3:1 bar for non-text graphics.
+ * hues mean something.
+ *
+ * The neutral is WARM. On the cool palette this was #7d8794; against the warm
+ * paper ground a cool grey reads as a faint blue, i.e. as a colour with meaning.
+ * Measured for the current value: ΔE 21.4 from the central-rate grey on the FX
+ * chart (which is also dashed, so the two could not read alike anyway), ΔE 10.4
+ * from `fg-faint` (which is never drawn as a series), and 3.29:1 against paper —
+ * past the 3:1 bar that applies to non-text graphics.
  */
-export const VN_INDEX = "#7d8794";
+export const VN_INDEX = "#8b8477";
 
 /**
  * Categorical slots for multi-series panels, in order of use. Chosen to stay
@@ -82,11 +87,11 @@ export const SERIES = [
 
 /** Literal twins of the structural tokens, for charting libraries only. */
 export const CHART_LITERAL = {
-  grid: "#edf0f2", // --color-line-faint
-  axis: "#e3e6ea", // --color-line
-  label: "#656e79", // --color-fg-label
-  text: "#111418", // --color-fg
-  panel: "#ffffff", // --color-panel
-  up: "#137a3a", // --color-up
-  down: "#c4342b", // --color-down
+  grid: "#ddd7ca", // --color-line-faint
+  axis: "#c9c1b0", // --color-line
+  label: "#6b655c", // --color-fg-label
+  text: "#14120f", // --color-fg
+  panel: "#fbf9f5", // --color-panel
+  up: "#0c6b4a", // --color-up
+  down: "#b32c24", // --color-down
 } as const;

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber } from "@/lib/format";
 
 // One trading day of foreign (khối ngoại) activity on HOSE:
 // - net: daily net buy value, billion VND (negative = net foreign selling)
@@ -121,9 +122,9 @@ export function ForeignFlowChart({ rows, locale }: { rows: FfRow[]; locale: Loca
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
   ).filter((i) => i >= 0 && i < n);
 
-  const fmtInt = (v: number) => Math.round(v).toLocaleString("en-US");
+  const fmtInt = (v: number) => formatNumber(Math.round(v));
   const fmtSignedInt = (v: number) =>
-    `${v > 0 ? "+" : v < 0 ? "-" : ""}${Math.abs(Math.round(v)).toLocaleString("en-US")}`;
+    `${v > 0 ? "+" : v < 0 ? "-" : ""}${formatNumber(Math.abs(Math.round(v)))}`;
   const fmtDay = (d: string) => d.slice(2);
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {

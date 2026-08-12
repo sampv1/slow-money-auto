@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { CACHE_TTL_SECONDS, TAG_FA, TAG_TA, fetchAllPaged, getActiveSymbols } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatPercent } from "@/lib/format";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import type { FaScore } from "@/lib/fa";
 import { ChartClient } from "./chart-client";
@@ -267,7 +267,7 @@ export default async function SymbolDrillDown({
             <div className="text-display font-mono">{formatPrice(latest.close)}</div>
             {dayChangePct !== null && (
               <div className={`text-body-lg font-mono ${dayChangeColor}`}>
-                {dayChangePct >= 0 ? "+" : ""}{dayChangePct.toFixed(2)}%
+                {dayChangePct >= 0 ? "+" : ""}{formatPercent(dayChangePct, 2)}
               </div>
             )}
             <div className="text-data text-fg-muted font-mono">{latest.date}</div>

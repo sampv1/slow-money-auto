@@ -5,6 +5,7 @@ import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { timeAxisTicks } from "@/lib/chart-axis";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 // One row on the union date grid. Series sit at different frequencies:
 // - deposit: all-bank 12M term-deposit board average (DAILY, CafeF).
@@ -158,9 +159,9 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
   // and 6M views with no x-axis at all (see lib/chart-axis.ts).
   const xTicks = timeAxisTicks(t0, t1);
 
-  const fmtPct = (v: number) => `${v.toFixed(2)}%`;
-  const fmtPct1 = (v: number) => `${v.toFixed(1)}%`;
-  const fmtInt = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const fmtPct = (v: number) => `${formatPercent(v, 2)}`;
+  const fmtPct1 = (v: number) => `${formatPercent(v, 1)}`;
+  const fmtInt = (v: number) => formatNumber(v, 0);
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();

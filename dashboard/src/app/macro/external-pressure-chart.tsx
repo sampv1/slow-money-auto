@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
 import { CHART, VN_INDEX } from "@/lib/chart-theme";
+import { formatNumber } from "@/lib/format";
 
 // Overnight VND–SOFR spread regime (thresholds fixed by spec):
 //   positive: spread >= 0        — VND funding pays more than USD
@@ -188,7 +189,7 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
     new Set([0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1]),
   ).filter((i) => i >= 0 && i < n);
 
-  const fmtInt = (v: number) => Math.round(v).toLocaleString("en-US");
+  const fmtInt = (v: number) => formatNumber(Math.round(v));
   const fmt2 = (v: number) => v.toFixed(2);
   const fmtS2 = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
   const fmtDay = (d: string) => d.slice(2);

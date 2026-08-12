@@ -2,114 +2,141 @@
 @plugin "@tailwindcss/typography";
 
 /* ===========================================================================
-   Design tokens — "refined terminal"
+   Design tokens — "editorial quant broadsheet"
    ===========================================================================
-   The vocabulary of TradingView / Koyfin / Investing.com: light ground, sans
-   throughout, tight radius, hairline borders over shadows, ONE interactive
-   accent, and dense tabular figures. Both named references ship light by
-   default and treat dark as an opt-in preset, which is why there is no dark
-   variant here.
+   Warm paper ground, ink-black text, ZERO radius on data surfaces, hairline
+   rules instead of shadows, a serif for editorial voice, and monospaced tabular
+   figures for every number. Deliberately not the dark-slate/rounded-card look.
 
-   Every value is a token so a dark theme later is a second token block rather
-   than a rewrite. Do NOT reintroduce raw hex in components.
+   Density is calibrated against LSEG Workspace's Halo design system — the
+   terminal Bloomberg competes with, which publishes its theme. Measured there:
+   12px data text, 24-28px control/row heights, line-height 1.2-1em, and
+   border-radius 0 in 6 of 8 declarations. The previous calibration (13px text,
+   ~35px rows, line-height 1.5, 4px radius) fit roughly TEN fewer symbols per
+   screen, which is what read as "a web dashboard, not a terminal".
+
+   Single theme by design — this IS the light theme. Every value is a token, so
+   a dark variant later is a second block rather than a rewrite. Never
+   reintroduce raw hex in components.
    =========================================================================== */
 @theme {
   /* --- Fonts --------------------------------------------------------------
-     next/font declares --font-geist-sans / --font-geist-mono on <html>, but
-     NOTHING consumed them: Tailwind's own --font-sans and --font-mono still
-     held the system stacks, so the entire site rendered in the browser's
-     default face while both Geist webfonts were downloaded and never drawn.
-     That is why the UI read as unstyled — and why the mono labels introduced
-     with this design system fell back to system Courier.
+     Three families, each verified to carry Vietnamese (a U+1EA0-1EF9 block on
+     Google Fonts): Source Serif 4 for editorial voice, Be Vietnam Pro for UI
+     (Vietnamese-designed, so the diacritics are drawn rather than synthesised),
+     IBM Plex Mono for every figure and label.
 
-     Mapping the two namespaces here is what actually puts Geist on screen:
-     Tailwind's preflight sets html's font-family from --font-sans, and every
-     font-mono / .label / .tnum utility resolves through --font-mono.
-     The system stacks stay behind them as fallbacks for the swap window. */
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+     These MUST be mapped onto Tailwind's own --font-* namespaces. Geist was
+     declared by next/font for months and never rendered because nothing
+     consumed --font-geist-*: Tailwind's preflight sets html's font-family from
+     --default-font-family, which resolves to --font-sans, and --font-sans still
+     held the system stack. Three unused webfonts would be the same bug, larger. */
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+  --font-serif: var(--font-editorial), ui-serif, Georgia, Cambria, serif;
+  --font-mono: var(--font-figure), ui-monospace, SFMono-Regular, Menlo,
     Consolas, "Liberation Mono", monospace;
 
   /* --- Radius -------------------------------------------------------------
-     The app had FIVE radii across 194 call sites (rounded-lg 77, rounded 70,
-     rounded-md 22, rounded-sm 17, rounded-full 8) with no system behind the
-     choice. Bare `rounded` is hardcoded to 0.25rem by Tailwind and cannot be
-     retuned, so 4px is adopted as the house radius and the three tokenised
-     steps are collapsed onto it. That silently corrects 116 call sites — lg
-     and md now render identically to the bare `rounded` already in use.
-     rounded-full is left alone: it is correct for pills and status dots. */
+     Zero on every data surface. Depth comes from 1px rules and the paper/desk
+     tonal step alone — no shadows anywhere. `rounded-sm` is kept at 2px purely
+     for pills and badges, which Halo also exempts; `rounded-full` stays correct
+     for status dots. Bare `rounded` is hardcoded to 0.25rem by Tailwind and
+     cannot be retuned, so it must not be used on a panel or a table. */
   --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius-lg: 4px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
 
   /* --- Surfaces -----------------------------------------------------------
-     A neutral biased very slightly cool, so it reads as chosen rather than as
-     the default mid-grey. */
-  --color-canvas: #f7f8fa; /* page ground */
-  --color-panel: #ffffff; /* cards, table bodies */
-  --color-panel-2: #f1f3f5; /* table headers, inset wells */
+     A three-step warm tonal ladder: the desk the sheet sits on, the sheet, and
+     tiles raised off it. */
+  --color-desk: #e8e4da; /* outermost page ground */
+  --color-canvas: #f4f1ea; /* the content sheet ("paper") */
+  --color-panel: #fbf9f5; /* tiles and cells raised on paper */
+  --color-panel-2: #eeebe2; /* table headers, inset wells */
 
   /* --- Lines --------------------------------------------------------------
-     Depth comes from rules, not shadows. */
-  --color-line: #e3e6ea; /* default border */
-  --color-line-strong: #c8cfd6; /* table header rules, section breaks */
-  --color-line-faint: #edf0f2; /* row separators */
+     Three weights. `line-strong` is near-ink: it draws the masthead bar and the
+     double rule above/below a table header, which is the signature treatment. */
+  --color-line-strong: #14120f;
+  --color-line: #c9c1b0; /* section dividers, control borders */
+  --color-line-faint: #ddd7ca; /* table row separators, tile grid lines */
+  --color-bar-track: #e3ded2; /* empty portion of a meter or diverging bar */
 
   /* --- Text ---------------------------------------------------------------
-     `fg-label` is the LIGHTEST value permitted for text — labels render at
-     11px and anything lighter fails WCAG AA at that size. `fg-faint` is for
-     non-text only: em-dashes for null cells, disabled glyphs, meter tracks. */
-  --color-fg: #111418; /* 16.6:1 worst ground */
-  --color-fg-muted: #5a626c; /*  5.6:1 */
-  --color-fg-label: #656e79; /*  4.7:1 — see note below */
-  --color-fg-faint: #a2aab4; /*  2.4:1 — NON-TEXT ONLY */
+     `fg-label` is the LIGHTEST value permitted for text — labels render at 11px
+     and anything lighter fails WCAG AA there. `fg-faint` is non-text only:
+     em-dashes for null cells, disabled glyphs, redaction marks. */
+  --color-fg: #14120f; /* 14.7:1 worst ground */
+  --color-fg-muted: #55504a; /*  6.3:1 */
+  --color-fg-label: #6b655c; /*  4.5:1 */
+  --color-fg-faint: #a79f92; /*  2.1:1 — NON-TEXT ONLY */
 
   /* --- Accent -------------------------------------------------------------
-     Interactive ONLY: links, focus rings, active nav. Deliberately reserved so
-     it can never be mistaken for one of the five board semantics below. This
-     replaces an indigo/blue split that had both colours acting as "the accent"
-     (text-blue-600 ×12, text-indigo-700 ×7, bg-indigo-600 ×6, bg-blue-600 ×5). */
-  --color-accent: #1e66c8;
-  --color-accent-hover: #17509e;
-  --color-accent-soft: #eaf1fb;
+     Interactive ONLY: links, focus rings, actions. Reserved so it can never be
+     mistaken for one of the five board semantics below — which is also why the
+     selected state of a control is near-ink, not accent (a blue "selected" chip
+     competed directly with the blue series in the charts behind it). */
+  --color-accent: #1d3f73;
+  --color-accent-hover: #142c51;
+  --color-accent-soft: #e6e9f0;
 
   /* --- Board semantics — LOCKED ------------------------------------------
-     Vietnamese exchange convention. A local trader reads these pre-attentively,
-     and green-up/red-down is the OPPOSITE of the mainland Chinese convention.
-     The MEANINGS are locked; the exact values are set for legibility.
+     Vietnamese exchange convention: green up, red down, purple trần, cyan sàn,
+     yellow tham chiếu. A local trader reads these pre-attentively, and green-up
+     is the OPPOSITE of the mainland Chinese convention. Meanings are locked;
+     values are set for legibility.
 
-     Each was darkened from its Tailwind-palette original because the originals
-     fail WCAG AA as text on these grounds — measured on the worst of the three
-     (panel-2 #f1f3f5): green-600 #16a34a scored 2.96, red-600 #dc2626 4.34,
-     cyan-600 #0891b2 3.31, amber #b5820a 3.06. These carry P&L figures at 12px,
-     the most-repeated text in the app, so 3:1 green was the single worst
-     legibility defect present. Hue is unchanged — green still reads green.
+     FOUR are darkened from the design handoff, which specified ratios for its
+     text tokens but never checked its own board semantics. Measured against its
+     three surfaces (worst of paper/panel/desk): floor #1b9aaa scored 2.65 and
+     reference #b5820a 2.68 — both plain failures — while up #0e7a55 (4.20) and
+     down #c4342b (4.27) passed on paper but failed on the desk. These carry P&L
+     at 12px, the most-repeated text in the app, and `reference` doubles as the
+     Pro-tier marker. Hue is unchanged in every case; only lightness moved.
      pnlColor() in src/lib/format.ts returns these same tokens. Never decorative. */
-  --color-up: #137a3a; /* 4.9:1 — tăng · thuận lợi · mua ròng · lãi */
-  --color-down: #c4342b; /* 4.9:1 — giảm · rủi ro · bán ròng · lỗ */
-  --color-ceiling: #7a3fa8; /* 6.1:1 — trần  (limit up)  */
-  --color-floor: #0e7490; /* 4.8:1 — sàn   (limit down) */
-  --color-reference: #8d6508; /* 4.7:1 — tham chiếu · cảnh báo */
+  --color-up: #0c6b4a; /* 5.1:1 — tăng · thuận lợi · nới lỏng · lãi */
+  --color-down: #b32c24; /* 5.0:1 — giảm · rủi ro · siết chặt · lỗ */
+  --color-ceiling: #7a3fa8; /* 5.3:1 — trần  (limit up)  */
+  --color-floor: #136a76; /* 4.9:1 — sàn   (limit down) */
+  --color-reference: #7d5806; /* 5.1:1 — tham chiếu · cảnh báo · Pro */
 
   /* --- Type scale ---------------------------------------------------------
-     Six deliberate steps. The app previously ran on an ad-hoc text-xs (177
-     uses) / text-sm (161) pair with text-base appearing 11 times in total —
-     two sizes doing every job, which is why hierarchy read as flat. */
+     Data sizes drop to Halo's 12px and their line-heights tighten hard, because
+     row height is what density actually is. Prose keeps generous leading — it
+     is read, not scanned. `display` is the editorial hero figure. */
   --text-label: 0.6875rem; /* 11px — uppercase mono column headers, captions */
-  --text-label--line-height: 1.3;
-  --text-data: 0.75rem; /* 12px — figures in dense tables */
-  --text-data--line-height: 1.4;
-  --text-body: 0.8125rem; /* 13px — table cells, UI copy */
-  --text-body--line-height: 1.5;
-  --text-body-lg: 0.875rem; /* 14px — prose, card descriptions */
+  --text-label--line-height: 1.25;
+  --text-data: 0.75rem; /* 12px — figures and cells in dense tables */
+  --text-data--line-height: 1.25;
+  --text-body: 0.8125rem; /* 13px — UI copy, controls */
+  --text-body--line-height: 1.4;
+  --text-body-lg: 0.9375rem; /* 15px — prose, card descriptions (serif) */
   --text-body-lg--line-height: 1.55;
-  --text-title: 1.25rem; /* 20px — section and card titles */
-  --text-title--line-height: 1.25;
-  --text-display: 1.625rem; /* 26px — page titles, hero figures */
-  --text-display--line-height: 1.15;
+  --text-title: 1.375rem; /* 22px — section and card titles (serif) */
+  --text-title--line-height: 1.2;
+  --text-display: 2.375rem; /* 38px — page titles (serif) */
+  --text-display--line-height: 1.05;
+  --text-hero: 5rem; /* 80px — the one figure that owns a screen */
+  --text-hero--line-height: 0.85;
 
-  --tracking-label: 0.08em; /* uppercase 11px labels only */
+  --tracking-label: 0.1em; /* uppercase 11px labels only */
+
+  /* --- Density ------------------------------------------------------------
+     One row height for every data table. Halo drives its rows off an explicit
+     height with ZERO vertical padding (`th{height:28px}`, `td{padding:0 8px}`),
+     which is what keeps a row from growing when a cell wraps a badge. 26px sits
+     between their 24px control and 28px header, and was checked against
+     Vietnamese stacked diacritics — see the note on line-height below. */
+  --row-h: 26px;
+  --row-px: 8px;
+}
+
+/* The page ground is the "desk"; the sheet inside it is the paper. Set here
+   rather than on <body> in the layout so the tonal step survives any page that
+   forgets it. */
+body {
+  background-color: var(--color-desk);
 }
 
 /* Column figures must line up. Applied to the elements that actually carry
@@ -119,15 +146,25 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The 11px uppercase label used for column headers, captions and metadata.
-   One utility so the size, tracking, case and colour can never drift apart. */
+/* The 11px uppercase mono label used for column headers, captions and metadata.
+   One utility so size, tracking, case and colour can never drift apart. */
 @utility label {
   font-family: var(--font-mono);
   font-size: var(--text-label);
-  line-height: 1.3;
+  line-height: 1.25;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--color-fg-label);
+}
+
+/* A data table row at the house height.
+   `line-height: 1.25` at 12px leaves 15px of line box inside a 26px row, which
+   was rendered and checked against `Lọc kỹ thuật · Rủi ro hàm ý · ĐIỀU KIỆN`:
+   the stacked marks on Ề/Ệ/ữ/ậ clear without clipping. Do not drop the row
+   height below 24px without re-running that check — Latin-only systems like
+   Halo never had to survive it. */
+@utility row-h {
+  height: var(--row-h);
 }
 
 /* Visible keyboard focus everywhere, in the accent. Tailwind's reset removes

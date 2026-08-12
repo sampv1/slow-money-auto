@@ -1,5 +1,5 @@
 import { getDailyLogs, getRecommendations } from "@/lib/cached-data";
-import { formatPnl, pnlColor, regimeLabel } from "@/lib/format";
+import { formatPnl, pnlColor, regimeLabel, formatPercent } from "@/lib/format";
 import { getLocale, t } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 import type { Recommendation, DailyLog } from "@/lib/types";
@@ -137,7 +137,7 @@ export default async function StatsPage() {
       {/* Overview Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <StatCard label={t(locale, "totalRecs")} value={allRecs.length.toString()} sub={`${active.length} ${t(locale, "active")}, ${closed.length} ${t(locale, "closedLower")}`} />
-        <StatCard label={t(locale, "winRate")} value={`${winRate.toFixed(0)}%`} sub={`${wins.length}W / ${losses.length}L`} color={winRate >= 50 ? "text-up" : "text-down"} />
+        <StatCard label={t(locale, "winRate")} value={`${formatPercent(winRate, 0)}`} sub={`${wins.length}W / ${losses.length}L`} color={winRate >= 50 ? "text-up" : "text-down"} />
         <StatCard label={t(locale, "avgPnl")} value={formatPnl(avgPnl)} color={pnlColor(avgPnl)} />
         <StatCard label={t(locale, "avgRMultiple")} value={avgR.toFixed(2)} color={pnlColor(avgR)} />
         <StatCard label={t(locale, "profitFactor")} value={profitFactor === Infinity ? "\u221E" : profitFactor.toFixed(2)} color={profitFactor >= 1 ? "text-up" : "text-down"} />
@@ -171,7 +171,7 @@ export default async function StatsPage() {
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <span className="w-16 text-right text-fg-muted text-data">{count} ({pct.toFixed(0)}%)</span>
+                  <span className="w-16 text-right text-fg-muted text-data">{count} ({formatPercent(pct, 0)})</span>
                 </div>
               );
             })}

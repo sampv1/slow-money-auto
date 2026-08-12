@@ -13,12 +13,59 @@ export function todayVn(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date());
 }
 
+/**
+ * The number locale for the whole app: Vietnamese convention \u2014 decimal COMMA,
+ * thousands PERIOD. `1.773,41` and `25.516`, never `1,773.41`.
+ *
+ * Centralised here because the mixed case is worse than either convention: a
+ * page showing `1,773.41` beside `\u22120,80` reads as a bug. Every call site goes
+ * through these helpers rather than calling toLocaleString directly, so the
+ * convention can never drift back.
+ */
+export const NUM_LOCALE = "vi-VN";
+
+/** True minus U+2212, not a hyphen \u2014 it aligns with digits in tabular figures. */
+const MINUS = "\u2212";
+const DASH = "\u2014";
+
+/** Replaces the ASCII hyphen Intl emits with a true minus. */
+function trueMinus(s: string): string {
+  return s.replace(/^-/, MINUS);
+}
+
+/** A plain number at the given precision, in Vietnamese convention. */
+export function formatNumber(
+  v: number | null | undefined,
+  digits = 0,
+): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return DASH;
+  return trueMinus(
+    v.toLocaleString(NUM_LOCALE, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }),
+  );
+}
+
+/** A percentage. `signed` prefixes a explicit + on positives (deltas). */
+export function formatPercent(
+  v: number | null | undefined,
+  digits = 2,
+  signed = false,
+): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return DASH;
+  const sign = signed && v > 0 ? "+" : "";
+  return `${sign}${trueMinus(
+    v.toLocaleString(NUM_LOCALE, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }),
+  )}%`;
+}
+
 export function formatPrice(price: number | null): string {
-  if (price === null) return "\u2014";
-  if (price >= 1000) {
-    return price.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  }
-  return price.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  if (price === null) return DASH;
+  return formatNumber(price, price >= 1000 ? 0 : 1);
 }
 
 /**
@@ -31,16 +78,11 @@ export function formatPrice(price: number | null): string {
  */
 export function formatBillions(v: number | null): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "—";
-  return v.toLocaleString("en-US", {
-    minimumFractionDigits: Math.abs(v) >= 100 ? 0 : 1,
-    maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 1,
-  });
+  return formatNumber(v, Math.abs(v) >= 100 ? 0 : 1);
 }
 
 export function formatPnl(pnl: number | null): string {
-  if (pnl === null) return "\u2014";
-  const sign = pnl >= 0 ? "+" : "";
-  return `${sign}${pnl.toFixed(1)}%`;
+  return formatPercent(pnl, 1, true);
 }
 
 /**
