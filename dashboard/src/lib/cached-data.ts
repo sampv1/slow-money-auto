@@ -438,3 +438,170 @@ export const getCorporateActions = unstable_cache(
   ["corporate-actions-all"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
 );
+
+// --- Homepage ---------------------------------------------------------------
+//
+// Both reads below are deliberately SMALL. The homepage shows ten rows and four
+// numbers; it must never pull the whole universe the way Signal Pro does (1,431
+// rows across 4 chunks). Anything that grows these into a full-universe read is
+// a regression, not a simplification.
+
+/** The scanners' default liquidity floor: 200k average 20-session volume. */
+export const HOME_MIN_AVG_VOLUME = 200_000;
+
+export type HomeTopScore = {
+  symbol: string;
+  as_of_period: string;
+  final_score: number;
+  final_grade: string | null;
+  rating: FaScore["rating"];
+  fa_normalized: number | null;
+  ta_score: number | null;
+  rs_3m: number | null;
+  base_grade: string | null;
+  base_type: string | null;
+};
+
+type HomeUniverseRow = {
+  symbol: string;
+  ta_score: number | null;
+  rs_3m: number | null;
+  base_grade: string | null;
+  base_type: string | null;
+  avg_volume_20d: number | null;
+};
+
+// Display fields for a SHORT, explicit symbol list. `.in(...)` keeps this to one
+// small request; the candidate list is ~60 symbols, far below the 1000-row cap,
+// so no paging is needed. Cache key includes the symbol list so a different
+// candidate set is a different entry.
+const getHomeUniverseRows = unstable_cache(
+  async (symbols: string[]): Promise<HomeUniverseRow[]> => {
+    if (symbols.length === 0) return [];
+    const { data, error } = await supabase
+      .from("ta_universe")
+      .select("symbol,ta_score,rs_3m,base_grade,base_type,avg_volume_20d")
+      .in("symbol", symbols);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as unknown as HomeUniverseRow[];
+  },
+  ["home-universe-rows"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
+);
+
+/**
+ * The homepage leaderboard: the highest Final Scores among liquid names.
+ *
+ * Final Score lives on fa_scores (per symbol, per quarter) while the technical
+ * display fields live on ta_universe, so this is a two-step join:
+ *
+ *   1. getFaRowsLatestPerSymbol() — already cached, already one row per symbol.
+ *      NOTE it sorts by `total_score` (the FA score), so the re-sort by
+ *      `final_score` here is load-bearing, not redundant.
+ *   2. One `.in(...)` read for the technical columns of the candidates only.
+ *
+ * Over-fetching candidates (CANDIDATES, not `limit`) is deliberate: the liquidity
+ * filter needs avg_volume_20d, which only arrives in step 2, so the top `limit`
+ * by score alone would come up short once illiquid names are dropped. The top
+ * of the score table skews illiquid — measured 2026-08-12, the best 60 by Final
+ * Score contained only 12 names above the floor, so 60 would leave a 10-row list
+ * two names from running short. 150 yields 26 and is still one small request.
+ *
+ * Liquidity is a VIEW-TIME filter, exactly as on the scanners — it is never
+ * conflated with is_active, which means "tracked", not "liquid".
+ */
+export async function getHomeTopScores(limit = 10): Promise<HomeTopScore[]> {
+  const CANDIDATES = 150;
+
+  const fa = await getFaRowsLatestPerSymbol();
+  const ranked = fa
+    .filter((r): r is FaScore & { final_score: number } => r.final_score !== null)
+    .sort((a, b) => b.final_score - a.final_score || a.symbol.localeCompare(b.symbol))
+    .slice(0, CANDIDATES);
+  if (ranked.length === 0) return [];
+
+  const universe = await getHomeUniverseRows(ranked.map((r) => r.symbol));
+  const bySymbol = new Map(universe.map((u) => [u.symbol, u]));
+
+  return ranked
+    .filter((r) => (bySymbol.get(r.symbol)?.avg_volume_20d ?? 0) >= HOME_MIN_AVG_VOLUME)
+    .slice(0, limit)
+    .map((r) => {
+      const u = bySymbol.get(r.symbol);
+      return {
+        symbol: r.symbol,
+        as_of_period: r.as_of_period,
+        final_score: r.final_score,
+        final_grade: r.final_grade,
+        rating: r.rating,
+        fa_normalized: r.normalized_score,
+        ta_score: u?.ta_score ?? null,
+        rs_3m: u?.rs_3m ?? null,
+        base_grade: u?.base_grade ?? null,
+        base_type: u?.base_type ?? null,
+      };
+    });
+}
+
+export type MacroHeadline = {
+  vnindex: { value: number; changePct: number | null; date: string } | null;
+  fci: { value: number; date: string } | null;
+  usdvnd: { value: number; date: string } | null;
+  interbank: { value: number; date: string } | null;
+};
+
+/**
+ * The four numbers in the homepage market strip.
+ *
+ * `macro_fci_core` is READ, never recomputed. The FCI is frozen (see
+ * MACRO_COMPOSITE_DESIGN.md); re-deriving it here would put a second definition
+ * of a frozen metric in the tree, which is exactly what the freeze forbids.
+ *
+ * VN-Index takes the last TWO bars so the strip can show a daily change — the
+ * series is stored as levels, with no change column.
+ */
+export const getMacroHeadline = unstable_cache(
+  async (): Promise<MacroHeadline> => {
+    const latest = async (metric: string, take = 1) => {
+      const { data, error } = await supabase
+        .from("macro_series")
+        .select("date,value")
+        .eq("metric", metric)
+        .order("date", { ascending: false })
+        .limit(take);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as { date: string; value: number }[];
+    };
+
+    const [vn, fci, fx, ib] = await Promise.all([
+      latest("vnindex", 2),
+      latest("macro_fci_core"),
+      latest("fx_central_rate"),
+      latest("interbank_overnight"),
+    ]);
+
+    const one = (rows: { date: string; value: number }[]) =>
+      rows.length > 0 ? { value: rows[0].value, date: rows[0].date } : null;
+
+    return {
+      vnindex:
+        vn.length > 0
+          ? {
+              value: vn[0].value,
+              // Null rather than 0 when there is no prior bar — an unknown change
+              // must not render as "flat".
+              changePct:
+                vn.length > 1 && vn[1].value !== 0
+                  ? ((vn[0].value - vn[1].value) / vn[1].value) * 100
+                  : null,
+              date: vn[0].date,
+            }
+          : null,
+      fci: one(fci),
+      usdvnd: one(fx),
+      interbank: one(ib),
+    };
+  },
+  ["home-macro-headline"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
+);

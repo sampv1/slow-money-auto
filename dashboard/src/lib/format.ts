@@ -82,6 +82,30 @@ export function conclusionBadge(conclusion: string): { label: string; className:
   }
 }
 
+// Score grades (A+/A/B/C/D) on the 90/80/70/60 bands — applied to FA, TA and
+// Final scores alike. Shared so the homepage and Signal Pro cannot drift apart:
+// a grade badge must mean the same thing and look the same on both.
+export const SCORE_GRADE_CLASS: Record<string, string> = {
+  "A+": "bg-green-100 text-green-800",
+  A: "bg-green-100 text-green-700",
+  B: "bg-blue-100 text-blue-700",
+  C: "bg-amber-100 text-amber-700",
+  D: "bg-red-100 text-red-700",
+};
+
+export function scoreGradeClass(grade: string | null | undefined): string {
+  return (grade && SCORE_GRADE_CLASS[grade]) || "bg-gray-100 text-gray-600";
+}
+
+export function gradeOf(score: number | null | undefined): string | null {
+  if (score === null || score === undefined) return null;
+  if (score >= 90) return "A+";
+  if (score >= 80) return "A";
+  if (score >= 70) return "B";
+  if (score >= 60) return "C";
+  return "D";
+}
+
 export function regimeLabel(regime: number, locale: Locale = "en"): string {
   switch (regime) {
     case 1: return t(locale, "regime1");

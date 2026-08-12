@@ -654,6 +654,50 @@ export const translations = {
     spSlMustBeBelowEntry: "Stop loss must be below entry",
     spConfirmAdd: "Are you sure you want to add this to the Active list?",
     spConfirmSell: "Are you sure you want to sell and finalize this position?",
+
+    // Homepage
+    homeMarketToday: "Market today",
+    homeFci: "Financial conditions",
+    homeFciEasing: "Easing",
+    homeFciNeutral: "Neutral",
+    homeFciTight: "Tightening",
+    homeUsdVnd: "USD/VND central",
+    homeInterbank: "Interbank O/N",
+    homeTopScoresTitle: "Today's highest scores",
+    homeTopScoresSub: "Ranked by Final Score, liquid names only. Recomputed nightly after the close.",
+    homeColGrade: "Grade",
+    homeColFinal: "Final",
+    homeColTa: "TA",
+    homeColFa: "FA",
+    homeColBase: "Base",
+    homeSeeAllPrefix: "See all",
+    homeSeeAllSuffix: "symbols",
+    homeNoScores: "No scored symbols yet — the nightly pipeline has not produced a ranking.",
+    homeHowTitle: "How the score works",
+    homeHowIntro:
+      "Every symbol gets one number, and the whole formula is public. Nothing is hidden behind a black box.",
+    homeHowFinalLabel: "Final Score",
+    homeHowFinalBody: "59% technical + 41% fundamental, on a 0–100 scale.",
+    homeHowTaLabel: "TA Score",
+    homeHowTaBody:
+      "Relative strength over 3 months (20%) and a 3/6/9/12-month composite (25%), the RS line versus the index (20%), and price-base quality (35%).",
+    homeHowFaLabel: "FA Score",
+    homeHowFaBody:
+      "Nine quarterly criteria — earnings and revenue growth, margins, ROE, debt and valuation — banded into A, B or C.",
+    homeHowNote:
+      "Banks and securities firms score UNRATED: the margin criteria do not apply to their financial statements.",
+    homeToolsTitle: "Where to start",
+    homeToolSignalPro: "Every symbol ranked by Final Score, with filters and sparklines.",
+    homeToolScanner: "Screen on technical signals — 57 indicators, any trading date.",
+    homeToolFaScanner: "Screen on the nine fundamental criteria, quarter by quarter.",
+    homeToolAnalysis: "Candlestick charts, indicators and the score breakdown for one symbol.",
+    homeToolMacro: "Rates, inflation, currency and the financial conditions index.",
+    homeToolImpliedRisk: "Risk implied by VN30 futures versus the cash index.",
+    homeCoverageSymbols: "symbols",
+    homeCoverageExchanges: "HOSE, HNX and UPCOM",
+    homeCoverageUpdated: "Updated nightly after the close",
+    homeDisclaimer:
+      "Research and paper trading only. Nothing here is investment advice, and no order is ever placed.",
   },
   vi: {
     // Layout / Nav
@@ -1308,6 +1352,53 @@ export const translations = {
     spSlMustBeBelowEntry: "Cắt lỗ phải thấp hơn giá vào lệnh",
     spConfirmAdd: "Bạn có chắc muốn thêm vào danh sách Đang mở?",
     spConfirmSell: "Bạn có chắc muốn bán và chốt vị thế này?",
+
+    // Homepage
+    homeMarketToday: "Thị trường hôm nay",
+    homeFci: "Điều kiện tài chính",
+    homeFciEasing: "Nới lỏng",
+    homeFciNeutral: "Trung tính",
+    homeFciTight: "Thắt chặt",
+    // Kept short deliberately: these are 11px uppercase labels in a 2-up grid on
+    // a 375px screen, where the fuller "Tỷ giá trung tâm USD/VND" truncates.
+    homeUsdVnd: "Tỷ giá trung tâm",
+    homeInterbank: "Liên NH qua đêm",
+    homeTopScoresTitle: "Điểm số cao nhất hôm nay",
+    homeTopScoresSub:
+      "Xếp hạng theo Điểm tổng hợp, chỉ gồm cổ phiếu có thanh khoản. Tính lại mỗi đêm sau phiên đóng cửa.",
+    homeColGrade: "Hạng",
+    homeColFinal: "Tổng hợp",
+    homeColTa: "Kỹ thuật",
+    homeColFa: "Cơ bản",
+    homeColBase: "Nền giá",
+    homeSeeAllPrefix: "Xem toàn bộ",
+    homeSeeAllSuffix: "cổ phiếu",
+    homeNoScores: "Chưa có cổ phiếu nào được chấm điểm — pipeline hằng đêm chưa tạo ra bảng xếp hạng.",
+    homeHowTitle: "Cách tính điểm",
+    homeHowIntro:
+      "Mỗi cổ phiếu có một điểm số duy nhất, và toàn bộ công thức đều được công khai. Không có hộp đen nào cả.",
+    homeHowFinalLabel: "Điểm tổng hợp",
+    homeHowFinalBody: "59% kỹ thuật + 41% cơ bản, trên thang 0–100.",
+    homeHowTaLabel: "Điểm kỹ thuật",
+    homeHowTaBody:
+      "Sức mạnh giá tương đối 3 tháng (20%) và tổng hợp 3/6/9/12 tháng (25%), đường RS so với chỉ số (20%), và chất lượng nền giá (35%).",
+    homeHowFaLabel: "Điểm cơ bản",
+    homeHowFaBody:
+      "Chín tiêu chí theo quý — tăng trưởng lợi nhuận và doanh thu, biên lợi nhuận, ROE, nợ vay và định giá — phân hạng A, B hoặc C.",
+    homeHowNote:
+      "Ngân hàng và công ty chứng khoán được xếp UNRATED: các tiêu chí biên lợi nhuận không áp dụng cho báo cáo tài chính của họ.",
+    homeToolsTitle: "Bắt đầu từ đâu",
+    homeToolSignalPro: "Toàn bộ cổ phiếu xếp hạng theo Điểm tổng hợp, kèm bộ lọc và biểu đồ thu nhỏ.",
+    homeToolScanner: "Lọc theo tín hiệu kỹ thuật — 57 chỉ báo, theo bất kỳ phiên nào.",
+    homeToolFaScanner: "Lọc theo chín tiêu chí cơ bản, theo từng quý.",
+    homeToolAnalysis: "Biểu đồ nến, chỉ báo và chi tiết điểm số của từng cổ phiếu.",
+    homeToolMacro: "Lãi suất, lạm phát, tỷ giá và chỉ số điều kiện tài chính.",
+    homeToolImpliedRisk: "Rủi ro hàm ý từ phái sinh VN30 so với chỉ số cơ sở.",
+    homeCoverageSymbols: "cổ phiếu",
+    homeCoverageExchanges: "HOSE, HNX và UPCOM",
+    homeCoverageUpdated: "Cập nhật mỗi đêm sau phiên đóng cửa",
+    homeDisclaimer:
+      "Chỉ phục vụ nghiên cứu và giao dịch thử. Đây không phải khuyến nghị đầu tư, và không có lệnh nào được đặt.",
   },
 } as const;
 

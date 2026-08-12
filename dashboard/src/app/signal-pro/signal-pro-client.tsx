@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, faNormalizedScore } from "@/lib/fa";
+import { SCORE_GRADE_CLASS, gradeOf, scoreGradeClass } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import { PriceBaseBreakdown, PriceBaseSparkline, PriceBaseChart, type BaseChart, baseTypeLabel, baseStatusLabel } from "./price-base";
@@ -22,29 +23,13 @@ const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 // — see the hint text in the filter bar for why that matters here.
 const DEFAULT_MIN_NPAT_BN = 35;
 
-// Score grades (A+/A/B/C/D) on the 90/80/70/60 bands — applied to FA, TA and
-// Final scores alike.
-const SCORE_GRADE_CLASS: Record<string, string> = {
-  "A+": "bg-green-100 text-green-800",
-  A: "bg-green-100 text-green-700",
-  B: "bg-blue-100 text-blue-700",
-  C: "bg-amber-100 text-amber-700",
-  D: "bg-red-100 text-red-700",
-};
-
-function gradeOf(score: number | null | undefined): string | null {
-  if (score === null || score === undefined) return null;
-  if (score >= 90) return "A+";
-  if (score >= 80) return "A";
-  if (score >= 70) return "B";
-  if (score >= 60) return "C";
-  return "D";
-}
+// SCORE_GRADE_CLASS / gradeOf now live in src/lib/format.ts so the homepage
+// renders identical grade badges (imported at the top of this file).
 
 function GradeBadge({ grade }: { grade: string | null }) {
   if (!grade) return <span className="text-gray-300">—</span>;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-medium ${SCORE_GRADE_CLASS[grade] ?? "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-medium ${scoreGradeClass(grade)}`}>
       {grade}
     </span>
   );
