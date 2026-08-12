@@ -8,6 +8,7 @@ import { InterbankRateChart, type IbRow } from "./interbank-rate-chart";
 import { ExternalPressureChart, type EpRegime, type EpRow } from "./external-pressure-chart";
 import { ForeignFlowChart, type FfRow } from "./foreign-flow-chart";
 import { FciChart, type FciRegime, type FciRow } from "./fci-chart";
+import { VerdictBand } from "./verdict-band";
 import { BondYieldChart, type GbRow } from "./bond-yield-chart";
 import { BankRatesChart, type BrRow } from "./bank-rates-chart";
 import { MarginDebtChart, type MdRow } from "./margin-debt-chart";
@@ -559,6 +560,10 @@ export default async function MacroPage() {
 
   return (
     <div>
+      {/* The verdict comes FIRST — before the header blurb and the chart index.
+          A visitor asking "is today risky?" gets the answer, and everything
+          below it becomes the evidence rather than the whole answer. */}
+      {!error && fciRows.length >= 2 && <VerdictBand rows={fciRows} locale={locale} />}
       {header}
       <MacroToc items={tocItems} />
 

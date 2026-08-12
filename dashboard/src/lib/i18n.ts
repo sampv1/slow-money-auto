@@ -655,6 +655,24 @@ export const translations = {
     spConfirmAdd: "Are you sure you want to add this to the Active list?",
     spConfirmSell: "Are you sure you want to sell and finalize this position?",
 
+    // FCI verdict band. The three verdict sentences are DOMAIN CLAIMS about
+    // what the index means — drafted for review, not asserted. Each states the
+    // condition and then what it does NOT mean, because the failure mode of a
+    // one-number headline is being read as a trade signal.
+    fciBandLabel: "Financial conditions index — FCI",
+    fciStreak: "recent sessions below −0.5",
+    fciVerdictSupportive:
+      "Macro is not the constraint right now — this is a green light on conditions, not a buy signal.",
+    fciVerdictNeutral:
+      "Conditions are neither helping nor hurting. Macro is unlikely to decide the outcome here; the individual setup is.",
+    fciVerdictRiskoff:
+      "Conditions are tight. This raises the bar for new risk rather than acting as a sell signal on its own.",
+    fciCaveat:
+      "A shock the model cannot see — tariffs, a global sell-off — can still happen. Always confirm against actual price action.",
+    fciContribLabel: "Contribution by component",
+    fciContribTotal: "Total = FCI",
+    fciContribLegend: "Red = tightening · Green = loosening",
+
     // Masthead / footer
     tagline: "Vietnam macro board & market screener",
     footerDisclaimer: "Lọc tín hiệu · Analysis tool, not investment advice",
@@ -1357,6 +1375,21 @@ export const translations = {
     spSlMustBeBelowEntry: "Cắt lỗ phải thấp hơn giá vào lệnh",
     spConfirmAdd: "Bạn có chắc muốn thêm vào danh sách Đang mở?",
     spConfirmSell: "Bạn có chắc muốn bán và chốt vị thế này?",
+
+    // FCI verdict band — see the note on the EN side. These are domain claims.
+    fciBandLabel: "Chỉ số điều kiện tài chính — FCI",
+    fciStreak: "phiên gần nhất dưới −0,5",
+    fciVerdictSupportive:
+      "Vĩ mô lúc này không phải vấn đề — đây là đèn xanh cho điều kiện chung, không phải tín hiệu mua.",
+    fciVerdictNeutral:
+      "Điều kiện không hỗ trợ cũng không cản trở. Vĩ mô khó quyết định kết quả ở đây; chính thiết lập của từng mã mới quyết định.",
+    fciVerdictRiskoff:
+      "Điều kiện đang siết chặt. Điều này nâng chuẩn cho vị thế mới, chứ tự nó không phải tín hiệu bán.",
+    fciCaveat:
+      "Cú sốc mô hình không thấy được (thuế quan, bán tháo toàn cầu) vẫn có thể xảy ra. Luôn xác nhận bằng diễn biến giá thực tế.",
+    fciContribLabel: "Đóng góp theo cấu phần",
+    fciContribTotal: "Tổng = FCI",
+    fciContribLegend: "Đỏ = siết chặt · Xanh = nới lỏng",
 
     // Masthead / footer
     tagline: "Bảng vĩ mô & bộ lọc thị trường Việt Nam",
