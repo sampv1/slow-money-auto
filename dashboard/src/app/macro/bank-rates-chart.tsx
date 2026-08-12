@@ -212,7 +212,7 @@ export function BankRatesChart({ rows, locale }: { rows: BrRow[]; locale: Locale
               key={r}
               onClick={() => setRange(r)}
               className={`text-data px-2 py-1 rounded font-medium ${
-                range === r ? "bg-amber-600 text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
+                range === r ? "bg-fg text-panel" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {r === "1m" ? t(locale, "irRange1m")

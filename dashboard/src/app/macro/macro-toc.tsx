@@ -94,7 +94,7 @@ export function MacroToc({ items }: { items: TocItem[] }) {
               aria-current={on ? "true" : undefined}
               className={`shrink-0 text-data px-2.5 py-1 rounded-full font-medium transition-colors ${
                 on
-                  ? "bg-accent text-white"
+                  ? "bg-fg text-panel"
                   : "bg-panel text-fg-muted border border-line hover:bg-panel-2"
               }`}
             >

@@ -30,7 +30,9 @@ const VN_COLOR = VN_INDEX;
 const CEILING_COLOR = CHART.down; // red    — SBV ceiling (the cap)
 const CENTRAL_COLOR = CHART.labelStrong; // slate  — SBV central reference rate
 const VCB_COLOR = "#4f46e5"; // indigo — VCB sell (market rate)
-const PCT_COLOR = "#4f46e5"; // indigo — pct line
+const PCT_COLOR = "#0f766e"; // teal — headroom-to-ceiling line.
+// Deliberately NOT the VCB indigo: the two were byte-identical (#4f46e5)
+// while measuring different things in different panels.
 const CHG_FAST = "#d97706"; // amber  — Δ5 bar above threshold
 const CHG_SLOW = CHART.neutral; // slate  — Δ5 bar normal
 const REGIME: Record<Regime, { color: string; label: TranslationKey }> = {
@@ -221,7 +223,7 @@ export function ExchangeRateChart({
               key={r}
               onClick={() => setRange(r)}
               className={`text-data px-2 py-1 rounded font-medium ${
-                range === r ? "bg-accent text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
+                range === r ? "bg-fg text-panel" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {t(locale, r === "1m" ? "irRange1m" : r === "6m" ? "irRange6m" : r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}

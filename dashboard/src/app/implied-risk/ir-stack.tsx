@@ -195,7 +195,7 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
               key={r}
               onClick={() => setRange(r)}
               className={`text-data px-2 py-1 rounded font-medium ${
-                range === r ? "bg-accent text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
+                range === r ? "bg-fg text-panel" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {t(locale, r === "6m" ? "irRange6m" : r === "1y" ? "irRange1y" : r === "3y" ? "irRange3y" : "irRangeAll")}

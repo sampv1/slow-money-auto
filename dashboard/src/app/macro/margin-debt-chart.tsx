@@ -220,7 +220,7 @@ export function MarginDebtChart({ rows, locale }: { rows: MdRow[]; locale: Local
               key={r}
               onClick={() => setRange(r)}
               className={`text-data px-2 py-1 rounded font-medium ${
-                range === r ? "bg-violet-600 text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
+                range === r ? "bg-fg text-panel" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {r === "1m" ? t(locale, "irRange1m")

@@ -241,7 +241,7 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
               key={r}
               onClick={() => setRange(r)}
               className={`text-data px-2 py-1 rounded font-medium ${
-                range === r ? "bg-teal-600 text-white" : "bg-panel-2 text-fg-muted hover:bg-line"
+                range === r ? "bg-fg text-panel" : "bg-panel-2 text-fg-muted hover:bg-line"
               }`}
             >
               {r === "1m" ? "1M" : r === "6m" ? "6M" : r === "1y" ? "1Y" : r === "3y" ? "3Y" : t(locale, "irRangeAll")}

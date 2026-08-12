@@ -49,12 +49,22 @@ export const CHART = {
 } as const;
 
 /**
- * The VN-Index context overlay. Always this colour, always drawn behind the
- * series it contextualises, on every chart that carries it — nine charts had
- * independently arrived at #2563eb, which is worth making explicit rather than
- * leaving as a coincidence.
+ * The VN-Index context overlay — always this colour, always behind the series it
+ * contextualises, on every chart that carries it.
+ *
+ * GREY ON PURPOSE. It used to be #2563eb, which sat ΔE 21 from the #4f46e5
+ * indigo carrying the PRIMARY series on five of the ten macro panels (FCI, CPI,
+ * FX, external pressure, foreign flow) and ΔE 12 from the blue O/N component
+ * inside the FCI stack. Two near-identical blues where one is the subject and
+ * the other is background is the "duplicated colours" problem: the eye cannot
+ * tell which line it is being asked to read.
+ *
+ * VN-Index is CONTEXT, not a series, so it takes a neutral and lets the coloured
+ * hues mean something. Measured: ΔE 14.8 from the central-rate grey on the FX
+ * chart (which is also dashed, so the two never read alike) and 3.64:1 against
+ * the panel, comfortably past the 3:1 bar for non-text graphics.
  */
-export const VN_INDEX = "#2563eb";
+export const VN_INDEX = "#7d8794";
 
 /**
  * Categorical slots for multi-series panels, in order of use. Chosen to stay
