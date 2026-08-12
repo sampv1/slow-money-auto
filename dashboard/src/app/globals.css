@@ -68,9 +68,17 @@
      and anything lighter fails WCAG AA there. `fg-faint` is non-text only:
      em-dashes for null cells, disabled glyphs, redaction marks. */
   --color-fg: #14120f; /* 14.7:1 worst ground */
-  --color-fg-muted: #55504a; /*  6.3:1 */
-  --color-fg-label: #6b655c; /*  4.5:1 */
+  --color-fg-muted: #443f38; /*  8.2:1 — subtitles, hint text, secondary values */
+  --color-fg-label: #4a443b; /*  7.6:1 — see note */
   --color-fg-faint: #a79f92; /*  2.1:1 — NON-TEXT ONLY */
+
+  /* `fg-label` and `fg-muted` are deliberately WELL past the 4.5:1 minimum.
+     At 4.54 and 6.28 they cleared AA on paper and still read as washed out in
+     use: these carry 11px UPPERCASE MONO column headers at 0.1em tracking, and
+     uppercase mono at that size has thin, evenly-weighted strokes with no
+     x-height cue to help the eye — the ratio that suffices for 13px sentence
+     case does not suffice here. AA is a floor for legibility, not a target for
+     scannability. Anything lighter than these two is a regression. */
 
   /* --- Accent -------------------------------------------------------------
      Interactive ONLY: links, focus rings, actions. Reserved so it can never be
@@ -151,6 +159,10 @@ body {
 @utility label {
   font-family: var(--font-mono);
   font-size: var(--text-label);
+  /* 500, not 400: at 11px the mono's regular weight renders about one device
+     pixel wide per stem, so the glyphs thin out and the row reads as grey
+     texture rather than as words. */
+  font-weight: 500;
   line-height: 1.25;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
