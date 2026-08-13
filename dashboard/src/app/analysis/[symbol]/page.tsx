@@ -315,7 +315,17 @@ export default async function SymbolDrillDown({
         </div>
       </div>
 
-      <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
+      {isRealEstate ? (
+        <ReSummary row={reRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
+      ) : (
+        <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
+      )}
+
+      {/* Technical analysis follows the fundamentals: the FA panel answers
+          "is this a business worth owning", the chart answers "is this a
+          moment worth buying". mt-8 replaces the leading margin the FA
+          section used to supply when it sat last. */}
+      <h2 className="mt-8 text-title font-semibold border-b border-line pb-1 mb-3">
         {t(locale, "taSection")}
       </h2>
 
@@ -381,11 +391,6 @@ export default async function SymbolDrillDown({
         )}
       </section>
 
-      {isRealEstate ? (
-        <ReSummary row={reRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
-      ) : (
-        <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
-      )}
     </div>
   );
 }
