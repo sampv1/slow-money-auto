@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "./supabase";
 import type { FaScore, FaQuarterlyRaw } from "./fa";
+import type { ReScore } from "./fa-re";
 import { buildQuarterlyFacts, faNpat, yearAgoPeriod } from "./fa";
 import type { DailyLog, Recommendation } from "./types";
 
@@ -604,4 +605,86 @@ export const getMacroHeadline = unstable_cache(
   },
   ["home-macro-headline"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
+);
+
+// --- Real-estate FA (BĐS rubric) --------------------------------------------
+
+/**
+ * Symbols scored on a rubric OTHER than manufacturing.
+ *
+ * The FA Scanner splits into two sub-pages and each symbol must appear on
+ * exactly one, so the manufacturing page subtracts this set. Returned as a Set
+ * of real-estate symbols only — construction and financial keep the
+ * manufacturing rubric for now (FA_GROUPS_DESIGN.md leaves both open), so
+ * excluding them would empty a page nothing else fills.
+ *
+ * Empty set before migration 048 is applied, which leaves the manufacturing
+ * page showing everything — the pre-existing behaviour, not a broken one.
+ */
+export const getRealEstateSymbols = unstable_cache(
+  async (): Promise<string[]> => {
+    try {
+      const rows = await fetchAllPaged<{ symbol: string }>((from, to, withCount) =>
+        supabase
+          .from("fa_industry")
+          .select("symbol", withCount ? { count: "exact" } : undefined)
+          .eq("industry_group", "real_estate")
+          .order("symbol", { ascending: true })
+          .range(from, to),
+      );
+      return rows.map((r) => r.symbol);
+    } catch (e) {
+      console.warn(
+        "[fa-re] fa_industry unavailable — the manufacturing scanner will keep " +
+          "showing real-estate symbols (apply supabase/048):",
+        e instanceof Error ? e.message : e,
+      );
+      return [];
+    }
+  },
+  ["fa-industry-real-estate"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/** Distinct quarters present in fa_re_scores, newest first. */
+export const getReQuarters = unstable_cache(
+  async (): Promise<string[]> => {
+    const rows = await fetchAllPaged<{ as_of_period: string }>((from, to, withCount) =>
+      supabase
+        .from("fa_re_scores")
+        .select("as_of_period", withCount ? { count: "exact" } : undefined)
+        .order("as_of_period", { ascending: false })
+        .order("symbol", { ascending: true }) // tie-break → deterministic paging
+        .range(from, to),
+    );
+    return Array.from(new Set(rows.map((r) => r.as_of_period)));
+  },
+  ["fa-re-quarters"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/**
+ * Real-estate score rows for one quarter.
+ *
+ * ~118 rows carrying a 13-entry jsonb breakdown each — two orders of magnitude
+ * under Vercel's 2 MB per-entry cache limit, so no column trimming is needed
+ * here (unlike getFaRows, where a quarter is 0.79 MB).
+ */
+export const getReRows = unstable_cache(
+  async (quarter: string): Promise<ReScore[]> =>
+    fetchAllPaged<ReScore>(
+      (from, to, withCount) =>
+        supabase
+          .from("fa_re_scores")
+          .select(
+            "symbol,as_of_period,total_score,scorable_weight,n_scored,normalized_score,breakdown",
+            withCount ? { count: "exact" } : undefined,
+          )
+          .eq("as_of_period", quarter)
+          .order("total_score", { ascending: false })
+          .order("symbol", { ascending: true })
+          .range(from, to) as unknown as PromiseLike<PagedResult<ReScore>>,
+    ),
+  ["fa-re-rows"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
 );

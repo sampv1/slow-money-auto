@@ -65,6 +65,60 @@ def _latest_fa_rows(client) -> dict[str, tuple[str, float]]:
     return {s: (p, ns) for s, (p, ns) in latest.items() if ns is not None}
 
 
+def _real_estate_fa(client) -> dict[str, float]:
+    """{symbol: normalized_score} for symbols scored on the REAL-ESTATE rubric.
+
+    Property developers are scored on their own 13-criterion rubric
+    (fa/real_estate.py), because the manufacturing one cannot see land bank or
+    customer advances. Where a real-estate symbol has an RE score, that score is
+    the FA half of its Final score.
+
+    A real-estate symbol WITHOUT a usable RE score gets no Final score at all
+    rather than silently falling back to its manufacturing number — otherwise
+    the same column would mean two different things depending on the symbol.
+    Mapped to None here, and dropped by the caller.
+
+    Degrades to {} if migration 048 has not been applied yet, so the daily
+    workflow keeps running against the old schema.
+    """
+    try:
+        re_norm: dict[str, float | None] = {}
+        offset, page = 0, 1000
+        while True:
+            rows = safe_execute(
+                client.table("fa_re_scores").select("symbol,as_of_period,normalized_score")
+                .order("symbol").order("as_of_period")
+                .range(offset, offset + page - 1),
+                label="final re read",
+            ).data
+            for r in rows:
+                ns = r.get("normalized_score")
+                re_norm[r["symbol"]] = float(ns) if ns is not None else None
+            if len(rows) < page:
+                break
+            offset += page
+
+        members: dict[str, float | None] = {}
+        offset = 0
+        while True:
+            rows = safe_execute(
+                client.table("fa_industry").select("symbol,industry_group")
+                .eq("industry_group", "real_estate").order("symbol")
+                .range(offset, offset + page - 1),
+                label="final re industry",
+            ).data
+            for r in rows:
+                members[r["symbol"]] = re_norm.get(r["symbol"])
+            if len(rows) < page:
+                break
+            offset += page
+        return members
+    except Exception as e:  # noqa: BLE001 — schema may predate migration 048
+        print(f"::warning::real-estate FA unavailable ({type(e).__name__}: {e}); "
+              "falling back to the manufacturing score for every symbol")
+        return {}
+
+
 def _ta_score_map(client) -> dict[str, int]:
     """{symbol: ta_score} from the latest ta_universe snapshot."""
     out: dict[str, int] = {}
@@ -100,22 +154,35 @@ def compute_final_score(client, dry_run: bool = False) -> dict:
     if not latest:
         return {"rows": 0, "scored": 0, "periods": {}}
     ta = _ta_score_map(client)
+    # Real-estate symbols take their FA half from the real-estate rubric. Keys
+    # present with a None value are real-estate symbols with no usable RE score.
+    re_fa = _real_estate_fa(client)
 
     # Bucket by (period, score, grade): each distinct combination is one bulk
     # UPDATE instead of a write per symbol. Periods are few (one per reporting
     # cohort) and scores are 0-100, so this stays a small number of statements.
     buckets: dict[tuple[str, int, str], list[str]] = {}
     periods: dict[str, int] = {}
+    re_used = 0
     for sym, (period, fa_val) in latest.items():
         ta_val = ta.get(sym)
         if ta_val is None:
             continue
+        if sym in re_fa:
+            # Real estate: the RE rubric replaces the manufacturing FA half. A
+            # member with no usable RE score is skipped rather than blended from
+            # a rubric that does not fit it.
+            if re_fa[sym] is None:
+                continue
+            fa_val = re_fa[sym]
+            re_used += 1
         score = int(round(w["ta"] * ta_val + w["fa"] * fa_val))
         buckets.setdefault((period, score, _grade(score, grades)), []).append(sym)
         periods[period] = periods.get(period, 0) + 1
 
     scored = sum(len(v) for v in buckets.values())
-    stats = {"rows": len(latest), "scored": scored, "periods": periods}
+    stats = {"rows": len(latest), "scored": scored, "periods": periods,
+             "real_estate": re_used, "real_estate_members": len(re_fa)}
     if dry_run:
         return stats
 

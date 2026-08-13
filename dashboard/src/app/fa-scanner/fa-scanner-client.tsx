@@ -288,7 +288,11 @@ export function FaScannerClient({
             disabled={isPending}
             onChange={(e) => {
               const q = e.target.value;
-              startTransition(() => router.push(`/fa-scanner?q=${encodeURIComponent(q)}`));
+              // Must be the CONCRETE route, not /fa-scanner — that now redirects
+              // to this page and would drop the query string on the way.
+              startTransition(() =>
+                router.push(`/fa-scanner/manufacturing?q=${encodeURIComponent(q)}`),
+              );
             }}
             className="border border-line rounded px-2 py-1 disabled:opacity-60"
           >
