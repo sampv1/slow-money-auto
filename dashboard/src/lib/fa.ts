@@ -86,6 +86,14 @@ export type QuarterlyFacts = {
   revenueBn: number | null;
   npatBn: number | null;
   npatYoy: number | null;
+  /**
+   * Revenue YoY, %. The manufacturing scanner reads this off `fa_scores`
+   * (`c4_rev_yoy`, a scored criterion), but the real-estate rubric has no
+   * revenue criterion to carry it — so it is derived here, from the same two
+   * quarters the NPAT YoY above already has in hand, using the same convention
+   * (divide by |prior|, null when prior is 0).
+   */
+  revYoy: number | null;
 };
 
 /**
@@ -124,19 +132,23 @@ export function buildQuarterlyFacts(
   prior: FaQuarterlyRaw[],
 ): Map<string, QuarterlyFacts> {
   const priorNpat = new Map<string, number | null>();
-  for (const r of prior) priorNpat.set(r.symbol, faNpat(r));
+  const priorRevenue = new Map<string, number | null>();
+  for (const r of prior) {
+    priorNpat.set(r.symbol, faNpat(r));
+    priorRevenue.set(r.symbol, r.revenue);
+  }
+
+  const yoy = (now: number | null, prev: number | null) =>
+    now === null || prev === null || prev === 0 ? null : ((now - prev) / Math.abs(prev)) * 100;
 
   const out = new Map<string, QuarterlyFacts>();
   for (const r of current) {
     const npat = faNpat(r);
-    const prev = priorNpat.get(r.symbol) ?? null;
     out.set(r.symbol, {
       revenueBn: r.revenue === null ? null : r.revenue / 1e9,
       npatBn: npat === null ? null : npat / 1e9,
-      npatYoy:
-        npat === null || prev === null || prev === 0
-          ? null
-          : ((npat - prev) / Math.abs(prev)) * 100,
+      npatYoy: yoy(npat, priorNpat.get(r.symbol) ?? null),
+      revYoy: yoy(r.revenue, priorRevenue.get(r.symbol) ?? null),
     });
   }
   return out;
