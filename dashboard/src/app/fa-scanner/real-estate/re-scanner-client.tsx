@@ -12,6 +12,7 @@ import {
   formatReValue,
   isPartialCoverage,
   rePointsColor,
+  reNoteLabel,
 } from "@/lib/fa-re";
 import { type QuarterlyFacts, fmtRatio } from "@/lib/fa";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
@@ -423,7 +424,7 @@ export function ReScannerClient({
                             b
                               ? `${formatReValue(c.key, b.value, locale)}${
                                   b.band ? ` → ${b.band}` : ""
-                                }${b.note ? ` (${b.note})` : ""}`
+                                }${b.note ? ` (${reNoteLabel(b.note, locale)})` : ""}`
                               : undefined
                           }
                         >

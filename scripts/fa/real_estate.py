@@ -413,7 +413,7 @@ def score_metrics(symbol: str, m: dict, rubric: dict[int, Criterion]) -> ReScore
         note = None
 
         if no_debt and idx in DEBT_DENOMINATOR_CRITERIA:
-            points, band, note = crit.weight, "no borrowings", "zero-debt rule"
+            points, band, note = crit.weight, "no borrowings", "zero_debt"
 
         # C10's own two-step rule, which OVERRIDES the zero-debt maximum:
         #   Bước 1  CFO TTM <= 0            -> 0, stop, debt is irrelevant
@@ -421,10 +421,13 @@ def score_metrics(symbol: str, m: dict, rubric: dict[int, Criterion]) -> ReScore
         #   Bước 2  CFO TTM > 0, debt > 0   -> score on the bands
         if idx == 10 and reported:
             if cfo_ttm <= 0:
-                points, band, note = 0.0, "CFO TTM ≤ 0", "cash burn scores 0 regardless of debt"
+                points, band, note = 0.0, "CFO TTM ≤ 0", "cfo_not_positive"
             elif debt == 0:
-                points, band, note = crit.weight, "CFO > 0, no borrowings", "positive CFO, no debt"
+                points, band, note = crit.weight, "CFO > 0, no borrowings", "cfo_positive_no_debt"
 
+        # `note` is a STABLE KEY, not prose. The dashboard is bilingual and
+        # renders this string directly, so English prose stored here would show
+        # untranslated on the Vietnamese page. See NOTE_LABELS in lib/fa-re.ts.
         entry = {"value": None if value is None else round(value, 6),
                  "points": points, "weight": crit.weight, "band": band}
         if note:

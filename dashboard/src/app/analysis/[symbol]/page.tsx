@@ -6,8 +6,10 @@ import { getUserRole } from "@/lib/supabase-server";
 import { formatPrice, formatPercent } from "@/lib/format";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import type { FaScore } from "@/lib/fa";
+import type { ReScore } from "@/lib/fa-re";
 import { ChartClient } from "./chart-client";
 import { FaSummary } from "./fa-summary";
+import { ReSummary } from "./re-summary";
 import { TaSearch } from "../ta-search";
 import { TradeActions } from "../../signal-pro/trade-actions";
 import { DataError } from "@/components/data-error";
@@ -47,7 +49,7 @@ type Signal = { date: string; indicator: string; value: number | null };
 // into the cache key, which would fragment the cache per URL.
 const getSymbolData = unstable_cache(
   async (symbol: string) => {
-    const [candles, signals, srLevels, trendlines, faRows, rsHist] = await Promise.all([
+    const [candles, signals, srLevels, trendlines, faRows, rsHist, reRows, industry] = await Promise.all([
       // Both MUST be paged: a symbol has >1000 triggered signals (and can grow
       // past 1000 bars), and PostgREST silently truncates at 1000 — which would
       // drop the NEWEST rows and quietly break the default indicator selection.
@@ -125,14 +127,43 @@ const getSymbolData = unstable_cache(
           return null;
         }
       })(),
+      // Real-estate rubric rows, and the symbol's rubric group. Both are
+      // defensive: neither table exists until migration 048 is applied, and a
+      // throw here would take down the whole Analysis page rather than fall
+      // back to the manufacturing panel it showed before.
+      (async (): Promise<ReScore[]> => {
+        try {
+          const { data } = await supabase
+            .from("fa_re_scores")
+            .select("symbol,as_of_period,total_score,scorable_weight,n_scored,normalized_score,breakdown")
+            .eq("symbol", symbol)
+            .order("as_of_period", { ascending: false });
+          return (data ?? []) as ReScore[];
+        } catch {
+          return [];
+        }
+      })(),
+      (async (): Promise<string | null> => {
+        try {
+          const { data } = await supabase
+            .from("fa_industry")
+            .select("industry_group")
+            .eq("symbol", symbol)
+            .maybeSingle();
+          return (data?.industry_group as string | undefined) ?? null;
+        } catch {
+          return null;
+        }
+      })(),
     ]);
-    return { candles, signals, srLevels, trendlines, faRows, rsHist };
+    return { candles, signals, srLevels, trendlines, faRows, rsHist, reRows, industry };
   },
-  // v2: payload gained rsHist. The version bump matters — cached entries
-  // persist across deploys (Vercel Data Cache), so without it the new code
-  // could read old-shape entries (no rsHist) for up to the TTL and the RS
-  // lines would silently not show. Bump again on any payload-shape change.
-  ["symbol-data-v2"],
+  // v3: payload gained reRows + industry (v2 gained rsHist). The version bump
+  // matters — cached entries persist across deploys (Vercel Data Cache), so
+  // without it the new code could read old-shape entries for up to the TTL and
+  // every real-estate symbol would keep rendering the manufacturing panel.
+  // Bump again on any payload-shape change.
+  ["symbol-data-v3"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA, TAG_FA] },
 );
 
@@ -182,7 +213,7 @@ export default async function SymbolDrillDown({
   } catch (e) {
     return <DataError error={e} locale={locale} />;
   }
-  const { candles, signals: allSignals, srLevels: allSrLevels, trendlines: allTrendlines, faRows, rsHist } = data;
+  const { candles, signals: allSignals, srLevels: allSrLevels, trendlines: allTrendlines, faRows, rsHist, reRows, industry } = data;
 
   // When no ?ind= is supplied, default to whatever indicators most recently
   // fired for this symbol — gives the visitor an immediately useful chart.
@@ -232,13 +263,22 @@ export default async function SymbolDrillDown({
   const srLevels = selected.some((k) => SR_KEYS.has(k)) ? allSrLevels : [];
   const trendlines = selected.some((k) => TL_KEYS.has(k)) ? allTrendlines : [];
 
-  // Fundamental-analysis snapshots — fa_scores has one row per quarter.
+  // Fundamental-analysis snapshots — one row per quarter.
   // List the quarters for the dropdown and show the selected one (default = latest).
-  const faQuarters = faRows.map((r) => r.as_of_period);
+  //
+  // WHICH RUBRIC: a property developer is scored on the 13-criterion real-estate
+  // rubric, not the 9-criterion manufacturing one, so the panel below switches
+  // on the symbol's group. Driven by `fa_industry` rather than "does it have RE
+  // rows", so a real-estate symbol MISSING its score says so instead of quietly
+  // falling back to a manufacturing number the FA Scanner already stopped
+  // showing for it.
+  const isRealEstate = industry === "real_estate";
+  const faQuarters = (isRealEstate ? reRows : faRows).map((r) => r.as_of_period);
   const selectedFq = fq && faQuarters.includes(fq) ? fq : faQuarters[0];
-  const faRow: FaScore | null = selectedFq
-    ? faRows.find((r) => r.as_of_period === selectedFq) ?? null
-    : null;
+  const faRow: FaScore | null =
+    !isRealEstate && selectedFq ? faRows.find((r) => r.as_of_period === selectedFq) ?? null : null;
+  const reRow: ReScore | null =
+    isRealEstate && selectedFq ? reRows.find((r) => r.as_of_period === selectedFq) ?? null : null;
 
   const latest = candles[candles.length - 1];
   const prev = candles.length > 1 ? candles[candles.length - 2] : null;
@@ -341,7 +381,11 @@ export default async function SymbolDrillDown({
         )}
       </section>
 
-      <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
+      {isRealEstate ? (
+        <ReSummary row={reRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
+      ) : (
+        <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
+      )}
     </div>
   );
 }

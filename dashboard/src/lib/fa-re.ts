@@ -124,3 +124,33 @@ export function rePointsColor(points: number | null, weight: number): string {
 export function isPartialCoverage(row: ReScore): boolean {
   return row.scorable_weight < RE_MIN_SCORABLE;
 }
+
+/**
+ * Why a criterion took a precedence rule instead of its bands.
+ *
+ * `breakdown[...].note` stores a STABLE KEY rather than prose (see
+ * scripts/fa/real_estate.py), because the value is rendered directly and this
+ * site is bilingual — English prose written by the scorer would show
+ * untranslated on the Vietnamese page.
+ */
+const NOTE_LABELS: Record<string, { en: string; vi: string }> = {
+  zero_debt: {
+    en: "no borrowings — scores maximum",
+    vi: "không có nợ vay — được điểm tối đa",
+  },
+  cfo_not_positive: {
+    en: "cash burn scores 0 regardless of debt",
+    vi: "dòng tiền âm nên 0 điểm, bất kể nợ vay",
+  },
+  cfo_positive_no_debt: {
+    en: "positive cash flow and no borrowings",
+    vi: "dòng tiền dương và không có nợ vay",
+  },
+};
+
+/** Unknown keys pass through, so a note added by the scorer is never swallowed. */
+export function reNoteLabel(note: string | undefined, locale: Locale): string | null {
+  if (!note) return null;
+  const hit = NOTE_LABELS[note];
+  return hit ? hit[locale === "vi" ? "vi" : "en"] : note;
+}
