@@ -406,12 +406,12 @@ export function FaScannerClient({
             </thead>
             <tbody>
               {filtered.map((row) => (
-                <tr key={row.symbol} className="group border-b border-line-faint hover:bg-canvas">
+                <tr key={row.symbol} className="group border-b border-line-faint transition-colors hover:bg-panel-2">
                   {/* Frozen identity column. Needs its own opaque background —
                       it paints over the cells scrolling beneath it — and
                       group-hover so it tracks the row highlight instead of
                       staying stubbornly white. */}
-                  <td className="sticky left-0 z-10 bg-panel group-hover:bg-canvas row-h px-2 text-body font-semibold text-accent">
+                  <td className="sticky left-0 z-10 bg-panel group-hover:bg-panel-2 row-h px-2 text-body font-semibold text-accent">
                     <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
                       {row.symbol}
                     </Link>

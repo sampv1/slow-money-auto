@@ -5,7 +5,7 @@ import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, faNormalizedScore } from "@/lib/fa";
 import type { ReScoreBrief } from "@/lib/cached-data";
-import { RE_MAX_SCORE, RE_MIN_SCORABLE } from "@/lib/fa-re";
+
 import { SCORE_GRADE_CLASS, gradeOf, scoreGradeClass, formatPercent } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
@@ -38,25 +38,14 @@ function GradeBadge({ grade }: { grade: string | null }) {
 }
 
 /**
- * Tooltip for a real-estate FA score: which rubric produced it, and its coverage
- * when short of full.
+ * Tooltip naming the rubric behind a real-estate score.
  *
  * The column shows one number for two rubrics, so without this a 36 next to a
- * 48 looks like the same measurement — and a partially covered score looks like
- * a low one rather than an incomplete one.
+ * 48 looks like the same measurement.
  */
 function reTitle(re: ReScoreBrief | undefined, locale: Locale): string | undefined {
   if (!re) return undefined;
-  const rubric = locale === "vi" ? "Bộ tiêu chí BĐS · 13 mục" : "Real-estate rubric · 13 criteria";
-  if (re.scorable_weight >= RE_MAX_SCORE) return rubric;
-  const cov = locale === "vi" ? "Độ phủ" : "Coverage";
-  const short =
-    re.scorable_weight < RE_MIN_SCORABLE
-      ? locale === "vi"
-        ? " — quá ít dữ liệu để so sánh"
-        : " — too little data to compare"
-      : "";
-  return `${rubric}\n${cov}: ${re.scorable_weight}/${RE_MAX_SCORE}${short}`;
+  return locale === "vi" ? "Bộ tiêu chí BĐS · 13 mục" : "Real-estate rubric · 13 criteria";
 }
 
 // One score column's cell: the number, plus a grade badge only when `grade` is
@@ -640,7 +629,7 @@ export function SignalProClient({
                 const base = baseBySymbol.get(row.symbol);
                 const catScore = catalystBySymbol.get(row.symbol) ?? null;
                 return (
-                  <tr key={row.symbol} className="border-b border-line-faint hover:bg-canvas">
+                  <tr key={row.symbol} className="border-b border-line-faint transition-colors hover:bg-panel-2">
                     <td className="px-2 py-1 font-medium">
                       <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
                         {row.symbol}

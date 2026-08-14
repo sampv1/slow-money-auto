@@ -3,9 +3,7 @@ import {
   type ReScore,
   RE_COMPONENTS,
   RE_MAX_SCORE,
-  RE_MIN_SCORABLE,
   formatReValue,
-  isPartialCoverage,
   rePointsColor,
   reNoteLabel,
 } from "@/lib/fa-re";
@@ -52,8 +50,6 @@ export function ReSummary({
     );
   }
 
-  const partial = isPartialCoverage(row);
-
   return (
     <section className="mt-6">
       {heading}
@@ -77,17 +73,6 @@ export function ReSummary({
             </div>
           )}
         </div>
-        {/* Coverage is stated whenever it is not full: a 44/100 built from six
-            criteria is a different claim from a 44/100 built from thirteen, and
-            below the floor it is excluded from the Final Score entirely. */}
-        {row.scorable_weight < RE_MAX_SCORE && (
-          <p className={`text-data mt-2 ${partial ? "text-down" : "text-fg-muted"}`}>
-            {t(locale, "faReCoverage")}: {formatNumber(row.scorable_weight, 0)}/{RE_MAX_SCORE}
-            {" — "}
-            {t(locale, partial ? "faReCoverageBelowFloor" : "faReCoveragePartialNote")}
-            {partial ? ` (< ${RE_MIN_SCORABLE})` : ""}
-          </p>
-        )}
       </div>
 
       {/* 13-criterion breakdown. Unlike the scanner, which has 13 columns to fit

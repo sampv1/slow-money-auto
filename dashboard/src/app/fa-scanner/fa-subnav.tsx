@@ -9,10 +9,15 @@ import { type Locale, t } from "@/lib/i18n";
  *
  * A sub-nav rather than two more entries in the masthead: the masthead is
  * already ten items wide and wraps on a laptop, and these two are one tool
- * viewed two ways, not two tools. The active tab is an INKED underline, not a
- * filled chip — the filled treatment is what the masthead uses for the current
- * section, and repeating it here would give a page two things claiming to be
- * "where you are".
+ * viewed two ways, not two tools.
+ *
+ * The label is just the industry; which rubric it uses is a tooltip. A tab
+ * strip is scanned, not read — a second line of explanatory text under each
+ * one turns a two-item switch into a paragraph.
+ *
+ * The active tab is an INKED underline, not a filled chip: the filled treatment
+ * is what the masthead uses for the current section, and repeating it here
+ * would give one page two things claiming to be "where you are".
  */
 const TABS = [
   {
@@ -33,7 +38,7 @@ export function FaSubnav({ locale }: { locale: Locale }) {
   return (
     <nav
       aria-label={t(locale, "faScannerTitle")}
-      className="flex flex-wrap items-stretch gap-x-6 border-b border-line mb-4"
+      className="flex flex-wrap items-stretch gap-x-1 border-b border-line mb-4"
     >
       {TABS.map((tab) => {
         const active = pathname.startsWith(tab.href);
@@ -41,17 +46,19 @@ export function FaSubnav({ locale }: { locale: Locale }) {
           <Link
             key={tab.href}
             href={tab.href}
+            title={t(locale, tab.hint)}
             aria-current={active ? "page" : undefined}
-            className={`group -mb-px border-b-2 pb-2 pt-1 transition-colors ${
+            // Hover has to be unmistakable: the inactive tab picks up a filled
+            // ground AND the full-strength ink AND a rule under it, so the
+            // pointer's target is obvious before the click rather than after.
+            // A colour-only shift on a muted grey is the change people miss.
+            className={`-mb-px border-b-2 px-3 py-2 text-body-lg font-semibold transition-colors duration-100 ${
               active
                 ? "border-fg text-fg"
-                : "border-transparent text-fg-muted hover:text-fg hover:border-line"
+                : "border-transparent text-fg-muted hover:border-fg-muted hover:bg-panel-2 hover:text-fg"
             }`}
           >
-            <span className="block text-body-lg font-semibold">{t(locale, tab.label)}</span>
-            {/* The hint names the rubric, so the tabs read as two different
-                measuring sticks rather than two filters on one dataset. */}
-            <span className="block label mt-0.5">{t(locale, tab.hint)}</span>
+            {t(locale, tab.label)}
           </Link>
         );
       })}

@@ -25,17 +25,24 @@ export type ReScore = {
   symbol: string;
   as_of_period: string;
   total_score: number;
-  /** Weight that was scorable at all — below 100 means partial coverage. */
+  /**
+   * Weight that could be scored at all. Not displayed — the score is simply the
+   * total out of 100. Kept because 0 here means the symbol filed nothing, which
+   * is how "no data" is told apart from "scored zero".
+   */
   scorable_weight: number;
   n_scored: number;
-  /** 100 × total ÷ scorable, or null below the coverage floor. */
+  /** Equals total_score; null only when nothing at all could be scored. */
   normalized_score: number | null;
   breakdown: Record<string, ReCriterion>;
 };
 
+/**
+ * The rubric's weights sum to exactly 100, so the raw total IS the 0-100 score.
+ * There is no normalization step — a criterion whose input is missing simply
+ * scores nothing and the symbol ends up with fewer points.
+ */
 export const RE_MAX_SCORE = 100;
-/** Below this scorable weight the score is not comparable — matches RE_MIN_SCORABLE. */
-export const RE_MIN_SCORABLE = 80;
 
 /**
  * The 13 criteria, in rubric order.
@@ -118,11 +125,6 @@ export function rePointsColor(points: number | null, weight: number): string {
   if (share >= 1) return "text-up font-semibold";
   if (share > 0) return "text-fg";
   return "text-down";
-}
-
-/** Coverage below the floor means the score is not comparable to a full one. */
-export function isPartialCoverage(row: ReScore): boolean {
-  return row.scorable_weight < RE_MIN_SCORABLE;
 }
 
 /**

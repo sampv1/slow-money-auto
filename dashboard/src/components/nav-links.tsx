@@ -31,10 +31,14 @@ export function NavLinks({ links }: { links: NavLink[] }) {
             key={link.href}
             href={link.href}
             aria-current={isActive ? "page" : undefined}
-            className={`whitespace-nowrap px-3.5 py-2.5 text-body transition-colors ${
+            // Hover has to be unmistakable on a nav this wide: the item takes a
+            // filled ground AND an inked underline, so the pointer's target is
+            // obvious BEFORE the click. A tint alone on near-black text is the
+            // change people miss.
+            className={`whitespace-nowrap border-b-2 px-3.5 py-2.5 text-body transition-colors duration-100 ${
               isActive
-                ? "bg-line-strong text-canvas font-semibold"
-                : "text-fg hover:bg-panel-2"
+                ? "border-line-strong bg-line-strong text-canvas font-semibold"
+                : "border-transparent text-fg hover:border-line-strong hover:bg-panel-2"
             }`}
           >
             {link.label}

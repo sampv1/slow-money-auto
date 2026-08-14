@@ -24,7 +24,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fa.real_estate import (  # noqa: E402
     AS_OF_PERIOD,
-    RE_MIN_SCORABLE,
     load_rubric,
     parse_workbook,
     score_metrics,
@@ -139,8 +138,8 @@ def cmd_score(args):
 
     full = sum(1 for r in out if r["n_scored"] == 13)
     rated = sum(1 for r in out if r["normalized_score"] is not None)
-    print(f"  scored {len(out)}  (all 13: {full}, above the {RE_MIN_SCORABLE:.0f}-weight "
-          f"floor: {rated}, skipped: {skipped})")
+    print(f"  scored {len(out)}  (all 13: {full}, with any data: {rated}, "
+          f"skipped: {skipped})")
     top = sorted(out, key=lambda r: -r["total_score"])[:5]
     print("  top: " + ", ".join(f"{r['symbol']} {r['total_score']:g}" for r in top))
     for sym in ("HDC", "DXG"):

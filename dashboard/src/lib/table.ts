@@ -31,14 +31,30 @@
 /** `<thead>`. Pair with `TH` on each cell. Add `sticky top-0 z-20` per page. */
 export const THEAD = "bg-panel-2 border-y border-line-strong";
 
-/** Header cell. Left-aligned by default; compose with `TH_NUM` for figures. */
-export const TH = "label row-h px-2 font-normal text-left whitespace-nowrap";
+/**
+ * Header cell. Left-aligned by default; compose with `TH_NUM` for figures.
+ *
+ * These carry sort buttons on every page that uses them, so they get a hover
+ * state — a control that reorders the whole table should not look like a label
+ * until you happen to click it.
+ */
+export const TH =
+  "label row-h px-2 font-normal text-left whitespace-nowrap transition-colors hover:text-fg hover:bg-line-faint cursor-pointer";
 
 /** Header cell over a column of numbers. */
-export const TH_NUM = "label row-h px-2 font-normal text-right whitespace-nowrap";
+export const TH_NUM =
+  "label row-h px-2 font-normal text-right whitespace-nowrap transition-colors hover:text-fg hover:bg-line-faint cursor-pointer";
 
-/** Body row. `group` lets a frozen cell track the hover via `group-hover:`. */
-export const TR = "group row-h border-b border-line-faint hover:bg-panel";
+/**
+ * Body row. `group` lets a frozen cell track the hover via `group-hover:`.
+ *
+ * Hover is `panel-2`, NOT `panel`: these tables sit inside a `bg-panel`
+ * container, so hovering to `panel` painted the row its own background and the
+ * highlight was invisible. `panel-2` is the inset-well tone and reads clearly
+ * against both the panel and the paper ground.
+ */
+export const TR =
+  "group row-h border-b border-line-faint transition-colors hover:bg-panel-2";
 
 /** Body cell carrying words. */
 export const TD = "row-h px-2 text-data text-fg-muted";

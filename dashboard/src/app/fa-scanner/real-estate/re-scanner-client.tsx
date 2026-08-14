@@ -8,9 +8,7 @@ import {
   type ReScore,
   RE_COMPONENTS,
   RE_MAX_SCORE,
-  RE_MIN_SCORABLE,
   formatReValue,
-  isPartialCoverage,
   rePointsColor,
   reNoteLabel,
 } from "@/lib/fa-re";
@@ -51,7 +49,7 @@ const RE_EXTRA = [
 ] as const;
 
 type ExtraKey = (typeof RE_EXTRA)[number]["key"];
-type SortKey = "symbol" | "total_score" | "scorable_weight" | ExtraKey | string;
+type SortKey = "symbol" | "total_score" | ExtraKey | string;
 
 const N_QUARTERLY = RE_EXTRA.filter((c) => c.group === "q").length;
 const N_DAILY = RE_EXTRA.filter((c) => c.group === "d").length;
@@ -92,10 +90,6 @@ export function ReScannerClient({
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("total_score");
   const [sortAsc, setSortAsc] = useState(false);
-  // Off by default: a partially-covered symbol is real data, just not comparable,
-  // so it stays visible and flagged rather than silently dropped.
-  const [fullOnly, setFullOnly] = useState(false);
-
   const volBySymbol = useMemo(
     () => new Map(universe.map((u) => [u.symbol, u.avg_volume_20d])),
     [universe],
@@ -113,7 +107,6 @@ export function ReScannerClient({
 
     const out = rows.filter((r) => {
       if (min !== null && !Number.isNaN(min) && r.total_score < min) return false;
-      if (fullOnly && isPartialCoverage(r)) return false;
       // Liquidity: an UNKNOWN volume is excluded rather than assumed to pass,
       // matching both other scanners — the list only holds names demonstrated
       // to clear the bar.
@@ -136,8 +129,6 @@ export function ReScannerClient({
       switch (sortKey) {
         case "total_score":
           return r.total_score;
-        case "scorable_weight":
-          return r.scorable_weight;
         case "rs_1m":
           return rs1mBySymbol.get(r.symbol) ?? null;
         case "pe":
@@ -178,7 +169,7 @@ export function ReScannerClient({
       return a.symbol.localeCompare(b.symbol);
     });
     return out;
-  }, [rows, minScore, minAvgVolume, minNpatBn, fullOnly, volBySymbol, rs1mBySymbol,
+  }, [rows, minScore, minAvgVolume, minNpatBn, volBySymbol, rs1mBySymbol,
       quarterlyBySymbol, peBySymbol, search, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
@@ -191,7 +182,6 @@ export function ReScannerClient({
   }
 
   const arrow = (key: SortKey) => (sortKey !== key ? "" : sortAsc ? " ▲" : " ▼");
-  const partialCount = rows.filter(isPartialCoverage).length;
 
   return (
     <div>
@@ -226,20 +216,6 @@ export function ReScannerClient({
             quarter — worth saying, since the filter drops it either way. */}
         <span className="text-body text-fg-label">{t(locale, "faReMinNpatHint")}</span>
 
-        <span className="hidden sm:block h-5 w-px bg-line" aria-hidden />
-        <label className="flex items-center gap-2 text-body text-fg">
-          <input
-            type="checkbox"
-            checked={fullOnly}
-            onChange={(e) => setFullOnly(e.target.checked)}
-          />
-          {t(locale, "faReCoverage")} = {RE_MAX_SCORE}
-        </label>
-        {partialCount > 0 && (
-          <span className="text-body text-fg-label">
-            {partialCount} {t(locale, "faRePartial")}
-          </span>
-        )}
         {(minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D || minNpatBn !== DEFAULT_MIN_NPAT_BN) && (
           <button
             type="button"
@@ -323,18 +299,13 @@ export function ReScannerClient({
                     {t(locale, "symbol")}{arrow("symbol")}
                   </button>
                 </th>
-                <th rowSpan={2} className={`${TH_NUM} align-bottom`} title={t(locale, "faReScoreTip")}>
-                  <button type="button" onClick={() => toggleSort("total_score")}>
-                    {t(locale, "faTotalScore")}{arrow("total_score")}
-                  </button>
-                </th>
                 <th
                   rowSpan={2}
                   className={`${TH_NUM} align-bottom border-r border-line`}
-                  title={t(locale, "faReCoverageTip")}
+                  title={t(locale, "faReScoreTip")}
                 >
-                  <button type="button" onClick={() => toggleSort("scorable_weight")}>
-                    {t(locale, "faReCoverage")}{arrow("scorable_weight")}
+                  <button type="button" onClick={() => toggleSort("total_score")}>
+                    {t(locale, "faTotalScore")}{arrow("total_score")}
                   </button>
                 </th>
                 <th colSpan={RE_COMPONENTS.length} className="label row-h px-2 text-center">
@@ -387,28 +358,16 @@ export function ReScannerClient({
             </thead>
             <tbody>
               {filtered.map((r) => {
-                const partial = isPartialCoverage(r);
                 return (
                   <tr key={r.symbol} className={TR}>
-                    <td className={`${TD_SYMBOL} sticky left-0 z-10 bg-panel group-hover:bg-panel`}>
+                    <td className={`${TD_SYMBOL} sticky left-0 z-10 bg-panel group-hover:bg-panel-2`}>
                       <Link href={`/analysis/${r.symbol}`} className="hover:underline">
                         {r.symbol}
                       </Link>
                     </td>
-                    <td className={`${TD_NUM} font-semibold`}>
+                    <td className={`${TD_NUM} font-semibold border-r border-line-faint`}>
                       {formatNumber(r.total_score, 0)}
-                    </td>
-                    <td
-                      className={`${TD_NUM} border-r border-line-faint ${
-                        partial ? "text-down" : "text-fg-muted"
-                      }`}
-                      title={
-                        partial
-                          ? `${t(locale, "faRePartial")} — < ${RE_MIN_SCORABLE}`
-                          : undefined
-                      }
-                    >
-                      {formatNumber(r.scorable_weight, 0)}
+                      <span className="text-fg-label font-normal"> / {RE_MAX_SCORE}</span>
                     </td>
                     {RE_COMPONENTS.map((c) => {
                       const b = r.breakdown?.[c.key];

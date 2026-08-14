@@ -48,10 +48,15 @@ DEBT_DENOMINATOR_CRITERIA = (4, 6, 8)
 # Criteria scored on a raw ratio/count rather than a percentage.
 NON_PERCENT_CRITERIA = (7, 9)
 
-# Below this much scorable weight a symbol gets no `normalized_score`, so it
-# contributes nothing to the Final Score rather than a number assembled from a
-# handful of criteria. 21 of the 118 filed no Q2/2026 balance sheet at all.
-RE_MIN_SCORABLE = 80.0
+# The rubric's weights sum to exactly 100, so the raw total IS the 0-100 score —
+# there is nothing to normalize (2026-08-14, by decision). A criterion whose
+# input is missing simply scores nothing, and the symbol ends up with fewer
+# points, which is what "not proven" should look like.
+#
+# The ONE exception is a symbol where nothing at all could be scored: 21 of the
+# 118 filed no Q2/2026 balance sheet, and a total of 0 out of 0 scorable weight
+# is absence of data, not a score of zero. Those get NULL, so the Final Score
+# skips them rather than blending a meaningless 0.
 
 # Sheet roles in the FiinProX export. Sheet names have already changed once
 # (Sheet3 -> "CFO quý - năm"), so they are resolved by ROLE, with the tolerated
@@ -334,9 +339,8 @@ class ReScore:
 
     @property
     def normalized(self) -> float | None:
-        if self.scorable < RE_MIN_SCORABLE or self.scorable == 0:
-            return None
-        return round(100 * self.total / self.scorable, 2)
+        """The 0-100 score the Final Score blends. NULL when nothing scored."""
+        return None if self.scorable == 0 else self.total
 
 
 def _z(x):
