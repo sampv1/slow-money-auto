@@ -1,6 +1,13 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { CACHE_TTL_SECONDS, TAG_TA, getFaRowsLatestPerSymbol, getNpatBnByRow } from "@/lib/cached-data";
+import type { ReScoreBrief } from "@/lib/cached-data";
+import {
+  CACHE_TTL_SECONDS,
+  TAG_TA,
+  getFaRowsLatestPerSymbol,
+  getNpatBnByRow,
+  getReScoresLatestPerSymbol,
+} from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import { SignalProClient } from "./signal-pro-client";
@@ -82,6 +89,9 @@ export default async function SignalProPage() {
   // client: it needs a per-quarter join the client has no data for, and the
   // client's `filtered` memo re-runs on every keystroke in the search box.
   let npatBn: Map<string, number | null> = new Map();
+  // Property developers are scored on the 13-criterion real-estate rubric, so
+  // the FA Score column has to resolve per symbol rather than assume one.
+  let reScores: ReScoreBrief[] = [];
   // Hold the ERROR ITSELF, not its message: a failed head:true count query
   // comes back with an empty message, and the old `string | null` + truthy
   // check swallowed it — during the 2026-07-27 Supabase outage this page
@@ -95,7 +105,7 @@ export default async function SignalProPage() {
     // Each symbol is shown at ITS OWN latest FA quarter (no global quarter
     // selection): symbols report on different schedules, so pinning one quarter
     // would hide most of the universe.
-    [rows, universe, activeSymbols] = await Promise.all([
+    [rows, universe, activeSymbols, reScores] = await Promise.all([
       getFaRowsLatestPerSymbol(),
       getSignalProUniverse(),
       (async (): Promise<string[]> => {
@@ -106,6 +116,7 @@ export default async function SignalProPage() {
           .in("status", ["OPEN", "TP1_HIT"]);
         return Array.from(new Set((active ?? []).map((r) => r.symbol as string)));
       })(),
+      getReScoresLatestPerSymbol(),
     ]);
     // Keyed off each row's own as_of_period, so this has to follow the parallel
     // block rather than join it. Cheap: one cached read per distinct quarter.
@@ -151,6 +162,7 @@ export default async function SignalProPage() {
         isAdmin={isAdmin}
         activeSymbols={activeSymbols}
         npatBn={Array.from(npatBn)}
+        reScores={reScores}
       />
     </div>
   );

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, faNormalizedScore } from "@/lib/fa";
+import type { ReScoreBrief } from "@/lib/cached-data";
+import { RE_MAX_SCORE, RE_MIN_SCORABLE } from "@/lib/fa-re";
 import { SCORE_GRADE_CLASS, gradeOf, scoreGradeClass, formatPercent } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
@@ -35,11 +37,33 @@ function GradeBadge({ grade }: { grade: string | null }) {
   );
 }
 
+/**
+ * Tooltip for a real-estate FA score: which rubric produced it, and its coverage
+ * when short of full.
+ *
+ * The column shows one number for two rubrics, so without this a 36 next to a
+ * 48 looks like the same measurement — and a partially covered score looks like
+ * a low one rather than an incomplete one.
+ */
+function reTitle(re: ReScoreBrief | undefined, locale: Locale): string | undefined {
+  if (!re) return undefined;
+  const rubric = locale === "vi" ? "Bộ tiêu chí BĐS · 13 mục" : "Real-estate rubric · 13 criteria";
+  if (re.scorable_weight >= RE_MAX_SCORE) return rubric;
+  const cov = locale === "vi" ? "Độ phủ" : "Coverage";
+  const short =
+    re.scorable_weight < RE_MIN_SCORABLE
+      ? locale === "vi"
+        ? " — quá ít dữ liệu để so sánh"
+        : " — too little data to compare"
+      : "";
+  return `${rubric}\n${cov}: ${re.scorable_weight}/${RE_MAX_SCORE}${short}`;
+}
+
 // One score column's cell: the number, plus a grade badge only when `grade` is
 // set (Final score). FA/TA show the number alone.
-function ScoreCell({ score, highlight = false, grade = false }: { score: number | null; highlight?: boolean; grade?: boolean }) {
+function ScoreCell({ score, highlight = false, grade = false, title }: { score: number | null; highlight?: boolean; grade?: boolean; title?: string }) {
   return (
-    <td className={`px-2 py-1 ${highlight ? "bg-amber-50" : ""}`}>
+    <td className={`px-2 py-1 ${highlight ? "bg-amber-50" : ""}`} title={title}>
       {score !== null ? (
         <div className="flex items-center justify-end gap-2 whitespace-nowrap">
           <span className={`font-mono ${highlight ? "font-semibold" : ""}`}>{score}</span>
@@ -87,6 +111,7 @@ export function SignalProClient({
   isAdmin = false,
   activeSymbols = [],
   npatBn = [],
+  reScores = [],
 }: {
   rows: FaScore[];
   universe: {
@@ -108,6 +133,8 @@ export function SignalProClient({
   activeSymbols?: string[];
   /** [symbol, NPAT in bn VND] at each row's own quarter; null = not reported. */
   npatBn?: [string, number | null][];
+  /** Latest real-estate score per symbol; empty before migration 048. */
+  reScores?: ReScoreBrief[];
 }) {
   const activeSet = useMemo(() => new Set(activeSymbols), [activeSymbols]);
   // Reliable "as of" date: the most recent close-price date among displayed rows
@@ -178,13 +205,45 @@ export function SignalProClient({
     return m;
   }, [rows]);
 
+  const reBySymbol = useMemo(() => new Map(reScores.map((r) => [r.symbol, r])), [reScores]);
+
+  /**
+   * The FA Score each symbol is actually judged on, 0-100.
+   *
+   * A property developer is scored on the 13-criterion real-estate rubric, so
+   * this table mixes two rubrics and the column has to resolve per symbol —
+   * otherwise the number here contradicts the FA Scanner, the Analysis page and
+   * the Final Score, all three of which already use the real-estate one.
+   *
+   * The RAW total is used, not `normalized_score` (100 x total / scorable),
+   * because that is the number the other two real-estate surfaces show; the
+   * normalized figure exists for blending into the Final Score, where a
+   * partially covered symbol has to be either comparable or absent. Coverage is
+   * surfaced as a tooltip on the cell instead.
+   */
+  const faScoreBySymbol = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const r of rows) {
+      const re = reBySymbol.get(r.symbol);
+      // scorable_weight 0 means NOTHING could be scored — the symbol filed no
+      // balance sheet. Its total is 0, which as a bare number reads as "scored
+      // zero on every criterion" rather than "no data", so it renders as a dash.
+      m.set(
+        r.symbol,
+        re ? (re.scorable_weight > 0 ? re.total_score : null) : faNormalizedScore(r),
+      );
+    }
+    return m;
+  }, [rows, reBySymbol]);
+
   // The FA quarter each row comes from — symbols report on different schedules,
-  // so this is per-symbol, not a single page-wide quarter.
+  // so this is per-symbol, not a single page-wide quarter. Real-estate symbols
+  // report the quarter their RE score came from, which is the score displayed.
   const quarterBySymbol = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of rows) m.set(r.symbol, r.as_of_period);
+    for (const r of rows) m.set(r.symbol, reBySymbol.get(r.symbol)?.as_of_period ?? r.as_of_period);
     return m;
-  }, [rows]);
+  }, [rows, reBySymbol]);
 
   const baseBySymbol = useMemo(() => {
     const m = new Map<string, { score: number | null; grade: string | null; type: string | null; status: string | null; chart: BaseChart | null }>();
@@ -327,8 +386,13 @@ export function SignalProClient({
           : sortKey === "final_score" ? (finalBySymbol.get(sym) ?? null)
           : sortKey === "base_score" ? (baseBySymbol.get(sym)?.score ?? null)
           : null;
-        const an = sortKey === "total_score" ? a.total_score : pick(a.symbol);
-        const bn = sortKey === "total_score" ? b.total_score : pick(b.symbol);
+        // The FA column sorts on the DISPLAYED score, which is now per-rubric.
+        // It used to sort on the raw fa_scores.total_score (0-108) while showing
+        // the normalized 0-100 — harmless when one rubric ranked identically on
+        // both, wrong the moment a second rubric on a 0-100 scale joined the
+        // table.
+        const an = sortKey === "total_score" ? (faScoreBySymbol.get(a.symbol) ?? null) : pick(a.symbol);
+        const bn = sortKey === "total_score" ? (faScoreBySymbol.get(b.symbol) ?? null) : pick(b.symbol);
         if (an === null && bn === null) return 0;
         if (an === null) return 1;
         if (bn === null) return -1;
@@ -340,7 +404,7 @@ export function SignalProClient({
       return 0;
     });
     return out;
-  }, [rows, rating, minScore, minAvgVolume, minNpatBn, avgVolBySymbol, npatBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, baseBySymbol, search, sortKey, sortAsc]);
+  }, [rows, rating, minScore, minAvgVolume, minNpatBn, avgVolBySymbol, npatBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, faScoreBySymbol, baseBySymbol, search, sortKey, sortAsc]);
 
   // Fetch sparkline data for the rows currently on screen, once they are known.
   //
@@ -585,7 +649,10 @@ export function SignalProClient({
                     <td className="px-2 py-1 font-mono text-data text-fg-muted whitespace-nowrap">
                       {quarterBySymbol.get(row.symbol) ?? row.as_of_period}
                     </td>
-                    <ScoreCell score={faNormalizedScore(row)} />
+                    <ScoreCell
+                      score={faScoreBySymbol.get(row.symbol) ?? null}
+                      title={reTitle(reBySymbol.get(row.symbol), locale)}
+                    />
                     <ScoreCell score={taScore} />
                     <ScoreCell score={finalScore} highlight grade />
                     <td className="px-2 py-1 text-right font-mono border-l border-line-faint">{rs3m ?? "—"}</td>

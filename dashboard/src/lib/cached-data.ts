@@ -688,3 +688,54 @@ export const getReRows = unstable_cache(
   ["fa-re-rows"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
 );
+
+/**
+ * Latest real-estate score per symbol: `{symbol, total_score, scorable_weight,
+ * as_of_period}`.
+ *
+ * For Signal Pro, which mixes rubrics in one table and must show each symbol
+ * the score that actually applies to it. Read plainly and reduced in JS rather
+ * than through fa_re_scores_latest_per_symbol(): the whole table is ~118 rows,
+ * so DISTINCT ON saves nothing here and the RPC would only add a failure mode
+ * (it is worth it on fa_scores, which is 4,000+).
+ *
+ * Empty before migration 048, which leaves every symbol on the manufacturing
+ * score — the behaviour from before the split, not a broken one.
+ */
+export type ReScoreBrief = {
+  symbol: string;
+  total_score: number;
+  scorable_weight: number;
+  as_of_period: string;
+};
+
+export const getReScoresLatestPerSymbol = unstable_cache(
+  async (): Promise<ReScoreBrief[]> => {
+    try {
+      const rows = await fetchAllPaged<ReScoreBrief>((from, to, withCount) =>
+        supabase
+          .from("fa_re_scores")
+          .select(
+            "symbol,total_score,scorable_weight,as_of_period",
+            withCount ? { count: "exact" } : undefined,
+          )
+          .order("symbol", { ascending: true })
+          .order("as_of_period", { ascending: false })
+          .range(from, to),
+      );
+      // Ordered newest-first within each symbol, so the first row wins.
+      const latest = new Map<string, ReScoreBrief>();
+      for (const r of rows) if (!latest.has(r.symbol)) latest.set(r.symbol, r);
+      return [...latest.values()];
+    } catch (e) {
+      console.warn(
+        "[fa-re] fa_re_scores unavailable — Signal Pro will show the " +
+          "manufacturing FA score for every symbol (apply supabase/048):",
+        e instanceof Error ? e.message : e,
+      );
+      return [];
+    }
+  },
+  ["fa-re-scores-latest"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
