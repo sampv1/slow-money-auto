@@ -49,8 +49,23 @@
 
   /* --- Surfaces -----------------------------------------------------------
      A three-step warm tonal ladder: the desk the sheet sits on, the sheet, and
-     tiles raised off it. */
-  --color-desk: #e8e4da; /* outermost page ground */
+     tiles raised off it.
+
+     THE DESK IS MARGIN ONLY. The sheet div closes immediately before </body>,
+     so nothing is ever painted on it — which is what lets it go darker than the
+     text tokens would otherwise permit, and why every ratio quoted below is
+     measured across canvas/panel/panel-2 and NOT the desk. If anything is ever
+     rendered outside the sheet, re-run the contrast gate before shipping it. */
+  --color-desk: #dcd6c6; /* outermost page ground — margin only, never text.
+                            1.29:1 against the sheet. At the previous #e8e4da it
+                            was 1.13:1 — near enough to invisible that the sheet
+                            did not read as a sheet. Darkened along its OWN hue
+                            (R-B 14 -> 22) rather than going neutral: a grey desk
+                            measures 1.14:1, i.e. buys no separation at all, and
+                            a cream sheet against a neutral ground reads as two
+                            lighting temperatures with the cream looking yellowed.
+                            Separation here is a LIGHTNESS problem, not a hue one.
+                            Only visible above the sheet's 1600px max-width. */
   --color-canvas: #f4f1ea; /* the content sheet ("paper") */
   --color-panel: #fbf9f5; /* tiles and cells raised on paper */
   --color-panel-2: #eeebe2; /* table headers, inset wells */
@@ -67,10 +82,13 @@
      `fg-label` is the LIGHTEST value permitted for text — labels render at 11px
      and anything lighter fails WCAG AA there. `fg-faint` is non-text only:
      em-dashes for null cells, disabled glyphs, redaction marks. */
-  --color-fg: #14120f; /* 14.7:1 worst ground */
-  --color-fg-muted: #443f38; /*  8.2:1 — subtitles, hint text, secondary values */
-  --color-fg-label: #4a443b; /*  7.6:1 — see note */
-  --color-fg-faint: #a79f92; /*  2.1:1 — NON-TEXT ONLY */
+  /* Ratios are the WORST across the three text-bearing grounds (canvas, panel,
+     panel-2) — which is panel-2 in every case. The desk is excluded: it carries
+     no text, see the surfaces note above. */
+  --color-fg: #14120f; /* 15.7:1 worst ground */
+  --color-fg-muted: #443f38; /*  8.8:1 — subtitles, hint text, secondary values */
+  --color-fg-label: #4a443b; /*  8.1:1 — see note */
+  --color-fg-faint: #a79f92; /*  2.2:1 — NON-TEXT ONLY */
 
   /* `fg-label` and `fg-muted` are deliberately WELL past the 4.5:1 minimum.
      At 4.54 and 6.28 they cleared AA on paper and still read as washed out in
@@ -96,18 +114,23 @@
      values are set for legibility.
 
      FOUR are darkened from the design handoff, which specified ratios for its
-     text tokens but never checked its own board semantics. Measured against its
-     three surfaces (worst of paper/panel/desk): floor #1b9aaa scored 2.65 and
+     text tokens but never checked its own board semantics. Measured when the
+     desk was still treated as a text surface: floor #1b9aaa scored 2.65 and
      reference #b5820a 2.68 — both plain failures — while up #0e7a55 (4.20) and
      down #c4342b (4.27) passed on paper but failed on the desk. These carry P&L
      at 12px, the most-repeated text in the app, and `reference` doubles as the
      Pro-tier marker. Hue is unchanged in every case; only lightness moved.
-     pnlColor() in src/lib/format.ts returns these same tokens. Never decorative. */
-  --color-up: #0c6b4a; /* 5.1:1 — tăng · thuận lợi · nới lỏng · lãi */
-  --color-down: #b32c24; /* 5.0:1 — giảm · rủi ro · siết chặt · lỗ */
-  --color-ceiling: #7a3fa8; /* 5.3:1 — trần  (limit up)  */
-  --color-floor: #136a76; /* 4.9:1 — sàn   (limit down) */
-  --color-reference: #7d5806; /* 5.1:1 — tham chiếu · cảnh báo · Pro */
+     pnlColor() in src/lib/format.ts returns these same tokens. Never decorative.
+
+     The ratios below are re-measured on the text-bearing grounds only (worst is
+     panel-2). Keep the values themselves: they clear the gate with room to
+     spare, and re-lightening them to sit exactly on 4.5 would undo the very
+     legibility fix this paragraph documents. */
+  --color-up: #0c6b4a; /* 5.5:1 — tăng · thuận lợi · nới lỏng · lãi */
+  --color-down: #b32c24; /* 5.3:1 — giảm · rủi ro · siết chặt · lỗ */
+  --color-ceiling: #7a3fa8; /* 5.7:1 — trần  (limit up)  */
+  --color-floor: #136a76; /* 5.3:1 — sàn   (limit down) */
+  --color-reference: #7d5806; /* 5.4:1 — tham chiếu · cảnh báo · Pro */
 
   /* --- Type scale ---------------------------------------------------------
      Data sizes drop to Halo's 12px and their line-heights tighten hard, because
