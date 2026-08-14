@@ -179,6 +179,21 @@ body {
   height: var(--row-h);
 }
 
+/* Suppress the browser's own number spinners.
+   A native <input type="number"> steps by a single fixed amount, which cannot
+   walk a non-uniform ladder like the volume presets (0, 5k, 10k, 20k, 30k...).
+   The control that needs one renders its own buttons in the same place; this
+   just takes the UA's out of the way. Typing is unaffected. */
+@utility no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
 /* Visible keyboard focus everywhere, in the accent. Tailwind's reset removes
    the UA outline and nothing had replaced it. */
 :where(a, button, summary, [tabindex]):focus-visible {
