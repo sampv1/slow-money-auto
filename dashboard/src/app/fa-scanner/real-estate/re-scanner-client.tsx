@@ -16,7 +16,7 @@ import { type QuarterlyFacts, fmtRatio } from "@/lib/fa";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatBillions, formatNumber, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
-import { TABLE, TABLE_SCROLL, THEAD, TH, TH_NUM, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
+import { TABLE, TABLE_FREEZE, THEAD_STICKY, TH, TH_NUM, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 const DEFAULT_MIN_NPAT_BN = 35;
@@ -280,18 +280,14 @@ export function ReScannerClient({
         </div>
       ) : (
         <div
-          className={`bg-panel border border-line ${TABLE_SCROLL} max-h-[calc(100vh-14rem)]${
+          className={`bg-panel border border-line ${TABLE_FREEZE}${
             isPending ? " opacity-50 transition-opacity" : ""
           }`}
-          style={{ overflowY: "auto" }}
         >
           <table className={TABLE}>
-            {/* Two sticky axes meet here, so the z-order is deliberate — same
-                as the manufacturing tab:
-                  thead        z-20  — beats every body cell on vertical scroll
-                  symbol <th>  z-30  — beats the rest of the header too
-                  symbol <td>  z-10  — beats sibling body cells, loses to thead */}
-            <thead className={`${THEAD} sticky top-0 z-20`}>
+            {/* Two sticky axes meet here; THEAD_STICKY documents the z-order and
+                why its bottom rule is a shadow rather than a border. */}
+            <thead className={THEAD_STICKY}>
               {/* Group row. Only Symbol, Score and Coverage span both rows. */}
               <tr>
                 <th rowSpan={2} className={`${TH} sticky left-0 z-30 bg-panel-2 align-bottom`}>

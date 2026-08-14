@@ -74,5 +74,45 @@ export const TD_SYMBOL =
 /** Wraps a table that can exceed its container. Never let the body scroll. */
 export const TABLE_SCROLL = "overflow-x-auto";
 
+/**
+ * A table box that scrolls INSIDE itself, so a `sticky` header can freeze.
+ *
+ * Both halves are load-bearing. `overflow-x-auto` alone already makes the box a
+ * scroll container (per spec a non-visible overflow on one axis computes the
+ * other to `auto`), so a sticky header anchors to it and then never moves while
+ * the PAGE scrolls — the cap is what gives it something to scroll against.
+ *
+ * IT LIVES HERE, IN A PLAIN STRING LITERAL, ON PURPOSE. Written inline it was
+ * spelled `max-h-[calc(100vh-14rem)]${isPending ? … }`, glued straight onto the
+ * interpolation — and Tailwind's scanner reads raw source text, so it never
+ * extracted the candidate and emitted NO RULE AT ALL. An arbitrary value that
+ * silently compiles to nothing is the worst kind of miss: the class is right
+ * there in the DOM, so the element looks correctly styled in devtools until you
+ * notice no declaration matches it. The Real Estate scanner's header did not
+ * freeze for exactly this reason. The manufacturing tab had the same glued
+ * class and worked only by accident — Signal Pro spells the identical utility
+ * in a clean string, so its rule covered for it.
+ *
+ * One shared value also keeps the three scanners scrolling to the same depth.
+ */
+export const TABLE_FREEZE = "overflow-auto max-h-[calc(100vh-12rem)]";
+
+/**
+ * A `<thead>` frozen to the top of a TABLE_FREEZE box. Use INSTEAD of `THEAD`.
+ *
+ * The bottom rule is a shadow rather than a border: Tailwind's preflight sets
+ * `border-collapse: collapse`, collapsed borders belong to the table rather than
+ * the cell, and Chrome drops them once the header is sticky — so `THEAD`'s
+ * `border-y` would simply vanish at the moment the header starts floating.
+ *
+ * z-20 is the middle of three deliberate layers where two sticky axes meet:
+ * a frozen symbol `<th>` takes z-30 to beat the rest of the header, a frozen
+ * symbol `<td>` takes z-10 to beat its sibling cells but lose to this. Give them
+ * all one z and the body's symbol cell — later in the DOM — paints OVER the
+ * frozen header.
+ */
+export const THEAD_STICKY =
+  "sticky top-0 z-20 bg-panel-2 shadow-[0_1px_0_0_var(--color-line-strong)]";
+
 /** The table element itself. */
 export const TABLE = "w-full border-collapse";
