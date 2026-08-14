@@ -28,14 +28,28 @@ const MAX_RUNG = RUNGS[RUNGS.length - 1];
  * The next rung STRICTLY above / below the current value.
  *
  * Strictly, so a typed in-between value (250,000) steps to the neighbouring
- * rung rather than snapping to itself and appearing stuck. At either end the
- * value holds instead of wrapping.
+ * rung rather than snapping to itself and appearing stuck.
+ *
+ * ABOVE the top rung the ladder does not stop — it continues in steps of
+ * MAX_RUNG (500,000 → 1,000,000 → 1,500,000 …), because the presets are the
+ * rungs people usually reach for, not a ceiling on the filter. Only the bottom
+ * end is a real limit: volume cannot go below zero.
  */
 function stepUp(v: number): number {
-  return RUNGS.find((r) => r > v) ?? Math.max(v, MAX_RUNG);
+  const rung = RUNGS.find((r) => r > v);
+  if (rung !== undefined) return rung;
+  // Snap to the next MULTIPLE, so a typed 750,000 lands on 1,000,000 rather
+  // than 1,250,000 — past the presets the value should still read as a round
+  // number.
+  return (Math.floor(v / MAX_RUNG) + 1) * MAX_RUNG;
 }
 
 function stepDown(v: number): number {
+  if (v > MAX_RUNG) {
+    // Coming back down the open-ended part, stopping on MAX_RUNG so the descent
+    // rejoins the ladder rather than skipping past its top.
+    return Math.max((Math.ceil(v / MAX_RUNG) - 1) * MAX_RUNG, MAX_RUNG);
+  }
   for (let i = RUNGS.length - 1; i >= 0; i--) if (RUNGS[i] < v) return RUNGS[i];
   return MIN_RUNG;
 }
@@ -95,7 +109,8 @@ export function MinVolumeFilter({
               tabIndex={-1} // the input already handles ArrowUp/ArrowDown
               aria-label={t(locale, dir === 1 ? "stepUp" : "stepDown")}
               onClick={() => bump(dir)}
-              disabled={dir === 1 ? current >= MAX_RUNG : current <= MIN_RUNG}
+              // Only DOWN has a real limit. Up keeps going in MAX_RUNG steps.
+              disabled={dir === -1 && current <= MIN_RUNG}
               className="flex flex-1 items-center justify-center bg-panel-2 text-fg-muted transition-colors hover:bg-line-faint hover:text-fg disabled:opacity-30 disabled:hover:bg-panel-2"
             >
               <svg viewBox="0 0 8 5" className="h-[5px] w-2" aria-hidden="true">
