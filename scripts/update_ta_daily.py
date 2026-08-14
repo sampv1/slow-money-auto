@@ -43,6 +43,40 @@ from ta.trendlines import detect_trendlines, upsert_trendlines
 from ta.universe import get_active_symbols, get_universe_symbols
 
 
+# Statuses whose position is still live, so its stored prices still decide money.
+# Mirrors update_prices.ACTIVE_STATUSES; kept local so this module does not import
+# a recommendation-tracking script just for two strings.
+OPEN_REC_STATUSES = ("OPEN", "TP1_HIT")
+
+
+def open_position_symbols(client) -> list[str]:
+    """Symbols carrying a live recommendation.
+
+    These get the adjustment repair unconditionally, not only when a detector
+    flags them, because BOTH detectors have a blind spot that a real position
+    already fell into. `find_gap` needs a day-over-day move beyond the exchange
+    band (UPCOM: 15% + 3% buffer) and the reference check is disabled on UPCOM
+    entirely, since its reference is a session average rather than the prior
+    close. AIG's 15% bonus (ex 2026-08-04) moved the price -13.0% on UPCOM and so
+    was invisible to both; its history stayed unadjusted until a hand-run repair.
+
+    `repair_symbols` re-fetches and upserts only when the fresh series actually
+    disagrees with ours, so a symbol that is already correct costs one history()
+    call and writes nothing. Non-fatal: a failure here just means no extra
+    targets, which is the behaviour this replaces.
+    """
+    try:
+        rows = safe_execute(
+            client.table("recommendations").select("symbol")
+            .in_("status", list(OPEN_REC_STATUSES)),
+            label="open recommendation symbols",
+        ).data
+    except Exception as e:  # noqa: BLE001
+        print(f"  open-position symbols unavailable ({str(e)[:80]}) — flagged symbols only")
+        return []
+    return sorted({r["symbol"] for r in rows if r.get("symbol")})
+
+
 def log_step_failure(step: str) -> None:
     """Print a step's FULL traceback, then flag it in the Actions summary.
 
@@ -162,7 +196,13 @@ def main():
             n_act = record_actions(client, [e for f in flagged for e in f.get("events", [])])
             if n_act:
                 print(f"  Recorded {n_act} corporate action(s).")
-            targets = [f["symbol"] for f in flagged]
+            # Open positions FIRST so the cap below can never drop one: they are
+            # a handful of symbols, and they are the ones where an unrepaired
+            # adjustment closes a trade rather than skewing a percentile.
+            held = open_position_symbols(client)
+            if held:
+                print(f"  + {len(held)} symbol(s) with an open position, checked unconditionally")
+            targets = list(dict.fromkeys(held + [f["symbol"] for f in flagged]))
             if len(targets) > MAX_DAILY_REPAIRS:
                 print(f"  {len(targets)} symbols flagged (> cap {MAX_DAILY_REPAIRS}); "
                       f"re-backfilling the first {MAX_DAILY_REPAIRS}. Run "

@@ -43,22 +43,50 @@ CLOSED_STATUSES = {"TP2_HIT", "STOPPED", "EXPIRED", "CLOSED_MANUAL"}
 # in the morning when selling is not possible. So we only check SL/TP from T+3.
 MIN_DAYS_BEFORE_EXIT = 3
 
-# A same-session corporate action can drag the RAW price through a nominal stop
-# without the position having lost anything. The rebase normally prevents that,
-# but it needs the provider's back-adjusted history, and the provider may not
-# have applied it yet: on AIG's ex-date (2026-08-04, 15% bonus) the adjustment
-# was not live at 16:07 ICT — when the daily job ran — but was by 21:56. So the
-# job saw k=1.0, compared a post-bonus 46,900 against a pre-bonus 48,000 stop,
-# and closed a position that was actually +6.7%.
+# A corporate action can drag the RAW price through a nominal stop without the
+# position having lost anything. The rebase normally prevents that, but it needs
+# the provider's back-adjusted history, and the provider may not have applied it
+# yet: on AIG's ex-date (2026-08-04, 15% bonus) the adjustment was not live at
+# 16:07 ICT — when the daily job ran — but was by 21:56. So the job saw k=1.0,
+# compared a post-bonus 46,900 against a pre-bonus 48,000 stop, and closed a
+# position that was actually +6.7%.
 #
-# Guard: when a symbol looks adjusted but we could NOT rebase (k == 1.0), skip
-# the exit decision for that session. The price is still recorded; only the
-# irreversible close is deferred, and the next run decides with correct data.
+# Guard 1 (same session): when a symbol looks adjusted but we could NOT rebase
+# (k == 1.0), skip the exit decision for that session. The price is still
+# recorded; only the irreversible close is deferred, and the next run decides
+# with correct data.
 # Deviation of today's exchange reference from the last stored close. HOSE/HNX
 # set it to the adjusted prior close, so a few % is already conclusive; UPCOM
 # uses a session average, hence a threshold well above normal average-vs-close
 # drift (AIG showed -11.9%).
 SUSPECT_REF_DEV = 0.05
+
+# Guard 2 (every LATER session) — see effective_factor().
+#
+# Guard 1 only asks "did an action take effect TODAY?", because the exchange
+# reference it compares against is reset to the adjusted close overnight. On
+# ex-date+1 that signal is gone, while a provider that is still behind keeps
+# answering k=1.0 — so the identical false stop fires one day later, outside the
+# guard entirely. AIG was stopped twice for one bonus: once on 08-04 (fixed by
+# guard 1) and again on 08-05, when the same 46,900 low was measured against the
+# same pre-bonus 48,000 stop. The correct nominal low that session was 54,474.
+#
+# The fix is to stop treating the provider as the only witness. Two more sources
+# answer the same question and fail independently:
+#   * `recommendations.adj_factor` — a factor a PREVIOUS run already observed
+#     and persisted. AIG carried 0.860962, written 08-04, while the run that
+#     closed it on 08-05 derived 1.0 and never looked.
+#   * `ta_ohlcv` — our own history, which the TA pipeline re-backfills (adjusted)
+#     in its Step 1b. It ran at 09:23 UTC on 08-04, so by the 08-05 evaluation
+#     the correct factor was sitting in our own database.
+#
+# They combine with min() rather than a precedence order, because k is
+# MONOTONICALLY NON-INCREASING over a position's life: k = adjusted(ref_date) /
+# nominal(ref_date), the denominator is fixed at rec time, and every corporate
+# action only ever lowers the numerator. So a source that is behind reports a k
+# too HIGH (1.0 = "nothing happened"), never too low — every failure mode biases
+# the same way, and the lowest candidate is the one that has seen the most.
+# A rise in k is not a corporate action reversing; it is a source regressing.
 
 # vnstock KBS source: free, no API key needed
 VNSTOCK_SOURCE = "KBS"
@@ -173,8 +201,84 @@ def adjustment_factor(hist: dict | None, rec: dict, tol: float = 0.01) -> float:
     adj = _close_on_or_before(hist, ref_date)
     if not adj or adj <= 0:
         return 1.0
-    k = adj / ref_nominal
+    return _sane_factor(adj / ref_nominal, tol)
+
+
+def _sane_factor(k: float, tol: float = 0.01) -> float:
+    """A raw ratio reduced to a usable corporate-action factor, or 1.0.
+
+    Rejects k > 1 as well as k <= 0. Every corporate action LOWERS the adjusted
+    price, so adjusted > nominal is never one — it is a mistyped `last_close` on
+    a manual entry, or a provider glitch. Left alone it is actively dangerous:
+    _rebase_price divides by k, so k = 1.05 marks every price down 5% and can
+    fire a stop the market never touched, which is the exact failure this whole
+    module exists to prevent — just with the sign flipped.
+    """
+    if k <= 0 or k > 1.0:
+        return 1.0
     return k if abs(k - 1.0) > tol else 1.0
+
+
+def _db_factor(rec: dict, ref_closes: dict[tuple[str, str], float], tol: float = 0.01) -> float:
+    """The same factor derived from `ta_ohlcv` instead of the provider's live answer.
+
+    `ta_ohlcv` is append-only and RAW, but the TA pipeline's Step 1b re-backfills
+    (adjusted) any symbol it detects an action on, so once that has run our own
+    copy carries the adjustment. It runs at 09:23 UTC, this job at 08:43 — so on
+    the ex-date itself this source is still behind (guard 1 covers that session)
+    and from ex-date+1 it is the one that is reliably ahead of the provider.
+    """
+    ref_date = rec.get("last_close_date")
+    ref_nominal = rec.get("last_close")
+    if not ref_date or ref_nominal is None:
+        return 1.0
+    try:
+        ref_nominal = float(ref_nominal)
+    except (TypeError, ValueError):
+        return 1.0
+    if ref_nominal <= 0:
+        return 1.0
+    stored = ref_closes.get((rec["symbol"], ref_date))
+    if not stored or stored <= 0:
+        return 1.0
+    return _sane_factor(stored / ref_nominal, tol)
+
+
+def _stored_factor(rec: dict, tol: float = 0.01) -> float:
+    """The factor a previous run already observed and persisted on the row."""
+    k = rec.get("adj_factor")
+    if k is None:
+        return 1.0
+    try:
+        return _sane_factor(float(k), tol)
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def effective_factor(rec: dict, hist: dict | None,
+                     ref_closes: dict[tuple[str, str], float]) -> tuple[float, str]:
+    """(k, source) — the most-adjusted factor any witness reports.
+
+    See the SUSPECT_REF_DEV block for why min() is the right combiner: k can only
+    fall over a position's life, so the lowest candidate is the best-informed one
+    and a source that is behind can only ever pull the answer toward 1.0.
+    """
+    cands = {
+        "history": adjustment_factor(hist, rec),
+        "stored": _stored_factor(rec),
+        "ta_ohlcv": _db_factor(rec, ref_closes),
+    }
+    source, k = min(cands.items(), key=lambda kv: kv[1])
+    if k == 1.0:
+        return 1.0, "none"
+    # Name every witness that agrees, so the log distinguishes "all three saw it"
+    # from "only our own database did" — the second is a provider lag worth
+    # noticing, and it is exactly the state AIG was in on 2026-08-05.
+    # Relative tolerance, not exact equality: `adj_factor` is persisted rounded to
+    # six decimals, so the stored witness never matches the freshly computed one
+    # to the bit and every log would read as a lone source.
+    agree = [n for n, v in cands.items() if abs(v - k) <= 5e-6 * k]
+    return k, "+".join(agree)
 
 
 def _rebase_price(bar: dict | None, k: float) -> dict | None:
@@ -196,6 +300,29 @@ def count_business_days(since_date: str) -> int:
             count += 1
         current += timedelta(days=1)
     return count
+
+
+def fetch_ref_closes(client, recs: list[dict]) -> dict[tuple[str, str], float]:
+    """{(symbol, ref_date): our stored close on or before ref_date} from ta_ohlcv.
+
+    One tiny query per distinct (symbol, reference date) — a handful per run.
+    A symbol outside the TA universe simply has no entry, which _db_factor reads
+    as "no evidence" (k = 1.0), never as "no adjustment".
+    """
+    out: dict[tuple[str, str], float] = {}
+    pairs = {(r["symbol"], r["last_close_date"]) for r in recs if r.get("last_close_date")}
+    for sym, ref_date in sorted(pairs):
+        try:
+            rows = (
+                client.table("ta_ohlcv").select("date,close")
+                .eq("symbol", sym).lte("date", ref_date)
+                .order("date", desc=True).limit(1).execute()
+            ).data
+        except Exception:  # noqa: BLE001 — a missing table must not stop evaluation
+            continue
+        if rows and rows[0].get("close") is not None:
+            out[(sym, ref_date)] = float(rows[0]["close"])
+    return out
 
 
 def suspect_adjustments(client, symbols: list[str]) -> dict[str, float]:
@@ -423,6 +550,10 @@ def main():
 
     # One bulk price_board call for the open symbols — cheap, and it is the only
     # signal available on the ex-date itself (see SUSPECT_REF_DEV).
+    # Our own copy of the same history, as an independent witness to any
+    # corporate action the provider has not applied yet (see effective_factor).
+    ref_closes = fetch_ref_closes(client, recs)
+
     suspects = suspect_adjustments(client, symbols)
     for sym, dev in suspects.items():
         print(f"  {sym}: exchange reference {dev * 100:+.1f}% vs last stored close "
@@ -438,11 +569,11 @@ def main():
         # Rebase today's adjusted bar into this recommendation's nominal basis
         # so a corporate action during the holding period can't false-trigger a
         # stop and P&L stays on the entry/SL/TP scale.
-        k = adjustment_factor(hist, rec)
+        k, ksrc = effective_factor(rec, hist, ref_closes)
         price = _rebase_price(latest_by_symbol.get(rec["symbol"]), k)
         if k != 1.0:
             print(f"  {rec['symbol']} (id {rec['id']}): corporate-action factor k={k:.4f} "
-                  f"applied — entry/SL/TP evaluated on nominal basis")
+                  f"applied (source: {ksrc}) — entry/SL/TP evaluated on nominal basis")
         days_held = count_business_days(rec["trading_date"])
 
         # Evaluate TP/SL (respects T+2.5 settlement)
