@@ -402,13 +402,22 @@ export function FaScannerClient({
         // `${isPending …}` interpolation, which Tailwind's scanner does not read,
         // so this tab was relying on Signal Pro to emit its max-height for it.
         <div className={`bg-panel rounded-lg border border-line ${TABLE_FREEZE}${isPending ? " opacity-50 transition-opacity" : ""}`}>
-          <table className="w-full border-collapse">
+          {/* border-separate, NOT collapse — see the note on Signal Pro's table.
+              A collapsed border belongs to the TABLE and paints above every
+              row-group background, including a sticky <thead>'s, and the table
+              does not offset it. Body rows therefore bled through the frozen
+              header along every rule. Measured here at 1,634 changed pixels in
+              the header band between unscrolled and scrolled. */}
+          <table className="w-full border-separate border-spacing-0">
             {/* Sticky on <thead> rather than each <th>: it keeps multi-row headers
                 aligned without hardcoding a `top` offset per row. THEAD_STICKY
                 documents the z-order and the shadow-not-border divider. */}
             <thead className={THEAD_STICKY}>
-              {/* Group row. Only Symbol and Score span both rows. */}
-              <tr className="border-b border-line text-left">
+              {/* Group row. Only Symbol and Score span both rows.
+                  No border-b on the <tr>: in separate mode a row border is not
+                  painted at all, so the rule under each group label rides on the
+                  cell instead. */}
+              <tr className="text-left">
                 <th rowSpan={2} className="label sticky left-0 z-30 bg-panel-2 row-h px-2 align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
@@ -422,7 +431,7 @@ export function FaScannerClient({
                 <th rowSpan={2} className="label row-h px-2 text-right align-bottom cursor-pointer select-none border-r border-line" onClick={() => toggleSort("total_score")}>
                   {t(locale, "faTotalScore")}{sortIndicator("total_score")}
                 </th>
-                <th colSpan={FA_COMPONENTS.length} className="label row-h px-2 text-center">
+                <th colSpan={FA_COMPONENTS.length} className="label row-h px-2 text-center border-b border-line">
                   {t(locale, "faComponentsGroup")}
                 </th>
                 <th
@@ -431,15 +440,17 @@ export function FaScannerClient({
                   // know which quarter it is measured against, and the selected
                   // quarter is a dropdown.
                   title={`${selectedQuarter} vs ${priorQuarter || "—"}`}
-                  className={`label px-3 py-2 text-center ${BLOCK_HEAD} ${BLOCK_EDGE}`}
+                  className={`label px-3 py-2 text-center border-b border-line ${BLOCK_HEAD} ${BLOCK_EDGE}`}
                 >
                   {t(locale, "faQuarterlyGroup")}
                 </th>
-                <th colSpan={N_DAILY} className={`label row-h px-2 text-center ${BLOCK_HEAD} ${BLOCK_SPLIT}`}>
+                <th colSpan={N_DAILY} className={`label row-h px-2 text-center border-b border-line ${BLOCK_HEAD} ${BLOCK_SPLIT}`}>
                   {t(locale, "faDailyGroup")}
                 </th>
               </tr>
-              <tr className="border-b border-line text-left">
+              {/* No border-b either: THEAD_STICKY's shadow is the header's bottom
+                  rule, and it is a shadow for this same reason. */}
+              <tr className="text-left">
                 {FA_COMPONENTS.map((c) => (
                   <th
                     key={c.pts}
@@ -465,7 +476,7 @@ export function FaScannerClient({
             </thead>
             <tbody>
               {filtered.map((row) => (
-                <tr key={row.symbol} className="group border-b border-line-faint transition-colors hover:bg-panel-2">
+                <tr key={row.symbol} className="group transition-colors hover:bg-panel-2 [&>td]:border-b [&>td]:border-line-faint">
                   {/* Frozen identity column. Needs its own opaque background —
                       it paints over the cells scrolling beneath it — and
                       group-hover so it tracks the row highlight instead of

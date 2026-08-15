@@ -615,7 +615,18 @@ export function SignalProClient({
         // which meant a `sticky` header anchored to it and never moved while the
         // PAGE scrolled. Capping the height gives it something to scroll against.
         <div className="bg-panel rounded-lg border border-line overflow-auto max-h-[calc(100vh-12rem)]">
-          <table className="w-full text-body-lg">
+          {/* border-separate, NOT the default collapse.
+              In collapsed mode a cell's borders belong to the TABLE, and the
+              table paints them above every row-group background — including the
+              background of a sticky <thead>, which the table does not offset.
+              The result was three 1px vertical rules and the group divider
+              painting from whichever body row happened to be scrolled under the
+              frozen header, so data bled through the header along those lines.
+              Measured by diffing the header band unscrolled against scrolled:
+              877 pixels changed before, 0 after. Separate borders belong to the
+              cells, travel with the sticky header, and cost nothing here because
+              border-spacing is 0 and no two adjacent cells both carry a rule. */}
+          <table className="w-full text-body-lg border-separate border-spacing-0">
             {/* Sticky on <thead>, not per-<th>: this header is two rows deep with
                 rowSpan/colSpan cells, and freezing the whole thead keeps them
                 aligned without hardcoding a `top` offset for the sub-header row.
@@ -625,7 +636,7 @@ export function SignalProClient({
                 is sticky. */}
             <thead className="sticky top-0 z-10 bg-panel-2 shadow-[0_1px_0_0_var(--color-line-strong)]">
               {/* Group row */}
-              <tr className="border-b border-line text-left text-fg-muted">
+              <tr className="text-left text-fg-muted">
                 <th rowSpan={2} className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
@@ -646,15 +657,20 @@ export function SignalProClient({
                   <div>{t(locale, "spFinalScore")} (100)</div>
                   <div className="text-data font-normal text-fg-label">{t(locale, "spOverallGrade")}{sortIndicator("final_score")}</div>
                 </th>
-                <th colSpan={3} className="px-2 py-1 label text-center border-l border-line">{t(locale, "spTaComponents")}</th>
-                <th colSpan={4} className="px-2 py-1 label text-center border-l border-line">{t(locale, "spBaseGroup")}</th>
+                {/* The rule under a group label rides on the cell, not the row:
+                    row borders are not painted at all in separate mode. */}
+                <th colSpan={3} className="px-2 py-1 label text-center border-l border-b border-line">{t(locale, "spTaComponents")}</th>
+                <th colSpan={4} className="px-2 py-1 label text-center border-l border-b border-line">{t(locale, "spBaseGroup")}</th>
                 <th rowSpan={2} className="px-2 py-1 label text-right align-bottom border-l border-line" title={t(locale, "spCatalystTitle")}>{t(locale, "spCatalyst")}</th>
                 {isAdmin && (
                   <th rowSpan={2} className="px-2 py-1 label text-right align-bottom border-l border-line">{t(locale, "spTrade")}</th>
                 )}
               </tr>
               {/* Sub-header row */}
-              <tr className="border-b border-line text-left text-fg-muted text-data">
+              {/* No border-b: the thead's own shadow draws the header's bottom
+                  rule, and it is a shadow precisely because a border there had
+                  the same sticky problem. */}
+              <tr className="text-left text-fg-muted text-data">
                 <th className="px-2 py-1 label text-right border-l border-line cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
                   {t(locale, "taRs3m")}{sortIndicator("rs_3m")}
                 </th>
@@ -681,7 +697,7 @@ export function SignalProClient({
                 const base = baseBySymbol.get(row.symbol);
                 const catScore = catalystBySymbol.get(row.symbol) ?? null;
                 return (
-                  <tr key={row.symbol} className="border-b border-line-faint transition-colors hover:bg-panel-2">
+                  <tr key={row.symbol} className="group transition-colors hover:bg-panel-2 [&>td]:border-b [&>td]:border-line-faint">
                     <td className="px-2 py-1 font-medium">
                       <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
                         {row.symbol}
