@@ -85,11 +85,19 @@ const G2_END = "border-l-2 border-line-strong";
 // `align-baseline`, not `align-top`: metadata is 13px and figures are 15px, so
 // top-aligning them left the date sitting visibly higher than the price on the
 // same row. Baseline puts the first line of every cell on one line.
-const P_CELL = "px-3 py-2 align-baseline";
+const P_CELL = "px-2 py-2 align-baseline";
 const P_TD = `${P_CELL} text-body text-fg-muted whitespace-nowrap`;
 const P_NUM = `${P_CELL} text-body-lg font-mono tnum text-right whitespace-nowrap`;
-const P_TH = `${P_CELL} label text-left whitespace-nowrap`;
-const P_TH_NUM = `${P_CELL} label text-right whitespace-nowrap`;
+// Headers WRAP; only the body cells are nowrap.
+//
+// They were the thing setting every column width, and badly: "ƯỚC TÍNH %
+// THẮNG" held 148px open for values like "80%", and the Vietnamese labels are
+// long enough that the table ran 1,553px — overflowing even a 1920 viewport and
+// forcing a horizontal scrollbar to read one row. Wrapping lets the DATA size
+// the column, which is what a column is for. `leading-tight` keeps a two-line
+// header from adding much height.
+const P_TH = `${P_CELL} label leading-tight text-left`;
+const P_TH_NUM = `${P_CELL} label leading-tight text-right`;
 const P_TR = "group border-b border-line-faint transition-colors hover:bg-panel-2";
 
 // Corporate actions (cash dividend / bonus / split) re-scale the market price
@@ -298,7 +306,13 @@ export default async function PortfolioPage({
           </div>
           <div className="bg-panel rounded-lg border border-line p-3">
             <div className="text-data text-fg-muted">{t(locale, "winRate")}</div>
-            <div className="text-title font-semibold">{withPnl.length > 0 ? `${formatPercent(winRate, 0)}` : "—"}</div>
+            {/* Coloured on the same 50% pivot as the Win Rate Est column, so
+                the card and the column cannot say different things about the
+                same idea. It was the only uncoloured figure in the row of
+                summary cards — Avg P&L beside it has always used pnlColor. */}
+            <div className={`text-title font-semibold ${withPnl.length > 0 ? winRateColor(winRate) : "text-fg-label"}`}>
+              {withPnl.length > 0 ? `${formatPercent(winRate, 0)}` : "—"}
+            </div>
             <div className="text-data text-fg-label">{wins.length}W / {withPnl.length - wins.length}L</div>
           </div>
           <div className="bg-panel rounded-lg border border-line p-3">
