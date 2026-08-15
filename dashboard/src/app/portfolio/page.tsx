@@ -1,5 +1,5 @@
 import { getCorporateActions, getRecommendations, type CorporateAction } from "@/lib/cached-data";
-import { formatPrice, formatPnl, pnlColor, statusBadge, formatPercent, winRateColor } from "@/lib/format";
+import { formatPriceK, formatPnl, pnlColor, statusBadge, formatPercent, winRateColor } from "@/lib/format";
 import { getLocale, t, type Locale } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import type { Recommendation } from "@/lib/types";
@@ -134,7 +134,7 @@ const marketBasis = (
 ) =>
   k !== null && typeof v === "number" && Number.isFinite(v) ? (
     <span className="block text-[11px] text-amber-700 font-normal mt-0.5 leading-tight">
-      {formatPrice(v * k)}
+      {formatPriceK(v * k)}
       {withLabel && <span className="block text-fg-label">{t(locale, "adjMarketBasis")}</span>}
     </span>
   ) : null;
@@ -439,20 +439,20 @@ export default async function PortfolioPage({
                         it repeat the amber figure without it, so the row
                         explains itself once instead of five times. */}
                     <td className={`${P_NUM} ${G1_EDGE}`}>
-                      {formatPrice(rec.entry_price)}
+                      {formatPriceK(rec.entry_price)}
                       {marketBasis(rec.entry_price, k, locale, true)}
                     </td>
                     {/* Current and Exit are now SEPARATE. Merged, a closed row
                         showed its exit price in a column headed "Current" and
                         there was no way to see the last mark beside it. */}
                     <td className={P_NUM}>
-                      {formatPrice(rec.current_price)}
+                      {formatPriceK(rec.current_price)}
                       {marketBasis(rec.current_price, k, locale)}
                     </td>
                     <td className={P_NUM}>
                       {rec.actual_exit_price !== null ? (
                         <>
-                          {formatPrice(rec.actual_exit_price)}
+                          {formatPriceK(rec.actual_exit_price)}
                           {marketBasis(rec.actual_exit_price, k, locale)}
                         </>
                       ) : (
@@ -476,21 +476,21 @@ export default async function PortfolioPage({
                         are sized by the price alone and the prices line up in a
                         column you can scan straight down. */}
                     <td className={`${P_NUM} text-up ${G2_EDGE}`}>
-                      {formatPrice(rec.tp1)}
+                      {formatPriceK(rec.tp1)}
                       {rec.tp1_pct !== null && (
                         <span className="block text-[11px]">({rec.tp1_pct > 0 ? "+" : ""}{formatPercent(rec.tp1_pct, 1)})</span>
                       )}
                       {marketBasis(rec.tp1, k, locale)}
                     </td>
                     <td className={`${P_NUM} text-up`}>
-                      {formatPrice(rec.tp2)}
+                      {formatPriceK(rec.tp2)}
                       {rec.tp2_pct !== null && (
                         <span className="block text-[11px]">({rec.tp2_pct > 0 ? "+" : ""}{formatPercent(rec.tp2_pct, 1)})</span>
                       )}
                       {marketBasis(rec.tp2, k, locale)}
                     </td>
                     <td className={`${P_NUM} text-down`}>
-                      {formatPrice(rec.stop_loss)}
+                      {formatPriceK(rec.stop_loss)}
                       {rec.stop_loss_pct !== null && (
                         <span className="block text-[11px]">({rec.stop_loss_pct > 0 ? "+" : ""}{formatPercent(rec.stop_loss_pct, 1)})</span>
                       )}

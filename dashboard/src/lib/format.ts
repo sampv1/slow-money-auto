@@ -69,6 +69,28 @@ export function formatPrice(price: number | null): string {
 }
 
 /**
+ * A market price quoted in THOUSANDS of dong — the convention every Vietnamese
+ * broker screen uses. `12.340 ₫` is quoted `12,34`.
+ *
+ * Two decimals is the precision that actually exists: the tick is 10 ₫ below
+ * 10k, 50 ₫ to 50k and 100 ₫ above, so the third decimal is always zero and the
+ * full form spends its two widest characters saying nothing. It also puts the
+ * portfolio in the same unit as the board the trade was placed on.
+ *
+ * DISPLAY ONLY. Every stored price stays raw VND — in the database, in the
+ * pipeline, and in every P&L, TP/SL and adjustment-factor computation. The
+ * division happens here, at the last possible moment, so nothing upstream can
+ * ever see the scaled number.
+ *
+ * Follows NUM_LOCALE like everything else, so the separator is a comma (`12,34`)
+ * and the page cannot show two decimal conventions at once.
+ */
+export function formatPriceK(price: number | null | undefined): string {
+  if (price === null || price === undefined || !Number.isFinite(price)) return DASH;
+  return formatNumber(price / 1000, 2);
+}
+
+/**
  * VND billions for the FA Scanner's revenue / NPAT columns.
  *
  * Values span roughly 1 to 70,000 bn, so thousands separators matter. Drops the
