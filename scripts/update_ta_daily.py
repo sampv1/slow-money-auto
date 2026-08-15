@@ -38,6 +38,7 @@ from ta.rs_rating import compute_rs_ratings
 from ta.price_base import compute_price_bases
 from ta.ta_score import compute_ta_score
 from ta.final_score import compute_final_score
+from ta.profile import fetch_profiles, upsert_profiles
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
 from ta.universe import get_active_symbols, get_universe_symbols
@@ -335,6 +336,26 @@ def main():
             except Exception as e:
                 log_step_failure("Step 6 Final score")
 
+        # Step 7: company names + ICB sectors. Reference data, so it runs LAST
+        # and nothing above depends on it — a failure here must not colour a
+        # scoring run that already succeeded. Two bulk HTTP calls, ~1s.
+        # fetch_profiles() returns None rather than raising on a bad fetch, so
+        # the failure path writes nothing instead of half a table.
+        profile_stats = {"symbols": 0, "sectors": 0}
+        if not args.dry_run:
+            try:
+                print("\n--- Step 7: company profiles + ICB sectors ---")
+                fetched = fetch_profiles()
+                if fetched is None:
+                    print("Company profiles: fetch failed, nothing written (kept previous values).")
+                else:
+                    profiles, sectors = fetched
+                    n_p, n_s = upsert_profiles(client, profiles, sectors)
+                    profile_stats = {"symbols": n_p, "sectors": n_s}
+                    print(f"Company profiles: {n_p} symbols, {n_s} ICB labels.")
+            except Exception as e:
+                log_step_failure("Step 7 company profiles")
+
         # GitHub Actions Job Summary — visible on the run page without opening logs.
         summary_lines = [
             "## TA Daily Update Summary",
@@ -349,6 +370,8 @@ def main():
         summary_lines.append(f"- **Price bases**: {base_stats['based']} detected")
         summary_lines.append(f"- **TA Score**: {ta_stats['scored']}/{ta_stats['rows']} scored")
         summary_lines.append(f"- **Final score**: {final_stats['scored']}/{final_stats['rows']} scored")
+        summary_lines.append(f"- **Company profiles**: {profile_stats['symbols']} symbols, "
+                             f"{profile_stats['sectors']} ICB labels")
         if final_failed:
             shown = ", ".join(final_failed[:25])
             more = f" (+{len(final_failed) - 25} more)" if len(final_failed) > 25 else ""

@@ -41,7 +41,7 @@ python3 update_prices.py                            # daily eval: fetch price, c
 python3 run_prompt.py                               # run trading prompt via Claude API + web search → push (--dry-run, --context, --model, --max-searches)
 
 # --- TA pipeline ---
-python3 update_ta_daily.py                          # DAILY ORCHESTRATOR: OHLCV → signals → RS → bases → TA Score → Final Score (--dry-run, --ohlcv-days N)
+python3 update_ta_daily.py                          # DAILY ORCHESTRATOR: OHLCV → signals → RS → bases → TA Score → Final Score → profiles (--dry-run, --ohlcv-days N)
 python3 compute_ta_signals.py                       # signals only (--all-dates backfill, --since, --symbols, --inspect SYM DATE)
 python3 backfill_ta_ohlcv.py --days 90              # backfill OHLCV history via vnstock history()
 python3 refresh_adjustments.py --scan-days 450      # detect corporate-action price adjustments → re-backfill only affected symbols (--dry-run, --symbols, --scan-days 15 for a daily-style pass)
@@ -61,6 +61,9 @@ python3 refresh_fa.py score --backfill              # score all eligible quarter
 python3 refresh_fa_re.py import --file "../data/File BDS quy 2-2026 ngày 13-08.xlsx"   # export → fa_industry + fa_re_metrics (raw inputs)
 python3 refresh_fa_re.py score                      # fa_re_metrics → fa_re_scores (--period, --symbols, --dry-run)
 
+# --- Reference data (company name + ICB sector) ---
+python3 refresh_symbol_profile.py                   # symbol_profile + icb_sectors from one keyless Vietcap call (--dry-run, --symbols)
+
 # --- Sentiment ---
 python3 refresh_catalysts.py                        # CAN SLIM "N" catalyst scoring for A/A+ shortlist via Groq groq/compound (built-in web search) (--symbols, --limit, --dry-run)
 
@@ -76,6 +79,7 @@ Most `refresh_*` scripts read columns that earlier passes wrote, so **order matt
 
 ```bash
 python3 scripts/tests/test_bqs_v8.py      # standalone, or:  pytest scripts/tests/test_bqs_v8.py
+for t in scripts/tests/test_*.py; do python3 "$t" || echo "FAIL $t"; done   # whole suite, no pytest needed
 ```
 
 Tests pin BQS V8 price-base scoring against the spec's `Test_Cases` sheet. Add tests here as plain-runnable + pytest-compatible modules.
@@ -152,7 +156,13 @@ A JSON object with: `analysis_date`, `trading_date`, `market_context` (regime 1�
 
 ## Database tables
 
-Core: `daily_logs` (one row per trading day) + `recommendations` (individual picks with tracking status). TA: `ta_universe` (per-symbol snapshot: RS, base, TA/Final scores, avg volume), `ta_ohlcv`, `ta_signals`, `ta_runs`, `ta_sr_levels`, `ta_trendlines`. FA: `fa_quarterly`, `fa_annual_pe`, `fa_scores` (keyed `(symbol, as_of_period)` — full quarterly history), `fa_scoring_config`, plus the real-estate set `fa_industry` (which rubric a symbol belongs to), `fa_re_metrics` (raw inputs) and `fa_re_scores` (migration 048). Others: `profiles` (roles), `feedbacks`, `implied_risk`, `symbol_catalysts`, `macro_series`, `scoring_config`. Full definitions in the numbered `supabase/*.sql` migrations.
+Core: `daily_logs` (one row per trading day) + `recommendations` (individual picks with tracking status). TA: `ta_universe` (per-symbol snapshot: RS, base, TA/Final scores, avg volume), `ta_ohlcv`, `ta_signals`, `ta_runs`, `ta_sr_levels`, `ta_trendlines`. FA: `fa_quarterly`, `fa_annual_pe`, `fa_scores` (keyed `(symbol, as_of_period)` — full quarterly history), `fa_scoring_config`, plus the real-estate set `fa_industry` (which rubric a symbol belongs to), `fa_re_metrics` (raw inputs) and `fa_re_scores` (migration 048). Reference: `symbol_profile` (company name + ICB L1–L4 codes + company type + logo, per symbol) and `icb_sectors` (bilingual labels, keyed `(icb_code, level)`) — migration 050. Others: `profiles` (roles), `feedbacks`, `implied_risk`, `symbol_catalysts`, `macro_series`, `scoring_config`. Full definitions in the numbered `supabase/*.sql` migrations.
+
+**Company name + industry sector** (`ta/profile.py`, `refresh_symbol_profile.py`, Step 7 of the daily pass) come from ONE keyless call to Vietcap's `search-bar` endpoint, per language — 2,092 companies in under a second, 100% coverage of name/short name/company type/ICB L1–L4 across the active universe in **both** vi and en (`logo_url` is only 71%, so every read must tolerate null). Two things it must keep doing:
+  - **Fail closed.** Either language failing, an empty payload, or zero parsed symbols all return `None` and write NOTHING. The tables are upserted and never truncated, so a partial fetch would overwrite good rows with nulls that the next run cannot distinguish from companies that genuinely lack an English name — and an empty result would upsert 0 rows, print "0 symbols" and exit 0, which reads exactly like success.
+  - **Resolve ticker collisions by rank, not by dict order.** The payload repeats codes: `VNH` is both `CTCP Đầu tư Việt Việt Nhật` (UPCOM, an ordinary company — ours) and `Vietnam Holding Ltd` (floor `OTHER`, a foreign fund). The obvious `{r["code"]: r for r in data}` keeps the LAST record and filed our UPCOM stock under `Quỹ đầu tư`; `_rank` prefers a real exchange, then a non-fund. Both pinned by `scripts/tests/test_symbol_profile.py`.
+  - **`fa_industry` is NOT touched.** It stays FiinProX-authoritative so the real-estate FA rubric split cannot move — `symbol_profile` is additive reference data with no reader in the pipeline. The two agree independently: VCI's ICB L4 matches `fa_industry.icb_industry` on 1,588/1,592 (99.7%) and all 118 real-estate symbols land at L2 `8600 Bất động sản`.
+  - **ICB L1 is not the grouping a reader expects.** ICB files real estate under Financials, so 120 of the 181 active symbols at L1 `8000` are property developers; the source also injects a custom L1 `8301 Ngân hàng` whose code sits in the L2 numeric range (hence the `(icb_code, level)` key). L2 or L4 are the honest choices for a sector filter. Codes are zero-padded text (`0001`, `0533`) — coercing them to int breaks the join.
 
 ## Key conventions
 
