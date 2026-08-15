@@ -110,6 +110,14 @@ export interface Recommendation {
   // — and every row if it has not been applied yet — simply omit these.
   adj_factor?: number | null;
   adj_detected_at?: string | null;
+  // Trading Journal (migration 049). The BUY thesis is deliberately not here —
+  // it stays in `note`, read-only, dated by `trading_date`, because an entry
+  // thesis you can edit once the outcome is known stops being a record.
+  // Optional so every read degrades to "no journal" until 049 is applied.
+  sell_thesis?: string | null;
+  sell_thesis_at?: string | null;
+  lesson_learned?: string | null;
+  lesson_learned_at?: string | null;
   created_at: string;
   updated_at: string;
 }

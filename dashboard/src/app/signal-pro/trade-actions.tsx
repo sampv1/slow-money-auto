@@ -50,10 +50,16 @@ export function TradeActions({
   const [holding, setHolding] = useState("");
   const [winRate, setWinRate] = useState("");
   const [sharpe, setSharpe] = useState("");
+  // BUY writes `note` (the buy thesis); SELL writes the two journal halves.
+  // Kept as separate state rather than one reused box so switching modes cannot
+  // carry an exit reason into an entry thesis.
   const [note, setNote] = useState("");
+  const [sellThesis, setSellThesis] = useState("");
+  const [lessonLearned, setLessonLearned] = useState("");
 
   function reset() {
     setPrice(""); setSl(""); setTp1(""); setTp2(""); setHolding(""); setWinRate(""); setSharpe(""); setNote("");
+    setSellThesis(""); setLessonLearned("");
     setError(null); setClose(null); setEntry(null); setPosCount(0);
   }
 
@@ -130,7 +136,14 @@ export function TradeActions({
         body: JSON.stringify(
           mode === "BUY"
             ? { symbol, action: "BUY", price, stop_loss: sl, tp1, tp2, holding, win_rate_est: winRate, sharpe, note }
-            : { symbol, action: "SELL", price, note, ...(recId ? { id: recId } : {}) },
+            : {
+                symbol,
+                action: "SELL",
+                price,
+                sell_thesis: sellThesis,
+                lesson_learned: lessonLearned,
+                ...(recId ? { id: recId } : {}),
+              },
         ),
       });
       const json = await res.json();
@@ -275,16 +288,57 @@ export function TradeActions({
               </ul>
             )}
 
-            <div className="mt-3">
-              <label className="block text-data text-fg-muted mb-1">{t(locale, "spNote")}</label>
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                rows={2}
-                className="w-full border border-line rounded px-2 py-1 text-body-lg"
-                placeholder={t(locale, "spNotePlaceholder")}
-              />
-            </div>
+            {/* The journal, captured at the moment the decision is made rather
+                than reconstructed later. BUY writes the buy thesis (which is
+                then fixed forever); SELL writes the two halves of the exit.
+                All three surface in the Trading Journal on the Portfolio page.
+
+                SELL deliberately asks TWO questions. Why you sold and what the
+                trade taught are different claims, and one box for both is what
+                let them be conflated — the reason to keep the lesson separate is
+                that it is written knowing the outcome, and the exit reason must
+                not be quietly rewritten by hindsight. */}
+            {mode === "BUY" ? (
+              <div className="mt-3">
+                <label className="block text-data text-fg-muted mb-1">
+                  {t(locale, "journalBuyThesis")}
+                </label>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={3}
+                  className="w-full border border-line rounded px-2 py-1 text-body-lg"
+                  placeholder={t(locale, "spBuyThesisPlaceholder")}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="mt-3">
+                  <label className="block text-data text-fg-muted mb-1">
+                    {t(locale, "journalSellThesis")}
+                  </label>
+                  <textarea
+                    value={sellThesis}
+                    onChange={(e) => setSellThesis(e.target.value)}
+                    rows={3}
+                    className="w-full border border-line rounded px-2 py-1 text-body-lg"
+                    placeholder={t(locale, "journalSellPlaceholder")}
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="block text-data text-fg-muted mb-1">
+                    {t(locale, "journalLesson")}
+                  </label>
+                  <textarea
+                    value={lessonLearned}
+                    onChange={(e) => setLessonLearned(e.target.value)}
+                    rows={3}
+                    className="w-full border border-line rounded px-2 py-1 text-body-lg"
+                    placeholder={t(locale, "journalLessonPlaceholder")}
+                  />
+                </div>
+              </>
+            )}
 
             {error && <p className="mt-3 text-body-lg text-down">{error}</p>}
 

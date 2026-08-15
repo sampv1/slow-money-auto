@@ -18,7 +18,9 @@ interface ManualInput {
   holding?: string | null;
   win_rate_est?: number | null;
   sharpe?: number | null;
-  note?: string | null;
+  note?: string | null; // BUY only — the buy thesis, fixed at entry
+  sell_thesis?: string | null; // SELL only
+  lesson_learned?: string | null; // SELL only
 }
 
 function num(v: unknown): number | null {
@@ -217,7 +219,13 @@ async function sell(
   // Exit defaults to the latest close but the admin can override it.
   const exitInput = num(body.price);
   const exit = exitInput !== null && exitInput > 0 ? exitInput : close.price;
-  const sellNote = (body.note ?? "").toString().trim();
+  // The exit's two journal entries. These used to be ONE free-text `note` that
+  // was concatenated onto the buy thesis as `${note} | SELL: ${sellNote}` —
+  // which is precisely how 7 positions ended up with both theses in one string
+  // and neither one dated. Migration 049 gave each its own column; this writes
+  // to them instead of rebuilding the marker.
+  const sellThesis = (body.sell_thesis ?? "").toString().trim() || null;
+  const lessonLearned = (body.lesson_learned ?? "").toString().trim() || null;
 
   // The date the position was actually closed — TODAY in Vietnam, matching how
   // BUY stamps trading_date. Using the bar's date here would let a same-day
@@ -231,9 +239,6 @@ async function sell(
       const entry = Number(pos.entry_price);
       totalEntry += entry;
       const pnl = Number((((exit - entry) / entry) * 100).toFixed(2));
-      const note = sellNote
-        ? pos.note ? `${pos.note} | SELL: ${sellNote}` : `SELL: ${sellNote}`
-        : pos.note;
       return admin
         .from("recommendations")
         .update({
@@ -245,7 +250,14 @@ async function sell(
           current_price_date: close.date, // provenance of the PRICE, not the trade
           unrealized_pnl_pct: null,
           days_held: businessDays(pos.trading_date as string, exitDate),
-          note,
+          // `note` is NOT touched. It holds the buy thesis, which is fixed at
+          // entry — the whole reason the journal is worth keeping.
+          // Both entries are dated by the exit; a thesis written later can be
+          // re-dated by editing it in the journal, which stamps that day.
+          ...(sellThesis ? { sell_thesis: sellThesis, sell_thesis_at: exitDate } : {}),
+          ...(lessonLearned
+            ? { lesson_learned: lessonLearned, lesson_learned_at: exitDate }
+            : {}),
         })
         .eq("id", pos.id);
     }),

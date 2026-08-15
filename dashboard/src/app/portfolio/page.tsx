@@ -1,10 +1,12 @@
 import { getCorporateActions, getRecommendations, type CorporateAction } from "@/lib/cached-data";
-import { formatPrice, formatPnl, pnlColor, statusBadge, formatPercent } from "@/lib/format";
+import { formatPrice, formatPnl, pnlColor, statusBadge, formatPercent, winRateColor } from "@/lib/format";
 import { getLocale, t, type Locale } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import type { Recommendation } from "@/lib/types";
 import { ACTIVE_STATUSES } from "@/lib/types";
+import { TABLE, TABLE_SCROLL, THEAD, TH, TH_NUM, TR, TD, TD_NUM, TD_SYMBOL } from "@/lib/table";
 import { TradeActions } from "../signal-pro/trade-actions";
+import { TradingJournal } from "./trading-journal";
 import { DataError } from "@/components/data-error";
 
 export const revalidate = 0;
@@ -41,9 +43,31 @@ const isOpen = (r: Recommendation) => (ACTIVE_STATUSES as string[]).includes(r.s
 // a border: Tailwind's preflight sets `border-collapse: collapse`, which hands
 // borders to the table rather than the cell and drops them once a cell is
 // sticky (the same trap the FA Scanner's sticky header hit).
-const FROZEN_TD = "sticky left-0 z-10 bg-panel group-hover:bg-canvas";
-const FROZEN_TH = "sticky left-0 z-20 bg-panel";
+// Grounds must match the house treatment exactly, or the frozen column becomes
+// the one cell that does not light up with its row: TR hovers to `panel-2` and
+// THEAD sits on `panel-2`, so these follow. (They were `canvas`/`panel`, which
+// paired with the old bespoke styling this table no longer uses.)
+const FROZEN_TD = "sticky left-0 z-10 bg-panel group-hover:bg-panel-2";
+const FROZEN_TH = "sticky left-0 z-20 bg-panel-2";
 const FROZEN_EDGE = "shadow-[1px_0_0_0_var(--color-line)]";
+
+// The 16 columns fall into two groups that answer DIFFERENT questions, and
+// reading them as one undifferentiated run is what makes the table hard to scan:
+//
+//   Group 1  Entry → Holding   what actually happened
+//   Group 2  TP1 → Win rate    what was planned, before the trade
+//
+// Marked with a 2px near-ink rule rather than a background tint. A tint has to
+// be repainted on row hover or the highlight dies at the group edge, and this
+// design already carries its structure in rules. (The FA scanner's coloured
+// blocks work there because that table has a labelled group header row; this one
+// has no vertical room for a second header row.)
+//
+// Three rules, not four: group 1's right edge IS group 2's left edge, and the
+// last closes group 2 against Status.
+const G1_EDGE = "border-l-2 border-line-strong";
+const G2_EDGE = "border-l-2 border-line-strong";
+const G2_END = "border-l-2 border-line-strong";
 
 // Corporate actions (cash dividend / bonus / split) re-scale the market price
 // but NOT this row: entry/SL/TP are the nominal levels captured at trade time and
@@ -165,6 +189,14 @@ export default async function PortfolioPage({
     return <DataError error={e} locale={locale} />;
   }
 
+  // Migration 049 applied? `select("*")` simply omits columns that do not
+  // exist, so the presence of the KEY (not a truthy value) is the signal — a
+  // row whose journal is genuinely empty still has `sell_thesis: null`. Checked
+  // across all rows rather than the first, so one stray row cannot decide it.
+  // Until it is applied the journal still opens and shows the buy thesis; only
+  // the two editable sections are withheld.
+  const journalReady = recommendations.some((r) => "sell_thesis" in r);
+
   // Summary over the FILTERED rows, covering the WHOLE portfolio: an open
   // position counts at its current mark, a closed one at its realized result.
   // So these read as "how the book stands today", not as a closed-trade track
@@ -265,33 +297,33 @@ export default async function PortfolioPage({
           {t(locale, "noPositions")}
         </div>
       ) : (
-        <div className="bg-panel rounded-lg border border-line overflow-x-auto">
-          <table className="w-full text-body-lg">
-            <thead className="bg-panel-2 border-y border-line-strong">
-              {/* px-3, not px-4: 16 columns turn every extra 8px of gutter into
-                  128px of horizontal scroll, which is most of what was pushing
-                  this table past the viewport. */}
-              <tr className="border-b border-line text-left text-fg-muted">
-                <th className="row-h px-2 label">{t(locale, "date")}</th>
-                <th className={`${FROZEN_TH} ${FROZEN_EDGE} row-h px-2 label`}>{t(locale, "symbol")}</th>
-                <th className="row-h px-2 label">{t(locale, "setup")}</th>
-                <th className="row-h px-2 label text-right">{t(locale, "entry")}</th>
-                <th className="row-h px-2 label text-right">{t(locale, "sl")}</th>
-                <th className="row-h px-2 label text-right">{t(locale, "tp1")}</th>
-                <th className="row-h px-2 label text-right">{t(locale, "tp2")}</th>
-                {/* Allowed to wrap. "Current / Exit" (and the longer VI
-                    "Hiện tại / Giá ra") held a 134px column open on one nowrap
-                    header for cells that only ever hold a price. */}
-                <th className="row-h px-2 label text-right">{t(locale, "currentExit")}</th>
-                <th className="row-h px-2 font-bold text-right">{t(locale, "pnl")}</th>
-                <th className="row-h px-2 label text-right">{t(locale, "maxDd")}</th>
-                <th className="row-h px-2 label text-right">{t(locale, "rMultiple")}</th>
-                <th className="row-h px-2 label text-right">{t(locale, "winRateEst")}</th>
-                <th className="row-h px-2 label text-right">{t(locale, "sharpe")}</th>
-                <th className="row-h px-2 label">{t(locale, "holding")}</th>
-                <th className="row-h px-2 label">{t(locale, "closed")}</th>
-                <th className="row-h px-2 label">{t(locale, "status")}</th>
-                {isAdmin && <th className="row-h px-2 label text-right">{t(locale, "actionCol")}</th>}
+        <div className={`bg-panel rounded-lg border border-line ${TABLE_SCROLL}`}>
+          <table className={TABLE}>
+            <thead className={THEAD}>
+              <tr>
+                <th className={TH}>{t(locale, "date")}</th>
+                <th className={`${FROZEN_TH} ${FROZEN_EDGE} ${TH}`}>{t(locale, "symbol")}</th>
+                <th className={TH}>{t(locale, "setup")}</th>
+
+                {/* GROUP 1 — what actually happened. */}
+                <th className={`${TH_NUM} ${G1_EDGE}`}>{t(locale, "entry")}</th>
+                <th className={TH_NUM}>{t(locale, "current")}</th>
+                <th className={TH_NUM}>{t(locale, "exit")}</th>
+                <th className={TH_NUM}>{t(locale, "pnl")}</th>
+                <th className={TH_NUM}>{t(locale, "maxDd")}</th>
+                <th className={TH}>{t(locale, "closed")}</th>
+                <th className={TH}>{t(locale, "holding")}</th>
+
+                {/* GROUP 2 — what was planned. Separated because these are the
+                    levels set BEFORE the trade; reading them next to the
+                    outcome invites judging the plan by the result. */}
+                <th className={`${TH_NUM} ${G2_EDGE}`}>{t(locale, "tp1")}</th>
+                <th className={TH_NUM}>{t(locale, "tp2")}</th>
+                <th className={TH_NUM}>{t(locale, "sl")}</th>
+                <th className={TH_NUM}>{t(locale, "winRateEst")}</th>
+
+                <th className={`${TH} ${G2_END}`}>{t(locale, "status")}</th>
+                {isAdmin && <th className={TH_NUM}>{t(locale, "actionCol")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -300,21 +332,31 @@ export default async function PortfolioPage({
                 // Realized figures once the trade is closed, live ones while it
                 // runs — the two old tables showed these in separate columns.
                 const pnl = pnlOf(rec);
-                const lastPrice = rec.actual_exit_price ?? rec.current_price;
                 const plan =
                   rec.holding_period_label ??
                   (rec.holding_period_sessions ? `${rec.holding_period_sessions} ${t(locale, "sessions")}` : null);
                 const badge = statusBadge(rec.status, locale);
                 const k = adjFactor(rec);
                 return (
-                  <tr key={rec.id} className="group border-b border-line-faint hover:bg-canvas">
-                    {/* Both date columns are text-data, matching Setup and Holding:
-                        they are metadata, not figures you scan down, and at
-                        text-body-lg the two of them held ~195px of a table that had
-                        none to spare. */}
-                    <td className="row-h px-2 text-data text-fg-muted whitespace-nowrap">{rec.trading_date}</td>
-                    <td className={`${FROZEN_TD} ${FROZEN_EDGE} row-h px-2 font-medium`}>
-                      {rec.symbol}
+                  <tr key={rec.id} className={TR}>
+                    <td className={`${TD} whitespace-nowrap font-mono tnum`}>{rec.trading_date}</td>
+                    <td className={`${FROZEN_TD} ${FROZEN_EDGE} ${TD_SYMBOL}`}>
+                      <TradingJournal
+                        recId={rec.id}
+                        symbol={rec.symbol}
+                        locale={locale}
+                        canEdit={isAdmin}
+                        buyThesis={rec.note ?? null}
+                        buyDate={rec.trading_date}
+                        sellThesis={rec.sell_thesis ?? null}
+                        sellDate={rec.sell_thesis_at ?? null}
+                        lesson={rec.lesson_learned ?? null}
+                        lessonDate={rec.lesson_learned_at ?? null}
+                        isOpenPosition={open}
+                        journalReady={journalReady}
+                      >
+                        {rec.symbol}
+                      </TradingJournal>
                       {rec.source === "MANUAL" && (
                         <span className="ml-1.5 inline-block px-1 py-0.5 text-[10px] rounded bg-panel-2 text-fg-muted align-middle">M</span>
                       )}
@@ -347,70 +389,81 @@ export default async function PortfolioPage({
                           {t(locale, "adjBadge")}
                         </span>
                       )}
-                      {/* Narrower than the 180px it used to claim: the note is
-                          truncated context, but it was setting the width of the
-                          frozen identity column and so of every row. The full
-                          text is still one hover away. */}
-                      {rec.note && (
-                        <span className="block text-[11px] text-fg-label font-normal mt-0.5 max-w-[112px] truncate" title={rec.note}>{rec.note}</span>
-                      )}
+                      {/* The truncated note is GONE from the cell. It was the
+                          entry thesis squeezed into 112px with the rest behind a
+                          `title=`, which is unreadable on touch and uncopyable
+                          anywhere. It is now the first section of the journal
+                          the symbol opens. */}
                     </td>
-                    <td className="row-h px-2 text-fg-muted text-data">{(rec.setup ?? "—").replace(/_/g, " ")}</td>
-                    {/* Entry carries the "market basis" label; the levels after it
-                        repeat the amber figure without it, so the row explains
-                        itself once instead of five times.
+                    <td className={`${TD} whitespace-nowrap`}>{(rec.setup ?? "—").replace(/_/g, " ")}</td>
 
-                        The distance-to-entry percentages sit UNDER their price
-                        rather than beside it. Side by side, `24,500 (-7.0%)` is
-                        one unbreakable ~113px line per column; stacked, SL/TP1
-                        are sized by the price alone and the prices line up in a
-                        column you can scan straight down. */}
-                    <td className="row-h px-2 text-right font-mono whitespace-nowrap">
+                    {/* ---- GROUP 1: what happened ---------------------------
+                        Entry carries the "market basis" label; the levels after
+                        it repeat the amber figure without it, so the row
+                        explains itself once instead of five times. */}
+                    <td className={`${TD_NUM} ${G1_EDGE}`}>
                       {formatPrice(rec.entry_price)}
                       {marketBasis(rec.entry_price, k, locale, true)}
                     </td>
-                    <td className="row-h px-2 text-right font-mono text-red-500 whitespace-nowrap">
-                      {formatPrice(rec.stop_loss)}
-                      {rec.stop_loss_pct !== null && (
-                        <span className="block text-data">({rec.stop_loss_pct > 0 ? "+" : ""}{formatPercent(rec.stop_loss_pct, 1)})</span>
+                    {/* Current and Exit are now SEPARATE. Merged, a closed row
+                        showed its exit price in a column headed "Current" and
+                        there was no way to see the last mark beside it. */}
+                    <td className={TD_NUM}>
+                      {formatPrice(rec.current_price)}
+                      {marketBasis(rec.current_price, k, locale)}
+                    </td>
+                    <td className={TD_NUM}>
+                      {rec.actual_exit_price !== null ? (
+                        <>
+                          {formatPrice(rec.actual_exit_price)}
+                          {marketBasis(rec.actual_exit_price, k, locale)}
+                        </>
+                      ) : (
+                        <span className="text-fg-faint">—</span>
                       )}
-                      {marketBasis(rec.stop_loss, k, locale)}
                     </td>
-                    <td className="row-h px-2 text-right font-mono text-up whitespace-nowrap">
-                      {formatPrice(rec.tp1)}
-                      {rec.tp1_pct !== null && (
-                        <span className="block text-data">({rec.tp1_pct > 0 ? "+" : ""}{formatPercent(rec.tp1_pct, 1)})</span>
-                      )}
-                      {marketBasis(rec.tp1, k, locale)}
+                    <td className={`${TD_NUM} font-semibold ${pnlColor(pnl)}`}>{formatPnl(pnl)}</td>
+                    <td className={`${TD_NUM} ${rec.max_drawdown_pct !== null ? "text-down" : ""}`}>
+                      {rec.max_drawdown_pct !== null ? formatPercent(rec.max_drawdown_pct, 1) : <span className="text-fg-faint">—</span>}
                     </td>
-                    <td className="row-h px-2 text-right font-mono text-up whitespace-nowrap">
-                      {formatPrice(rec.tp2)}
-                      {rec.tp2_pct !== null && (
-                        <span className="block text-data">({rec.tp2_pct > 0 ? "+" : ""}{formatPercent(rec.tp2_pct, 1)})</span>
-                      )}
-                      {marketBasis(rec.tp2, k, locale)}
-                    </td>
-                    <td className="row-h px-2 text-right font-mono whitespace-nowrap">
-                      {formatPrice(lastPrice)}
-                      {/* Market basis, so the row reconciles against a broker
-                          screen without altering what was actually recorded. */}
-                      {marketBasis(lastPrice, k, locale)}
-                    </td>
-                    <td className={`row-h px-2 text-right font-mono font-bold ${pnlColor(pnl)}`}>
-                      {formatPnl(pnl)}
-                    </td>
-                    <td className="row-h px-2 text-right font-mono text-down">
-                      {rec.max_drawdown_pct !== null ? `${formatPercent(rec.max_drawdown_pct, 1)}` : ""}
-                    </td>
-                    <td className="row-h px-2 text-right">{rec.r_multiple !== null ? rec.r_multiple.toFixed(1) : "—"}</td>
-                    <td className="row-h px-2 text-right">{rec.win_rate_est !== null ? `${rec.win_rate_est}%` : "—"}</td>
-                    <td className="row-h px-2 text-right">{rec.sharpe !== null ? rec.sharpe.toFixed(1) : "—"}</td>
-                    <td className="row-h px-2 text-fg-muted text-data whitespace-nowrap">
+                    <td className={`${TD} whitespace-nowrap font-mono tnum`}>{rec.closed_at ?? "—"}</td>
+                    <td className={`${TD} whitespace-nowrap`}>
                       {rec.days_held !== null ? `${rec.days_held} ${t(locale, "sessions")}` : "—"}
                       {plan && <span className="block text-[11px] text-fg-label mt-0.5">{plan}</span>}
                     </td>
-                    <td className="row-h px-2 text-data text-fg-muted whitespace-nowrap">{rec.closed_at ?? "—"}</td>
-                    <td className="row-h px-2">
+
+                    {/* ---- GROUP 2: what was planned ------------------------
+                        The distance-to-entry percentages sit UNDER their price
+                        rather than beside it. Side by side, `24,500 (-7.0%)` is
+                        one unbreakable ~113px line per column; stacked, SL/TP
+                        are sized by the price alone and the prices line up in a
+                        column you can scan straight down. */}
+                    <td className={`${TD_NUM} text-up ${G2_EDGE}`}>
+                      {formatPrice(rec.tp1)}
+                      {rec.tp1_pct !== null && (
+                        <span className="block text-[11px]">({rec.tp1_pct > 0 ? "+" : ""}{formatPercent(rec.tp1_pct, 1)})</span>
+                      )}
+                      {marketBasis(rec.tp1, k, locale)}
+                    </td>
+                    <td className={`${TD_NUM} text-up`}>
+                      {formatPrice(rec.tp2)}
+                      {rec.tp2_pct !== null && (
+                        <span className="block text-[11px]">({rec.tp2_pct > 0 ? "+" : ""}{formatPercent(rec.tp2_pct, 1)})</span>
+                      )}
+                      {marketBasis(rec.tp2, k, locale)}
+                    </td>
+                    <td className={`${TD_NUM} text-down`}>
+                      {formatPrice(rec.stop_loss)}
+                      {rec.stop_loss_pct !== null && (
+                        <span className="block text-[11px]">({rec.stop_loss_pct > 0 ? "+" : ""}{formatPercent(rec.stop_loss_pct, 1)})</span>
+                      )}
+                      {marketBasis(rec.stop_loss, k, locale)}
+                    </td>
+                    <td className={`${TD_NUM} ${winRateColor(rec.win_rate_est)}`}>
+                      {rec.win_rate_est !== null ? `${rec.win_rate_est}%` : "—"}
+                    </td>
+
+                    <td className={`${TD} ${G2_END}`}>
                       {/* nowrap: a pill that breaks across two lines ("Đang /
                           mở") reads as damage rather than as a badge, and the
                           tighter gutters left this column narrow enough to do
@@ -420,7 +473,7 @@ export default async function PortfolioPage({
                       </span>
                     </td>
                     {isAdmin && (
-                      <td className="row-h px-2 text-right">
+                      <td className={`${TD_NUM}`}>
                         {open && (
                           <TradeActions
                             symbol={rec.symbol}
