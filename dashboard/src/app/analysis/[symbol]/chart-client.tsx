@@ -23,7 +23,7 @@ const UP_COLOR = "#16a34a";
 const DOWN_COLOR = "#dc2626";
 
 const MA_COLOR: Record<number, string> = {
-  20: VN_INDEX,  // blue
+  20: VN_INDEX,  // warm grey — see the VN_INDEX note in lib/chart-theme.ts
   50: "#ea580c",  // orange
   150: "#0d9488", // teal
   200: "#9333ea", // purple
@@ -47,10 +47,14 @@ const MACD_SIGNAL_COLOR = "#ea580c";
 const VOLUME_UP_COLOR = "rgba(12, 107, 74, 0.7)"; // --color-up
 const VOLUME_DOWN_COLOR = "rgba(179, 44, 36, 0.7)"; // --color-down
 
-// Ink, not grey. The old #6b7280 was chosen against pastel bars; over the
-// stronger ones it is the weakest mark in the pane, when it is the reference
-// every bar is being read against.
-const VOLUME_MA_COLOR = "#443f38";
+// The SAME treatment as a price MA line: MA_COLOR[20] at lineWidth 1.
+//
+// Not a separate constant, so the two MA20s cannot drift apart — it is the same
+// average of the same window, drawn over a different series, and it should not
+// announce itself as something else. An earlier cut set it in near-black ink at
+// 2px, which made the quietest line on the chart into its heaviest and pulled
+// the eye away from the bars it exists to explain.
+const VOLUME_MA_COLOR = MA_COLOR[20];
 
 // MCDX (Multi Color Dragon Extended) histogram colours — see data/MCDX.md.
 // These are convention colours fixed by the indicator (like status colours),
@@ -703,7 +707,7 @@ export function ChartClient({
       LineSeries,
       {
         color: VOLUME_MA_COLOR,
-        lineWidth: 2,
+        lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
         priceScaleId: "vol",
