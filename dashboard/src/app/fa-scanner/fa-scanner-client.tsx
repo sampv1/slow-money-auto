@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { industryOptions } from "@/lib/symbol-meta";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
@@ -68,7 +69,7 @@ const FA_EXTRA = [
 
 type PtsKey = (typeof FA_COMPONENTS)[number]["pts"];
 type ExtraKey = (typeof FA_EXTRA)[number]["key"];
-type SortKey = "total_score" | "symbol" | PtsKey | ExtraKey;
+type SortKey = "total_score" | "symbol" | "industry" | PtsKey | ExtraKey;
 
 const N_QUARTERLY = FA_EXTRA.filter((c) => c.group === "q").length;
 const N_DAILY = FA_EXTRA.filter((c) => c.group === "d").length;
@@ -120,6 +121,9 @@ export function FaScannerClient({
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
   const [minNpatBn, setMinNpatBn] = useState<number>(DEFAULT_MIN_NPAT_BN);
   const [search, setSearch] = useState("");
+  // "" = no industry filter. Holds the LABEL, not a code — the options are the
+  // same localised strings the column renders, so what you pick is what you see.
+  const [industryFilter, setIndustryFilter] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("total_score");
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -148,10 +152,19 @@ export function FaScannerClient({
     return mx;
   }, [rows]);
 
-  const filtered = useMemo(() => {
+  /**
+   * Every filter EXCEPT industry.
+   *
+   * The industry dropdown's options are built from this, not from `rows`:
+   * offering all 87 industries against a list already cut down by the score,
+   * volume and NPAT floors means most options match nothing, and a filter that
+   * empties the table looks exactly like a bug. It excludes the industry filter
+   * itself, or choosing one would collapse the dropdown to that single option.
+   */
+  const preIndustry = useMemo(() => {
     const min = minScore.trim() === "" ? null : Number(minScore);
     const q = search.trim().toUpperCase();
-    const out = rows.filter((r) => {
+    return rows.filter((r) => {
       if (min !== null && !Number.isNaN(min) && faNormalizedScore(r) < min) return false;
       // Liquidity filter: drop symbols whose 20-session avg volume is below the
       // threshold (or NULL = unknown), matching the TA scanner.
@@ -171,6 +184,19 @@ export function FaScannerClient({
       if (q && !r.symbol.toUpperCase().includes(q)) return false;
       return true;
     });
+  }, [rows, minScore, minAvgVolume, minNpatBn, avgVolBySymbol, quarterlyBySymbol, search]);
+
+  const industryChoices = useMemo(
+    () => industryOptions(preIndustry.map((r) => r.symbol), industry, locale),
+    [preIndustry, industry, locale],
+  );
+
+  const filtered = useMemo(() => {
+    // Industry narrows FIRST, then the sort runs over what is left — sorting is
+    // always of the visible list, never of the whole universe.
+    const out = industryFilter
+      ? preIndustry.filter((r) => industry[r.symbol] === industryFilter)
+      : [...preIndustry];
 
     // Four of the six new columns live in side maps rather than on the FaScore
     // row, so the sort value goes through a resolver (same shape as Signal Pro's
@@ -191,7 +217,9 @@ export function FaScannerClient({
         case "npat_yoy":
           return quarterlyBySymbol.get(r.symbol)?.npatYoy ?? null;
         default:
-          return r[sortKey as Exclude<SortKey, "symbol" | ExtraKey>];
+          // "symbol" and "industry" are compared as text in the sort itself and
+          // never reach here; the rest are real FaScore numeric columns.
+          return r[sortKey as Exclude<SortKey, "symbol" | "industry" | ExtraKey>];
       }
     };
 
@@ -201,6 +229,18 @@ export function FaScannerClient({
       if (sortKey === "symbol") {
         av = a.symbol;
         bv = b.symbol;
+      } else if (sortKey === "industry") {
+        // Text, so it needs the collator rather than `<`: a plain comparison
+        // orders by UTF-16 code unit, which files every Đ-initial industry
+        // (Điện, Đồ uống, Đầu tư) after Z. Unclassified symbols sort last in
+        // both directions, like every null column here.
+        const ai = industry[a.symbol] ?? "";
+        const bi = industry[b.symbol] ?? "";
+        if (!ai && !bi) return 0;
+        if (!ai) return 1;
+        if (!bi) return -1;
+        const cmp = ai.localeCompare(bi, locale === "en" ? "en" : "vi");
+        return sortAsc ? cmp : -cmp;
       } else {
         // Nulls sort last regardless of direction.
         const an = pick(a);
@@ -216,16 +256,16 @@ export function FaScannerClient({
       return 0;
     });
     return out;
-  }, [rows, minScore, minAvgVolume, minNpatBn, avgVolBySymbol, rs1mBySymbol,
-      quarterlyBySymbol, search, sortKey, sortAsc]);
+  }, [preIndustry, industryFilter, industry, locale, rs1mBySymbol,
+      quarterlyBySymbol, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
       setSortAsc((v) => !v);
     } else {
       setSortKey(key);
-      // Symbol defaults to ascending; numeric columns to descending.
-      setSortAsc(key === "symbol");
+      // Text columns default to ascending; numeric ones to descending.
+      setSortAsc(key === "symbol" || key === "industry");
     }
   }
 
@@ -316,6 +356,23 @@ export function FaScannerClient({
             className="border border-line rounded px-2 py-1 w-24"
           />
         </label>
+        <label className="text-body-lg">
+          <span className="label block mb-1">{t(locale, "industry")}</span>
+          <select
+            value={industryFilter}
+            onChange={(e) => setIndustryFilter(e.target.value)}
+            // Capped: the longest option runs 43 characters and an uncapped
+            // select stretches the whole filter row to fit it.
+            className="border border-line rounded px-2 py-1 max-w-[14rem]"
+          >
+            <option value="">{t(locale, "allIndustries")}</option>
+            {industryChoices.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="text-body-lg flex-1 min-w-[160px]">
           <span className="label block mb-1">{t(locale, "symbol")}</span>
           <input
@@ -355,8 +412,12 @@ export function FaScannerClient({
                 <th rowSpan={2} className="label sticky left-0 z-30 bg-panel-2 row-h px-2 align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
-                <th rowSpan={2} className="label row-h px-2 align-bottom">
-                  {t(locale, "industry")}
+                <th
+                  rowSpan={2}
+                  className="label row-h px-2 align-bottom cursor-pointer select-none"
+                  onClick={() => toggleSort("industry")}
+                >
+                  {t(locale, "industry")}{sortIndicator("industry")}
                 </th>
                 <th rowSpan={2} className="label row-h px-2 text-right align-bottom cursor-pointer select-none border-r border-line" onClick={() => toggleSort("total_score")}>
                   {t(locale, "faTotalScore")}{sortIndicator("total_score")}
@@ -414,9 +475,6 @@ export function FaScannerClient({
                       {row.symbol}
                     </Link>
                   </td>
-                  {/* Not sortable: the header is a plain label because the
-                      sort state lives in a URL param keyed to FaScore fields,
-                      and industry is not one of them. */}
                   <td className="row-h px-2 text-data text-fg-muted">
                     {industry[row.symbol] ? (
                       <span className="block max-w-[10rem] truncate" title={industry[row.symbol]}>
