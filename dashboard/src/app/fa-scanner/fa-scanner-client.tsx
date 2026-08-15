@@ -89,6 +89,9 @@ const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 // 124. Like the volume filter, a symbol with NO figure is excluded rather than
 // assumed to pass — see the hint text in the filter bar for why that matters here.
 const DEFAULT_MIN_NPAT_BN = 35;
+// Percent. On by default, like the volume and NPAT floors: this scanner is for
+// finding growth, and a profit that went sideways is not a candidate.
+const DEFAULT_MIN_NPAT_YOY = 20;
 
 export function FaScannerClient({
   rows,
@@ -120,6 +123,7 @@ export function FaScannerClient({
   const [minScore, setMinScore] = useState<string>("");
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
   const [minNpatBn, setMinNpatBn] = useState<number>(DEFAULT_MIN_NPAT_BN);
+  const [minNpatYoy, setMinNpatYoy] = useState<number>(DEFAULT_MIN_NPAT_YOY);
   const [search, setSearch] = useState("");
   // "" = no industry filter. Holds the LABEL, not a code — the options are the
   // same localised strings the column renders, so what you pick is what you see.
@@ -181,10 +185,22 @@ export function FaScannerClient({
         if (npat === null || npat === undefined) return false;
         if (npat < minNpatBn) return false;
       }
+      // NPAT growth floor. Same "unknown does not pass" rule as the two above,
+      // and it bites for a second reason here: npatYoy is null when the year-ago
+      // quarter is missing OR was exactly zero, so a null is "cannot be
+      // compared", never "did not grow".
+      //
+      // Deliberately NOT clamped at 0 like the others — a negative threshold is
+      // meaningful ("allow up to a 10% decline"), so the input accepts one.
+      if (minNpatYoy !== 0) {
+        const yoy = quarterlyBySymbol.get(r.symbol)?.npatYoy;
+        if (yoy === null || yoy === undefined) return false;
+        if (yoy < minNpatYoy) return false;
+      }
       if (q && !r.symbol.toUpperCase().includes(q)) return false;
       return true;
     });
-  }, [rows, minScore, minAvgVolume, minNpatBn, avgVolBySymbol, quarterlyBySymbol, search]);
+  }, [rows, minScore, minAvgVolume, minNpatBn, minNpatYoy, avgVolBySymbol, quarterlyBySymbol, search]);
 
   const industryChoices = useMemo(
     () => industryOptions(preIndustry.map((r) => r.symbol), industry, locale),
@@ -309,12 +325,32 @@ export function FaScannerClient({
             whole sector. Better said out loud than discovered later. */}
         <span className="text-body text-fg-label">{t(locale, "faMinNpatHint")}</span>
 
-        {(minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D || minNpatBn !== DEFAULT_MIN_NPAT_BN) && (
+        <span className="hidden sm:block h-5 w-px bg-line" aria-hidden />
+
+        <label htmlFor="fa-min-npat-yoy" className="text-body text-fg">
+          {t(locale, "faMinNpatYoy")}
+        </label>
+        <input
+          id="fa-min-npat-yoy"
+          type="number"
+          step={5}
+          value={Number.isFinite(minNpatYoy) ? minNpatYoy : 0}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            setMinNpatYoy(Number.isFinite(n) ? n : 0);
+          }}
+          className="w-24 rounded border border-line px-2 py-1 text-data font-mono tnum"
+        />
+        <span className="text-body text-fg-label">{t(locale, "faMinNpatYoyHint")}</span>
+
+        {(minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D || minNpatBn !== DEFAULT_MIN_NPAT_BN
+          || minNpatYoy !== DEFAULT_MIN_NPAT_YOY) && (
           <button
             type="button"
             onClick={() => {
               setMinAvgVolume(DEFAULT_MIN_AVG_VOLUME_20D);
               setMinNpatBn(DEFAULT_MIN_NPAT_BN);
+              setMinNpatYoy(DEFAULT_MIN_NPAT_YOY);
             }}
             className="text-body text-fg-muted hover:text-fg ml-auto"
           >
