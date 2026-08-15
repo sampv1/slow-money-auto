@@ -204,7 +204,6 @@ function rollingMin(values: number[], window: number): (number | null)[] {
 
 type Features = {
   maPeriods: number[];
-  showVolumeMA: boolean;
   showRollingHigh: boolean;
   showRollingLow: boolean;
   show52wHigh: boolean;
@@ -224,7 +223,6 @@ const DISPLAY_MA: Record<string, number> = { ma20: 20, ma50: 50, ma200: 200 };
 
 function featuresFor(selected: string[]): Features {
   const maPeriods = new Set<number>();
-  let showVolumeMA = false;
   let showRollingHigh = false;
   let showRollingLow = false;
   let show52wHigh = false;
@@ -272,13 +270,6 @@ function featuresFor(selected: string[]): Features {
       maPeriods.add(150);
       maPeriods.add(200);
     }
-    // Volume MA20 context — shown for any volume-vs-average indicator
-    else if (
-      key === "volume_spike" || key === "volume_dryup"
-      || key === "volume_50_above_avg" || key === "pocket_pivot"
-    ) {
-      showVolumeMA = true;
-    }
     // 20-day breakout reference lines
     else if (key === "breaks_20d_high") {
       showRollingHigh = true;
@@ -304,7 +295,6 @@ function featuresFor(selected: string[]): Features {
 
   return {
     maPeriods: [...maPeriods].sort((a, b) => a - b),
-    showVolumeMA,
     showRollingHigh,
     showRollingLow,
     show52wHigh,
@@ -698,22 +688,30 @@ export function ChartClient({
       })),
     );
 
-    if (features.showVolumeMA) {
-      const volMA = sma(volumes, 20);
-      const line = chart.addSeries(
-        LineSeries,
-        {
-          color: VOLUME_MA_COLOR,
-          lineWidth: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          priceScaleId: "vol",
-          title: "Vol MA20",
-        },
-        panes.volume,
-      );
-      line.setData(linePointsFrom(volMA));
-    }
+    // ALWAYS drawn, not gated on a chip.
+    //
+    // A volume bar means nothing on its own — "is this a lot?" is only
+    // answerable against the recent average, which is the whole reason the
+    // volume-vs-average signals (spike, dry-up, pocket pivot) exist. It used to
+    // appear only when one of those four indicators was selected, so the
+    // reference for reading the pane was missing exactly when you were reading
+    // it without a signal in mind.
+    //
+    // It shares the volume price scale, so it needs no autoscale of its own and
+    // costs one line over data already in memory.
+    const volMA20 = chart.addSeries(
+      LineSeries,
+      {
+        color: VOLUME_MA_COLOR,
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        priceScaleId: "vol",
+        title: "Vol MA20",
+      },
+      panes.volume,
+    );
+    volMA20.setData(linePointsFrom(sma(volumes, 20)));
 
     // === Pane 2 (optional): RSI ==================================
     let rsiSeries: ReturnType<typeof chart.addSeries<"Line">> | null = null;
@@ -1032,6 +1030,11 @@ export function ChartClient({
               MA{period}
             </span>
           ))}
+          {/* Unconditional, because the line always is. */}
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-3 h-0.5" style={{ backgroundColor: VOLUME_MA_COLOR }} />
+            Vol MA20
+          </span>
           {features.showRSI && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-3 h-0.5" style={{ backgroundColor: RSI_COLOR }} />
