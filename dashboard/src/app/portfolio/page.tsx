@@ -102,41 +102,52 @@ const P_TH_NUM = `${P_CELL} label leading-tight text-right`;
 const P_TR = "group border-b border-line-faint transition-colors hover:bg-panel-2";
 
 // Corporate actions (cash dividend / bonus / split) re-scale the market price
-// but NOT this row: entry/SL/TP are the nominal levels captured at trade time and
-// current_price is rebased back onto that same basis by update_prices.py, so P&L
-// stays correct as a total return on the original share count. The cost is that
-// the levels shown stop matching a broker screen — after a 1:1 bonus this row
-// reads 50,000 while the market trades at 26,000. `adjFactor` recovers the market
-// basis (nominal x k) so the row can show both and explain itself.
+// but NOT the stored row: entry/SL/TP are the NOMINAL levels captured at trade
+// time, and current_price is rebased back onto that same basis by
+// update_prices.py, so P&L stays correct as a total return on the original share
+// count. `adj_factor` (k) converts a stored level to what the market shows now.
 const adjFactor = (r: Recommendation): number | null => {
   const k = r.adj_factor;
   return typeof k === "number" && Number.isFinite(k) && k > 0 && Math.abs(k - 1) > 0.01 ? k : null;
 };
 
-// The market-basis echo printed under a nominal level. Shown under EVERY price
-// on an adjusted row — entry, SL, TP1, TP2 and current — because carrying it on
-// the current price alone was the confusing part: AIG read entry 51,000 against
-// a market trading near 43,900, with nothing on the row to reconcile them.
+// THE MARKET BASIS LEADS. On an adjusted row every price is shown as `nominal x
+// k` — the number a broker screen shows today — with the original trade-time
+// level demoted to a caption beneath it.
 //
-// The percentages beside SL/TP are deliberately NOT rescaled. They are ratios to
-// entry, and a corporate action scales entry and the level by the same k, so the
-// ratio is invariant — rescaling them would introduce an error, not fix one.
+// It used to be the other way round, and that was the wrong way: after AIG's 15%
+// bonus the row read entry 51,000 against a stock trading near 43,900, so the
+// figure you compared against your broker was the small grey one. The stored
+// level is provenance; the tradeable price is what you are actually reading the
+// row for.
 //
-// The "market basis" caption sits on its OWN line rather than trailing the amber
-// number. Inline, it made Entry the third-widest column in the table (171px) for
-// a caption that repeats once per page — every other row paid for it in
-// horizontal scroll. Stacked, the column is sized by the wider of the price and
-// the caption instead of their sum.
-const marketBasis = (
+// Nothing about the arithmetic changes — and nothing needed to. Both bases give
+// the SAME P&L, because k scales entry and current by the same factor and P&L is
+// their ratio (AIG: 56,91/51,00 and 49,00/43,91 are both +11.6%). The percentages
+// beside SL/TP are that same invariant ratio, which is why they are not rescaled
+// either: rescaling them would introduce an error, not fix one.
+const marketPrice = (v: number | null | undefined, k: number | null): number | null => {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  return k === null ? v : v * k;
+};
+
+// The original trade-time level, printed under the market price on an adjusted
+// row. Muted rather than amber now that it is the reference and not the answer —
+// the amber ĐC badge on the symbol already says this row has an action.
+//
+// The caption sits on its OWN line rather than trailing the number. Inline, it
+// made Entry the third-widest column in the table (171px) for a caption that
+// repeats once per page, and every other row paid for it in horizontal scroll.
+const originalBasis = (
   v: number | null | undefined,
   k: number | null,
   locale: Locale,
   withLabel = false,
 ) =>
   k !== null && typeof v === "number" && Number.isFinite(v) ? (
-    <span className="block text-[11px] text-amber-700 font-normal mt-0.5 leading-tight">
-      {formatPriceK(v * k)}
-      {withLabel && <span className="block text-fg-label">{t(locale, "adjMarketBasis")}</span>}
+    <span className="block text-[11px] text-fg-label font-normal mt-0.5 leading-tight">
+      {formatPriceK(v)}
+      {withLabel && <span className="block">{t(locale, "adjOriginal")}</span>}
     </span>
   ) : null;
 
@@ -461,21 +472,21 @@ export default async function PortfolioPage({
                         it repeat the amber figure without it, so the row
                         explains itself once instead of five times. */}
                     <td className={`${P_NUM} ${G1_EDGE}`}>
-                      {formatPriceK(rec.entry_price)}
-                      {marketBasis(rec.entry_price, k, locale, true)}
+                      {formatPriceK(marketPrice(rec.entry_price, k))}
+                      {originalBasis(rec.entry_price, k, locale, true)}
                     </td>
                     {/* Current and Exit are now SEPARATE. Merged, a closed row
                         showed its exit price in a column headed "Current" and
                         there was no way to see the last mark beside it. */}
                     <td className={P_NUM}>
-                      {formatPriceK(rec.current_price)}
-                      {marketBasis(rec.current_price, k, locale)}
+                      {formatPriceK(marketPrice(rec.current_price, k))}
+                      {originalBasis(rec.current_price, k, locale)}
                     </td>
                     <td className={P_NUM}>
                       {rec.actual_exit_price !== null ? (
                         <>
-                          {formatPriceK(rec.actual_exit_price)}
-                          {marketBasis(rec.actual_exit_price, k, locale)}
+                          {formatPriceK(marketPrice(rec.actual_exit_price, k))}
+                          {originalBasis(rec.actual_exit_price, k, locale)}
                         </>
                       ) : (
                         <span className="text-fg-faint">—</span>
@@ -498,25 +509,25 @@ export default async function PortfolioPage({
                         are sized by the price alone and the prices line up in a
                         column you can scan straight down. */}
                     <td className={`${P_NUM} text-up ${G2_EDGE}`}>
-                      {formatPriceK(rec.tp1)}
+                      {formatPriceK(marketPrice(rec.tp1, k))}
                       {rec.tp1_pct !== null && (
                         <span className="block text-[11px]">({rec.tp1_pct > 0 ? "+" : ""}{formatPercent(rec.tp1_pct, 1)})</span>
                       )}
-                      {marketBasis(rec.tp1, k, locale)}
+                      {originalBasis(rec.tp1, k, locale)}
                     </td>
                     <td className={`${P_NUM} text-up`}>
-                      {formatPriceK(rec.tp2)}
+                      {formatPriceK(marketPrice(rec.tp2, k))}
                       {rec.tp2_pct !== null && (
                         <span className="block text-[11px]">({rec.tp2_pct > 0 ? "+" : ""}{formatPercent(rec.tp2_pct, 1)})</span>
                       )}
-                      {marketBasis(rec.tp2, k, locale)}
+                      {originalBasis(rec.tp2, k, locale)}
                     </td>
                     <td className={`${P_NUM} text-down`}>
-                      {formatPriceK(rec.stop_loss)}
+                      {formatPriceK(marketPrice(rec.stop_loss, k))}
                       {rec.stop_loss_pct !== null && (
                         <span className="block text-[11px]">({rec.stop_loss_pct > 0 ? "+" : ""}{formatPercent(rec.stop_loss_pct, 1)})</span>
                       )}
-                      {marketBasis(rec.stop_loss, k, locale)}
+                      {originalBasis(rec.stop_loss, k, locale)}
                     </td>
                     <td className={`${P_NUM} ${winRateColor(rec.win_rate_est)}`}>
                       {rec.win_rate_est !== null ? `${rec.win_rate_est}%` : "—"}

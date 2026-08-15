@@ -480,10 +480,10 @@ export const translations = {
     adjKindUnknown: "price adjustment",
     adjBadge: "ADJ",
     adjTooltip:
-      "Corporate action detected on or before {date} (factor {factor}). Entry, SL and TP stay on the basis recorded at trade time; multiply by the factor for the market basis.",
-    adjMarketBasis: "market basis",
+      "Corporate action detected on or before {date} (factor {factor}). Prices are shown on today's market basis; the caption under each one is the level recorded at trade time.",
+    adjOriginal: "original",
     adjFootnote:
-      "ADJ marks a position whose price series was adjusted by a cash dividend, bonus issue or split during the holding period. Entry, SL and TP are kept exactly as recorded at trade time, so those levels no longer match a broker screen — the smaller figure under Current / Exit is the market-basis price. P&L is unaffected: it is measured as a total return on the original share count, so a dividend's price drop is added back and a bonus is offset by the extra shares.",
+      "ADJ marks a position whose price series was adjusted by a cash dividend, bonus issue or split during the holding period. Its prices are shown on the CURRENT MARKET BASIS, so they match a broker screen; the small figure beneath each is the level recorded at trade time, kept for reference. P&L is the same either way — a corporate action scales entry and current price by the same factor, so their ratio does not move — and it is measured as a total return on the original share count, so a dividend's price drop is added back and a bonus is offset by the extra shares.",
 
     // Table headers (shared)
     date: "Date",
@@ -1246,10 +1246,10 @@ export const translations = {
     adjKindUnknown: "điều chỉnh giá",
     adjBadge: "ĐC",
     adjTooltip:
-      "Phát hiện sự kiện doanh nghiệp vào hoặc trước {date} (hệ số {factor}). Giá mua, cắt lỗ và chốt lời giữ nguyên theo mốc ghi nhận lúc vào lệnh; nhân với hệ số để ra giá thị trường.",
-    adjMarketBasis: "giá thị trường",
+      "Phát hiện sự kiện doanh nghiệp vào hoặc trước {date} (hệ số {factor}). Giá hiển thị theo giá thị trường hiện tại; số nhỏ bên dưới là mốc giá ghi nhận lúc vào lệnh.",
+    adjOriginal: "giá gốc",
     adjFootnote:
-      "ĐC đánh dấu vị thế có chuỗi giá bị điều chỉnh do cổ tức tiền mặt, cổ phiếu thưởng hoặc chia tách trong thời gian nắm giữ. Giá mua, cắt lỗ và chốt lời được giữ đúng như lúc vào lệnh nên không còn khớp với bảng giá — số nhỏ hơn dưới cột Hiện tại / Thoát là giá theo thị trường. P&L không bị ảnh hưởng: nó được tính là tổng lợi nhuận trên số cổ phiếu ban đầu, nên phần giá giảm do cổ tức được cộng lại và cổ phiếu thưởng được bù bằng lượng cổ phiếu tăng thêm.",
+      "ĐC đánh dấu vị thế có chuỗi giá bị điều chỉnh do cổ tức tiền mặt, cổ phiếu thưởng hoặc chia tách trong thời gian nắm giữ. Giá của vị thế này hiển thị theo GIÁ THỊ TRƯỜNG HIỆN TẠI nên khớp với bảng giá; số nhỏ bên dưới mỗi giá là mốc ghi nhận lúc vào lệnh, giữ lại để đối chiếu. P&L không đổi dù tính theo mốc nào — sự kiện doanh nghiệp nhân giá mua và giá hiện tại với cùng một hệ số nên tỷ lệ giữa chúng không thay đổi — và được tính là tổng lợi nhuận trên số cổ phiếu ban đầu, nên phần giá giảm do cổ tức được cộng lại và cổ phiếu thưởng được bù bằng lượng cổ phiếu tăng thêm.",
 
     // Table headers (shared)
     date: "Ngày",
