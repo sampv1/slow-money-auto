@@ -7,7 +7,9 @@ import {
   getFaQuarterlyFacts,
   getUniverseLiquidity,
   getRealEstateSymbols,
+  getSymbolMeta,
 } from "@/lib/cached-data";
+import { industryMapFor } from "@/lib/symbol-meta";
 import { getLocale, t } from "@/lib/i18n";
 import { FaScannerClient } from "../fa-scanner-client";
 import { DataError } from "@/components/data-error";
@@ -95,6 +97,7 @@ export default async function FaScannerManufacturingPage({
       <FaScannerClient
         rows={rows}
         universe={universe}
+        industry={industryMapFor(rows.map((r) => r.symbol), await getSymbolMeta(), locale)}
         locale={locale}
         quarters={quarters}
         selectedQuarter={selected}

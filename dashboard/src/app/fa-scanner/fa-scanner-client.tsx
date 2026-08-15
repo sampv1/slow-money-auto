@@ -92,6 +92,7 @@ const DEFAULT_MIN_NPAT_BN = 35;
 export function FaScannerClient({
   rows,
   universe,
+  industry,
   locale,
   quarters,
   selectedQuarter,
@@ -100,6 +101,8 @@ export function FaScannerClient({
 }: {
   rows: FaScore[];
   universe: UniverseLiquidityRow[];
+  /** symbol -> industry label, already localised server-side. Sparse. */
+  industry: Record<string, string>;
   locale: Locale;
   quarters: string[];
   selectedQuarter: string;
@@ -352,6 +355,9 @@ export function FaScannerClient({
                 <th rowSpan={2} className="label sticky left-0 z-30 bg-panel-2 row-h px-2 align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
+                <th rowSpan={2} className="label row-h px-2 align-bottom">
+                  {t(locale, "industry")}
+                </th>
                 <th rowSpan={2} className="label row-h px-2 text-right align-bottom cursor-pointer select-none border-r border-line" onClick={() => toggleSort("total_score")}>
                   {t(locale, "faTotalScore")}{sortIndicator("total_score")}
                 </th>
@@ -407,6 +413,18 @@ export function FaScannerClient({
                     <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
                       {row.symbol}
                     </Link>
+                  </td>
+                  {/* Not sortable: the header is a plain label because the
+                      sort state lives in a URL param keyed to FaScore fields,
+                      and industry is not one of them. */}
+                  <td className="row-h px-2 text-data text-fg-muted">
+                    {industry[row.symbol] ? (
+                      <span className="block max-w-[10rem] truncate" title={industry[row.symbol]}>
+                        {industry[row.symbol]}
+                      </span>
+                    ) : (
+                      <span className="text-fg-faint">—</span>
+                    )}
                   </td>
                   <td className="row-h px-2 text-data font-mono tnum text-right whitespace-nowrap border-r border-line-faint">
                     {faNormalizedScore(row)} / {FA_NORMALIZED_MAX}

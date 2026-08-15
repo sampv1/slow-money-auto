@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { CACHE_TTL_SECONDS, TAG_FA, TAG_TA, fetchAllPaged, getActiveSymbols } from "@/lib/cached-data";
+import { CACHE_TTL_SECONDS, TAG_FA, TAG_TA, fetchAllPaged, getActiveSymbols, getSymbolMeta, getSymbolProfile } from "@/lib/cached-data";
+import { metaIndustry, metaShortName, metaFullName } from "@/lib/symbol-meta";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import { formatPrice, formatPercent } from "@/lib/format";
@@ -13,6 +14,7 @@ import { ReSummary } from "./re-summary";
 import { TaSearch } from "../ta-search";
 import { TradeActions } from "../../signal-pro/trade-actions";
 import { DataError } from "@/components/data-error";
+import { SymbolLogo } from "@/components/symbol-logo";
 
 export const revalidate = 0;
 
@@ -193,7 +195,7 @@ export default async function SymbolDrillDown({
   //    picks BUY vs SELL in the header (same rule as Signal Pro). Deliberately
   //    UNCACHED so a trade shows up immediately on the router.refresh() that
   //    TradeActions fires after a successful BUY/SELL.
-  const [universe, hasOpenPosition] = await Promise.all([
+  const [universe, hasOpenPosition, profile, symbolMeta] = await Promise.all([
     getActiveSymbols().catch((): string[] => []),
     (async (): Promise<boolean> => {
       if (!isAdmin) return false;
@@ -205,7 +207,23 @@ export default async function SymbolDrillDown({
         .limit(1);
       return (data ?? []).length > 0;
     })(),
+    // Both already swallow their own failure (null / empty Map), so a missing
+    // migration 050 costs the header its logo and subtitle, not the page.
+    getSymbolProfile(symbol),
+    getSymbolMeta(),
   ]);
+
+  // NB `industry` further down is fa_industry.industry_group — which RUBRIC this
+  // symbol is scored on. These are the DISPLAY strings, deliberately named apart
+  // so the two can never be confused at a glance.
+  const meta = symbolMeta.get(symbol);
+  const companyName =
+    metaShortName(meta, locale) ??
+    (locale === "en" ? profile?.short_name_en ?? profile?.short_name_vi : profile?.short_name_vi ?? profile?.short_name_en) ??
+    null;
+  const fullName = metaFullName(meta, locale);
+  const industryLabel = metaIndustry(meta, locale);
+  const exchange = profile?.exchange ?? null;
 
   let data: Awaited<ReturnType<typeof getSymbolData>>;
   try {
@@ -292,11 +310,45 @@ export default async function SymbolDrillDown({
           title, and the latest price. Sticks to the top so the box stays put
           as the (long) analysis page scrolls. */}
       <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2 bg-canvas/95 backdrop-blur border-b border-line flex items-baseline justify-between gap-4 mb-4">
-        <div className="flex items-baseline gap-3 sm:gap-4 min-w-0">
+        {/* Identity block. The ticker stays the headline — it is what the reader
+            arrived with and what every other page links by — and the things that
+            say WHICH COMPANY that is sit around it, smallest first:
+
+              [logo]  SYMBOL  Company Name
+                      Industry · EXCHANGE
+
+            Two lines rather than one: the four fields together run past 60
+            characters in Vietnamese, and this bar is STICKY, so anything that
+            wrapped unpredictably would change the header height for the whole
+            scroll. Fixed at two lines, both truncating, it cannot.
+            `min-w-0` at every level is what actually lets truncate work inside
+            a flex row — without it the text forces the container wider. */}
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           <div className="self-center">
             <TaSearch symbols={universe} locale={locale} compact />
           </div>
-          <h1 className="text-display font-semibold shrink-0">{symbol}</h1>
+          <SymbolLogo symbol={symbol} src={profile?.logo_url ?? null} />
+          <div className="min-w-0">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <h1 className="text-display font-semibold shrink-0">{symbol}</h1>
+              {companyName && (
+                <span className="text-body-lg text-fg-muted truncate" title={fullName ?? undefined}>
+                  {companyName}
+                </span>
+              )}
+            </div>
+            {(industryLabel || exchange) && (
+              <div className="flex items-center gap-2 text-data text-fg-label min-w-0">
+                {industryLabel && <span className="truncate" title={industryLabel}>{industryLabel}</span>}
+                {industryLabel && exchange && <span aria-hidden>·</span>}
+                {exchange && (
+                  <span className="shrink-0 font-mono px-1.5 py-0.5 rounded border border-line-faint bg-panel-2 text-[11px] leading-none">
+                    {exchange}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <div className="shrink-0 flex items-center gap-3 sm:gap-4">
           {/* Admin-only paper-trade controls — identical behaviour to the

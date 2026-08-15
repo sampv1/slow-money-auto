@@ -488,6 +488,12 @@ export const translations = {
     // Table headers (shared)
     date: "Date",
     symbol: "Symbol",
+    // ICB level 4 — the granularity FiinProX publishes, so it is the only level
+    // the two sources can be reconciled at. See lib/symbol-meta.ts.
+    industry: "Industry",
+    allIndustries: "All industries",
+    companyName: "Company",
+    exchange: "Exchange",
     setup: "Setup",
     entry: "Entry",
     sl: "SL",
@@ -1248,6 +1254,12 @@ export const translations = {
     // Table headers (shared)
     date: "Ngày",
     symbol: "Mã CK",
+    // "Ngành" not "Ngành nghề": the column header sets the width and the labels
+    // under it already run to 43 characters.
+    industry: "Ngành",
+    allIndustries: "Tất cả ngành",
+    companyName: "Công ty",
+    exchange: "Sàn",
     setup: "Chiến lược",
     entry: "Giá vào",
     sl: "Cắt lỗ",

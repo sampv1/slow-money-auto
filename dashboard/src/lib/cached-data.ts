@@ -4,6 +4,8 @@ import type { FaScore, FaQuarterlyRaw } from "./fa";
 import type { ReScore } from "./fa-re";
 import { buildQuarterlyFacts, faNpat, yearAgoPeriod } from "./fa";
 import type { DailyLog, Recommendation } from "./types";
+import type { IcbLabel, SymbolMeta } from "./symbol-meta";
+import { indexIcbLabels, resolveIndustry } from "./symbol-meta";
 
 // ---------------------------------------------------------------------------
 // Server-side data cache (Next.js Data Cache via unstable_cache).
@@ -738,4 +740,163 @@ export const getReScoresLatestPerSymbol = unstable_cache(
   },
   ["fa-re-scores-latest"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+// --- Company name + industry sector (migration 050) -------------------------
+
+/**
+ * Every symbol's name and industry, resolved once and shared by every surface.
+ *
+ * THREE tables are joined here rather than on the pages, because the precedence
+ * between two of them is a decision the pages must not each re-make:
+ * `fa_industry` (FiinProX) OUTRANKS `symbol_profile`'s ICB classification. See
+ * resolveIndustry() in lib/symbol-meta.ts for why, and for how the English label
+ * is recovered from a Vietnamese-only source.
+ *
+ * ONE entry, 0.42 MB measured — comfortably inside Vercel's silent 2 MB
+ * per-entry cap, so no chunking (unlike Signal Pro's universe read). It is
+ * deliberately NOT trimmed to the active universe: Portfolio shows positions in
+ * symbols that may since have been retired, and a name is the one thing that
+ * stays true after a delisting.
+ *
+ * Tagged with BOTH pipelines: symbol_profile is written by ta-daily's Step 7 and
+ * fa_industry by the FA import, so either one changing must expire this.
+ *
+ * Returns an empty Map before migration 050 is applied — every caller renders a
+ * dash for the missing column rather than failing the page.
+ */
+const getSymbolMetaRows = unstable_cache(
+  async (): Promise<SymbolMeta[]> => {
+    try {
+      const [profiles, labels, fiin] = await Promise.all([
+        fetchAllPaged<{
+          symbol: string;
+          name_vi: string | null;
+          name_en: string | null;
+          short_name_vi: string | null;
+          short_name_en: string | null;
+          icb_l4: string | null;
+        }>((from, to, withCount) =>
+          supabase
+            .from("symbol_profile")
+            .select(
+              "symbol,name_vi,name_en,short_name_vi,short_name_en,icb_l4",
+              withCount ? { count: "exact" } : undefined,
+            )
+            .order("symbol", { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllPaged<IcbLabel>((from, to, withCount) =>
+          supabase
+            .from("icb_sectors")
+            .select("icb_code,level,name_vi,name_en", withCount ? { count: "exact" } : undefined)
+            .order("icb_code", { ascending: true })
+            .order("level", { ascending: true }) // PK is (icb_code, level) → unique
+            .range(from, to),
+        ),
+        fetchAllPaged<{ symbol: string; icb_industry: string | null }>((from, to, withCount) =>
+          supabase
+            .from("fa_industry")
+            .select("symbol,icb_industry", withCount ? { count: "exact" } : undefined)
+            .order("symbol", { ascending: true })
+            .range(from, to),
+        ),
+      ]);
+
+      const { labelsByCode, enByVi } = indexIcbLabels(labels);
+      const fiinBySymbol = new Map(fiin.map((r) => [r.symbol, r.icb_industry]));
+
+      const out = new Map<string, SymbolMeta>();
+      for (const p of profiles) {
+        out.set(p.symbol, {
+          symbol: p.symbol,
+          nameVi: p.name_vi,
+          nameEn: p.name_en,
+          shortVi: p.short_name_vi,
+          shortEn: p.short_name_en,
+          ...resolveIndustry(fiinBySymbol.get(p.symbol), p.icb_l4, labelsByCode, enByVi),
+        });
+      }
+
+      // A symbol FiinProX classifies but the profile table has never seen still
+      // deserves its industry — it just has no name to go with it.
+      for (const [symbol, icb_industry] of fiinBySymbol) {
+        if (out.has(symbol) || !icb_industry) continue;
+        out.set(symbol, {
+          symbol,
+          nameVi: null,
+          nameEn: null,
+          shortVi: null,
+          shortEn: null,
+          ...resolveIndustry(icb_industry, null, labelsByCode, enByVi),
+        });
+      }
+      return [...out.values()];
+    } catch (e) {
+      console.warn(
+        "[symbol-meta] symbol_profile/icb_sectors unavailable — name and " +
+          "industry columns will be blank (apply supabase/050):",
+        e instanceof Error ? e.message : e,
+      );
+      return [];
+    }
+  },
+  ["symbol-meta-v1"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA, TAG_FA] },
+);
+
+/**
+ * The same rows as a Map, which is what every caller actually wants.
+ *
+ * The Map is built OUTSIDE unstable_cache on purpose. A cache entry is stored as
+ * JSON, and a Map does not survive that round trip — it comes back as `{}`, so
+ * `meta.get(...)` throws "get is not a function". The failure is intermittent in
+ * the worst way: the first request in a process gets the live value and works,
+ * and only later requests read the serialized entry, so it looks fine locally
+ * and in dev and breaks in production. (Same reason the FA Scanner passes
+ * `quarterly` across the RSC boundary as entries rather than a Map.)
+ */
+export async function getSymbolMeta(): Promise<Map<string, SymbolMeta>> {
+  const rows = await getSymbolMetaRows();
+  return new Map(rows.map((r) => [r.symbol, r]));
+}
+
+export type SymbolProfileRow = {
+  symbol: string;
+  name_vi: string | null;
+  name_en: string | null;
+  short_name_vi: string | null;
+  short_name_en: string | null;
+  exchange: string | null;
+  logo_url: string | null;
+  com_type_code: string | null;
+};
+
+/**
+ * One symbol's full profile, for the Analysis page header.
+ *
+ * Read separately from getSymbolMeta because `logo_url` and `exchange` are only
+ * ever shown for a single symbol, and carrying ~70 characters of logo URL for
+ * 2,089 rows would add ~0.23 MB to an entry that every table page loads.
+ */
+export const getSymbolProfile = unstable_cache(
+  async (symbol: string): Promise<SymbolProfileRow | null> => {
+    try {
+      const { data, error } = await supabase
+        .from("symbol_profile")
+        .select("symbol,name_vi,name_en,short_name_vi,short_name_en,exchange,logo_url,com_type_code")
+        .eq("symbol", symbol)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return (data as SymbolProfileRow) ?? null;
+    } catch (e) {
+      console.warn(
+        `[symbol-meta] profile unavailable for ${symbol} (apply supabase/050):`,
+        e instanceof Error ? e.message : e,
+      );
+      return null;
+    }
+  },
+  ["symbol-profile-v1"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
 );

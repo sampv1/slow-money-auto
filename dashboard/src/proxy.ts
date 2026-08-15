@@ -43,7 +43,14 @@ function contentSecurityPolicy(nonce: string): string {
     // computed data). Low risk — style injection needs an HTML sink, and this
     // app has none (no dangerouslySetInnerHTML anywhere).
     `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' data: blob: https://www.googletagmanager.com https://*.google-analytics.com`,
+    // The last host serves company logos on the Analysis page (symbol_profile
+    // .logo_url, migration 050). Named EXACTLY rather than as an
+    // `https://*.amazonaws.com` wildcard, which would allow every S3 bucket on
+    // the internet. Widening img-src is the mildest of the CSP relaxations — an
+    // image cannot execute — and the alternative, proxying each logo through our
+    // own origin to keep `img-src 'self'`, costs a function invocation per view
+    // for a 36px icon.
+    `img-src 'self' data: blob: https://www.googletagmanager.com https://*.google-analytics.com https://vietcap-website.s3.ap-southeast-1.amazonaws.com`,
     `font-src 'self' data:`,
     // The browser talks to Supabase directly from two client components
     // (signal-pro-client, trade-actions), so 'self' alone would break them.

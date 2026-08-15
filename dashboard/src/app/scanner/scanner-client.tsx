@@ -139,6 +139,7 @@ export function ScannerClient({
   signals,
   closes,
   universe,
+  industry,
   locale,
 }: {
   latestDate: string;
@@ -146,6 +147,8 @@ export function ScannerClient({
   signals: TriggeredSignal[];
   closes: LatestClose[];
   universe: UniverseLiquidity[];
+  /** symbol -> industry label, already localised server-side. Sparse. */
+  industry: Record<string, string>;
   locale: Locale;
 }) {
   // The date's signal data lives in state so switching dates updates the table
@@ -726,6 +729,7 @@ export function ScannerClient({
                 <thead className="bg-panel-2 border-y border-line-strong">
                   <tr className="border-b border-line text-left text-fg-muted">
                     <th className="row-h px-2 label">{t(locale, "symbol")}</th>
+                    <th className="row-h px-2 label">{t(locale, "industry")}</th>
                     <th
                       className="px-4 py-3 font-medium text-right"
                       title="TA Score = RS3M·20% + RS Composite·25% + RS Line·20% + BQS·35%"
@@ -747,6 +751,18 @@ export function ScannerClient({
                         >
                           {row.symbol}
                         </Link>
+                      </td>
+                      {/* Capped + truncated: the longest ICB L4 label is 43
+                          characters and would set this column's width for every
+                          row. Full text on the title. */}
+                      <td className="row-h px-2 text-fg-muted">
+                        {industry[row.symbol] ? (
+                          <span className="block max-w-[11rem] truncate" title={industry[row.symbol]}>
+                            {industry[row.symbol]}
+                          </span>
+                        ) : (
+                          <span className="text-fg-faint">—</span>
+                        )}
                       </td>
                       <td className="row-h px-2 text-right font-mono">
                         {row.taScore ?? "—"}

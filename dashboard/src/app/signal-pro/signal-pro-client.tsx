@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { industryOptions } from "@/lib/symbol-meta";
 import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import { type FaScore, faNormalizedScore } from "@/lib/fa";
@@ -96,6 +97,7 @@ function passesRating(grade: string | null, filter: RatingFilter): boolean {
 export function SignalProClient({
   rows,
   universe,
+  industry,
   locale,
   isAdmin = false,
   activeSymbols = [],
@@ -117,6 +119,8 @@ export function SignalProClient({
     ta_score: number | null;
     catalyst_score: number | null;
   }[];
+  /** symbol -> industry label, already localised server-side. Sparse. */
+  industry: Record<string, string>;
   locale: Locale;
   isAdmin?: boolean;
   activeSymbols?: string[];
@@ -141,6 +145,10 @@ export function SignalProClient({
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
   const [minNpatBn, setMinNpatBn] = useState<number>(DEFAULT_MIN_NPAT_BN);
   const [search, setSearch] = useState("");
+  // "" = no industry filter. Holds the LABEL, not a code: the options are built
+  // from the same localised strings the column renders, so what you pick is
+  // literally what you see.
+  const [industryFilter, setIndustryFilter] = useState("");
 
   const npatBySymbol = useMemo(() => new Map(npatBn), [npatBn]);
   const [sortKey, setSortKey] = useState<SortKey>("final_score");
@@ -326,10 +334,23 @@ export function SignalProClient({
     });
   }
 
-  const filtered = useMemo(() => {
+  /**
+   * Every filter EXCEPT industry.
+   *
+   * Split out because the industry dropdown's options are built from this set,
+   * not from `rows`. Offering all 87 industries against a table already narrowed
+   * to ~122 rows by the rating/volume/NPAT floors means most options return
+   * nothing — picking one just empties the table, with no way to tell a filter
+   * that matched nothing from a bug. Built from what survives the other filters,
+   * every option in the list is one that leads somewhere.
+   *
+   * It deliberately does NOT include the industry filter itself, or choosing an
+   * industry would collapse the dropdown to the single option just chosen.
+   */
+  const preIndustry = useMemo(() => {
     const min = minScore.trim() === "" ? null : Number(minScore);
     const q = search.trim().toUpperCase();
-    const out = rows.filter((r) => {
+    return rows.filter((r) => {
       // Min rating + min score both key off the Final score (and its grade).
       const finalScore = finalBySymbol.get(r.symbol) ?? null;
       if (!passesRating(gradeOf(finalScore), rating)) return false;
@@ -353,6 +374,17 @@ export function SignalProClient({
       if (q && !r.symbol.toUpperCase().includes(q)) return false;
       return true;
     });
+  }, [rows, rating, minScore, minAvgVolume, minNpatBn, avgVolBySymbol, npatBySymbol, finalBySymbol, search]);
+
+  const industryChoices = useMemo(
+    () => industryOptions(preIndustry.map((r) => r.symbol), industry, locale),
+    [preIndustry, industry, locale],
+  );
+
+  const filtered = useMemo(() => {
+    const out = industryFilter
+      ? preIndustry.filter((r) => industry[r.symbol] === industryFilter)
+      : [...preIndustry];
 
     out.sort((a, b) => {
       let av: number | string;
@@ -393,7 +425,7 @@ export function SignalProClient({
       return 0;
     });
     return out;
-  }, [rows, rating, minScore, minAvgVolume, minNpatBn, avgVolBySymbol, npatBySymbol, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, faScoreBySymbol, baseBySymbol, search, sortKey, sortAsc]);
+  }, [preIndustry, industryFilter, industry, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, faScoreBySymbol, baseBySymbol, sortKey, sortAsc]);
 
   // Fetch sparkline data for the rows currently on screen, once they are known.
   //
@@ -537,6 +569,23 @@ export function SignalProClient({
             className="border border-line rounded px-2 py-1 w-24"
           />
         </label>
+        <label className="text-body-lg">
+          <span className="block text-fg-muted mb-1">{t(locale, "industry")}</span>
+          <select
+            value={industryFilter}
+            onChange={(e) => setIndustryFilter(e.target.value)}
+            // Capped: the longest option is 43 characters and an uncapped
+            // select stretches the whole filter row to fit it.
+            className="border border-line rounded px-2 py-1 max-w-[14rem]"
+          >
+            <option value="">{t(locale, "allIndustries")}</option>
+            {industryChoices.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="text-body-lg flex-1 min-w-[160px]">
           <span className="block text-fg-muted mb-1">{t(locale, "symbol")}</span>
           <input
@@ -579,6 +628,9 @@ export function SignalProClient({
               <tr className="border-b border-line text-left text-fg-muted">
                 <th rowSpan={2} className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
+                </th>
+                <th rowSpan={2} className="px-2 py-1 label align-bottom">
+                  {t(locale, "industry")}
                 </th>
                 {/* Each symbol is shown at its OWN latest FA quarter */}
                 <th rowSpan={2} className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("quarter")}>
@@ -634,6 +686,15 @@ export function SignalProClient({
                       <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
                         {row.symbol}
                       </Link>
+                    </td>
+                    <td className="px-2 py-1 text-data text-fg-muted">
+                      {industry[row.symbol] ? (
+                        <span className="block max-w-[10rem] truncate" title={industry[row.symbol]}>
+                          {industry[row.symbol]}
+                        </span>
+                      ) : (
+                        <span className="text-fg-faint">—</span>
+                      )}
                     </td>
                     <td className="px-2 py-1 font-mono text-data text-fg-muted whitespace-nowrap">
                       {quarterBySymbol.get(row.symbol) ?? row.as_of_period}

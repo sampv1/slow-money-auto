@@ -144,6 +144,7 @@ function JournalPart({
 export function TradingJournal({
   recId,
   symbol,
+  companyName,
   locale,
   canEdit,
   buyThesis,
@@ -158,6 +159,8 @@ export function TradingJournal({
 }: {
   recId: string;
   symbol: string;
+  /** Short company name, already in the reader's locale. Null before 050. */
+  companyName: string | null;
   locale: Locale;
   /** Admin. Anonymous visitors read the journal; only an admin writes to it. */
   canEdit: boolean;
@@ -278,8 +281,13 @@ export function TradingJournal({
                 <h3 className="text-title font-serif font-semibold tracking-tight">
                   {t(locale, "journalTitle")}
                 </h3>
-                <p className="text-data font-mono text-fg-muted mt-0.5">
-                  {symbol}
+                {/* Symbol then company name. The name is NOT mono — it is prose,
+                    and setting it in the tabular face made it read as another
+                    code. Wraps rather than truncating: a dialog has the width,
+                    and this is the one place the full name is worth reading. */}
+                <p className="text-data text-fg-muted mt-0.5">
+                  <span className="font-mono">{symbol}</span>
+                  {companyName && <span className="ml-2 text-fg-label">{companyName}</span>}
                   {isOpenPosition && (
                     <span className="ml-2 text-fg-label">· {t(locale, "journalStillOpen")}</span>
                   )}

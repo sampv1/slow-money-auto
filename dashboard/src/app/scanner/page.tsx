@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { CACHE_TTL_SECONDS, TAG_TA, fetchAllPaged } from "@/lib/cached-data";
+import { CACHE_TTL_SECONDS, TAG_TA, fetchAllPaged, getSymbolMeta } from "@/lib/cached-data";
+import { industryMapFor } from "@/lib/symbol-meta";
 import { getLocale, t } from "@/lib/i18n";
 import { ScannerClient } from "./scanner-client";
 import { DataError } from "@/components/data-error";
@@ -141,6 +142,7 @@ export default async function ScannerPage({
       signals={data.signals}
       closes={data.closes}
       universe={data.universe}
+      industry={industryMapFor(data.universe.map((u) => u.symbol), await getSymbolMeta(), locale)}
       locale={locale}
     />
   );

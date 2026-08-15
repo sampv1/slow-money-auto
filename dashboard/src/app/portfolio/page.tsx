@@ -1,6 +1,7 @@
-import { getCorporateActions, getRecommendations, type CorporateAction } from "@/lib/cached-data";
+import { getCorporateActions, getRecommendations, getSymbolMeta, type CorporateAction } from "@/lib/cached-data";
 import { formatPriceK, formatPnl, pnlColor, statusBadge, formatPercent, winRateColor } from "@/lib/format";
 import { getLocale, t, type Locale } from "@/lib/i18n";
+import { metaIndustry, metaShortName } from "@/lib/symbol-meta";
 import { getUserRole } from "@/lib/supabase-server";
 import type { Recommendation } from "@/lib/types";
 import { ACTIVE_STATUSES } from "@/lib/types";
@@ -228,6 +229,12 @@ export default async function PortfolioPage({
   // the two editable sections are withheld.
   const journalReady = recommendations.some((r) => "sell_thesis" in r);
 
+  // Name + industry (migration 050). getSymbolMeta already swallows its own
+  // failure into an empty Map, so a missing table blanks two cells instead of
+  // taking the page down — same posture as `actions` above.
+  const meta = await getSymbolMeta();
+  const industryOf = (symbol: string) => metaIndustry(meta.get(symbol), locale);
+
   // Summary over the FILTERED rows, covering the WHOLE portfolio: an open
   // position counts at its current mark, a closed one at its realized result.
   // So these read as "how the book stands today", not as a closed-trade track
@@ -340,6 +347,7 @@ export default async function PortfolioPage({
               <tr>
                 <th className={P_TH}>{t(locale, "date")}</th>
                 <th className={`${FROZEN_TH} ${FROZEN_EDGE} ${P_TH}`}>{t(locale, "symbol")}</th>
+                <th className={P_TH}>{t(locale, "industry")}</th>
                 <th className={P_TH}>{t(locale, "setup")}</th>
 
                 {/* GROUP 1 — what actually happened. */}
@@ -381,6 +389,7 @@ export default async function PortfolioPage({
                       <TradingJournal
                         recId={rec.id}
                         symbol={rec.symbol}
+                        companyName={metaShortName(meta.get(rec.symbol), locale)}
                         locale={locale}
                         canEdit={isAdmin}
                         buyThesis={rec.note ?? null}
@@ -431,6 +440,21 @@ export default async function PortfolioPage({
                           `title=`, which is unreadable on touch and uncopyable
                           anywhere. It is now the first section of the journal
                           the symbol opens. */}
+                    </td>
+                    {/* Industry. Capped and truncated rather than wrapped: the
+                        L4 labels run to 43 characters ("Sản phẩm hóa dầu, Nông
+                        dược & Hóa chất khác") and one of them would otherwise
+                        set the column width for the whole table. The full text
+                        is on the title, and the first two words are what
+                        distinguishes an industry in practice. */}
+                    <td className={P_TD}>
+                      {industryOf(rec.symbol) ? (
+                        <span className="block max-w-[9rem] truncate" title={industryOf(rec.symbol)!}>
+                          {industryOf(rec.symbol)}
+                        </span>
+                      ) : (
+                        <span className="text-fg-faint">—</span>
+                      )}
                     </td>
                     <td className={`${P_TD}`}>{(rec.setup ?? "—").replace(/_/g, " ")}</td>
 
