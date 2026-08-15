@@ -28,7 +28,7 @@ const isOpen = (r: Recommendation) => (ACTIVE_STATUSES as string[]).includes(r.s
 
 // Symbol stays frozen while everything else scrolls, so a row never loses the
 // one thing that says which position it is. Below ~1334px of viewport the table
-// still needs a scrollbar (16 columns), and this is what keeps that usable.
+// still needs a scrollbar (15 columns), and this is what keeps that usable.
 //
 // SYMBOL ONLY, pinned at left-0 — Date scrolls away underneath it. Freezing the
 // Date+Symbol pair was the obvious first move and it does not work: sticky needs
@@ -52,7 +52,7 @@ const FROZEN_TD = "sticky left-0 z-10 bg-panel group-hover:bg-panel-2";
 const FROZEN_TH = "sticky left-0 z-20 bg-panel-2";
 const FROZEN_EDGE = "shadow-[1px_0_0_0_var(--color-line)]";
 
-// The 16 columns fall into two groups that answer DIFFERENT questions, and
+// The 15 columns fall into two groups that answer DIFFERENT questions, and
 // reading them as one undifferentiated run is what makes the table hard to scan:
 //
 //   Group 1  Entry → Holding   what actually happened
@@ -348,7 +348,6 @@ export default async function PortfolioPage({
                 <th className={P_TH}>{t(locale, "date")}</th>
                 <th className={`${FROZEN_TH} ${FROZEN_EDGE} ${P_TH}`}>{t(locale, "symbol")}</th>
                 <th className={P_TH}>{t(locale, "industry")}</th>
-                <th className={P_TH}>{t(locale, "setup")}</th>
 
                 {/* GROUP 1 — what actually happened. */}
                 <th className={`${P_TH_NUM} ${G1_EDGE}`}>{t(locale, "entry")}</th>
@@ -449,14 +448,13 @@ export default async function PortfolioPage({
                         distinguishes an industry in practice. */}
                     <td className={P_TD}>
                       {industryOf(rec.symbol) ? (
-                        <span className="block max-w-[9rem] truncate" title={industryOf(rec.symbol)!}>
+                        <span className="block max-w-[8rem] truncate" title={industryOf(rec.symbol)!}>
                           {industryOf(rec.symbol)}
                         </span>
                       ) : (
                         <span className="text-fg-faint">—</span>
                       )}
                     </td>
-                    <td className={`${P_TD}`}>{(rec.setup ?? "—").replace(/_/g, " ")}</td>
 
                     {/* ---- GROUP 1: what happened ---------------------------
                         Entry carries the "market basis" label; the levels after
