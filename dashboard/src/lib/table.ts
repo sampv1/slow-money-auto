@@ -64,8 +64,24 @@ export const TD = "row-h px-2 text-data text-fg-muted";
  * before this, `tabular-nums` appeared in only 2 of the 10 files with tables,
  * which is why number columns read as ragged.
  */
+/*
+ * NO COLOUR HERE, deliberately. It used to end `text-fg`, which silently killed
+ * every red in the app.
+ *
+ * Tailwind emits colour utilities ALPHABETICALLY, so the cascade reads:
+ *   .text-down  .text-fg  .text-fg-muted  .text-reference  .text-up
+ * All are single-class selectors, so specificity ties and SOURCE ORDER decides —
+ * not the order you write them in `className`. `text-up` (last) beat `text-fg`,
+ * but `text-down` (first) lost to it. So `${TD_NUM} ${pnlColor(v)}` rendered
+ * gains green and losses BLACK, on the Portfolio P&L and Max DD columns and on
+ * the Real Estate scanner's zero-scoring criteria and negative YoY figures.
+ * Green working was what made it invisible.
+ *
+ * Cells now inherit `text-fg` from body and any per-cell colour just works.
+ * Never reintroduce a colour into this constant.
+ */
 export const TD_NUM =
-  "row-h px-2 text-data font-mono tnum text-right text-fg whitespace-nowrap";
+  "row-h px-2 text-data font-mono tnum text-right whitespace-nowrap";
 
 /** The identifying cell of a row — a ticker. Reads as the row's handle. */
 export const TD_SYMBOL =

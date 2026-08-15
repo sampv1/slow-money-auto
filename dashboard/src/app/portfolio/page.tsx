@@ -4,7 +4,7 @@ import { getLocale, t, type Locale } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import type { Recommendation } from "@/lib/types";
 import { ACTIVE_STATUSES } from "@/lib/types";
-import { TABLE, TABLE_SCROLL, THEAD, TH, TH_NUM, TR, TD, TD_NUM, TD_SYMBOL } from "@/lib/table";
+import { TABLE, TABLE_SCROLL, THEAD } from "@/lib/table";
 import { TradeActions } from "../signal-pro/trade-actions";
 import { TradingJournal } from "./trading-journal";
 import { DataError } from "@/components/data-error";
@@ -68,6 +68,29 @@ const FROZEN_EDGE = "shadow-[1px_0_0_0_var(--color-line)]";
 const G1_EDGE = "border-l-2 border-line-strong";
 const G2_EDGE = "border-l-2 border-line-strong";
 const G2_END = "border-l-2 border-line-strong";
+
+// Portfolio is read as a LEDGER, not scanned as a screener, so it does NOT take
+// the 12px/26px scanner density. You look up one position and read its numbers;
+// the scanners are where you sweep 1,400 rows and every pixel of row height
+// costs you a symbol on screen. Sized for legibility instead: 15px figures,
+// 13px metadata, and padding-driven rows rather than the fixed 26px.
+//
+// Figures stay mono + tabular. That is what "sharper" actually buys here —
+// 130.000 and 12.100 line their digits up in a column you can read down,
+// which proportional figures do not.
+//
+// NONE of these carry a text colour. See the note on TD_NUM in lib/table.ts:
+// a colour baked into the base class silently beats `text-down` in the cascade
+// and turns every loss black. Default ink is inherited from body.
+// `align-baseline`, not `align-top`: metadata is 13px and figures are 15px, so
+// top-aligning them left the date sitting visibly higher than the price on the
+// same row. Baseline puts the first line of every cell on one line.
+const P_CELL = "px-3 py-2 align-baseline";
+const P_TD = `${P_CELL} text-body text-fg-muted whitespace-nowrap`;
+const P_NUM = `${P_CELL} text-body-lg font-mono tnum text-right whitespace-nowrap`;
+const P_TH = `${P_CELL} label text-left whitespace-nowrap`;
+const P_TH_NUM = `${P_CELL} label text-right whitespace-nowrap`;
+const P_TR = "group border-b border-line-faint transition-colors hover:bg-panel-2";
 
 // Corporate actions (cash dividend / bonus / split) re-scale the market price
 // but NOT this row: entry/SL/TP are the nominal levels captured at trade time and
@@ -301,29 +324,29 @@ export default async function PortfolioPage({
           <table className={TABLE}>
             <thead className={THEAD}>
               <tr>
-                <th className={TH}>{t(locale, "date")}</th>
-                <th className={`${FROZEN_TH} ${FROZEN_EDGE} ${TH}`}>{t(locale, "symbol")}</th>
-                <th className={TH}>{t(locale, "setup")}</th>
+                <th className={P_TH}>{t(locale, "date")}</th>
+                <th className={`${FROZEN_TH} ${FROZEN_EDGE} ${P_TH}`}>{t(locale, "symbol")}</th>
+                <th className={P_TH}>{t(locale, "setup")}</th>
 
                 {/* GROUP 1 — what actually happened. */}
-                <th className={`${TH_NUM} ${G1_EDGE}`}>{t(locale, "entry")}</th>
-                <th className={TH_NUM}>{t(locale, "current")}</th>
-                <th className={TH_NUM}>{t(locale, "exit")}</th>
-                <th className={TH_NUM}>{t(locale, "pnl")}</th>
-                <th className={TH_NUM}>{t(locale, "maxDd")}</th>
-                <th className={TH}>{t(locale, "closed")}</th>
-                <th className={TH}>{t(locale, "holding")}</th>
+                <th className={`${P_TH_NUM} ${G1_EDGE}`}>{t(locale, "entry")}</th>
+                <th className={P_TH_NUM}>{t(locale, "current")}</th>
+                <th className={P_TH_NUM}>{t(locale, "exit")}</th>
+                <th className={P_TH_NUM}>{t(locale, "pnl")}</th>
+                <th className={P_TH_NUM}>{t(locale, "maxDd")}</th>
+                <th className={P_TH}>{t(locale, "closed")}</th>
+                <th className={P_TH}>{t(locale, "holding")}</th>
 
                 {/* GROUP 2 — what was planned. Separated because these are the
                     levels set BEFORE the trade; reading them next to the
                     outcome invites judging the plan by the result. */}
-                <th className={`${TH_NUM} ${G2_EDGE}`}>{t(locale, "tp1")}</th>
-                <th className={TH_NUM}>{t(locale, "tp2")}</th>
-                <th className={TH_NUM}>{t(locale, "sl")}</th>
-                <th className={TH_NUM}>{t(locale, "winRateEst")}</th>
+                <th className={`${P_TH_NUM} ${G2_EDGE}`}>{t(locale, "tp1")}</th>
+                <th className={P_TH_NUM}>{t(locale, "tp2")}</th>
+                <th className={P_TH_NUM}>{t(locale, "sl")}</th>
+                <th className={P_TH_NUM}>{t(locale, "winRateEst")}</th>
 
-                <th className={`${TH} ${G2_END}`}>{t(locale, "status")}</th>
-                {isAdmin && <th className={TH_NUM}>{t(locale, "actionCol")}</th>}
+                <th className={`${P_TH} ${G2_END}`}>{t(locale, "status")}</th>
+                {isAdmin && <th className={P_TH_NUM}>{t(locale, "actionCol")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -338,9 +361,9 @@ export default async function PortfolioPage({
                 const badge = statusBadge(rec.status, locale);
                 const k = adjFactor(rec);
                 return (
-                  <tr key={rec.id} className={TR}>
-                    <td className={`${TD} whitespace-nowrap font-mono tnum`}>{rec.trading_date}</td>
-                    <td className={`${FROZEN_TD} ${FROZEN_EDGE} ${TD_SYMBOL}`}>
+                  <tr key={rec.id} className={P_TR}>
+                    <td className={`${P_CELL} text-body font-mono tnum text-fg-muted whitespace-nowrap`}>{rec.trading_date}</td>
+                    <td className={`${FROZEN_TD} ${FROZEN_EDGE} ${P_CELL} text-body-lg font-mono font-semibold text-accent whitespace-nowrap`}>
                       <TradingJournal
                         recId={rec.id}
                         symbol={rec.symbol}
@@ -395,24 +418,24 @@ export default async function PortfolioPage({
                           anywhere. It is now the first section of the journal
                           the symbol opens. */}
                     </td>
-                    <td className={`${TD} whitespace-nowrap`}>{(rec.setup ?? "—").replace(/_/g, " ")}</td>
+                    <td className={`${P_TD}`}>{(rec.setup ?? "—").replace(/_/g, " ")}</td>
 
                     {/* ---- GROUP 1: what happened ---------------------------
                         Entry carries the "market basis" label; the levels after
                         it repeat the amber figure without it, so the row
                         explains itself once instead of five times. */}
-                    <td className={`${TD_NUM} ${G1_EDGE}`}>
+                    <td className={`${P_NUM} ${G1_EDGE}`}>
                       {formatPrice(rec.entry_price)}
                       {marketBasis(rec.entry_price, k, locale, true)}
                     </td>
                     {/* Current and Exit are now SEPARATE. Merged, a closed row
                         showed its exit price in a column headed "Current" and
                         there was no way to see the last mark beside it. */}
-                    <td className={TD_NUM}>
+                    <td className={P_NUM}>
                       {formatPrice(rec.current_price)}
                       {marketBasis(rec.current_price, k, locale)}
                     </td>
-                    <td className={TD_NUM}>
+                    <td className={P_NUM}>
                       {rec.actual_exit_price !== null ? (
                         <>
                           {formatPrice(rec.actual_exit_price)}
@@ -422,12 +445,12 @@ export default async function PortfolioPage({
                         <span className="text-fg-faint">—</span>
                       )}
                     </td>
-                    <td className={`${TD_NUM} font-semibold ${pnlColor(pnl)}`}>{formatPnl(pnl)}</td>
-                    <td className={`${TD_NUM} ${rec.max_drawdown_pct !== null ? "text-down" : ""}`}>
+                    <td className={`${P_NUM} font-semibold ${pnlColor(pnl)}`}>{formatPnl(pnl)}</td>
+                    <td className={`${P_NUM} ${rec.max_drawdown_pct !== null ? "text-down" : ""}`}>
                       {rec.max_drawdown_pct !== null ? formatPercent(rec.max_drawdown_pct, 1) : <span className="text-fg-faint">—</span>}
                     </td>
-                    <td className={`${TD} whitespace-nowrap font-mono tnum`}>{rec.closed_at ?? "—"}</td>
-                    <td className={`${TD} whitespace-nowrap`}>
+                    <td className={`${P_CELL} text-body font-mono tnum text-fg-muted whitespace-nowrap`}>{rec.closed_at ?? "—"}</td>
+                    <td className={`${P_TD}`}>
                       {rec.days_held !== null ? `${rec.days_held} ${t(locale, "sessions")}` : "—"}
                       {plan && <span className="block text-[11px] text-fg-label mt-0.5">{plan}</span>}
                     </td>
@@ -438,32 +461,32 @@ export default async function PortfolioPage({
                         one unbreakable ~113px line per column; stacked, SL/TP
                         are sized by the price alone and the prices line up in a
                         column you can scan straight down. */}
-                    <td className={`${TD_NUM} text-up ${G2_EDGE}`}>
+                    <td className={`${P_NUM} text-up ${G2_EDGE}`}>
                       {formatPrice(rec.tp1)}
                       {rec.tp1_pct !== null && (
                         <span className="block text-[11px]">({rec.tp1_pct > 0 ? "+" : ""}{formatPercent(rec.tp1_pct, 1)})</span>
                       )}
                       {marketBasis(rec.tp1, k, locale)}
                     </td>
-                    <td className={`${TD_NUM} text-up`}>
+                    <td className={`${P_NUM} text-up`}>
                       {formatPrice(rec.tp2)}
                       {rec.tp2_pct !== null && (
                         <span className="block text-[11px]">({rec.tp2_pct > 0 ? "+" : ""}{formatPercent(rec.tp2_pct, 1)})</span>
                       )}
                       {marketBasis(rec.tp2, k, locale)}
                     </td>
-                    <td className={`${TD_NUM} text-down`}>
+                    <td className={`${P_NUM} text-down`}>
                       {formatPrice(rec.stop_loss)}
                       {rec.stop_loss_pct !== null && (
                         <span className="block text-[11px]">({rec.stop_loss_pct > 0 ? "+" : ""}{formatPercent(rec.stop_loss_pct, 1)})</span>
                       )}
                       {marketBasis(rec.stop_loss, k, locale)}
                     </td>
-                    <td className={`${TD_NUM} ${winRateColor(rec.win_rate_est)}`}>
+                    <td className={`${P_NUM} ${winRateColor(rec.win_rate_est)}`}>
                       {rec.win_rate_est !== null ? `${rec.win_rate_est}%` : "—"}
                     </td>
 
-                    <td className={`${TD} ${G2_END}`}>
+                    <td className={`${P_TD} ${G2_END}`}>
                       {/* nowrap: a pill that breaks across two lines ("Đang /
                           mở") reads as damage rather than as a badge, and the
                           tighter gutters left this column narrow enough to do
@@ -473,7 +496,7 @@ export default async function PortfolioPage({
                       </span>
                     </td>
                     {isAdmin && (
-                      <td className={`${TD_NUM}`}>
+                      <td className={P_NUM}>
                         {open && (
                           <TradeActions
                             symbol={rec.symbol}

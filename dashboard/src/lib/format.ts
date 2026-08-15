@@ -107,21 +107,21 @@ export function pnlColor(pnl: number | null): string {
 /**
  * Colour for an estimated win rate (0-100).
  *
- * Banded, not a gradient, and the bands are about the COIN FLIP rather than
- * about optimism: at 50% the estimate says the trade is no better than chance,
- * so that is where the colour turns. Reusing the board semantics keeps one
- * meaning for green and red across the app — this is a probability, not a P&L,
- * but "good / marginal / bad" reads identically.
+ * ONE pivot, at the coin flip. Above 50% the estimate claims an edge, below it
+ * claims the trade is worse than chance, and 50 itself is neither — so it is
+ * green / red / neutral rather than a graded scale. An earlier version put an
+ * amber band across 50-69, which made a perfectly good 60% estimate read as a
+ * warning; the question a win rate answers is directional, not tiered.
  *
- * `reference` (amber) carries the middle band because it is already the app's
- * "caution" tone; using fg-muted there would make a 55% estimate look like
- * missing data rather than a weak one.
+ * Reuses the board semantics so green and red mean one thing app-wide. This is
+ * a probability rather than a P&L, but "better / worse than chance" reads the
+ * same way.
  */
 export function winRateColor(pct: number | null | undefined): string {
   if (pct === null || pct === undefined || !Number.isFinite(pct)) return "text-fg-faint";
-  if (pct >= 70) return "text-up";
-  if (pct >= 50) return "text-reference";
-  return "text-down";
+  if (pct > 50) return "text-up";
+  if (pct < 50) return "text-down";
+  return "text-fg-muted"; // exactly 50 — a coin flip is neither good nor bad
 }
 
 export function statusBadge(status: string, locale: Locale = "en"): { label: string; className: string } {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 
@@ -247,7 +248,20 @@ export function TradingJournal({
         {children}
       </button>
 
-      {open && (
+      {/* PORTALLED TO document.body, and it has to be.
+          This dialog is rendered from inside the frozen Symbol cell, which
+          carries `sticky left-0 z-10`. A positioned element with a z-index
+          creates a STACKING CONTEXT, so `z-50` on the overlay below is not
+          global — it only ranks the overlay within that one cell's z-10 layer.
+          Every frozen Symbol cell later in DOM order, plus the z-20 header,
+          then painted straight over the dimmed backdrop: opening VPL's journal
+          left the symbols from PVT downward sitting on top of it, looking
+          highlighted. Raising the z-index cannot fix that — no value beats a
+          sibling that is in a higher stacking context — so the dialog has to
+          leave the table subtree altogether.
+          Safe without a mounted-check: `open` can only become true from a
+          click, which is necessarily after hydration. */}
+      {open && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto"
           onClick={() => setOpen(false)}
@@ -343,7 +357,8 @@ export function TradingJournal({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
