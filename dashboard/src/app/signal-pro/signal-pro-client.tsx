@@ -509,7 +509,9 @@ export function SignalProClient({
 
         <span className="hidden sm:block h-5 w-px bg-line" aria-hidden />
 
-        <label htmlFor="sp-min-npat" className="text-body-lg text-fg">
+        {/* Tooltip, not a sentence in the bar — same treatment as the FA
+            Scanner, which shares this string. */}
+        <label htmlFor="sp-min-npat" className="text-body-lg text-fg cursor-help" title={t(locale, "faMinNpatHint")}>
           {t(locale, "faMinNpat")}
         </label>
         <input
@@ -524,11 +526,7 @@ export function SignalProClient({
           }}
           className="w-24 rounded border border-line px-2 py-1 text-body-lg font-mono"
         />
-        {/* Same hint as the FA Scanner: a missing NPAT is SYSTEMATIC, not random
-            — banks and securities firms don't report revenue/net margin in this
-            statement format at all, so any threshold above 0 removes the whole
-            sector. Better said out loud than discovered later. */}
-        <span className="text-data text-fg-muted">{t(locale, "faMinNpatHint")}</span>
+        <span className="text-data text-fg-muted">{t(locale, "faMinNpatUnit")}</span>
 
         {(minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D || minNpatBn !== DEFAULT_MIN_NPAT_BN) && (
           <button

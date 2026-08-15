@@ -303,7 +303,12 @@ export function FaScannerClient({
 
         <span className="hidden sm:block h-5 w-px bg-line" aria-hidden />
 
-        <label htmlFor="fa-min-npat" className="text-body text-fg">
+        {/* The exclusion rule is a tooltip, not a sentence in the bar. It is
+            worth saying — a missing NPAT is SYSTEMATIC, not random, so any
+            threshold above 0 drops banks and securities wholesale — but it is
+            read once and then never again, and three such sentences were most of
+            this bar's text. `cursor-help` is the affordance. */}
+        <label htmlFor="fa-min-npat" className="text-body text-fg cursor-help" title={t(locale, "faMinNpatHint")}>
           {t(locale, "faMinNpat")}
         </label>
         <input
@@ -318,16 +323,11 @@ export function FaScannerClient({
           }}
           className="w-24 rounded border border-line px-2 py-1 text-data font-mono tnum"
         />
-        {/* The hint names the exclusion explicitly. Unlike volume, a missing NPAT
-            is SYSTEMATIC rather than random — banks and securities firms don't
-            report revenue/net margin in this statement format at all, so ~26 of
-            the liquid names have no figure and any threshold above 0 removes the
-            whole sector. Better said out loud than discovered later. */}
-        <span className="text-body text-fg-label">{t(locale, "faMinNpatHint")}</span>
+        <span className="text-body text-fg-label">{t(locale, "faMinNpatUnit")}</span>
 
         <span className="hidden sm:block h-5 w-px bg-line" aria-hidden />
 
-        <label htmlFor="fa-min-npat-yoy" className="text-body text-fg">
+        <label htmlFor="fa-min-npat-yoy" className="text-body text-fg cursor-help" title={t(locale, "faMinNpatYoyHint")}>
           {t(locale, "faMinNpatYoy")}
         </label>
         <input
@@ -341,7 +341,7 @@ export function FaScannerClient({
           }}
           className="w-24 rounded border border-line px-2 py-1 text-data font-mono tnum"
         />
-        <span className="text-body text-fg-label">{t(locale, "faMinNpatYoyHint")}</span>
+        <span className="text-body text-fg-label">%</span>
 
         {(minAvgVolume !== DEFAULT_MIN_AVG_VOLUME_20D || minNpatBn !== DEFAULT_MIN_NPAT_BN
           || minNpatYoy !== DEFAULT_MIN_NPAT_YOY) && (
