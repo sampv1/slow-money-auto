@@ -32,7 +32,25 @@ const MA_COLOR: Record<number, string> = {
 const RSI_COLOR = "#7c3aed";
 const MACD_LINE_COLOR = VN_INDEX;
 const MACD_SIGNAL_COLOR = "#ea580c";
-const VOLUME_MA_COLOR = "#6b7280";
+// Volume bars: the BOARD tokens at 0.7 alpha, not a pastel.
+//
+// They were #bbf7d0 / #fecaca — Tailwind's 200 shades — which measure 1.3:1 and
+// 1.5:1 against the #fbf9f5 panel. That is below the 3:1 floor for a graphic
+// element by more than half, and on a cream ground it read as a faint wash
+// rather than as data. At 0.7 over the panel these land at 3.3:1 and 3.4:1, and
+// they are the SAME HUE as every other up/down cue in the app rather than a
+// third green and a third red.
+//
+// Alpha rather than a pre-blended hex so the hue is visibly the token's, and so
+// the bars stay lighter than the candles above them — volume is context for the
+// price pane, not a competitor to it.
+const VOLUME_UP_COLOR = "rgba(12, 107, 74, 0.7)"; // --color-up
+const VOLUME_DOWN_COLOR = "rgba(179, 44, 36, 0.7)"; // --color-down
+
+// Ink, not grey. The old #6b7280 was chosen against pastel bars; over the
+// stronger ones it is the weakest mark in the pane, when it is the reference
+// every bar is being read against.
+const VOLUME_MA_COLOR = "#443f38";
 
 // MCDX (Multi Color Dragon Extended) histogram colours — see data/MCDX.md.
 // These are convention colours fixed by the indicator (like status colours),
@@ -492,7 +510,7 @@ export function ChartClient({
   // reasons: (1) toggling a chip (which adds/removes a subplot pane) never
   // resizes the chart or shifts the chip panel below it — the container height
   // is constant, and the panes just redistribute by their stretch factors
-  // (price 3 : volume 1 : each subplot 1.2); (2) the chart plus its toggle chips
+  // (price 3 : volume 1.4 : each subplot 1.2); (2) the chart plus its toggle chips
   // fit within one screen, so clicking a chip shows the change immediately
   // instead of forcing a scroll-up to a taller-than-viewport chart. clamp keeps
   // it usable on short screens (min) and from getting absurd on large ones (max);
@@ -666,11 +684,17 @@ export function ChartClient({
       },
       panes.volume,
     );
+    // Without this the histogram inherits the library's default margins (20% top,
+    // 10% bottom) and spends 30% of an already-short pane on empty space, so the
+    // bars are squashed into two thirds of the height they have. Sitting them on
+    // the pane floor is also what makes the row read as a volume histogram rather
+    // than as a floating band.
+    volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.12, bottom: 0 } });
     volumeSeries.setData(
       candles.map((c) => ({
         time: c.date as Time,
         value: c.volume,
-        color: c.close >= c.open ? "#bbf7d0" : "#fecaca",
+        color: c.close >= c.open ? VOLUME_UP_COLOR : VOLUME_DOWN_COLOR,
       })),
     );
 
@@ -680,7 +704,7 @@ export function ChartClient({
         LineSeries,
         {
           color: VOLUME_MA_COLOR,
-          lineWidth: 1,
+          lineWidth: 2,
           priceLineVisible: false,
           lastValueVisible: false,
           priceScaleId: "vol",
@@ -773,7 +797,8 @@ export function ChartClient({
             return {
               time: c.date as Time,
               value: h,
-              color: h >= 0 ? "#86efac" : "#fca5a5",
+              // Same pastels, same problem as the volume bars above.
+              color: h >= 0 ? VOLUME_UP_COLOR : VOLUME_DOWN_COLOR,
             };
           })
           .filter((x): x is { time: Time; value: number; color: string } => x !== null),
@@ -862,7 +887,10 @@ export function ChartClient({
     const allPanes = chart.panes();
     // Price gets the most space; subplots are compact.
     if (allPanes[0]) allPanes[0].setStretchFactor(3);
-    if (allPanes[1]) allPanes[1].setStretchFactor(1);
+    // 1.4, not 1. With four panes open the volume row was 1/6.4 of the height —
+    // ~120px of which a third was scale margin — which is not enough vertical
+    // range to tell a spike from an ordinary session.
+    if (allPanes[1]) allPanes[1].setStretchFactor(1.4);
     if (features.showRSI && allPanes[panes.rsi]) allPanes[panes.rsi].setStretchFactor(1.2);
     if (features.showMACD && allPanes[panes.macd]) allPanes[panes.macd].setStretchFactor(1.2);
     if (features.showMcdx && allPanes[panes.mcdx]) allPanes[panes.mcdx].setStretchFactor(1.2);
