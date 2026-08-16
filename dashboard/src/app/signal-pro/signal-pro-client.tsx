@@ -17,7 +17,7 @@ import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { SPARKLINE_BATCH, type SymbolCharts } from "@/lib/sparkline";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
-type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol" | "quarter";
+type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol" | "quarter" | "industry";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 // Minimum quarterly net profit after tax, in VND billion. Same default as the FA
@@ -392,6 +392,20 @@ export function SignalProClient({
       if (sortKey === "symbol") {
         av = a.symbol;
         bv = b.symbol;
+      } else if (sortKey === "industry") {
+        // Text, so it needs the collator rather than `<`, exactly as on the FA
+        // Scanner: a plain comparison orders by UTF-16 code unit, which files
+        // every Đ-initial industry (Điện, Đồ uống, Đầu tư) after Z. Symbols with
+        // no industry sort last in both directions, like every null here.
+        const ai = industry[a.symbol] ?? "";
+        const bi = industry[b.symbol] ?? "";
+        if (!ai && !bi) return 0;
+        if (!ai) return 1;
+        if (!bi) return -1;
+        const cmp = ai.localeCompare(bi, locale === "en" ? "en" : "vi");
+        // Ties broken by symbol, or the many rows sharing an industry would
+        // reshuffle between renders the way the quarter column guards against.
+        return cmp !== 0 ? (sortAsc ? cmp : -cmp) : a.symbol.localeCompare(b.symbol);
       } else if (sortKey === "quarter") {
         // 'YYYY-Qn' sorts correctly as a plain string; symbol breaks ties so
         // the (many) rows sharing a quarter keep a stable order.
@@ -425,7 +439,7 @@ export function SignalProClient({
       return 0;
     });
     return out;
-  }, [preIndustry, industryFilter, industry, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, faScoreBySymbol, baseBySymbol, sortKey, sortAsc]);
+  }, [preIndustry, industryFilter, industry, locale, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, faScoreBySymbol, baseBySymbol, sortKey, sortAsc]);
 
   // Fetch sparkline data for the rows currently on screen, once they are known.
   //
@@ -486,8 +500,8 @@ export function SignalProClient({
       setSortAsc((v) => !v);
     } else {
       setSortKey(key);
-      // Symbol defaults to ascending; numeric columns to descending.
-      setSortAsc(key === "symbol");
+      // Text columns default to ascending; numeric ones to descending.
+      setSortAsc(key === "symbol" || key === "industry");
     }
   }
 
@@ -638,8 +652,8 @@ export function SignalProClient({
                 <th rowSpan={2} className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
-                <th rowSpan={2} className="px-2 py-1 label align-bottom">
-                  {t(locale, "industry")}
+                <th rowSpan={2} className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("industry")}>
+                  {t(locale, "industry")}{sortIndicator("industry")}
                 </th>
                 {/* Each symbol is shown at its OWN latest FA quarter */}
                 <th rowSpan={2} className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("quarter")}>
