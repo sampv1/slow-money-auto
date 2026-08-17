@@ -77,7 +77,11 @@ export default async function RootLayout({
     { href: "/macro", label: t(locale, "navMacro") },
     { href: "/scanner", label: t(locale, "navScanner") },
     { href: "/fa-scanner", label: t(locale, "navFAScanner") },
-    { href: "/signal-pro", label: t(locale, "navSignalPro") },
+    // The flagship page, marked as such in the nav (see FeaturedMark). Kept in
+    // its workflow position — screen the market, then each scanner, then the
+    // composite view — rather than promoted to first, so the mark carries the
+    // emphasis and the reading order still means something.
+    { href: "/signal-pro", label: t(locale, "navSignalPro"), featured: true },
     { href: "/analysis", label: t(locale, "navStockAnalysis") },
     { href: "/implied-risk", label: t(locale, "navImpliedRisk") },
     { href: "/portfolio", label: t(locale, "navPortfolio") },
