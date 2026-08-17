@@ -13,13 +13,24 @@ import { TABLE, TABLE_SCROLL, TD, TD_NUM, TD_SYMBOL, TH, TH_NUM, THEAD, TR } fro
  * small-screen layout instead. Scoped to this page only.
  */
 
-// Mirrors baseTypeLabel in src/app/signal-pro/price-base.tsx. Inlined rather
-// than imported because that module is "use client" and carries the whole
-// price-base chart; this is a two-value enum fixed by the BQS V8 spec.
-function baseLabel(type: string | null, locale: Locale): string {
-  if (type === "bottoming") return locale === "vi" ? "Tạo đáy" : "Bottoming";
-  if (type === "continuation") return locale === "vi" ? "Tiếp diễn" : "Continuation";
-  return "—";
+// Mirrors the STATUS map in src/app/signal-pro/trend.tsx. Inlined rather than
+// imported because that module is "use client" and carries the whole trend chart.
+//
+// The cost of that inlining is real and has already bitten once: when the status
+// vocabulary was replaced, this copy still listed the old codes and EVERY row on
+// the homepage silently rendered a dash — no type error, because both the column
+// and this function are plain `string | null`. If the codes in trend_status change
+// again, they must change here too. The four below are the whole set; a null
+// status is normal (no readable daily structure) and correctly shows a dash.
+function trendLabel(status: string | null, locale: Locale): string {
+  const vi = locale === "vi";
+  switch (status) {
+    case "tao_day": return vi ? "Tạo đáy" : "Basing";
+    case "tiep_dien": return vi ? "Tiếp diễn" : "Continuing";
+    case "cho_mua": return vi ? "Chờ mua" : "Wait to buy";
+    case "san_sang_mua": return vi ? "Sẵn sàng mua" : "Ready to buy";
+    default: return "—";
+  }
 }
 
 function Grade({ grade }: { grade: string | null }) {
@@ -77,7 +88,7 @@ export function TopScores({
                   <th className={TH_NUM}>{t(locale, "homeColTa")}</th>
                   <th className={TH_NUM}>{t(locale, "homeColFa")}</th>
                   <th className={TH_NUM}>RS 3M</th>
-                  <th className={`${TH} pr-5`}>{t(locale, "homeColBase")}</th>
+                  <th className={`${TH} pr-5`}>{t(locale, "homeColTrend")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -95,7 +106,7 @@ export function TopScores({
                     <td className={`${TD_NUM} text-fg-muted`}>{num(r.ta_score)}</td>
                     <td className={`${TD_NUM} text-fg-muted`}>{num(r.fa_normalized)}</td>
                     <td className={`${TD_NUM} text-fg-muted`}>{num(r.rs_3m)}</td>
-                    <td className={`${TD} pr-5`}>{baseLabel(r.base_type, locale)}</td>
+                    <td className={`${TD} pr-5`}>{trendLabel(r.trend_status, locale)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -115,7 +126,7 @@ export function TopScores({
                 </Link>
                 <p className="mt-1 text-label text-fg-label tnum normal-case tracking-normal">
                   {t(locale, "homeColTa")} {num(r.ta_score)} · {t(locale, "homeColFa")}{" "}
-                  {num(r.fa_normalized)} · RS 3M {num(r.rs_3m)} · {baseLabel(r.base_type, locale)}
+                  {num(r.fa_normalized)} · RS 3M {num(r.rs_3m)} · {trendLabel(r.trend_status, locale)}
                 </p>
               </li>
             ))}

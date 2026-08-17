@@ -7,7 +7,7 @@ plus the GitHub Actions job summary, so a bad run leaves evidence behind.
 
 It exists because of the 2026-08-07 RS incident: the paged upsert reported
 success for every chunk, only 500 of 1,384 rows persisted, and the run finished
-GREEN with a plausible-looking TA Score (VNM 24 = BQS 68 x 0.35, all three RS
+GREEN with a plausible-looking TA Score (VNM 24 = a 68 price-base x 0.35, all three RS
 terms silently counted as 0). Nothing in the log recorded the shortfall, and by
 the time it was noticed the next run had moved the state on. The counts below
 would have shown it immediately.
@@ -70,10 +70,10 @@ def main() -> int:
 
     active = _count(client, "ta_universe", is_active=True)
     rs = _count(client, "ta_universe", is_active=True, rs_date__notnull=None)
-    base = _count(client, "ta_universe", is_active=True, base_date__notnull=None)
+    trend = _count(client, "ta_universe", is_active=True, trend_date__notnull=None)
     ta = _count(client, "ta_universe", is_active=True, ta_score__notnull=None)
     rs_today = _count(client, "ta_universe", is_active=True, rs_date=today)
-    base_today = _count(client, "ta_universe", is_active=True, base_date=today)
+    trend_today = _count(client, "ta_universe", is_active=True, trend_date=today)
     ohlcv_today = _count(client, "ta_ohlcv", date=today)
 
     cov = (rs / active) if active else 0.0
@@ -82,8 +82,8 @@ def main() -> int:
         f"  active universe        {active}",
         f"  with RS (any date)     {rs}   ({cov:.1%} of active)",
         f"  with RS dated today    {rs_today}   [{today}]",
-        f"  with base (any date)   {base}",
-        f"  with base dated today  {base_today}",
+        f"  with trend (any date)  {trend}",
+        f"  with trend dated today {trend_today}",
         f"  with ta_score          {ta}",
         f"  ta_ohlcv rows today    {ohlcv_today}",
     ]
@@ -118,7 +118,7 @@ def main() -> int:
         f"| active universe | {active} |\n"
         f"| with RS (any date) | {rs} ({cov:.1%}) |\n"
         f"| with RS dated {today} | {rs_today} |\n"
-        f"| with base dated {today} | {base_today} |\n"
+        f"| with trend dated {today} | {trend_today} |\n"
         f"| with ta_score | {ta} |\n"
         f"| ta_ohlcv rows today | {ohlcv_today} |\n\n"
         + ("" if ok else f"> ⚠️ RS coverage {cov:.1%} below {MIN_RS_COVERAGE:.0%} — "

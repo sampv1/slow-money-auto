@@ -35,7 +35,7 @@ from ta.benchmark import fetch_vnindex_closes
 from ta.common import REQUEST_DELAY, get_supabase_client, safe_execute, today_vn
 from ta.ohlcv import fetch_today_snapshot, upsert_ohlcv
 from ta.rs_rating import compute_rs_ratings
-from ta.price_base import compute_price_bases
+from ta.trend_score import compute_trend_scores
 from ta.ta_score import compute_ta_score
 from ta.final_score import compute_final_score
 from ta.profile import fetch_profiles, upsert_profiles
@@ -300,21 +300,24 @@ def main():
             except Exception as e:
                 log_step_failure("Step 3 RS ratings")
 
-        # Step 4: Price bases (BQS V3). Runs after RS (Module 14 reuses the RS
-        # Line). Isolated so a failure here doesn't undo the signal run.
-        base_stats = {"based": 0, "by_grade": {}, "as_of": None}
+        # Step 4: Trend Score (daily + weekly structure). Replaced the BQS
+        # price-base pass in migration 051. Isolated so a failure here doesn't
+        # undo the signal run.
+        trend_stats = {"scored": 0, "by_grade": {}, "by_action": {}, "as_of": None}
         if not args.dry_run:
             try:
-                print("\n--- Step 4: price bases (BQS V3) ---")
-                base_stats = compute_price_bases(client)
-                bg = base_stats["by_grade"]
-                print(f"Price bases: {base_stats['based']} detected "
-                      f"(A={bg.get('A',0)} B={bg.get('B',0)} C={bg.get('C',0)} D={bg.get('D',0)}).")
+                print("\n--- Step 4: trend score (daily + weekly) ---")
+                trend_stats = compute_trend_scores(client)
+                tg, ta_ = trend_stats["by_grade"], trend_stats["by_action"]
+                print(f"Trend: scored {trend_stats['scored']} "
+                      f"(A+={tg.get('A+',0)} A={tg.get('A',0)} B={tg.get('B',0)} "
+                      f"C={tg.get('C',0)} D={tg.get('D',0)}; "
+                      f"buy_watch={ta_.get('buy_watch',0)}), as_of {trend_stats['as_of']}.")
             except Exception as e:
-                log_step_failure("Step 4 price bases")
+                log_step_failure("Step 4 trend score")
 
         # Step 5: TA Score (weighted blend of RS3M / RS Composite / RS Line /
-        # BQS). Runs last because it re-reads the columns the prior steps wrote.
+        # Trend). Runs last because it re-reads the columns the prior steps wrote.
         ta_stats = {"rows": 0, "scored": 0}
         if not args.dry_run:
             try:
@@ -367,7 +370,9 @@ def main():
         summary_lines.append(f"- **Adjustments repaired**: {adj_repaired}")
         summary_lines.append(f"- **Signals written**: {total_signals:,} ({triggered_total} triggered)")
         summary_lines.append(f"- **RS scored**: {rs_stats['scored']} liquid (rs_date {rs_stats['rs_date']})")
-        summary_lines.append(f"- **Price bases**: {base_stats['based']} detected")
+        summary_lines.append(
+            f"- **Trend scored**: {trend_stats['scored']} "
+            f"(buy_watch {trend_stats['by_action'].get('buy_watch', 0)})")
         summary_lines.append(f"- **TA Score**: {ta_stats['scored']}/{ta_stats['rows']} scored")
         summary_lines.append(f"- **Final score**: {final_stats['scored']}/{final_stats['rows']} scored")
         summary_lines.append(f"- **Company profiles**: {profile_stats['symbols']} symbols, "

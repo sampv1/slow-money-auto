@@ -24,18 +24,28 @@ type UniverseRow = {
   rs_composite: number | null;
   rs_line_score: number | null;
   rs_line_grade: string | null;
-  base_score: number | null;
-  base_grade: string | null;
-  base_type: string | null;
-  base_status: string | null;
+  trend_score: number | null;
+  trend_score_daily: number | null;
+  trend_score_weekly: number | null;
+  trend_grade: string | null;
+  trend_state_daily: string | null;
+  trend_state_weekly: string | null;
+  trend_dir_daily: string | null;
+  trend_dir_weekly: string | null;
+  trend_status: string | null;
+  trend_action: string | null;
   ta_score: number | null;
   catalyst_score: number | null;
 };
 
 const UNIVERSE_COLS =
-  "symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_score,rs_line_grade,base_score,base_grade,base_type,base_status,ta_score,catalyst_score";
+  "symbol,avg_volume_20d,rs_3m,rs_composite,rs_line_score,rs_line_grade," +
+  "trend_score,trend_score_daily,trend_score_weekly,trend_grade," +
+  "trend_state_daily,trend_state_weekly,trend_dir_daily,trend_dir_weekly," +
+  "trend_status,trend_action," +
+  "ta_score,catalyst_score";
 
-// rs_line_full and base_chart are NOT selected here. They were the row
+// rs_line_full and trend_chart are NOT selected here. They were the row
 // sparklines' data and, at ~1.7 MB, the single biggest part of this page — the
 // whole universe's charts shipped to draw the ~124 rows the default filters
 // show. The client now requests them for the rows it actually renders, via

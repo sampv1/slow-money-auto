@@ -10,14 +10,19 @@ import type { ReScoreBrief } from "@/lib/cached-data";
 import { SCORE_GRADE_CLASS, gradeOf, scoreGradeClass, formatPercent } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
-import { PriceBaseBreakdown, PriceBaseSparkline, PriceBaseChart, type BaseChart, baseTypeLabel, baseStatusLabel } from "./price-base";
+import {
+  TrendBreakdown, TrendSparkline, TrendDetailChart, TrendDirection, TrendStatusPill,
+  TrendLegend, HelpDot, type TrendChart, type TrendDetail,
+  trendActionLabel, trendActionClass,
+} from "./trend";
 import { CatalystDetail, type CatalystRow } from "./catalyst";
 import { TradeActions } from "./trade-actions";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { SPARKLINE_BATCH, type SymbolCharts } from "@/lib/sparkline";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
-type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite" | "base_score" | "symbol" | "quarter" | "industry";
+type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite"
+  | "trend_score" | "trend_daily" | "trend_weekly" | "symbol" | "quarter" | "industry";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
 // Minimum quarterly net profit after tax, in VND billion. Same default as the FA
@@ -69,10 +74,6 @@ function ScoreCell({ score, highlight = false, grade = false, title }: { score: 
 // Min-rating filter against the Final-score grade (A+/A/B/C/D). Treated as a
 // floor, so "A" also admits A+, etc. A null grade (no Final score) is excluded
 // whenever a minimum is set.
-// Subset of base_detail the modal needs for the chart (the rectangle bounds);
-// the full object is passed on to PriceBaseBreakdown.
-type BaseDetail = { base_start?: string; base_end?: string; base_high?: number; base_low?: number };
-
 function isoMinusDays(iso: string, days: number): string {
   const d = new Date(iso + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() - days);
@@ -112,10 +113,16 @@ export function SignalProClient({
     rs_composite: number | null;
     rs_line_score: number | null;
     rs_line_grade: string | null;
-    base_score: number | null;
-    base_grade: string | null;
-    base_type: string | null;
-    base_status: string | null;
+    trend_score: number | null;
+    trend_score_daily: number | null;
+    trend_score_weekly: number | null;
+    trend_grade: string | null;
+    trend_state_daily: string | null;
+    trend_state_weekly: string | null;
+    trend_dir_daily: string | null;
+    trend_dir_weekly: string | null;
+    trend_status: string | null;
+    trend_action: string | null;
     ta_score: number | null;
     catalyst_score: number | null;
   }[];
@@ -242,12 +249,20 @@ export function SignalProClient({
     return m;
   }, [rows, reBySymbol]);
 
-  const baseBySymbol = useMemo(() => {
-    const m = new Map<string, { score: number | null; grade: string | null; type: string | null; status: string | null; chart: BaseChart | null }>();
+  const trendBySymbol = useMemo(() => {
+    const m = new Map<string, {
+      score: number | null; daily: number | null; weekly: number | null;
+      grade: string | null; stateDaily: string | null; stateWeekly: string | null;
+      dirDaily: string | null; dirWeekly: string | null;
+      status: string | null; action: string | null; chart: TrendChart | null;
+    }>();
     for (const u of universe) {
       m.set(u.symbol, {
-        score: u.base_score, grade: u.base_grade, type: u.base_type, status: u.base_status,
-        chart: charts.get(u.symbol)?.base ?? null,
+        score: u.trend_score, daily: u.trend_score_daily, weekly: u.trend_score_weekly,
+        grade: u.trend_grade, stateDaily: u.trend_state_daily, stateWeekly: u.trend_state_weekly,
+        dirDaily: u.trend_dir_daily, dirWeekly: u.trend_dir_weekly,
+        status: u.trend_status, action: u.trend_action,
+        chart: charts.get(u.symbol)?.trend ?? null,
       });
     }
     return m;
@@ -274,42 +289,48 @@ export function SignalProClient({
     setCatModal({ symbol, loading: false, rows: (data as CatalystRow[] | null) ?? [] });
   }
 
-  // Price-base detail modal (OHLC window + breakdown fetched on demand).
+  // Trend detail modal (OHLC window + breakdown fetched on demand).
   type OHLC = { opens: number[]; highs: number[]; lows: number[]; closes: number[]; dates: string[] };
   const EMPTY_OHLC: OHLC = { opens: [], highs: [], lows: [], closes: [], dates: [] };
-  const [baseModal, setBaseModal] = useState<
-    { symbol: string; loading: boolean; detail: BaseDetail | null; ohlc: OHLC } | null
+  const [trendModal, setTrendModal] = useState<
+    { symbol: string; loading: boolean; detail: TrendDetail | null; ohlc: OHLC } | null
   >(null);
 
-  async function openBase(symbol: string) {
-    setBaseModal({ symbol, loading: true, detail: null, ohlc: EMPTY_OHLC });
+  async function openTrend(symbol: string) {
+    setTrendModal({ symbol, loading: true, detail: null, ohlc: EMPTY_OHLC });
     const { data } = await supabase
       .from("ta_universe")
-      .select("base_detail")
+      .select("trend_detail")
       .eq("symbol", symbol)
       .maybeSingle();
-    const detail = (data?.base_detail as BaseDetail | null) ?? null;
+    const detail = (data?.trend_detail as TrendDetail | null) ?? null;
+    // The window has to reach back past the OLDEST structural level, or the
+    // chart draws a level line for a pivot that is off-screen — O and K are
+    // routinely months behind price, and on a symbol that has held its trend for
+    // a year they are the far left edge of the structure.
+    const dates = Object.values(detail?.daily?.levels ?? {})
+      .map((lv) => lv?.date)
+      .filter((d): d is string => typeof d === "string");
+    const cutoff = dates.length > 0
+      ? isoMinusDays(dates.reduce((a, b) => (a < b ? a : b)), 30)
+      : isoMinusDays(new Date().toISOString().slice(0, 10), 400);
     let ohlc = EMPTY_OHLC;
-    if (detail?.base_start) {
-      // Fetch the OHLC window covering the base + ~45 days of prior context.
-      const cutoff = isoMinusDays(detail.base_start, 45);
-      const { data: rows } = await supabase
-        .from("ta_ohlcv")
-        .select("date,open,high,low,close")
-        .eq("symbol", symbol)
-        .gte("date", cutoff)
-        .order("date");
-      if (rows) {
-        ohlc = {
-          dates: rows.map((r) => r.date as string),
-          opens: rows.map((r) => Number(r.open)),
-          highs: rows.map((r) => Number(r.high)),
-          lows: rows.map((r) => Number(r.low)),
-          closes: rows.map((r) => Number(r.close)),
-        };
-      }
+    const { data: rows } = await supabase
+      .from("ta_ohlcv")
+      .select("date,open,high,low,close")
+      .eq("symbol", symbol)
+      .gte("date", cutoff)
+      .order("date");
+    if (rows) {
+      ohlc = {
+        dates: rows.map((r) => r.date as string),
+        opens: rows.map((r) => Number(r.open)),
+        highs: rows.map((r) => Number(r.high)),
+        lows: rows.map((r) => Number(r.low)),
+        closes: rows.map((r) => Number(r.close)),
+      };
     }
-    setBaseModal({ symbol, loading: false, detail, ohlc });
+    setTrendModal({ symbol, loading: false, detail, ohlc });
   }
 
   // RS Line detail modal. Values render instantly from the inline sparkline
@@ -419,7 +440,9 @@ export function SignalProClient({
           : sortKey === "rs_3m" ? (rs3mBySymbol.get(sym) ?? null)
           : sortKey === "ta_score" ? (taScoreBySymbol.get(sym) ?? null)
           : sortKey === "final_score" ? (finalBySymbol.get(sym) ?? null)
-          : sortKey === "base_score" ? (baseBySymbol.get(sym)?.score ?? null)
+          : sortKey === "trend_score" ? (trendBySymbol.get(sym)?.score ?? null)
+          : sortKey === "trend_daily" ? (trendBySymbol.get(sym)?.daily ?? null)
+          : sortKey === "trend_weekly" ? (trendBySymbol.get(sym)?.weekly ?? null)
           : null;
         // The FA column sorts on the DISPLAYED score, which is now per-rubric.
         // It used to sort on the raw fa_scores.total_score (0-108) while showing
@@ -439,7 +462,7 @@ export function SignalProClient({
       return 0;
     });
     return out;
-  }, [preIndustry, industryFilter, industry, locale, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, faScoreBySymbol, baseBySymbol, sortKey, sortAsc]);
+  }, [preIndustry, industryFilter, industry, locale, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, faScoreBySymbol, trendBySymbol, sortKey, sortAsc]);
 
   // Fetch sparkline data for the rows currently on screen, once they are known.
   //
@@ -672,7 +695,7 @@ export function SignalProClient({
                 {/* The rule under a group label rides on the cell, not the row:
                     row borders are not painted at all in separate mode. */}
                 <th colSpan={3} className="px-2 py-1 label text-center border-l border-b border-line">{t(locale, "spTaComponents")}</th>
-                <th colSpan={4} className="px-2 py-1 label text-center border-l border-b border-line">{t(locale, "spBaseGroup")}</th>
+                <th colSpan={6} className="px-2 py-1 label text-center border-l border-b border-line">{t(locale, "spTrendGroup")}</th>
                 <th rowSpan={2} className="px-2 py-1 label text-right align-bottom border-l border-line" title={t(locale, "spCatalystTitle")}>{t(locale, "spCatalyst")}</th>
                 {isAdmin && (
                   <th rowSpan={2} className="px-2 py-1 label text-right align-bottom border-l border-line">{t(locale, "spTrade")}</th>
@@ -690,12 +713,30 @@ export function SignalProClient({
                   {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
                 </th>
                 <th className="px-2 py-1 label">{t(locale, "taRsLine")}</th>
-                <th className="px-2 py-1 label text-right border-l border-line cursor-pointer select-none" onClick={() => toggleSort("base_score")}>
-                  {t(locale, "spBaseScore")}{sortIndicator("base_score")}
+                {/* The two timeframe columns render an arrow but still SORT on the
+                    0-100 score behind it — five direction values would otherwise
+                    sort into five indistinguishable blocks. */}
+                <th className="px-2 py-1 label text-right border-l border-line cursor-pointer select-none"
+                  onClick={() => toggleSort("trend_score")}>
+                  {t(locale, "spTrendScoreShort")} (100)<HelpDot title={t(locale, "spTrendScoreTitle")} />{sortIndicator("trend_score")}
                 </th>
-                <th className="px-2 py-1 label">{t(locale, "spBaseChart")}</th>
-                <th className="px-2 py-1 label">{t(locale, "spBaseType")}</th>
-                <th className="px-2 py-1 label">{t(locale, "spBaseStatus")}</th>
+                <th className="px-2 py-1 label cursor-pointer select-none"
+                  onClick={() => toggleSort("trend_weekly")}>
+                  {t(locale, "spTrendWeekly")}<HelpDot title={t(locale, "spTrendWeeklyTitle")} />{sortIndicator("trend_weekly")}
+                </th>
+                <th className="px-2 py-1 label cursor-pointer select-none"
+                  onClick={() => toggleSort("trend_daily")}>
+                  {t(locale, "spTrendDaily")}<HelpDot title={t(locale, "spTrendDailyTitle")} />{sortIndicator("trend_daily")}
+                </th>
+                <th className="px-2 py-1 label">
+                  {t(locale, "spTrendChart")}<HelpDot title={t(locale, "spTrendChartTitle")} />
+                </th>
+                <th className="px-2 py-1 label">
+                  {t(locale, "spTrendStatus")}<HelpDot title={t(locale, "spTrendStatusTitle")} />
+                </th>
+                <th className="px-2 py-1 label">
+                  {t(locale, "spTrendAction")}<HelpDot title={t(locale, "spTrendActionTitle")} />
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -706,7 +747,7 @@ export function SignalProClient({
                 const rsLineScore = rsLineScoreBySymbol.get(row.symbol);
                 const taScore = taScoreBySymbol.get(row.symbol) ?? null;
                 const finalScore = finalBySymbol.get(row.symbol) ?? null;
-                const base = baseBySymbol.get(row.symbol);
+                const trend = trendBySymbol.get(row.symbol);
                 const catScore = catalystBySymbol.get(row.symbol) ?? null;
                 return (
                   <tr key={row.symbol} className="group transition-colors hover:bg-panel-2 [&>td]:border-b [&>td]:border-line-faint">
@@ -761,38 +802,50 @@ export function SignalProClient({
                           </div>
                         </td>
                         <td className="px-2 py-1 text-right font-mono border-l border-line-faint">
-                          {base && base.score !== null ? (
+                          {trend && trend.score !== null ? (
                             <button
                               type="button"
-                              onClick={() => openBase(row.symbol)}
-                              className="cursor-pointer text-accent hover:underline"
-                              title={t(locale, "spBaseCol")}
+                              onClick={() => openTrend(row.symbol)}
+                              className="cursor-pointer text-accent hover:underline font-semibold text-body-lg"
+                              title={t(locale, "spTrendCol")}
                             >
-                              {base.score}
+                              {trend.score}
+                            </button>
+                          ) : (
+                            <span className="text-fg-faint">—</span>
+                          )}
+                        </td>
+                        {/* Arrow + word, per the prototype. The tooltip carries the
+                            score and the state name, because a 0 on the weekly chart
+                            means "below the daily MA200" far more often than it means
+                            "no structure", and those call for different reactions. */}
+                        <td className="px-2 py-1">
+                          <TrendDirection dir={trend?.dirWeekly ?? null} score={trend?.weekly ?? null}
+                            state={trend?.stateWeekly ?? null} locale={locale} />
+                        </td>
+                        <td className="px-2 py-1">
+                          <TrendDirection dir={trend?.dirDaily ?? null} score={trend?.daily ?? null}
+                            state={trend?.stateDaily ?? null} locale={locale} />
+                        </td>
+                        <td className="px-2 py-1">
+                          {trend && trend.chart ? (
+                            <button
+                              type="button"
+                              onClick={() => openTrend(row.symbol)}
+                              title={t(locale, "spTrendCol")}
+                              className="block cursor-pointer hover:opacity-70"
+                            >
+                              <TrendSparkline chart={trend.chart} width={110} height={30} />
                             </button>
                           ) : (
                             <span className="text-fg-faint">—</span>
                           )}
                         </td>
                         <td className="px-2 py-1">
-                          {base && base.chart ? (
-                            <button
-                              type="button"
-                              onClick={() => openBase(row.symbol)}
-                              title={t(locale, "spBaseCol")}
-                              className="block cursor-pointer hover:opacity-70"
-                            >
-                              <PriceBaseSparkline chart={base.chart} width={110} height={30} />
-                            </button>
-                          ) : (
-                            <span className="text-fg-faint">—</span>
-                          )}
+                          <TrendStatusPill status={trend?.status ?? null} locale={locale} />
                         </td>
-                        <td className="px-2 py-1 text-fg whitespace-nowrap">
-                          {base && base.score !== null ? baseTypeLabel(base.type, locale) : <span className="text-fg-faint">—</span>}
-                        </td>
-                        <td className="px-2 py-1 text-fg whitespace-nowrap">
-                          {base && base.score !== null ? baseStatusLabel(base.status, locale) : <span className="text-fg-faint">—</span>}
+                        <td className={`px-2 py-1 whitespace-nowrap ${trendActionClass(trend?.action ?? null)}`}>
+                          {trend && trend.score !== null ? trendActionLabel(trend.action, locale) : <span className="text-fg-faint">—</span>}
                         </td>
                         <td className="px-2 py-1 text-right font-mono border-l border-line-faint">
                           {catScore !== null ? (
@@ -820,6 +873,12 @@ export function SignalProClient({
           </table>
         </div>
       )}
+
+      {/* Trend legend — the prototype's footer. Sits above the grade/formula boxes
+          because it explains three columns of the table rather than one number. */}
+      <div className="mt-4">
+        <TrendLegend locale={locale} isAdmin={isAdmin} />
+      </div>
 
       {/* Legend + formula footer */}
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -889,45 +948,41 @@ export function SignalProClient({
       })()}
 
       {/* Price-base breakdown — opened by clicking the base badge. */}
-      {baseModal && (
+      {trendModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setBaseModal(null)}
+          onClick={() => setTrendModal(null)}
         >
           <div
             className="bg-panel rounded-lg shadow-xl border border-line p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-3">
-              <h3 className="text-title font-semibold">{baseModal.symbol} — {t(locale, "spBaseCol")}</h3>
+              <h3 className="text-title font-semibold">{trendModal.symbol} — {t(locale, "spTrendCol")}</h3>
               <button
                 type="button"
-                onClick={() => setBaseModal(null)}
+                onClick={() => setTrendModal(null)}
                 className="text-fg-label hover:text-fg text-display leading-none"
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
-            {baseModal.loading ? (
+            {trendModal.loading ? (
               <div className="h-32 flex items-center justify-center text-body-lg text-fg-label">{t(locale, "loading")}…</div>
-            ) : baseModal.detail ? (
+            ) : trendModal.detail ? (
               <div className="space-y-4">
-                {baseModal.ohlc.closes.length >= 2 && baseModal.detail.base_start && baseModal.detail.base_end
-                  && baseModal.detail.base_high != null && baseModal.detail.base_low != null ? (
-                  <PriceBaseChart
-                    opens={baseModal.ohlc.opens}
-                    highs={baseModal.ohlc.highs}
-                    lows={baseModal.ohlc.lows}
-                    closes={baseModal.ohlc.closes}
-                    dates={baseModal.ohlc.dates}
-                    baseStart={baseModal.detail.base_start}
-                    baseEnd={baseModal.detail.base_end}
-                    baseHigh={baseModal.detail.base_high}
-                    baseLow={baseModal.detail.base_low}
+                {trendModal.ohlc.closes.length >= 2 && trendModal.detail.daily ? (
+                  <TrendDetailChart
+                    opens={trendModal.ohlc.opens}
+                    highs={trendModal.ohlc.highs}
+                    lows={trendModal.ohlc.lows}
+                    closes={trendModal.ohlc.closes}
+                    dates={trendModal.ohlc.dates}
+                    levels={trendModal.detail.daily.levels}
                   />
                 ) : null}
-                <PriceBaseBreakdown detail={baseModal.detail as Parameters<typeof PriceBaseBreakdown>[0]["detail"]} locale={locale} />
+                <TrendBreakdown detail={trendModal.detail} locale={locale} />
               </div>
             ) : (
               <p className="text-body-lg text-fg-muted">{t(locale, "faNoData")}</p>

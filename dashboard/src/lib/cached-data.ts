@@ -461,16 +461,16 @@ export type HomeTopScore = {
   fa_normalized: number | null;
   ta_score: number | null;
   rs_3m: number | null;
-  base_grade: string | null;
-  base_type: string | null;
+  trend_score: number | null;
+  trend_status: string | null;
 };
 
 type HomeUniverseRow = {
   symbol: string;
   ta_score: number | null;
   rs_3m: number | null;
-  base_grade: string | null;
-  base_type: string | null;
+  trend_score: number | null;
+  trend_status: string | null;
   avg_volume_20d: number | null;
 };
 
@@ -483,7 +483,7 @@ const getHomeUniverseRows = unstable_cache(
     if (symbols.length === 0) return [];
     const { data, error } = await supabase
       .from("ta_universe")
-      .select("symbol,ta_score,rs_3m,base_grade,base_type,avg_volume_20d")
+      .select("symbol,ta_score,rs_3m,trend_score,trend_status,avg_volume_20d")
       .in("symbol", symbols);
     if (error) throw new Error(error.message);
     return (data ?? []) as unknown as HomeUniverseRow[];
@@ -540,8 +540,8 @@ export async function getHomeTopScores(limit = 10): Promise<HomeTopScore[]> {
         fa_normalized: r.normalized_score,
         ta_score: u?.ta_score ?? null,
         rs_3m: u?.rs_3m ?? null,
-        base_grade: u?.base_grade ?? null,
-        base_type: u?.base_type ?? null,
+        trend_score: u?.trend_score ?? null,
+        trend_status: u?.trend_status ?? null,
       };
     });
 }

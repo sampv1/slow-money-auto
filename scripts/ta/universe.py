@@ -434,6 +434,13 @@ RETIRED_FIELDS = {
     "rs_line": None, "rs_line_full": None, "rs_line_date": None,
     "rs_line_dates": None, "rs_line_score": None, "rs_line_grade": None,
     "ta_score": None,
+    # The trend read goes too, for the same reason as the RS columns: a retired
+    # row keeps rendering wherever a page does not filter on is_active, and a
+    # structure score is the last thing that should outlive the symbol's trading.
+    "trend_score": None, "trend_score_daily": None, "trend_score_weekly": None,
+    "trend_grade": None, "trend_state_daily": None, "trend_state_weekly": None,
+    "trend_status": None, "trend_action": None, "trend_detail": None,
+    "trend_chart": None, "trend_date": None,
 }
 
 

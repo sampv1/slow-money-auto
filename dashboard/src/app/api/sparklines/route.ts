@@ -3,7 +3,7 @@ import { rateLimit, clientKey } from "@/lib/rate-limit";
 import {
   SPARKLINE_BATCH,
   slimRsLine,
-  type BaseChartData,
+  type TrendChartData,
   type SymbolCharts,
 } from "@/lib/sparkline";
 
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 
     const { data, error } = await supabase
       .from("ta_universe")
-      .select("symbol,rs_line_full,base_chart")
+      .select("symbol,rs_line_full,trend_chart")
       .in("symbol", symbols);
 
     if (error) {
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     for (const row of data ?? []) {
       charts[row.symbol as string] = {
         rs: slimRsLine(row.rs_line_full as number[] | null),
-        base: (row.base_chart as BaseChartData | null) ?? null,
+        trend: (row.trend_chart as TrendChartData | null) ?? null,
       };
     }
     return Response.json({ charts });

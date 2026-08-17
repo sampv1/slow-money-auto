@@ -7,20 +7,22 @@
  * filters actually show.
  */
 
-export type BaseChartData = {
+/**
+ * Compact candles + structural markers for the trend chart, as written by
+ * scripts/ta/trend_score.py. Replaced the price-base (BQS) payload.
+ */
+export type TrendChartData = {
   o: number[];
   h: number[];
   l: number[];
   c: number[];
-  lo: number;
-  hi: number;
-  s: number;
+  marks: { i: number; k: string; v: number }[];
 };
 
 export type SymbolCharts = {
   /** RS line tail, already trimmed and rounded. */
   rs: number[] | null;
-  base: BaseChartData | null;
+  trend: TrendChartData | null;
 };
 
 /**
