@@ -58,27 +58,58 @@ export type TrendDetail = {
 // --- labels -----------------------------------------------------------------
 
 /**
- * The 0-100 state of each chart. One map for both timeframes: the codes are
- * shared wherever the meaning is (`d1`, `a_confirmed`), and the three that are
- * timeframe-specific (`base` vs `base_only`, `a1_uptrend` vs `a2_full_uptrend`)
- * describe the same situation one leg apart, so they read the same to a user.
+ * Every state code scripts/ta/trend_score.py can write. Listed as a const tuple
+ * so the label map below is typed `Record<TrendState, …>`: adding a state in
+ * Python and forgetting its label becomes a COMPILE error rather than a silent
+ * dash. That failure mode is not hypothetical — the homepage's own inlined label
+ * map shipped with stale codes and rendered a dash on every row.
  */
-const STATE: Record<string, { vi: string; en: string }> = {
-  no_ok: { vi: "Chưa có cấu trúc", en: "No structure" },
-  ok_base_fail: { vi: "Không đạt điều kiện nền", en: "Base conditions failed" },
-  ok_below_52w: { vi: "Xa đỉnh 52 tuần", en: "Far from 52W high" },
-  ok_below_ma200: { vi: "Dưới MA200 ngày", en: "Below daily MA200" },
-  below_ma200: { vi: "Dưới MA200 ngày", en: "Below daily MA200" },
+export const TREND_STATES = [
+  "no_ok", "ok_base_fail", "ok_below_52w", "ok_below_ma200", "below_ma200",
+  "base", "base_only", "a_confirmed", "d1", "a1_uptrend", "post_a1_above_d1",
+  "a2_full_uptrend", "d2_above_a1", "d2_between", "break_d1", "back_below_o",
+  "back_below_k",
+] as const;
+export type TrendState = (typeof TREND_STATES)[number];
+
+/**
+ * The 0-100 state of each chart, in the customer's naming (2026-08-17). One map
+ * for both timeframes: the codes are shared wherever the meaning is (`d1`,
+ * `a_confirmed`), and the timeframe-specific pairs (`base`/`base_only`,
+ * `a1_uptrend`/`a2_full_uptrend`) describe the same situation one leg apart, so
+ * they must read the same to a user.
+ *
+ * Two things about how the rename was applied:
+ *
+ *  - **The four weak states collapse to one label.** "Xu hướng yếu" covers a
+ *    failed 52-week test, a failed MA200 test, both failing, and the weekly hard
+ *    rule. Nothing is lost: `ok_below_ma200` (daily) and `below_ma200` (weekly)
+ *    are the SAME price condition on the two timeframes, so distinct wording
+ *    there made the row contradict itself, and the modal prints each criterion's
+ *    actual value and points right underneath.
+ *  - **"Xu hướng tăng mạnh" is the post-pullback half of a confirmed uptrend.**
+ *    A fresh completion is `a1_uptrend`/`a2_full_uptrend` — one higher high. Once
+ *    a trough confirms above the reset level the structure has a higher high AND
+ *    a higher low, which is `post_a1_above_d1`/`d2_above_a1`. That is the
+ *    HH/HL half of the customer's definition; the momentum-agreement half is not
+ *    computed here, so the label rests on structure alone.
+ */
+const STATE: Record<TrendState, { vi: string; en: string }> = {
+  no_ok: { vi: "Chưa xác lập xu hướng", en: "No trend established" },
+  ok_base_fail: { vi: "Xu hướng yếu", en: "Weak trend" },
+  ok_below_52w: { vi: "Xu hướng yếu", en: "Weak trend" },
+  ok_below_ma200: { vi: "Xu hướng yếu", en: "Weak trend" },
+  below_ma200: { vi: "Xu hướng yếu", en: "Weak trend" },
   base: { vi: "Chuẩn bị cấu trúc", en: "Building structure" },
   base_only: { vi: "Chuẩn bị cấu trúc", en: "Building structure" },
-  a_confirmed: { vi: "Phá xu hướng giảm", en: "Downtrend broken" },
-  d1: { vi: "Tích lũy sau phá giảm", en: "Accumulating after break" },
-  a1_uptrend: { vi: "Xu hướng tăng hoàn chỉnh", en: "Full uptrend" },
-  post_a1_above_d1: { vi: "Xu hướng tăng hoàn chỉnh", en: "Full uptrend" },
-  a2_full_uptrend: { vi: "Xu hướng tăng hoàn chỉnh", en: "Full uptrend" },
-  d2_above_a1: { vi: "Xu hướng tăng hoàn chỉnh", en: "Full uptrend" },
+  a_confirmed: { vi: "Đảo chiều tích cực", en: "Positive reversal" },
+  d1: { vi: "Tái tích lũy", en: "Re-accumulating" },
+  a1_uptrend: { vi: "Xu hướng tăng xác nhận", en: "Uptrend confirmed" },
+  a2_full_uptrend: { vi: "Xu hướng tăng xác nhận", en: "Uptrend confirmed" },
+  post_a1_above_d1: { vi: "Xu hướng tăng mạnh", en: "Strong uptrend" },
+  d2_above_a1: { vi: "Xu hướng tăng mạnh", en: "Strong uptrend" },
   d2_between: { vi: "Điều chỉnh trong xu hướng", en: "Correction in trend" },
-  break_d1: { vi: "Mất cấu trúc tăng", en: "Uptrend structure lost" },
+  break_d1: { vi: "Suy yếu xu hướng", en: "Trend weakening" },
   back_below_o: { vi: "Phá O thất bại", en: "Failed break of O" },
   back_below_k: { vi: "Thủng đáy K", en: "Broke below K" },
 };
@@ -140,7 +171,9 @@ const DIRECTION: Record<string, { vi: string; en: string; tone: "up" | "down" | 
 };
 
 export function trendStateLabel(state: string | null, locale: Locale): string {
-  const s = state ? STATE[state] : null;
+  // The column arrives from PostgREST as a bare string, so the lookup has to
+  // tolerate a value outside the union rather than trusting the cast.
+  const s = state ? STATE[state as TrendState] : undefined;
   if (!s) return "—";
   return locale === "vi" ? s.vi : s.en;
 }
