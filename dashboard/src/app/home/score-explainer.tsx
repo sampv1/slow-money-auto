@@ -6,8 +6,11 @@ import { type Locale, t } from "@/lib/i18n";
  * This is the wedge against the local competitors: Simplize and Fialda both keep
  * their scoring opaque, so publishing the exact weights is the differentiator.
  * The numbers here MUST track the pipeline — final_score.py (0.59 TA / 0.41 FA)
- * and ta_score.py (RS3M 20 / RS composite 25 / RS line 20 / BQS 35). If those
- * weights change, this copy is wrong until it changes too.
+ * and ta_score.py (RS3M 20 / RS composite 25 / RS line 20 / TREND 35). If those
+ * weights change, this copy is wrong until it changes too — and it silently was:
+ * the chip still read "Base 35%" for a while after the price base was retired,
+ * because these strings are hardcoded here while the prose beside them comes
+ * from i18n, so only half of it moved.
  */
 function Row({ label, body, formula }: { label: string; body: string; formula: string }) {
   return (
@@ -38,7 +41,7 @@ export function ScoreExplainer({ locale }: { locale: Locale }) {
         <Row
           label={t(locale, "homeHowTaLabel")}
           body={t(locale, "homeHowTaBody")}
-          formula="RS3M 20% + RS 25% + RS line 20% + Base 35%"
+          formula="RS3M 20% + RS 25% + RS line 20% + Trend 35%"
         />
         <Row
           label={t(locale, "homeHowFaLabel")}

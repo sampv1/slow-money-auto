@@ -732,7 +732,7 @@ export function ScannerClient({
                     <th className="row-h px-2 label">{t(locale, "industry")}</th>
                     <th
                       className="px-4 py-3 font-medium text-right"
-                      title="TA Score = RS3M·20% + RS Composite·25% + RS Line·20% + BQS·35%"
+                      title={t(locale, "spFormulaTa")}
                     >
                       {t(locale, "spTaScore")}
                     </th>
