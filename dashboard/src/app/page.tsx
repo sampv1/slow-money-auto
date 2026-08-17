@@ -49,11 +49,31 @@ export default async function HomePage() {
   // exists for the scanners' 17-column tables; at full bleed this page's
   // 7-column leaderboard spreads a symbol and its score ~1,100px apart and
   // stops being scannable. Landing pages read better bounded.
+  //
+  // mx-auto is load-bearing: bounded but left-aligned left a 404px void down the
+  // right of a 1588px main, which is what the page was reported for.
   return (
-    <div className="flex flex-col gap-6 max-w-6xl">
+    <div className="mx-auto flex w-full flex-col gap-6 max-w-6xl">
       <MarketStrip data={macro} locale={locale} />
-      <TopScores rows={topScores} universeSize={universeSize} locale={locale} />
-      <ScoreExplainer locale={locale} />
+
+      {/* The leaderboard sits BESIDE the explainer rather than above it.
+          Stacked, each got the full 1152px, and measured on the live page the
+          leaderboard's content needs only 495px — it was rendering at 1150, so
+          `w-full` was stretching it 2.3x and pushing a symbol away from its own
+          score. Side by side it gets ~626px (about 1.3x) and the explainer's
+          prose gets ~502px, which is a readable measure instead of a 1152px one.
+          The page also loses ~350px of height.
+
+          5fr/4fr rather than a even split because the leaderboard is the hero and
+          the explainer is supporting text. items-start keeps each panel at its
+          natural height — stretching the shorter one would open a blank strip
+          under the leaderboard's "see all" link. Below lg it stacks back into
+          the original single-column order. */}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[5fr_4fr]">
+        <TopScores rows={topScores} universeSize={universeSize} locale={locale} />
+        <ScoreExplainer locale={locale} />
+      </div>
+
       <ToolCards locale={locale} />
 
       <footer className="border-t border-line pt-4 text-body text-fg-label flex flex-col gap-1">
