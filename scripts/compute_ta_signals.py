@@ -180,19 +180,38 @@ def start_run(client, trading_date: str) -> int | None:
     return res.data[0]["id"] if res.data else None
 
 
-def finish_run(client, run_id: int | None, status: str, symbols_n: int, signals_n: int, err: str | None = None):
+def finish_run(client, run_id: int | None, status: str, symbols_n: int, signals_n: int,
+               err: str | None = None, trading_date: str | None = None):
+    """Close out a ta_runs row, correcting trading_date to what was WRITTEN.
+
+    start_run has to stamp something before any signal is computed, so it uses
+    the wall clock. That is only right when the run happens to be computing
+    today's bar. It was wrong twice over:
+
+      * a backfill (`--since` / `--all-dates`) writes older dates entirely;
+      * any run after midnight VN stamps a date the market has not traded yet.
+
+    Both mint a ta_runs row for a date with NO signals — and the TA Scanner
+    builds its date dropdown from ta_runs (deliberately, to avoid scanning the
+    multi-million-row ta_signals table), defaulting to the newest. On
+    2026-08-19 a 01:03 backfill produced exactly that: a `success` run stamped
+    2026-08-19, zero signals for it, and a scanner showing no symbols at all.
+
+    So the run records the LATEST date it actually wrote.
+    """
     if run_id is None:
         return
+    payload = {
+        "finished_at": "now()",
+        "status": status,
+        "symbols_processed": symbols_n,
+        "signals_written": signals_n,
+        "error_message": err,
+    }
+    if trading_date:
+        payload["trading_date"] = trading_date
     safe_execute(
-        client.table("ta_runs").update(
-            {
-                "finished_at": "now()",
-                "status": status,
-                "symbols_processed": symbols_n,
-                "signals_written": signals_n,
-                "error_message": err,
-            }
-        ).eq("id", run_id),
+        client.table("ta_runs").update(payload).eq("id", run_id),
         label="ta_runs finish",
     )
 
@@ -306,6 +325,7 @@ def main():
 
     total_signals = 0
     processed = 0
+    max_written_date: str | None = None
     start = time.time()
 
     # Refresh the Supabase client every CLIENT_REFRESH_EVERY symbols so the
@@ -340,6 +360,9 @@ def main():
             rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines, benchmark=benchmark)
             rows = filter_dates(rows, since_date, latest_only, ohlcv)
             n_triggered = sum(1 for r in rows if r["triggered"])
+            if rows:
+                d = max(r["date"] for r in rows)
+                max_written_date = d if max_written_date is None else max(max_written_date, d)
 
             if not args.dry_run:
                 upsert_signals(client, rows)
@@ -353,7 +376,11 @@ def main():
         print(f"\n{action.capitalize()} {total_signals:,} signal rows for {processed} symbols in {elapsed:.1f}s.")
 
         if not args.dry_run:
-            finish_run(client, run_id, "success", processed, total_signals)
+            finish_run(client, run_id, "success", processed, total_signals,
+                       trading_date=max_written_date)
+            if max_written_date and max_written_date != trading_date_str:
+                print(f"  ta_runs trading_date corrected {trading_date_str} -> "
+                      f"{max_written_date} (the newest date actually written).")
 
     except Exception as e:
         if not args.dry_run:

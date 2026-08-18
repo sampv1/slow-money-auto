@@ -120,6 +120,29 @@ export default async function ScannerPage({
     dates = await getSignalDates();
     selectedDate = params.date && dates.includes(params.date) ? params.date : dates[0];
     if (selectedDate) data = await getScannerData(selectedDate);
+
+    // The dropdown is built from ta_runs (the run LOG) rather than from
+    // ta_signals, deliberately — listing dates must not scan a multi-million-row
+    // table. The cost of that shortcut is that a run row can exist for a date
+    // that carries no signals, and the newest such row becomes the default: on
+    // 2026-08-19 a backfill started at 01:03 stamped itself with the wall-clock
+    // date, and the scanner rendered an empty table with no explanation.
+    //
+    // The writer now stamps the date it actually wrote (see finish_run in
+    // scripts/compute_ta_signals.py), so this should not recur. This stays as
+    // the reader's half of the guard: only when the default was AUTO-selected,
+    // never when the user explicitly asked for a date — an empty day they chose
+    // is an answer, not a fault worth silently overriding.
+    if (!params.date && data && data.signals.length === 0) {
+      const fallback = dates[1];
+      if (fallback) {
+        const older = await getScannerData(fallback);
+        if (older.signals.length > 0) {
+          selectedDate = fallback;
+          data = older;
+        }
+      }
+    }
   } catch (e) {
     return <DataError error={e} locale={locale} />;
   }

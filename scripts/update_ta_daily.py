@@ -276,6 +276,11 @@ def main():
     total_signals = 0
     triggered_total = 0
     processed = 0
+    # The date the signals are FOR, which is not necessarily today — see
+    # finish_run in compute_ta_signals.py. A run started after midnight VN would
+    # otherwise stamp ta_runs with a date the market has not traded, and the TA
+    # Scanner builds its date dropdown from ta_runs.
+    max_written_date: str | None = None
     t0 = time.time()
 
     # Refresh the Supabase client every CLIENT_REFRESH_EVERY symbols so the
@@ -309,6 +314,9 @@ def main():
 
             rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines, benchmark=benchmark)
             rows = filter_dates(rows, since=None, latest_only=True, ohlcv=ohlcv)
+            if rows:
+                d = max(r["date"] for r in rows)
+                max_written_date = d if max_written_date is None else max(max_written_date, d)
             n_triggered = sum(1 for r in rows if r["triggered"])
             triggered_total += n_triggered
 
@@ -324,7 +332,11 @@ def main():
               f"({triggered_total} triggered) in {elapsed:.1f}s")
 
         if not args.dry_run:
-            finish_run(client, run_id, "success", processed, total_signals)
+            finish_run(client, run_id, "success", processed, total_signals,
+                       trading_date=max_written_date)
+            if max_written_date and max_written_date != today_str:
+                print(f"  ta_runs trading_date corrected {today_str} -> "
+                      f"{max_written_date} (the newest date actually written).")
         # Signals are computed from stored OHLCV, so this failing means the DB
         # read or the write failed — not the market.
         st.require("Step 2 signals", total_signals, minimum=1, unit="rows",
