@@ -269,6 +269,9 @@ export const translations = {
     mcdxLegendHot: "Hot money",
     mcdxLegendRetail: "Retail",
 
+    // ZigZag overlay legend (Analysis price pane)
+    zigzagLegend: "ZigZag — dashed leg unconfirmed",
+
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
     taSymbolLabel: "Symbol",
@@ -1048,6 +1051,9 @@ export const translations = {
     mcdxLegendWeak: "Yếu",
     mcdxLegendHot: "Tiền nóng",
     mcdxLegendRetail: "Nhỏ lẻ",
+
+    // ZigZag overlay legend (Analysis price pane)
+    zigzagLegend: "ZigZag — nhánh nét đứt chưa xác nhận",
 
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",

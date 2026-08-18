@@ -29,6 +29,12 @@ const MA_COLOR: Record<number, string> = {
   200: "#9333ea", // purple
 };
 
+// ZigZag swing structure. Blue because the price pane has no blue: the MAs are
+// warm grey / orange / teal / purple and every other price overlay (S/R lines,
+// trendlines) is the up/down green-red, which carries direction. The ZigZag is
+// neither an average nor a direction, so it takes the one free hue.
+const ZIGZAG_COLOR = "#1d4ed8";
+
 const RSI_COLOR = "#7c3aed";
 const MACD_LINE_COLOR = VN_INDEX;
 const MACD_SIGNAL_COLOR = "#ea580c";
@@ -204,6 +210,121 @@ function rollingMin(values: number[], window: number): (number | null)[] {
   return out;
 }
 
+// ---------- ZigZag (mirrors scripts/ta/zigzag.py) ----------
+
+// The swing structure the Trend Score is built on, drawn over the candles so a
+// reader can see the O–K–A–D1 legs the score is talking about. This is a PORT,
+// not a second implementation: same closes-only input, same two parameters, same
+// tie-break, and — with the window below — the same pivots, verified identical
+// to scripts/ta/zigzag.py on 12 symbols of real history. If that module changes,
+// change this with it.
+//
+// Parameters are the DAILY row of scripts/ta/trend_score.py's ZIGZAG config —
+// deviation 5%, depth 10 candles. Weekly (7% / 6) is a different timeframe and
+// has no meaning on a daily chart.
+const ZIGZAG_DEVIATION = 0.05;
+const ZIGZAG_DEPTH = 10;
+
+// The score's own lookback (trend_score.py `window_days`), and the reason the
+// overlay is not simply run over every bar on the chart.
+//
+// A ZigZag is not a windowed function of the recent past — its first leg is
+// seeded at bar 0, and where that seed lands shifts the whole alternating
+// sequence after it. Run over the full history this page loads (~2.4 years)
+// instead of the score's 1.5, the pivots INSIDE the score's window came out
+// different on 103 of 117 sampled symbols. That is a chart drawing one
+// structure while the Trend Score column next to it reports another.
+const ZIGZAG_WINDOW_DAYS = 560;
+
+type ZigZagPivot = { idx: number; value: number; isHigh: boolean };
+
+function argExtreme(values: number[], a: number, b: number, wantMax: boolean): number {
+  let best = a;
+  for (let i = a + 1; i <= b; i++) {
+    if (wantMax ? values[i] > values[best] : values[i] < values[best]) best = i;
+  }
+  return best;
+}
+
+/**
+ * Confirmed alternating pivots, plus the extreme of the leg still in progress.
+ *
+ * A pivot is only emitted once the market moved `deviation` against it with at
+ * least `depth` bars of hindsight, which is why the last `depth` bars can never
+ * hold one. `provisional` is the running extreme since the final confirmed
+ * pivot — the leg that has not proved itself yet — kept separate so the chart
+ * can draw it as something weaker than a confirmed swing.
+ */
+function zigzag(
+  values: number[],
+  deviation = ZIGZAG_DEVIATION,
+  depth = ZIGZAG_DEPTH,
+): { pivots: ZigZagPivot[]; provisional: ZigZagPivot | null } {
+  const n = values.length;
+  const pivots: ZigZagPivot[] = [];
+  if (n < depth + 2) return { pivots, provisional: null };
+
+  let hiI = 0;
+  let loI = 0;
+  let lastI = -depth; // lets the first pivot sit anywhere, since nothing precedes it
+  let direction = 0; // 0 = unknown, +1 = seeking a peak, -1 = seeking a trough
+
+  for (let i = 1; i < n; i++) {
+    const x = values[i];
+    // Both running extremes are tracked at all times, not just the one the
+    // current direction cares about: when a peak confirms several bars late the
+    // trough that confirmed it has usually already formed, and a machine that
+    // only looked from the confirmation bar would place the bottom too late.
+    if (x > values[hiI]) hiI = i;
+    if (x < values[loI]) loI = i;
+
+    let peakOk =
+      direction >= 0 &&
+      values[hiI] > 0 &&
+      x <= values[hiI] * (1 - deviation) &&
+      i - hiI >= depth &&
+      hiI - lastI >= depth;
+    let troughOk =
+      direction <= 0 &&
+      values[loI] > 0 &&
+      x >= values[loI] * (1 + deviation) &&
+      i - loI >= depth &&
+      loI - lastI >= depth;
+
+    // Both can only qualify while the direction is still unknown (a wide opening
+    // range). Take the earlier extreme, so the sequence starts where the market
+    // did rather than wherever the branch order looks first.
+    if (peakOk && troughOk) {
+      if (loI < hiI) peakOk = false;
+      else troughOk = false;
+    }
+
+    if (peakOk) {
+      pivots.push({ idx: hiI, value: values[hiI], isHigh: true });
+      lastI = hiI;
+      direction = -1;
+      const nextLo = argExtreme(values, hiI + 1, i, false);
+      hiI = i;
+      loI = nextLo;
+    } else if (troughOk) {
+      pivots.push({ idx: loI, value: values[loI], isHigh: false });
+      lastI = loI;
+      direction = 1;
+      const nextHi = argExtreme(values, loI + 1, i, true);
+      loI = i;
+      hiI = nextHi;
+    }
+  }
+
+  // After a peak the open leg is seeking a trough, and vice versa. Direction 0
+  // means nothing confirmed at all, so there is no leg to extend.
+  let provisional: ZigZagPivot | null = null;
+  if (direction === -1) provisional = { idx: loI, value: values[loI], isHigh: false };
+  else if (direction === 1) provisional = { idx: hiI, value: values[hiI], isHigh: true };
+
+  return { pivots, provisional };
+}
+
 // ---------- Feature flags derived from selected indicators ----------
 
 type Features = {
@@ -216,12 +337,13 @@ type Features = {
   showMACD: boolean;
   showMcdx: boolean;
   showRs: boolean;
+  showZigzag: boolean;
 };
 
 // Display-overlay toggle group (separate from triggered-signal chips): always
 // available, ON by default. MA/MCDX toggle chart overlays; RS3M/6M/52W toggle
 // their lines in the RS pane. Keys are stable ids.
-const DISPLAY_KEYS = ["ma20", "ma50", "ma200", "mcdx", "rs3m", "rs6m", "rs52w"] as const;
+const DISPLAY_KEYS = ["ma20", "ma50", "ma200", "zigzag", "mcdx", "rs3m", "rs6m", "rs52w"] as const;
 type DisplayKey = (typeof DISPLAY_KEYS)[number];
 const DISPLAY_MA: Record<string, number> = { ma20: 20, ma50: 50, ma200: 200 };
 
@@ -307,6 +429,7 @@ function featuresFor(selected: string[]): Features {
     showMACD,
     showMcdx,
     showRs: false, // set by the merged features (depends on the display group + data)
+    showZigzag: false, // display-group only — no signal implies it
   };
 }
 
@@ -468,6 +591,7 @@ export function ChartClient({
       maPeriods: [...ma].sort((a, b) => a - b),
       showMcdx: displayOn.has("mcdx"),
       showRs: rsOn,
+      showZigzag: displayOn.has("zigzag"),
     };
   }, [sigFeatures, displayOn, rsAvailable]);
   const panes = useMemo(() => paneIndices(features), [features]);
@@ -575,6 +699,54 @@ export function ChartClient({
         title: `MA${period}`,
       });
       line.setData(linePointsFrom(sma(closes, period)));
+    }
+
+    // ZigZag swing structure on the price pane (5% / 10 candles, on closes).
+    //
+    // Closes, not highs/lows, because that is what the Trend Score reads — the
+    // spec defines every structural level as a closing price ("A = giá đóng cửa
+    // vượt đỉnh O"), so a ZigZag drawn off the wicks would put its pivots at
+    // prices no rule ever compares against.
+    //
+    // Two series, because the last leg is not the same kind of fact as the ones
+    // before it: confirming a pivot needs `depth` bars of hindsight, so the leg
+    // in progress can still be revoked by the next ten bars. Solid = confirmed
+    // and final; dashed = the running extreme of the open leg.
+    if (features.showZigzag) {
+      // Windowed off the last BAR, not today's clock: deterministic given the
+      // data, and immune to a stale pipeline or a timezone making the chart
+      // disagree with itself between renders.
+      const lastMs = Date.parse(candles[candles.length - 1].date);
+      const cutoff = lastMs - ZIGZAG_WINDOW_DAYS * 86400000;
+      let w0 = candles.findIndex((c) => Date.parse(c.date) >= cutoff);
+      if (w0 < 0) w0 = 0;
+      const { pivots, provisional } = zigzag(closes.slice(w0));
+      if (pivots.length >= 2) {
+        const zz = chart.addSeries(LineSeries, {
+          color: ZIGZAG_COLOR,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+          title: "ZigZag",
+        });
+        zz.setData(pivots.map((p) => ({ time: candles[w0 + p.idx].date as Time, value: p.value })));
+      }
+      const lastPivot = pivots[pivots.length - 1];
+      if (lastPivot && provisional && provisional.idx > lastPivot.idx) {
+        const open = chart.addSeries(LineSeries, {
+          color: ZIGZAG_COLOR,
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        open.setData([
+          { time: candles[w0 + lastPivot.idx].date as Time, value: lastPivot.value },
+          { time: candles[w0 + provisional.idx].date as Time, value: provisional.value },
+        ]);
+      }
     }
 
     // S/R horizontal lines on price pane (only when an S/R indicator is active).
@@ -990,6 +1162,7 @@ export function ChartClient({
     { key: "ma20", label: "MA20", color: MA_COLOR[20], show: true },
     { key: "ma50", label: "MA50", color: MA_COLOR[50], show: true },
     { key: "ma200", label: "MA200", color: MA_COLOR[200], show: true },
+    { key: "zigzag", label: "ZigZag 5%/10", color: ZIGZAG_COLOR, show: true },
     { key: "mcdx", label: "MCDX", color: MCDX_BANKER_COLOR, show: true },
     { key: "rs3m", label: `RS3M ${rsLatest?.rs3m ?? "—"}`, color: RS3M_COLOR, show: rsAvailable },
     { key: "rs6m", label: `RS6M ${rsLatest?.rs6m ?? "—"}`, color: RS6M_COLOR, show: rsAvailable },
@@ -1034,6 +1207,12 @@ export function ChartClient({
               MA{period}
             </span>
           ))}
+          {features.showZigzag && (
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-3 h-0.5" style={{ backgroundColor: ZIGZAG_COLOR }} />
+              {t(locale, "zigzagLegend")}
+            </span>
+          )}
           {/* Unconditional, because the line always is. */}
           <span className="flex items-center gap-1">
             <span className="inline-block w-3 h-0.5" style={{ backgroundColor: VOLUME_MA_COLOR }} />
