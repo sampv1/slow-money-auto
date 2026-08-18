@@ -9,6 +9,7 @@ import type { ReScoreBrief } from "@/lib/cached-data";
 
 import { SCORE_GRADE_CLASS, gradeOf, scoreGradeClass, formatPercent } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
+import { ZIGZAG_WINDOW_DAYS } from "@/lib/zigzag";
 import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import {
   TrendBreakdown, TrendSparkline, TrendDetailChart, TrendDirection, TrendStatusPill,
@@ -311,9 +312,20 @@ export function SignalProClient({
     const dates = Object.values(detail?.daily?.levels ?? {})
       .map((lv) => lv?.date)
       .filter((d): d is string => typeof d === "string");
-    const cutoff = dates.length > 0
+    // Two constraints, and the window has to satisfy BOTH:
+    //   * reach 30 days past the OLDEST level, or a level line is drawn for a
+    //     pivot that sits off-screen;
+    //   * reach the ZigZag's full 560-day lookback, because a ZigZag seeds its
+    //     first leg at bar 0 and where that seed lands shifts every pivot after
+    //     it. Fed a shorter window than the score used, the drawn structure
+    //     would disagree with the O/K/A/D1 levels beside it.
+    // Whichever reaches further back wins.
+    const today = new Date().toISOString().slice(0, 10);
+    const levelCutoff = dates.length > 0
       ? isoMinusDays(dates.reduce((a, b) => (a < b ? a : b)), 30)
-      : isoMinusDays(new Date().toISOString().slice(0, 10), 400);
+      : isoMinusDays(today, 400);
+    const zigzagCutoff = isoMinusDays(today, ZIGZAG_WINDOW_DAYS);
+    const cutoff = levelCutoff < zigzagCutoff ? levelCutoff : zigzagCutoff;
     let ohlc = EMPTY_OHLC;
     const { data: rows } = await supabase
       .from("ta_ohlcv")
@@ -980,6 +992,7 @@ export function SignalProClient({
                     closes={trendModal.ohlc.closes}
                     dates={trendModal.ohlc.dates}
                     levels={trendModal.detail.daily.levels}
+                    locale={locale}
                   />
                 ) : null}
                 <TrendBreakdown detail={trendModal.detail} locale={locale} />

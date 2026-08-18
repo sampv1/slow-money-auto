@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { type Locale, t } from "@/lib/i18n";
 import { CHART } from "@/lib/chart-theme";
+import { ZIGZAG_COLOR, zigzag, zigzagWindowStart } from "@/lib/zigzag";
 
 // Shared Trend-Score UI: the in-cell chart, the state/status/action labels and
 // the breakdown modal body. Replaces the retired price-base (BQS) module.
@@ -414,7 +415,7 @@ export function TrendSparkline({
  * structural level, and a letter at the session each level formed on.
  */
 export function TrendDetailChart({
-  opens, highs, lows, closes, dates, levels,
+  opens, highs, lows, closes, dates, levels, locale,
 }: {
   opens: number[];
   highs: number[];
@@ -422,6 +423,7 @@ export function TrendDetailChart({
   closes: number[];
   dates: string[];
   levels: TrendTimeframe["levels"];
+  locale: Locale;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const W = 680, H = 320, mL = 56, mR = 34, mT = 16, mB = 40;
@@ -454,6 +456,22 @@ export function TrendDetailChart({
     return best;
   }
 
+  // ZigZag over the SAME window the Trend Score used, so the legs drawn here and
+  // the O/K/A/D1 lines beside them come from one structure rather than two.
+  // openTrend() guarantees the fetch reaches back at least ZIGZAG_WINDOW_DAYS;
+  // if a caller ever passes less, the slice is simply everything it has.
+  const zz0 = zigzagWindowStart(dates);
+  const { pivots: zzPivots, provisional: zzOpen } = zigzag(closes.slice(zz0));
+  const zzPoints = zzPivots.map((p) => `${xAt(zz0 + p.idx)},${yAt(p.value)}`).join(" ");
+  const zzLast = zzPivots[zzPivots.length - 1];
+  // The leg in progress is not the same kind of fact as the ones behind it —
+  // confirming a pivot needs `depth` bars of hindsight, so the next ten bars can
+  // still revoke it. Dashed, and only when it actually extends past the last
+  // confirmed pivot.
+  const zzTail = zzLast && zzOpen && zzOpen.idx > zzLast.idx
+    ? `${xAt(zz0 + zzLast.idx)},${yAt(zzLast.value)} ${xAt(zz0 + zzOpen.idx)},${yAt(zzOpen.value)}`
+    : null;
+
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const px = ((e.clientX - rect.left) / rect.width) * W;
@@ -462,6 +480,7 @@ export function TrendDetailChart({
   }
 
   return (
+    <div>
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none"
       onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img">
       {yTicks.map((v, k) => (
@@ -499,6 +518,14 @@ export function TrendDetailChart({
           </g>
         );
       })}
+      {zzPivots.length >= 2 && (
+        <polyline points={zzPoints} fill="none" stroke={ZIGZAG_COLOR}
+          strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+      )}
+      {zzTail && (
+        <polyline points={zzTail} fill="none" stroke={ZIGZAG_COLOR}
+          strokeWidth={1.5} strokeDasharray="4 3" strokeLinecap="round" />
+      )}
       {present.map((k) => {
         const i = idxOf(levels[k]!.date);
         if (i === null) return null;
@@ -518,6 +545,13 @@ export function TrendDetailChart({
         </g>
       )}
     </svg>
+    {zzPivots.length >= 2 && (
+      <div className="flex items-center gap-1.5 mt-1 px-1 text-data text-fg-muted">
+        <span className="inline-block w-3 h-0.5" style={{ backgroundColor: ZIGZAG_COLOR }} />
+        {t(locale, "zigzagLegend")}
+      </div>
+    )}
+    </div>
   );
 }
 
