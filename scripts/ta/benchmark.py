@@ -33,40 +33,74 @@ from .common import VNSTOCK_SOURCE
 VN_INDEX_SYMBOL = "VNINDEX"
 DEFAULT_LOOKBACK_DAYS = 400  # ~80 weeks — enough for 60-bar RS + 60-bar RS-high window
 
+# Providers to try, in order, before giving up on the live feed.
+#
+# One VN-Index fetch broke TWO pipelines on 2026-08-18: the TA run's RS
+# indicators, and macro-daily — which froze the FCI, because the FCI's date grid
+# IS the VN-Index date index, so a missing close means a missing FCI day. A
+# series that load-bearing should not have a single point of failure.
+#
+# All three are vnstock providers, so they share a library but NOT an endpoint or
+# an operator: VCI is Vietcap (and blocks some cloud IP ranges), KBS is KB
+# Securities, MSN is Microsoft's market data. Verified 2026-08-19 to return the
+# same close for the same session (1,732.02 on 2026-08-18). TCBS is deliberately
+# absent — vnstock 4.x rejects it for Quote ("chỉ nhận ... kbs, vci, msn, dnse,
+# bina"), so listing it would just burn an attempt on a ValueError.
+BENCHMARK_SOURCES = (VNSTOCK_SOURCE, "KBS", "MSN")
 
-def fetch_vnindex_closes(start: date | None = None, end: date | None = None) -> pd.Series | None:
-    """Return VN-Index closing prices as a date-indexed Series, ascending.
 
-    Quote() in vnstock 4.0.x throws a "charting library" error on first call due
-    to a lazy banner-init bug; retrying once is the documented workaround used
-    in scripts/ta/ohlcv.py.
-    """
+def _history_from(source: str, start: date, end: date) -> pd.Series | None:
+    """One provider's VN-Index closes, or None if it fails or returns nothing."""
     from vnstock import Quote
 
+    df = None
+    for attempt in range(2):
+        try:
+            q = Quote(symbol=VN_INDEX_SYMBOL, source=source)
+            df = q.history(start=start.isoformat(), end=end.isoformat(), interval="1D")
+            break
+        except Exception as e:  # noqa: BLE001
+            # The "charting library" error is vnstock 4.0.x's lazy banner-init
+            # bug on first call; retrying once is the documented workaround (same
+            # as scripts/ta/ohlcv.py).
+            if "charting library" in str(e).lower() and attempt == 0:
+                continue
+            print(f"  VNINDEX via {source}: {type(e).__name__}: {str(e)[:110]}")
+            return None
+
+    if df is None or df.empty:
+        print(f"  VNINDEX via {source}: no rows returned.")
+        return None
+
+    out = pd.Series(df["close"].astype(float).values, name="vnindex_close")
+    # KBS timestamps carry a time component (07:00:00); .dt.date normalises every
+    # provider onto the plain date the rest of the pipeline joins on.
+    out.index = pd.to_datetime(df["time"]).dt.date
+    out.index.name = "date"
+    return out.sort_index()
+
+
+def fetch_vnindex_closes(start: date | None = None, end: date | None = None,
+                         sources: tuple[str, ...] = BENCHMARK_SOURCES) -> pd.Series | None:
+    """VN-Index closes as a date-indexed Series, ascending — first source that works.
+
+    Returns None only when EVERY provider failed, which callers must treat as
+    "no benchmark", never as "the benchmark is flat".
+    """
     if end is None:
         end = date.today()
     if start is None:
         start = end - timedelta(days=DEFAULT_LOOKBACK_DAYS)
 
-    df = None
-    for attempt in range(2):
-        try:
-            q = Quote(symbol=VN_INDEX_SYMBOL, source=VNSTOCK_SOURCE)
-            df = q.history(start=start.isoformat(), end=end.isoformat(), interval="1D")
-            break
-        except Exception as e:
-            if "charting library" in str(e).lower() and attempt == 0:
-                continue
-            print(f"  VNINDEX benchmark fetch failed: {str(e)[:120]}")
-            return None
-
-    if df is None or df.empty:
-        return None
-
-    out = pd.Series(df["close"].astype(float).values, name="vnindex_close")
-    out.index = pd.to_datetime(df["time"]).dt.date
-    out.index.name = "date"
-    return out.sort_index()
+    for i, source in enumerate(sources):
+        series = _history_from(source, start, end)
+        if series is not None and not series.empty:
+            if i > 0:
+                print(f"  VNINDEX: {sources[0]} unavailable — served by fallback "
+                      f"{source} ({len(series)} sessions through {series.index[-1]}).")
+            return series
+    print(f"  VNINDEX: all {len(sources)} providers failed ({', '.join(sources)}).")
+    return None
 
 
 def load_vnindex_from_db(client, lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> pd.Series | None:

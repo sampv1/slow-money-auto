@@ -28,6 +28,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ta.run_status import RunStatus  # noqa: E402
+
 load_dotenv(Path(__file__).parent / ".env")
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -515,6 +518,7 @@ def main():
 
     symbols = list(set(r["symbol"] for r in recs))
     print(f"Evaluating {len(recs)} recommendation(s) across {len(symbols)} symbol(s)")
+    st = RunStatus("Daily P&L evaluation")
 
     today_iso = today_vn().isoformat()
 
@@ -534,11 +538,14 @@ def main():
     print("\nFetching prices (adjusted; rebased to nominal per recommendation)...")
     hist_by_symbol: dict[str, dict | None] = {}
     latest_by_symbol: dict[str, dict | None] = {}
+    fetch_errors: list[str] = []
     for i, symbol in enumerate(sorted(symbols)):
         ref = earliest_ref.get(symbol, today_iso)
         start = date.fromisoformat(ref) - timedelta(days=7)
         hist = fetch_price_history(symbol, start, today_vn())
         hist_by_symbol[symbol] = hist
+        if not hist:
+            fetch_errors.append(symbol)
         latest = _latest_today_bar(hist, today_iso)
         latest_by_symbol[symbol] = latest
         if latest:
@@ -547,6 +554,30 @@ def main():
             print(f"  {symbol}: latest bar {max(hist)} != {today_iso} — no fresh price today")
         if i < len(symbols) - 1:
             time.sleep(REQUEST_DELAY)
+
+    # Gate the FETCH, separately from the evaluation below.
+    #
+    # A price fetch that returns nothing looks exactly like a position that did
+    # not move: no TP/SL trigger, no P&L change, exit 0. The distinction that
+    # matters is WHY there is no fresh bar — an empty history means the provider
+    # failed, while a history whose newest bar predates today means the market
+    # did not trade (or the close is not published yet), which is not our problem.
+    fresh = sum(1 for v in latest_by_symbol.values() if v)
+    if fetch_errors and len(fetch_errors) == len(symbols):
+        st.fail("Price fetch",
+                f"every one of {len(symbols)} symbol(s) returned no history — this is a "
+                f"provider outage, not a quiet market. No position was evaluated.")
+    elif fetch_errors:
+        st.warn("Price fetch",
+                f"{len(fetch_errors)}/{len(symbols)} symbol(s) returned no history: "
+                f"{', '.join(sorted(fetch_errors)[:20])}")
+        st.ok("Fresh bars", f"{fresh}/{len(symbols)} symbol(s) priced for {today_iso}")
+    elif fresh == 0:
+        st.warn("Fresh bars",
+                f"no symbol has a bar dated {today_iso} — non-trading day, or the close "
+                f"is not published yet. Nothing evaluated, by design.")
+    else:
+        st.ok("Fresh bars", f"{fresh}/{len(symbols)} symbol(s) priced for {today_iso}")
 
     # One bulk price_board call for the open symbols — cheap, and it is the only
     # signal available on the ex-date itself (see SUSPECT_REF_DEV).
@@ -662,6 +693,7 @@ def main():
 
     action = "would update" if args.dry_run else "updated"
     print(f"\n{action.capitalize()} {updates_count} recommendation(s).")
+    sys.exit(st.finish())
 
     if args.dry_run:
         print("(DRY RUN — no changes applied)")

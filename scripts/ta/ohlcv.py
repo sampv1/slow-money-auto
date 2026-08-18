@@ -128,7 +128,13 @@ def fetch_today_snapshot(symbols: list[str], expected_date: str | None = None,
     bar. Symbols with no match price (halted / untraded today) are also skipped.
 
     stats keys: requested, returned, written, skipped_stale, skipped_no_price,
-    stale_dates (set of distinct off-dates seen).
+    stale_dates (set of distinct off-dates seen), chunks, failed_chunks.
+
+    `failed_chunks` is what separates the two ways this returns nothing, and the
+    caller MUST branch on it: a holiday returns rows that the staleness guard
+    rejects (failed_chunks == 0), whereas a provider outage returns nothing at
+    all (failed_chunks == chunks). Both produced "0 rows written" on 2026-08-18,
+    and with no way to tell them apart the run reported success.
     """
     stats = {
         "requested": len(symbols),
@@ -137,12 +143,15 @@ def fetch_today_snapshot(symbols: list[str], expected_date: str | None = None,
         "skipped_stale": 0,
         "skipped_no_price": 0,
         "stale_dates": set(),
+        "chunks": 0,
+        "failed_chunks": 0,
     }
     rows: list[dict] = []
     trading = _make_trading()
 
     for start in range(0, len(symbols), chunk_size):
         chunk = symbols[start:start + chunk_size]
+        stats["chunks"] += 1
         retries_used = 0
         df = None
         while True:
@@ -163,6 +172,7 @@ def fetch_today_snapshot(symbols: list[str], expected_date: str | None = None,
                     time.sleep(wait)
                     continue
                 print(f"  price_board chunk [{start}:{start + len(chunk)}]: failed — {err[:160]}")
+                stats["failed_chunks"] += 1
                 df = None
                 break
 

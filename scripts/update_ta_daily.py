@@ -23,15 +23,19 @@ Usage:
 """
 
 import argparse
-import os
-import traceback
 import sys
 import time
+import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ta.benchmark import get_vnindex_closes
+from ta.run_status import RunStatus, write_job_summary
+
+# Fraction of tracked members that must receive a bar before Step 1 counts as a
+# real collection. See the Step 1 gate for why a bare "> 0" is not enough.
+MIN_SNAPSHOT_FRACTION = 0.25
 from ta.common import REQUEST_DELAY, get_supabase_client, safe_execute, today_vn
 from ta.ohlcv import fetch_today_snapshot, upsert_ohlcv
 from ta.rs_rating import compute_rs_ratings
@@ -78,30 +82,27 @@ def open_position_symbols(client) -> list[str]:
     return sorted({r["symbol"] for r in rows if r.get("symbol")})
 
 
-def log_step_failure(step: str) -> None:
-    """Print a step's FULL traceback, then flag it in the Actions summary.
+def log_step_failure(status: RunStatus, step: str, critical: bool = True) -> None:
+    """Record a swallowed exception against the run, with its FULL traceback.
 
-    Was `print(f"... failed (non-fatal): {str(e)[:160]}")`. Two problems that cost
-    a whole investigation on 2026-08-07: 160 characters truncates a PostgREST
-    APIError before its message/details/hint, and the traceback — which says WHICH
-    write raised — was discarded entirely. A step that swallows its exception must
-    at least record what it swallowed.
+    Swallowing stays deliberate — one broken step must not stop the others from
+    running. What changed on 2026-08-19 is that swallowing no longer makes the
+    RUN green: a critical step records a failure, and the process exits 1.
+
+    The traceback matters as much as the exit code. This was once
+    `print(f"... failed (non-fatal): {str(e)[:160]}")`, and 160 characters
+    truncates a PostgREST APIError before its message/details/hint — which cost
+    a whole investigation on 2026-08-07.
     """
-    print(f"  {step} FAILED (non-fatal) — full traceback follows:", flush=True)
-    traceback.print_exc()
-    write_job_summary(f"\n> **{step} failed** (non-fatal) — see the step log for the traceback.\n")
+    exc = sys.exc_info()[1]
+    if critical:
+        status.fail(step, exc=exc)
+    else:
+        print(f"  [WARN] {step} — full traceback follows:", flush=True)
+        traceback.print_exc()
+        status.warn(step, f"{type(exc).__name__}: {exc}" if exc else "failed")
 
 
-def write_job_summary(text: str) -> None:
-    """Append markdown text to the GitHub Actions Job Summary if running in CI."""
-    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if not summary_path:
-        return
-    try:
-        with open(summary_path, "a", encoding="utf-8") as f:
-            f.write(text)
-    except Exception as e:
-        print(f"  (could not write job summary: {e})")
 
 # Re-use the orchestrator's helpers so we don't duplicate logic
 from compute_ta_signals import (  # noqa: E402
@@ -135,6 +136,8 @@ def main():
         sys.exit(1)
 
     today_str = today_vn().isoformat()
+    st = RunStatus(f"TA daily update {today_str}")
+
     print(f"=== TA daily update for {today_str} ===")
     print(f"Universe: {len(members)} members ({len(symbols)} active)")
     print(f"OHLCV lookback: {args.ohlcv_days} days")
@@ -169,6 +172,40 @@ def main():
         if snap_stats["skipped_stale"]:
             print(f"  NOTE: snapshot trading_date(s) {sorted(snap_stats['stale_dates'])} != {today_str} "
                   f"— likely a non-trading day or close not yet published; those rows were NOT written.")
+
+        # THE gate this whole pipeline was missing. "No exception raised" is not
+        # evidence that bars were collected: on 2026-08-18 every price_board
+        # chunk failed, 0 rows were written, and the run still went green.
+        #
+        # The two ways this legitimately writes nothing are told apart by
+        # failed_chunks (see fetch_today_snapshot):
+        #   provider outage — nothing came back at all           => CRITICAL
+        #   holiday / close not published — rows came back but
+        #   the staleness guard rejected them                    => warning
+        if snap_stats["failed_chunks"]:
+            st.fail("Step 1 OHLCV snapshot",
+                    f"{snap_stats['failed_chunks']}/{snap_stats['chunks']} price_board "
+                    f"chunks failed; wrote {ohlcv_total:,} rows for {ohlcv_ok}/{len(members)} "
+                    f"members. The provider, not the market, is the problem.")
+        elif snap_stats["returned"] and not ohlcv_total and snap_stats["skipped_stale"]:
+            st.warn("Step 1 OHLCV snapshot",
+                    f"no fresh bar for {today_str} — the snapshot carried "
+                    f"{sorted(snap_stats['stale_dates'])}, i.e. a non-trading day or a "
+                    f"close not yet published. Nothing written, by design.")
+        else:
+            # A PROPORTIONAL floor, because minimum=1 would have passed the
+            # 2026-08-17 run that wrote 29 bars of the ~890 a normal session
+            # produces. That run reported success too.
+            #
+            # A typical day prices ~60-68% of members (many are dormant UPCOM
+            # lines that rarely trade), so 25% leaves wide room for a genuinely
+            # thin session or a wave of halts while still catching a collection
+            # that mostly failed. Below the floor the run goes red and the
+            # backup cron re-runs it — which is the outcome we want, since
+            # price_board is cheap and a partial day corrupts every percentile.
+            floor = max(1, int(len(members) * MIN_SNAPSHOT_FRACTION))
+            st.require("Step 1 OHLCV snapshot", ohlcv_ok, minimum=floor, unit="members",
+                       detail=f"of {len(members)} tracked, {ohlcv_total:,} bars")
 
         # Symbols with no fresh bar today (halted / untraded / stale). Not a
         # hard failure, but surfaced in the summary for visibility.
@@ -220,7 +257,7 @@ def main():
             else:
                 print("  No adjustments detected.")
         except Exception as e:  # noqa: BLE001
-            log_step_failure("Step 1b adjustment repair")
+            log_step_failure(st, "Step 1b adjustment repair", critical=False)
 
     # Step 2: compute signals (latest date only) and log to ta_runs
     print(f"\n--- Step 2: compute signals (latest date) ---")
@@ -288,6 +325,10 @@ def main():
 
         if not args.dry_run:
             finish_run(client, run_id, "success", processed, total_signals)
+        # Signals are computed from stored OHLCV, so this failing means the DB
+        # read or the write failed — not the market.
+        st.require("Step 2 signals", total_signals, minimum=1, unit="rows",
+                   detail=f"{processed} symbols, {triggered_total} triggered")
 
         # Step 3: RS ratings (cross-sectional). Isolated so a failure here does
         # not undo the already-committed signal run.
@@ -298,8 +339,14 @@ def main():
                 rs_stats = compute_rs_ratings(client)
                 print(f"RS: scored {rs_stats['scored']}/{rs_stats['liquid']} liquid symbols, "
                       f"{rs_stats.get('rs_lines', 0)} RS lines (rs_date {rs_stats['rs_date']}).")
+                st.require("Step 3 RS ratings", rs_stats["scored"], minimum=1,
+                           unit="symbols", detail=f"rs_date {rs_stats['rs_date']}")
+                # RS Line is a 20% component of TA Score and its own column on
+                # Signal Pro; losing it for the whole universe is not a detail.
+                st.expect("Step 3 RS Line", rs_stats.get("rs_lines", 0), minimum=1,
+                          unit="symbols", detail="benchmark ratio series")
             except Exception as e:
-                log_step_failure("Step 3 RS ratings")
+                log_step_failure(st, "Step 3 RS ratings")
 
         # Step 4: Trend Score (daily + weekly structure). Replaced the BQS
         # price-base pass in migration 051. Isolated so a failure here doesn't
@@ -314,8 +361,10 @@ def main():
                       f"(A+={tg.get('A+',0)} A={tg.get('A',0)} B={tg.get('B',0)} "
                       f"C={tg.get('C',0)} D={tg.get('D',0)}; "
                       f"buy_watch={ta_.get('buy_watch',0)}), as_of {trend_stats['as_of']}.")
+                st.require("Step 4 trend score", trend_stats["scored"], minimum=1,
+                           unit="symbols", detail=f"as_of {trend_stats['as_of']}")
             except Exception as e:
-                log_step_failure("Step 4 trend score")
+                log_step_failure(st, "Step 4 trend score")
 
         # Step 5: TA Score (weighted blend of RS3M / RS Composite / RS Line /
         # Trend). Runs last because it re-reads the columns the prior steps wrote.
@@ -325,8 +374,10 @@ def main():
                 print("\n--- Step 5: TA Score ---")
                 ta_stats = compute_ta_score(client)
                 print(f"TA Score: scored {ta_stats['scored']}/{ta_stats['rows']} symbols.")
+                st.require("Step 5 TA Score", ta_stats["scored"], minimum=1,
+                           unit="symbols", detail=f"of {ta_stats['rows']} rows")
             except Exception as e:
-                log_step_failure("Step 5 TA Score")
+                log_step_failure(st, "Step 5 TA Score")
 
         # Step 6: Final score (latest TA blended with latest FA). Runs after
         # ta_score; reads the latest FA period's normalized scores.
@@ -337,8 +388,10 @@ def main():
                 final_stats = compute_final_score(client)
                 print(f"Final score: scored {final_stats['scored']}/{final_stats['rows']} symbols "
                       f"(period {final_stats.get('period')}).")
+                st.require("Step 6 Final score", final_stats["scored"], minimum=1,
+                           unit="symbols", detail=f"period {final_stats.get('period')}")
             except Exception as e:
-                log_step_failure("Step 6 Final score")
+                log_step_failure(st, "Step 6 Final score")
 
         # Step 7: company names + ICB sectors. Reference data, so it runs LAST
         # and nothing above depends on it — a failure here must not colour a
@@ -358,7 +411,7 @@ def main():
                     profile_stats = {"symbols": n_p, "sectors": n_s}
                     print(f"Company profiles: {n_p} symbols, {n_s} ICB labels.")
             except Exception as e:
-                log_step_failure("Step 7 company profiles")
+                log_step_failure(st, "Step 7 company profiles", critical=False)
 
         # GitHub Actions Job Summary — visible on the run page without opening logs.
         summary_lines = [
@@ -386,6 +439,10 @@ def main():
         write_job_summary("\n".join(summary_lines))
 
         print(f"\n=== TA daily update done ===")
+        # The run is red when data is missing, not only when the script crashed.
+        exit_code = st.finish()
+        if exit_code:
+            sys.exit(exit_code)
 
     except Exception as e:
         if not args.dry_run:

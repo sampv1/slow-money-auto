@@ -25,6 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from ta.run_status import RunStatus
 from ta.common import get_supabase_client, safe_execute  # noqa: E402
 from fa import excel_import, metrics as fa_metrics, persist as fa_persist  # noqa: E402
 from fa.scoring import compute_score  # noqa: E402
@@ -209,7 +210,14 @@ def cmd_score(args) -> int:
         if not args.dry_run:
             fa_persist.finish_run(client, run_id, "success", processed, skipped, latest_period)
         print(f"Done. scored={processed} skipped={skipped}")
-        return 0
+        # scored=0 with skipped>0 means every symbol was unscorable — an upstream
+        # import problem, not a quiet success. It used to return 0 regardless.
+        st = RunStatus("FA scoring")
+        if args.dry_run:
+            return 0
+        st.require("FA scores written", processed, minimum=1, unit="symbols",
+                   detail=f"{skipped} skipped, period {latest_period}")
+        return st.finish()
     except Exception as e:  # noqa: BLE001
         if not args.dry_run:
             fa_persist.finish_run(client, run_id, "failed", processed, skipped, latest_period, str(e)[:500])

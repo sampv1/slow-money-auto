@@ -38,6 +38,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import requests
 
+from ta.run_status import RunStatus
+
 from ta.common import get_supabase_client, today_vn
 from macro.exchange_rate import (
     CENTRAL_NORMID,
@@ -140,6 +142,10 @@ FCI_CTB_METRICS = {"on": "macro_fci_ctb_on", "spread": "macro_fci_ctb_spread",
                    "dxy": "macro_fci_ctb_dxy", "foreign": "macro_fci_ctb_foreign",
                    "cpi": "macro_fci_ctb_cpi"}
 FCI_REFRESH_DAYS = 45  # daily mode rewrites this trailing slice (idempotent)
+# How far behind `end` the newest FCI date may fall before the run goes red.
+# 4 days absorbs a weekend plus a public holiday; anything beyond that means the
+# VN-Index grid stopped advancing, which is a data outage rather than a calendar.
+FCI_MAX_LAG_DAYS = 4
 
 
 def compute_fci_rows(client, since: dt.date | None) -> list[dict]:
@@ -770,6 +776,38 @@ def main():
         print("Nothing to write.")
         return
 
+    st = RunStatus("Macro daily refresh")
+    # Per-series gates. Every one of these used to return [] on failure and be
+    # summed into one total, so a series could vanish and the run still print a
+    # healthy-looking "Upserted N rows" — which is exactly how `0 vnindex` froze
+    # the FCI at 2026-08-14 for two days without anyone noticing.
+    #
+    # CRITICAL vs BEST-EFFORT is about the series, not the code:
+    #   vnindex   the FCI's date grid IS the VN-Index date index, so a missing
+    #             close is a missing FCI day. Nothing else gates the FCI.
+    #   fx/omo/on/dxy/foreign/sofr  FCI components (as-of filled, so staleness
+    #             degrades rather than blocks — but a total loss is critical).
+    #   cpi/banklending/margindebt  monthly or quarterly and often not yet
+    #             published on any given weekday; absence is normal.
+    for label, got, critical in (
+        ("vnindex", len(vnindex_rows), True),
+        ("fx_central_rate", len(central_rows), True),
+        ("fx_vcb_sell", len(vcb_rows), True),
+        ("interbank_overnight", len(interbank_rows), True),
+        ("omo", len(omo_rows), True),
+        ("dxy", len(dxy_rows), True),
+        ("sofr", len(sofr_rows), True),
+        ("foreign_net_value", len(foreign_rows), True),
+        ("govbond_10y", len(govbond_rows), True),
+        ("fed_target", len(fed_rows), True),
+        ("bank_rates", len(bank_rates_rows), True),
+        ("vnindex_ex_vic", len(exvic_rows), False),
+        ("cpi", len(cpi_rows), False),
+        ("bank_lending", len(bank_lending), False),
+        ("margin_debt", len(margin_debt), False),
+    ):
+        (st.require if critical else st.expect)(f"collect {label}", got, minimum=1, unit="points")
+
     client = get_supabase_client()
     rows = protect_stored_sbv_interbank(client, rows)  # SBV priority across runs
     n = upsert_macro(client, rows)
@@ -785,8 +823,28 @@ def main():
     since = None if args.backfill else end - dt.timedelta(days=FCI_REFRESH_DAYS)
     print(f"=== FCI (frozen W={FROZEN_FCI['window']}/{FROZEN_FCI['dxy_mode']}): "
           f"{'full history' if since is None else f'since {since}'} ===")
-    n = upsert_macro(client, compute_fci_rows(client, since))
+    fci_rows = compute_fci_rows(client, since)
+    n = upsert_macro(client, fci_rows)
     print(f"Upserted {n} FCI rows.")
+    st.require("FCI recompute", n, minimum=1, unit="rows")
+
+    # Freshness, not just presence. compute_fci_rows rewrites a trailing slice,
+    # so it happily returns hundreds of rows whose newest date is days old — the
+    # 2026-08-18 run wrote 270 FCI rows and still ended at 2026-08-14. Only the
+    # LATEST date proves the grid advanced.
+    fci_dates = [r["date"] for r in fci_rows if r.get("metric") == METRIC_FCI_FULL]
+    if fci_dates:
+        latest = max(fci_dates)
+        lag = (end - dt.date.fromisoformat(latest)).days
+        if lag > FCI_MAX_LAG_DAYS:
+            st.fail("FCI freshness",
+                    f"latest FCI date is {latest}, {lag} days behind {end}. The FCI grid is "
+                    f"the VN-Index date index, so this almost always means vnindex is missing "
+                    f"recent sessions.")
+        else:
+            st.ok("FCI freshness", f"latest {latest} ({lag}d behind {end})")
+
+    sys.exit(st.finish())
 
 
 if __name__ == "__main__":

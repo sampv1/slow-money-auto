@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ta.common import get_supabase_client
+from ta.run_status import RunStatus
 from ta.final_score import compute_final_score
 
 
@@ -38,6 +39,19 @@ def main():
     breakdown = ", ".join(f"{p}: {n}" for p, n in sorted(periods.items(), reverse=True))
     print(f"{verb}: {stats['scored']}/{stats['rows']} symbols on their latest FA quarter"
           + (f" ({breakdown})" if breakdown else ""))
+    sys.exit(_gate(stats, args.dry_run))
+
+
+# Scoring reads columns earlier passes wrote, so "scored 0" means an upstream
+# step produced nothing — a real failure that used to exit 0 and paint the
+# workflow green (see ta/run_status.py).
+def _gate(stats, dry_run: bool) -> int:
+    st = RunStatus("Final score refresh")
+    if dry_run:
+        return 0
+    st.require("Final score", stats["scored"], minimum=1, unit="symbols",
+               detail=f"of {stats['rows']} rows")
+    return st.finish()
 
 
 if __name__ == "__main__":

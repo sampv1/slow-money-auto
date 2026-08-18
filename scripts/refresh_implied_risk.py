@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from ta.run_status import RunStatus
 from ta.common import get_supabase_client, today_vn
 from ta.implied_risk import (
     FUTURE_SYMBOL,
@@ -79,6 +80,14 @@ def main():
     client = get_supabase_client()
     n = upsert_implied_risk(client, rows)
     print(f"Upserted {n} rows into implied_risk.")
+
+    # Auxiliary chart data — the workflow marks this step continue-on-error, so a
+    # bad night must not fail the TA run. The annotation is what stops "tolerated"
+    # from becoming "invisible".
+    st = RunStatus("Implied risk refresh")
+    st.expect("Implied risk rows", n, minimum=1, unit="rows",
+              detail=f"{len(computed)} with an IR value")
+    sys.exit(st.finish())
 
 
 if __name__ == "__main__":

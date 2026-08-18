@@ -39,6 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from sentiment.catalyst import compute_catalysts
+from ta.run_status import RunStatus
 from ta.common import get_supabase_client
 
 
@@ -65,6 +66,23 @@ def main():
     print(f"\nDone ({stats['as_of']}): {stats['evaluated']}/{stats['candidates']} evaluated, "
           f"{stats['with_catalysts']} with catalysts, {stats['catalysts']} catalyst rows, "
           f"{stats['errors']} error(s).")
+
+    # DELIBERATELY best-effort: groq/compound 413s on ~9 of 10 calls on the free
+    # tier because of an invisible sub-model quota (see CLAUDE.md), so a night
+    # that scores nothing is expected rather than broken — coverage accumulates
+    # across nights and a symbol that never lands keeps its previous score.
+    #
+    # `expect` rather than `require`: the run stays green, but a zero night is
+    # ANNOTATED instead of buried, so "we tolerate this" stays visible and a
+    # permanent outage is distinguishable from the usual partial coverage.
+    st = RunStatus("Catalyst scoring")
+    st.expect("Symbols evaluated", stats["evaluated"], minimum=1, unit="symbols",
+              detail=f"of {stats['candidates']} candidates, {stats['errors']} error(s)")
+    if stats["errors"] and not stats["evaluated"]:
+        st.warn("Catalyst provider",
+                f"all {stats['errors']} call(s) failed — likely the Groq free-tier "
+                f"sub-model quota; a paid tier is what makes this deterministic.")
+    sys.exit(st.finish())
 
 
 if __name__ == "__main__":

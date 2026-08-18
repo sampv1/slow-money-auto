@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ta.common import get_supabase_client
+from ta.run_status import RunStatus
 from ta.ta_score import compute_ta_score
 
 
@@ -35,6 +36,19 @@ def main():
     stats = compute_ta_score(client, dry_run=args.dry_run)
     verb = "would score" if args.dry_run else "scored"
     print(f"{verb}: {stats['scored']}/{stats['rows']} symbols")
+    sys.exit(_gate(stats, args.dry_run))
+
+
+# Scoring reads columns earlier passes wrote, so "scored 0" means an upstream
+# step produced nothing — a real failure that used to exit 0 and paint the
+# workflow green (see ta/run_status.py).
+def _gate(stats, dry_run: bool) -> int:
+    st = RunStatus("TA Score refresh")
+    if dry_run:
+        return 0
+    st.require("TA Score", stats["scored"], minimum=1, unit="symbols",
+               detail=f"of {stats['rows']} rows")
+    return st.finish()
 
 
 if __name__ == "__main__":
