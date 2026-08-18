@@ -449,8 +449,14 @@ export const getCorporateActions = unstable_cache(
 // rows across 4 chunks). Anything that grows these into a full-universe read is
 // a regression, not a simplification.
 
-/** The scanners' default liquidity floor: 200k average 20-session volume. */
-export const HOME_MIN_AVG_VOLUME = 200_000;
+// The leaderboard is "what Signal Pro shows at its defaults, ranked by Final
+// Score", so these two MUST stay equal to DEFAULT_MIN_AVG_VOLUME_20D and
+// DEFAULT_MIN_NPAT_BN in signal-pro-client.tsx. If they drift, the homepage
+// promises a Signal Pro view that Signal Pro itself would not produce.
+/** Signal Pro's default liquidity floor: 20k average 20-session volume. */
+export const HOME_MIN_AVG_VOLUME = 20_000;
+/** Signal Pro's default quarterly NPAT floor, VND billion. */
+export const HOME_MIN_NPAT_BN = 180;
 
 export type HomeTopScore = {
   symbol: string;
@@ -503,18 +509,24 @@ const getHomeUniverseRows = unstable_cache(
  *      `final_score` here is load-bearing, not redundant.
  *   2. One `.in(...)` read for the technical columns of the candidates only.
  *
- * Over-fetching candidates (CANDIDATES, not `limit`) is deliberate: the liquidity
- * filter needs avg_volume_20d, which only arrives in step 2, so the top `limit`
- * by score alone would come up short once illiquid names are dropped. The top
- * of the score table skews illiquid — measured 2026-08-12, the best 60 by Final
- * Score contained only 12 names above the floor, so 60 would leave a 10-row list
- * two names from running short. 150 yields 26 and is still one small request.
+ * Over-fetching candidates (CANDIDATES, not `limit`) is deliberate: neither
+ * filter can be applied in step 1 — avg_volume_20d arrives in step 2 and NPAT in
+ * step 3 — so the top `limit` by score alone would come up short once the
+ * filtered names are dropped. The top of the score table skews illiquid AND
+ * small-cap, so both floors bite hardest exactly where the ranking is richest.
  *
- * Liquidity is a VIEW-TIME filter, exactly as on the scanners — it is never
+ * Measured 2026-08-19 against the current floors (20k volume + 180bn NPAT):
+ * 150 candidates yield 19 survivors and 300 yield ~35, against a 10-row list.
+ * 150 was sized when the only filter was volume (it yielded 26); adding the NPAT
+ * floor cut that to 19, close enough to 10 that a shift in the market could run
+ * the list short. 300 is still one `.in(...)` request, far below the 1000-row
+ * cap, so the headroom is free.
+ *
+ * Both floors are VIEW-TIME filters, exactly as on the scanners — never
  * conflated with is_active, which means "tracked", not "liquid".
  */
 export async function getHomeTopScores(limit = 10): Promise<HomeTopScore[]> {
-  const CANDIDATES = 150;
+  const CANDIDATES = 300;
 
   const fa = await getFaRowsLatestPerSymbol();
   const ranked = fa
@@ -523,11 +535,23 @@ export async function getHomeTopScores(limit = 10): Promise<HomeTopScore[]> {
     .slice(0, CANDIDATES);
   if (ranked.length === 0) return [];
 
-  const universe = await getHomeUniverseRows(ranked.map((r) => r.symbol));
+  const [universe, npatBn] = await Promise.all([
+    getHomeUniverseRows(ranked.map((r) => r.symbol)),
+    // Reads each candidate's NPAT at its OWN quarter, the same way Signal Pro
+    // does — the leaderboard mixes 2026-Q2 and 2026-Q1 rows. Reuses the shared,
+    // already-cached fa_quarterly entries, so this adds no new cache weight.
+    getNpatBnByRow(ranked),
+  ]);
   const bySymbol = new Map(universe.map((u) => [u.symbol, u]));
 
   return ranked
-    .filter((r) => (bySymbol.get(r.symbol)?.avg_volume_20d ?? 0) >= HOME_MIN_AVG_VOLUME)
+    .filter((r) => {
+      if ((bySymbol.get(r.symbol)?.avg_volume_20d ?? 0) < HOME_MIN_AVG_VOLUME) return false;
+      // An unreported quarter fails the floor rather than passing it, matching
+      // Signal Pro: "no NPAT" is not evidence of a big enough NPAT.
+      const npat = npatBn.get(r.symbol);
+      return npat !== null && npat !== undefined && npat >= HOME_MIN_NPAT_BN;
+    })
     .slice(0, limit)
     .map((r) => {
       const u = bySymbol.get(r.symbol);

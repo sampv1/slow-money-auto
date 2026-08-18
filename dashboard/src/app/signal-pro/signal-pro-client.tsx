@@ -25,12 +25,12 @@ type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite"
   | "trend_score" | "trend_daily" | "trend_weekly" | "symbol" | "quarter" | "industry";
 
-const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
+const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
 // Minimum quarterly net profit after tax, in VND billion. Same default as the FA
 // Scanner so the two pages agree on what "worth looking at" means. Like the
 // volume filter, a symbol with NO figure is excluded rather than assumed to pass
 // — see the hint text in the filter bar for why that matters here.
-const DEFAULT_MIN_NPAT_BN = 35;
+const DEFAULT_MIN_NPAT_BN = 180;
 
 // SCORE_GRADE_CLASS / gradeOf now live in src/lib/format.ts so the homepage
 // renders identical grade badges (imported at the top of this file).

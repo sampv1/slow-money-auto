@@ -83,12 +83,12 @@ const BLOCK_BODY = "bg-sky-50";
 const BLOCK_EDGE = "border-l-2 border-sky-300"; // outer edge of the whole block
 const BLOCK_SPLIT = "border-l border-sky-200"; // quarterly | daily divider
 
-const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
+const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
 // Minimum quarterly net profit after tax, in VND billion. 35 keeps the list to
 // companies of real size: at the 2026-Q2 universe it takes 229 liquid names to
 // 124. Like the volume filter, a symbol with NO figure is excluded rather than
 // assumed to pass — see the hint text in the filter bar for why that matters here.
-const DEFAULT_MIN_NPAT_BN = 35;
+const DEFAULT_MIN_NPAT_BN = 180;
 // Percent. On by default, like the volume and NPAT floors: this scanner is for
 // finding growth, and a profit that went sideways is not a candidate.
 const DEFAULT_MIN_NPAT_YOY = 20;

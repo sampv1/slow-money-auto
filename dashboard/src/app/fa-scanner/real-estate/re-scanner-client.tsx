@@ -18,8 +18,8 @@ import { formatBillions, formatNumber, formatPnl, pnlColor } from "@/lib/format"
 import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { TABLE, TABLE_FREEZE, THEAD_STICKY, TH, TH_NUM, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
 
-const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
-const DEFAULT_MIN_NPAT_BN = 35;
+const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
+const DEFAULT_MIN_NPAT_BN = 180;
 
 /**
  * The trailing block: what the business did last quarter, then how the stock is

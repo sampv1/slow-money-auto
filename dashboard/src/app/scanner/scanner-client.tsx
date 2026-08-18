@@ -24,7 +24,7 @@ import {
 import { track } from "@/lib/analytics";
 import type { LatestClose, TriggeredSignal, UniverseLiquidity } from "./page";
 
-const DEFAULT_MIN_AVG_VOLUME_20D = 200_000;
+const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
 const DEFAULT_MIN_COMPOSITE_RS = 90;
 
 // localStorage key + shape for user-saved indicator combos.
