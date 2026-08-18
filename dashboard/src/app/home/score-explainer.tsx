@@ -41,7 +41,7 @@ export function ScoreExplainer({ locale }: { locale: Locale }) {
         <Row
           label={t(locale, "homeHowTaLabel")}
           body={t(locale, "homeHowTaBody")}
-          formula="RS3M 20% + RS 25% + RS line 20% + Trend 35%"
+          formula="RS3M 20% + RS 20% + RS line 20% + Trend 40%"
         />
         <Row
           label={t(locale, "homeHowFaLabel")}

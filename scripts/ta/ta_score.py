@@ -1,6 +1,6 @@
 """TA Score — a weighted blend of the technical components stored on ta_universe.
 
-    TA Score = RS3M·20% + RS Composite·25% + RS Line·20% + Trend·35%
+    TA Score = RS3M·20% + RS Composite·20% + RS Line·20% + Trend·40%
 
 All four inputs (rs_3m, rs_composite, rs_line_score, trend_score) are on a 0-100
 scale and already live on ta_universe (written by the RS + trend passes). This
@@ -8,8 +8,11 @@ step simply re-reads them and writes the blended ta_score, so it must run AFTER
 those passes. A MISSING component contributes 0 (weights unchanged); a row gets a
 null ta_score only when ALL four components are missing.
 
-The 35% used to belong to BQS (`base_score`), retired by migration 051 in favour
-of the structural trend score.
+Trend's 40% used to be BQS's 35% (`base_score`, retired by migration 051 in
+favour of the structural trend score); migration 052 then moved a further 5
+points to it from RS Composite. That trim reduces a real overlap rather than
+de-weighting relative strength — rs_3m is itself one of the four periods blended
+into rs_composite, so the two components were counting the 3-month return twice.
 
 Weights come from the scoring_config 'ta_score' row (deep-merged over
 TA_SCORE_DEFAULTS).
@@ -20,7 +23,7 @@ from .common import load_scoring_config, safe_execute
 # DB-overridable defaults (see scoring_config key 'ta_score'). Keys map to the
 # ta_universe columns rs_3m / rs_composite / rs_line_score / trend_score.
 TA_SCORE_DEFAULTS = {
-    "weights": {"rs_3m": 0.20, "rs_composite": 0.25, "rs_line": 0.20, "trend": 0.35},
+    "weights": {"rs_3m": 0.20, "rs_composite": 0.20, "rs_line": 0.20, "trend": 0.40},
 }
 
 

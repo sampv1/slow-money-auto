@@ -2,9 +2,13 @@
 """
 refresh_ta_score.py — Recompute and store TA Score on ta_universe.
 
-TA Score = RS3M·20% + RS Composite·25% + RS Line·20% + BQS(price base)·35%
-(missing component = 0). Re-reads columns the RS + price-base passes wrote, so
-run those first (update_ta_daily.py runs this as its final step).
+TA Score = RS3M·20% + RS Composite·20% + RS Line·20% + Trend·40%
+(missing component = 0). Weights live in the scoring_config 'ta_score' row —
+migration 052 — which is deep-merged OVER the code defaults, so editing
+TA_SCORE_DEFAULTS alone does not change the score.
+
+Re-reads columns the RS + trend passes wrote, so run those first
+(update_ta_daily.py runs this as its Step 5, before the Final Score).
 
 Usage:
   python3 refresh_ta_score.py            # compute + store

@@ -438,7 +438,7 @@ export const translations = {
     catEffective: "effective",
     spGradeLegend: "Grades",
     spFormula: "Formula",
-    spFormulaTa: "TA = RS3M × 20% + RS Composite × 25% + RS Line × 20% + Trend × 35%",
+    spFormulaTa: "TA = RS3M × 20% + RS Composite × 20% + RS Line × 20% + Trend × 40%",
     spFormulaFinal: "Final = TA × 59% + FA × 41%",
     spMinFinalScore: "Min score",
     spMinFinalRating: "Min rating",
@@ -765,7 +765,7 @@ export const translations = {
     homeHowFinalBody: "59% technical + 41% fundamental, on a 0–100 scale.",
     homeHowTaLabel: "TA Score",
     homeHowTaBody:
-      "Relative strength over 3 months (20%) and a 3/6/9/12-month composite (25%), the RS line versus the index (20%), and trend structure on the daily and weekly charts (35%).",
+      "Relative strength over 3 months (20%) and a 3/6/9/12-month composite (20%), the RS line versus the index (20%), and trend structure on the daily and weekly charts (40%).",
     homeHowFaLabel: "FA Score",
     homeHowFaBody:
       "Nine quarterly criteria — earnings and revenue growth, margins, ROE, debt and valuation — banded into A, B or C.",
@@ -1219,7 +1219,7 @@ export const translations = {
     catEffective: "hiệu dụng",
     spGradeLegend: "Hạng điểm",
     spFormula: "Công thức tính",
-    spFormulaTa: "TA = RS3M × 20% + RS tổng hợp × 25% + Đường RS × 20% + Xu hướng × 35%",
+    spFormulaTa: "TA = RS3M × 20% + RS tổng hợp × 20% + Đường RS × 20% + Xu hướng × 40%",
     spFormulaFinal: "Tổng hợp = TA × 59% + FA × 41%",
     spMinFinalScore: "Điểm tối thiểu",
     spMinFinalRating: "Hạng tối thiểu",
@@ -1542,7 +1542,7 @@ export const translations = {
     homeHowFinalBody: "59% kỹ thuật + 41% cơ bản, trên thang 0–100.",
     homeHowTaLabel: "Điểm kỹ thuật",
     homeHowTaBody:
-      "Sức mạnh giá tương đối 3 tháng (20%) và tổng hợp 3/6/9/12 tháng (25%), đường RS so với chỉ số (20%), và cấu trúc xu hướng trên chart ngày và tuần (35%).",
+      "Sức mạnh giá tương đối 3 tháng (20%) và tổng hợp 3/6/9/12 tháng (20%), đường RS so với chỉ số (20%), và cấu trúc xu hướng trên chart ngày và tuần (40%).",
     homeHowFaLabel: "Điểm cơ bản",
     homeHowFaBody:
       "Chín tiêu chí theo quý — tăng trưởng lợi nhuận và doanh thu, biên lợi nhuận, ROE, nợ vay và định giá — phân hạng A, B hoặc C.",

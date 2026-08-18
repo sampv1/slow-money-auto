@@ -17,7 +17,7 @@ The fix is `require_all=False` in the main pass. The two things that must not
 regress:
 
   1. A missing long anchor must NOT void the short periods.
-  2. `rs_composite` must STILL require all four periods. It feeds TA Score (25%)
+  2. `rs_composite` must STILL require all four periods. It feeds TA Score (20%)
      and thence Final Score, so a partial, silently-reweighted blend would move
      every grade in the system. NA has to propagate.
 """

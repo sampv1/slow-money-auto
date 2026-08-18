@@ -47,7 +47,7 @@ def test_rs_1m_is_not_a_period():
     """rs_1m must stay outside the blend so rs_composite/TA Score never move."""
     assert "1m" not in RS_DEFAULTS["periods"], (
         "rs_1m is display-only and must NOT be a `periods` member — that changes "
-        "rs_composite, hence TA Score (25% weight) and Final Score, for every symbol."
+        "rs_composite, hence TA Score (20% weight) and Final Score, for every symbol."
     )
     assert "1m" not in RS_DEFAULTS["weights"]
     assert isinstance(RS_DEFAULTS.get("rs_1m_days"), int), \
