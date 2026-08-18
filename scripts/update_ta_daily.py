@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from ta.benchmark import fetch_vnindex_closes
+from ta.benchmark import get_vnindex_closes
 from ta.common import REQUEST_DELAY, get_supabase_client, safe_execute, today_vn
 from ta.ohlcv import fetch_today_snapshot, upsert_ohlcv
 from ta.rs_rating import compute_rs_ratings
@@ -231,9 +231,10 @@ def main():
     # VN-Index benchmark for relative-strength indicators. One-off fetch per
     # run; passed into each symbol's compute pass. If the fetch fails, RS
     # indicators silently return False but the rest of the pipeline continues.
-    benchmark = fetch_vnindex_closes()
+    benchmark = get_vnindex_closes(client)
     if benchmark is None:
-        print("Warning: VN-Index benchmark unavailable — RS indicators will be skipped.")
+        print("::warning:: VN-Index benchmark unavailable from vnstock AND macro_series "
+              "— RS indicators will be skipped for this run.")
 
     total_signals = 0
     triggered_total = 0

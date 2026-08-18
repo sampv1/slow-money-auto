@@ -579,16 +579,33 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
     stats["rated_composite"] = int(df["rs_composite"].notna().sum())
 
     # RS Line (stock ÷ VN-Index) sparkline series for each rated symbol.
-    from .benchmark import fetch_vnindex_closes
-    vn_series = fetch_vnindex_closes()
+    #
+    # `have_benchmark` separates the two ways rs_lines can come out empty, and the
+    # payload below writes very different things for them:
+    #
+    #   benchmark present, symbol has no line  → a real null (too few points)
+    #   benchmark ABSENT                       → the rs_line* keys are OMITTED
+    #
+    # Without that split, one failed VN-Index fetch nulls the column for the whole
+    # universe — which is what happened on 2026-08-18 and cost every symbol the
+    # 20% RS-Line component of its TA Score. No benchmark is absence of the
+    # YARDSTICK, not evidence that 1,400 stocks stopped having relative strength.
+    from .benchmark import get_vnindex_closes
+    vn_series = get_vnindex_closes(client)
     vnindex = {d: float(v) for d, v in vn_series.items()} if vn_series is not None else {}
+    have_benchmark = bool(vnindex)
     rs_lines: dict[str, tuple[list[float], list[str]]] = {}
-    if vnindex:
+    if have_benchmark:
         for sym in df.index:
             line = _build_rs_line(closes_by_sym.get(sym) or [], vnindex, rl["window_days"], rl["min_points"])
             if line:
                 rs_lines[sym] = line
+    else:
+        print("  ::warning:: RS Line: no VN-Index from vnstock OR macro_series — "
+              "leaving every rs_line* column untouched (prior snapshot preserved). "
+              "TA Score will reuse the previous RS Line.")
     stats["rs_lines"] = len(rs_lines)
+    stats["have_benchmark"] = have_benchmark
 
     # RS Line Score (0-100) + grade for every symbol that has an RS Line.
     score_cfg = load_scoring_config(client, "rs_line_score", RS_LINE_SCORE_DEFAULTS)
@@ -634,12 +651,19 @@ def compute_rs_ratings(client, liquidity_floor: int | None = None,
             # Plain .get — None when the symbol had no bar near the 1-month mark.
             "rs_1m": rs_1m.get(sym),
             "rs_date": rs_date,
-            "rs_line": _downsample(rs_lines[sym][0], rl["spark_points"]) if sym in rs_lines else None,
-            "rs_line_full": rs_lines[sym][0] if sym in rs_lines else None,
-            "rs_line_dates": rs_lines[sym][1] if sym in rs_lines else None,
-            "rs_line_date": rs_date if sym in rs_lines else None,
-            "rs_line_score": rs_scores[sym][0] if sym in rs_scores else None,
-            "rs_line_grade": rs_scores[sym][1] if sym in rs_scores else None,
+            **(
+                {
+                    "rs_line": _downsample(rs_lines[sym][0], rl["spark_points"]) if sym in rs_lines else None,
+                    "rs_line_full": rs_lines[sym][0] if sym in rs_lines else None,
+                    "rs_line_dates": rs_lines[sym][1] if sym in rs_lines else None,
+                    "rs_line_date": rs_date if sym in rs_lines else None,
+                    "rs_line_score": rs_scores[sym][0] if sym in rs_scores else None,
+                    "rs_line_grade": rs_scores[sym][1] if sym in rs_scores else None,
+                }
+                # Omitted, not nulled: an upsert leaves columns it does not name
+                # alone, so yesterday's RS Line survives a benchmark outage.
+                if have_benchmark else {}
+            ),
         }
         for sym, row in df.iterrows()
     ]

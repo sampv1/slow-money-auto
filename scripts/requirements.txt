@@ -1,6 +1,23 @@
 supabase>=2.0.0
 python-dotenv>=1.0.0
-vnstock>=3.4.0
+# PINNED, do not loosen to >=. vnstock 4.0.5 and 4.0.6 ship a
+# get_hosting_service() (vnstock/core/utils/env.py) whose if/elif chain has no
+# else: every branch tests a cloud-host env var, and on an ordinary machine none
+# match, so `return hosting_service` reads a name that was never bound.
+#
+# 4.0.4 survives it only by accident — its last branch is
+# `elif ".hf.space" in os.environ["SPACE_HOST"]`, and the KeyError that raises on
+# any non-Hugging-Face machine is caught by the bare `except`, which is the ONLY
+# thing that assigns the variable. 4.0.5 "fixed" that KeyError by guarding the
+# lookup, removing the accidental assignment and making the UnboundLocalError
+# unconditional. 4.0.6 then called it from send_request() on the VCI path, so
+# EVERY request raises.
+#
+# That is what happened on 2026-08-18: this line said `>=3.4.0`, CI installs
+# fresh on every run, it picked up 4.0.6, and the whole pipeline collected zero
+# bars. ta/common.py patches the function at import time as a second line of
+# defence; both can go once upstream ships a release with a real else branch.
+vnstock==4.0.4
 anthropic>=0.40.0
 pandas>=2.0.0
 numpy>=1.24.0

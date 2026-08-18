@@ -32,6 +32,72 @@ REQUEST_DELAY = 4.0
 VN_TZ = timezone(timedelta(hours=7))
 
 
+def patch_vnstock_hosting_service() -> str | None:
+    """Repair vnstock's get_hosting_service(), which can return an unbound local.
+
+    Upstream (vnstock/core/utils/env.py) is an if/elif chain with no else. Every
+    branch tests for a cloud host — Colab, Codespace, Replit, Kaggle, HF Spaces —
+    and on an ordinary machine none of them match, leaving `hosting_service`
+    unassigned before `return hosting_service`.
+
+    In 4.0.4 the bug is masked: its final branch subscripts os.environ["SPACE_HOST"]
+    unguarded, and the resulting KeyError is swallowed by a bare `except` that sets
+    the variable. So the ERROR PATH is what binds it, and the function works only
+    on machines where that lookup throws. Set SPACE_HOST to anything and 4.0.4
+    raises too. 4.0.5 guarded that lookup, which removed the accidental assignment
+    and made the failure unconditional; 4.0.6 put the call on every VCI request.
+
+    Cost of not having this: on 2026-08-18 CI resolved `vnstock>=3.4.0` to 4.0.6
+    and every single call raised RetryError[UnboundLocalError] — price_board,
+    history, benchmark alike. Zero bars collected.
+
+    Idempotent, returns the value the repaired function yields (None if vnstock is
+    not installed or already correct). requirements.txt pins 4.0.4; this is the
+    second line of defence for the day someone bumps the pin.
+    """
+    try:
+        from vnstock.core.utils import env as _env
+    except Exception:  # noqa: BLE001 - vnstock absent (dashboard/test contexts)
+        return None
+
+    if getattr(_env.get_hosting_service, "_patched_by_us", False):
+        return _env.get_hosting_service()
+
+    def get_hosting_service() -> str:
+        checks = (
+            ("Google Colab", lambda: "google.colab" in sys.modules),
+            ("Github Codespace", lambda: "CODESPACE_NAME" in os.environ),
+            ("Gitpod", lambda: "GITPOD_WORKSPACE_CLUSTER_HOST" in os.environ),
+            ("Replit", lambda: "REPLIT_USER" in os.environ),
+            ("Kaggle", lambda: "KAGGLE_CONTAINER_NAME" in os.environ),
+            ("Hugging Face Spaces", lambda: ".hf.space" in os.environ.get("SPACE_HOST", "")),
+        )
+        for name, hit in checks:
+            try:
+                if hit():
+                    return name
+            except Exception:  # noqa: BLE001
+                continue
+        # The else upstream never wrote.
+        return "Local or Unknown"
+
+    get_hosting_service._patched_by_us = True  # type: ignore[attr-defined]
+    _env.get_hosting_service = get_hosting_service
+    # is_colab() closed over the old name at def time in some versions; rebind the
+    # module attribute it actually calls so both entry points get the fix.
+    for mod_name in ("vnstock.core.utils.env", "vnstock.core.config.ggcolab"):
+        mod = sys.modules.get(mod_name)
+        if mod is not None and hasattr(mod, "get_hosting_service"):
+            mod.get_hosting_service = get_hosting_service
+    return get_hosting_service()
+
+
+# Applied on import: every pipeline entry point imports ta.common before it ever
+# touches vnstock, so this runs before the first request.
+patch_vnstock_hosting_service()
+
+
+
 def today_vn() -> date:
     """Today's date in Vietnam timezone (GMT+7)."""
     return datetime.now(VN_TZ).date()

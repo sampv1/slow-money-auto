@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
 
-from ta.benchmark import fetch_vnindex_closes
+from ta.benchmark import get_vnindex_closes
 from ta.common import get_supabase_client, safe_execute, today_vn
 from ta.registry import INDICATOR_SPECS, all_keys
 from ta.sr import detect_levels, upsert_levels
@@ -91,7 +91,7 @@ def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame, *, levels=None,
 
     `levels` is the symbol's active S/R levels (from ta.sr.detect_levels).
     `trendlines` is the symbol's active trendlines (from ta.trendlines.detect_trendlines).
-    `benchmark` is the VN-Index close Series (from ta.benchmark.fetch_vnindex_closes),
+    `benchmark` is the VN-Index close Series (from ta.benchmark.get_vnindex_closes),
     consumed by relative-strength indicators only.
 
     Returns rows shaped for ta_signals: {date, symbol, indicator, triggered, value, metadata}.
@@ -205,7 +205,7 @@ def inspect_symbol_date(client, symbol: str, target_date: str):
         print(f"  No OHLCV for {symbol}")
         return
 
-    benchmark = fetch_vnindex_closes()
+    benchmark = get_vnindex_closes(client)
     levels = detect_levels(ohlcv)
     lines = detect_trendlines(ohlcv)
     print(f"  {len(ohlcv)} bars, range {ohlcv.index.min()} → {ohlcv.index.max()}")
@@ -299,9 +299,10 @@ def main():
     # passed into every symbol's compute pass. If the fetch fails (e.g.,
     # vnstock outage), RS indicators silently return False — the rest of the
     # pipeline still runs.
-    benchmark = fetch_vnindex_closes()
+    benchmark = get_vnindex_closes(client)
     if benchmark is None:
-        print("Warning: VN-Index benchmark unavailable — relative-strength indicators will be skipped.")
+        print("::warning:: VN-Index benchmark unavailable from vnstock AND macro_series "
+              "— relative-strength indicators will be skipped for this run.")
 
     total_signals = 0
     processed = 0
