@@ -1087,11 +1087,15 @@ export function ChartClient({
     };
   }, [candles, features, panes, activeSignals, activeSr, activeTl, displayOn, rsHist]);
 
-  const displayChips: { key: DisplayKey; label: string; color: string; show: boolean }[] = [
+  // `hint` carries anything the label cannot. The ZigZag's dashed-leg caveat used
+  // to be a legend row; it belongs on the control it describes rather than in a
+  // second list repeating the same chips.
+  const displayChips: { key: DisplayKey; label: string; color: string; show: boolean; hint?: string }[] = [
     { key: "ma20", label: "MA20", color: MA_COLOR[20], show: true },
     { key: "ma50", label: "MA50", color: MA_COLOR[50], show: true },
     { key: "ma200", label: "MA200", color: MA_COLOR[200], show: true },
-    { key: "zigzag", label: "ZigZag 5%/10", color: ZIGZAG_COLOR, show: true },
+    { key: "zigzag", label: "ZigZag 5%/10", color: ZIGZAG_COLOR, show: true,
+      hint: t(locale, "zigzagLegend") },
     { key: "mcdx", label: "MCDX", color: MCDX_BANKER_COLOR, show: true },
     { key: "rs3m", label: `RS3M ${rsLatest?.rs3m ?? "—"}`, color: RS3M_COLOR, show: rsAvailable },
     { key: "rs6m", label: `RS6M ${rsLatest?.rs6m ?? "—"}`, color: RS6M_COLOR, show: rsAvailable },
@@ -1118,7 +1122,7 @@ export function ChartClient({
                 key={c.key}
                 onClick={() => toggleDisplay(c.key)}
                 aria-pressed={on}
-                title={on ? "Click to hide on chart" : "Click to show on chart"}
+                title={c.hint ?? (on ? "Click to hide on chart" : "Click to show on chart")}
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${on ? "bg-canvas text-fg border-line hover:bg-panel-2" : "bg-transparent text-fg-label border-dashed border-line hover:text-fg-muted"}`}
               >
                 <span className="inline-block w-3 h-0.5" style={{ backgroundColor: on ? c.color : "#cbd5e1" }} />
@@ -1128,20 +1132,17 @@ export function ChartClient({
           })}
       </div>
       <div className="flex items-center justify-between flex-wrap gap-2 px-2 pb-2 text-data">
-        {/* Legend for whichever MAs are drawn */}
+        {/* Legend for the series that have NO chip of their own.
+            
+            MA20/50/200, the ZigZag and the three RS lines are deliberately
+            absent: the display-chip row directly above already shows each of
+            them with the same colour swatch and the same name, so listing them
+            again just printed the row twice. What stays here is everything the
+            chips cannot express — the volume average, MCDX's four band colours
+            (the MCDX chip toggles the pane but says nothing about what red or
+            gold mean), and the RSI/MACD lines, which appear only when a
+            triggered-signal chip opens their pane. */}
         <div className="flex items-center gap-4 text-fg-muted flex-wrap">
-          {features.maPeriods.map((period) => (
-            <span key={period} className="flex items-center gap-1">
-              <span className="inline-block w-3 h-0.5" style={{ backgroundColor: MA_COLOR[period] }} />
-              MA{period}
-            </span>
-          ))}
-          {features.showZigzag && (
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-3 h-0.5" style={{ backgroundColor: ZIGZAG_COLOR }} />
-              {t(locale, "zigzagLegend")}
-            </span>
-          )}
           {/* Unconditional, because the line always is. */}
           <span className="flex items-center gap-1">
             <span className="inline-block w-3 h-0.5" style={{ backgroundColor: VOLUME_MA_COLOR }} />
@@ -1180,24 +1181,6 @@ export function ChartClient({
                   {label}
                 </span>
               ))}
-            </>
-          )}
-          {features.showRs && (
-            <>
-              {(
-                [
-                  ["rs3m", RS3M_COLOR, "RS3M"],
-                  ["rs6m", RS6M_COLOR, "RS6M"],
-                  ["rs52w", RS52W_COLOR, "RS52W"],
-                ] as const
-              )
-                .filter(([key]) => displayOn.has(key))
-                .map(([key, color, label]) => (
-                  <span key={key} className="flex items-center gap-1">
-                    <span className="inline-block w-3 h-0.5" style={{ backgroundColor: color }} />
-                    {label}
-                  </span>
-                ))}
             </>
           )}
         </div>
