@@ -682,28 +682,14 @@ export function SignalProClient({
                 table rather than the cell, so Chrome drops them once the header
                 is sticky. */}
             <thead className="sticky top-0 z-10 bg-panel-2 shadow-[0_1px_0_0_var(--color-line-strong)]">
-              {/* Group row */}
+              {/* Group row.
+                  The leftmost six columns used to be rowSpan={2}, leaving a bare
+                  band above them while the other two families carried a label —
+                  so the widest part of the header was the part that explained
+                  nothing. They now sit under a group like everything else, which
+                  is why they are plain cells in the sub-header row below. */}
               <tr className="text-left text-fg-muted">
-                <th rowSpan={2} className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
-                  {t(locale, "symbol")}{sortIndicator("symbol")}
-                </th>
-                <th rowSpan={2} className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("industry")}>
-                  {t(locale, "industry")}{sortIndicator("industry")}
-                </th>
-                {/* Each symbol is shown at its OWN latest FA quarter */}
-                <th rowSpan={2} className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("quarter")}>
-                  {t(locale, "faQuarter")}{sortIndicator("quarter")}
-                </th>
-                <th rowSpan={2} className="px-2 py-1 label text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
-                  {t(locale, "spFaScore")} (100){sortIndicator("total_score")}
-                </th>
-                <th rowSpan={2} className="px-2 py-1 label text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
-                  {t(locale, "spTaScore")} (100){sortIndicator("ta_score")}
-                </th>
-                <th rowSpan={2} className="px-2 py-1 label text-right align-bottom cursor-pointer select-none bg-amber-50" onClick={() => toggleSort("final_score")}>
-                  <div>{t(locale, "spFinalScore")} (100)</div>
-                  <div className="text-data font-normal text-fg-label">{t(locale, "spOverallGrade")}{sortIndicator("final_score")}</div>
-                </th>
+                <th colSpan={6} className="px-2 py-1 label text-center border-b border-line">{t(locale, "spCompositeRank")}</th>
                 {/* The rule under a group label rides on the cell, not the row:
                     row borders are not painted at all in separate mode. */}
                 <th colSpan={3} className="px-2 py-1 label text-center border-l border-b border-line">{t(locale, "spTaComponents")}</th>
@@ -718,6 +704,26 @@ export function SignalProClient({
                   rule, and it is a shadow precisely because a border there had
                   the same sticky problem. */}
               <tr className="text-left text-fg-muted text-data">
+                <th className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
+                  {t(locale, "symbol")}{sortIndicator("symbol")}
+                </th>
+                <th className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("industry")}>
+                  {t(locale, "industry")}{sortIndicator("industry")}
+                </th>
+                {/* Each symbol is shown at its OWN latest FA quarter */}
+                <th className="px-2 py-1 label align-bottom cursor-pointer select-none" onClick={() => toggleSort("quarter")}>
+                  {t(locale, "faQuarter")}{sortIndicator("quarter")}
+                </th>
+                <th className="px-2 py-1 label text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
+                  {t(locale, "spFaScore")} (100){sortIndicator("total_score")}
+                </th>
+                <th className="px-2 py-1 label text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("ta_score")}>
+                  {t(locale, "spTaScore")} (100){sortIndicator("ta_score")}
+                </th>
+                <th className="px-2 py-1 label text-right align-bottom cursor-pointer select-none bg-amber-50" onClick={() => toggleSort("final_score")}>
+                  <div>{t(locale, "spFinalScore")} (100)</div>
+                  <div className="text-data font-normal text-fg-label">{t(locale, "spOverallGrade")}{sortIndicator("final_score")}</div>
+                </th>
                 <th className="px-2 py-1 label text-right border-l border-line cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
                   {t(locale, "taRs3m")}{sortIndicator("rs_3m")}
                 </th>
@@ -770,7 +776,30 @@ export function SignalProClient({
                     </td>
                     <td className="px-2 py-1 text-data text-fg-muted">
                       {industry[row.symbol] ? (
-                        <span className="block max-w-[10rem] truncate" title={industry[row.symbol]}>
+                        // Two lines at 8rem, replacing one truncated line at
+                        // 10rem. Sector names run long in BOTH locales ("Real
+                        // Estate Holding & Development", "Kho bãi, hậu cần và bảo
+                        // dưỡng"), so a single line spent the width and STILL
+                        // showed an ellipsis on most rows.
+                        //
+                        // Width, not max-width: the table lays out automatically,
+                        // and once the text may wrap a max-width alone let this
+                        // column collapse to 82px in Vietnamese — narrower than
+                        // asked for, and back to three and four lines per cell.
+                        // A fixed width gives the column a floor as well as a cap,
+                        // so both locales land on the same 128px.
+                        //
+                        // No `block` alongside line-clamp: the clamp needs its own
+                        // display value and `block` silently wins, which is how
+                        // the first cut still rendered four-line cells.
+                        //
+                        // Swept 96-160px against the live universe: at 128px no
+                        // English name clips and one Vietnamese name does
+                        // ("Sản phẩm hóa dầu, Nông dược & Hóa chất khác", 43 chars
+                        // across 5 of 89 rows), which needs the full 160px to fit
+                        // in two lines — i.e. no narrowing at all. The title
+                        // attribute carries the full string for that case.
+                        <span className="line-clamp-2 w-[8rem] leading-tight" title={industry[row.symbol]}>
                           {industry[row.symbol]}
                         </span>
                       ) : (

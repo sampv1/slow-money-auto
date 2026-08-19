@@ -409,7 +409,13 @@ export const translations = {
     spFinalScore: "Final score",
     spGrade: "Grade",
     spOverallGrade: "Grade",
-    spTaComponents: "TA components",
+    // Group label over the RS trio. "TA components" described where the numbers
+    // come from; this describes what they measure, which is what a reader of the
+    // column needs.
+    spTaComponents: "Stock Strength",
+    // Group label over the leftmost band — identity plus the three scores that
+    // produce the ranking the table is sorted by.
+    spCompositeRank: "Composite Rank",
     // Trend Score — replaced the price-base (BQS) column group.
     spTrendGroup: "Stock trend",
     spTrendScore: "Trend score",
@@ -1191,7 +1197,8 @@ export const translations = {
     spFinalScore: "Điểm tổng hợp",
     spGrade: "Hạng",
     spOverallGrade: "Hạng",
-    spTaComponents: "Thành phần TA",
+    spTaComponents: "Sức mạnh cổ phiếu",
+    spCompositeRank: "Xếp hạng tổng hợp",
     spTrendGroup: "Xu hướng cổ phiếu",
     spTrendScore: "Điểm xu hướng",
     spTrendScoreShort: "Điểm",
