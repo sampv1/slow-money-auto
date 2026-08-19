@@ -6,7 +6,7 @@ matching the convention in test_bqs_v8.py.
 
 Why this exists
 ---------------
-The trend spec (`data/He_thong_cham_diem_Xu_huong_TA_Pro.xlsx`) says three times,
+The trend spec (`data/He_thong_cham_diem_Xu_huong_TA_Pro_Bo_sung.xlsx`) says three times,
 in three different sheets, that its STATE TABLE beats mechanical addition. The
 temptation to just sum the five criteria is exactly what it is warning against,
 and the two places it bites are:

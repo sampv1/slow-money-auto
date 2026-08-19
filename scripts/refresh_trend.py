@@ -4,7 +4,7 @@ refresh_trend.py — Score each symbol's trend structure (daily + weekly).
 
 Reads ~1.5 years of daily OHLCV, finds the O–K–A–D1–A1 structure with a ZigZag on
 both the daily and the weekly chart, scores each 0-100 per the spec
-(data/He_thong_cham_diem_Xu_huong_TA_Pro.xlsx) and writes the blend
+(data/He_thong_cham_diem_Xu_huong_TA_Pro_Bo_sung.xlsx) and writes the blend
 (60% daily + 40% weekly) onto ta_universe. Replaces the BQS price-base pass.
 
 Run after the RS pass; update_ta_daily.py runs it as a step, and this script is

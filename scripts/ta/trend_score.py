@@ -1,7 +1,7 @@
 """Trend Score — structural trend scoring on the daily and weekly charts.
 
 Replaces the BQS price-base module. Spec:
-`data/He_thong_cham_diem_Xu_huong_TA_Pro.xlsx` (sheets Tổng quan / Trend ngày /
+`data/He_thong_cham_diem_Xu_huong_TA_Pro_Bo_sung.xlsx` (sheets Tổng quan / Trend ngày /
 Trend tuần / Logic IT).
 
     TrendScore = DailyTrendScore·60% + WeeklyTrendScore·40%
@@ -47,7 +47,7 @@ from datetime import date as _date, timedelta
 
 from .common import safe_execute, today_vn
 from .universe import get_active_symbols
-from .zigzag import PIVOT_HIGH, zigzag, _argmax
+from .zigzag import PIVOT_HIGH, PIVOT_LOW, zigzag, _argmax
 
 # --- DB-overridable defaults (scoring_config key 'trend_score') --------------
 TREND_DEFAULTS = {
@@ -82,6 +82,25 @@ TREND_DEFAULTS = {
     "points": {
         "daily": {"tc1": 15, "tc2": 15, "a": 30, "d1": 10, "final": 30},
         "weekly": {"tc1": 15, "tc2": 15, "a": 40, "d1": 10, "final": 20},
+    },
+    # BỔ SUNG 01 — re-seat O/K when the ZigZag is noisy sideways around MA200.
+    #
+    # A stock that chops across its MA200 prints several ZigZag lows below it, and
+    # the base rule ("K is the LOWEST trough of the decline") anchors K on whichever
+    # of them happens to be cheapest — often months stale. The structure then
+    # describes a decline the stock has already left behind.
+    #
+    # The supplement re-seats O/K on the MOST RECENT low below MA200 instead, but
+    # only once price has climbed back above MA200 and only when the chop is real
+    # (>= min_lows such lows in the lookback). It changes NOTHING else: not a
+    # score, not a state, not the weekly chart. Daily only, exactly as specified.
+    "sideway_reset": {
+        "enabled": True,
+        # "Ngưỡng kích hoạt reset: N >= 3" — fewer lows is an ordinary decline,
+        # not chop, and the base rule already handles it correctly.
+        "min_lows": 3,
+        # "trong 52 tuần gần nhất" — same window as the 52-week high.
+        "lookback_bars": 252,
     },
     "grades": [[90, "A+"], [80, "A"], [70, "B"], [60, "C"], [0, "D"]],
     # How many bars a just-invalidated structure keeps the spec's own name for the
@@ -175,7 +194,69 @@ def _reset(st: dict, i: int, kind: str) -> None:
     )
 
 
-def _walk_structure(closes, pivots, floor_key: str) -> dict:
+def _ma_series(values, period: int) -> list[float | None]:
+    """Trailing moving average at EVERY bar, None until `period` bars exist.
+
+    The supplement compares each swing low against the MA200 *of its own day*
+    ("Low_i < DailyMA200_i"), not against today's MA200 — a low from eight months
+    ago has to be judged by where the average sat then. One scalar cannot answer
+    that, so this walks the series.
+    """
+    out: list[float | None] = []
+    run = 0.0
+    for i, v in enumerate(values):
+        run += v
+        if i >= period:
+            run -= values[i - period]
+        out.append(run / period if i >= period - 1 else None)
+    return out
+
+
+def _sideway_reset_seed(closes, pivots, ma200s, cfg):
+    """BỔ SUNG 01: the (O, K, activate_idx) to re-seat the daily structure on.
+
+    Returns None when the rule does not fire, in which case the caller keeps the
+    existing O/K logic untouched — which is the spec's own default in both of its
+    ELSE branches.
+
+    Order of the three gates matters and is the spec's:
+      1. price is back above MA200 today (else the rule does not apply at all);
+      2. count ZigZag swing lows that sat below the MA200 *of their own day*
+         inside the lookback;
+      3. only at >= min_lows is the chop real enough to re-seat on.
+
+    K is then the LATEST such low by date — explicitly not the cheapest
+    ("chọn ĐÁY DƯỚI MA200 CUỐI CÙNG theo thời gian, KHÔNG chọn đáy có giá thấp
+    nhất 52W") — and O the nearest confirmed swing high before it.
+    """
+    conf = cfg.get("sideway_reset") or {}
+    if not conf.get("enabled", True):
+        return None
+    n = len(closes)
+    if not n or ma200s[-1] is None or closes[-1] <= ma200s[-1]:
+        return None  # gate 1: not back above MA200 — leave the structure alone
+
+    start = max(0, n - int(conf.get("lookback_bars", 252)))
+    below = [p for p in pivots
+             if p[2] == PIVOT_LOW and p[0] >= start
+             and ma200s[p[0]] is not None and p[1] < ma200s[p[0]]]
+    if len(below) < int(conf.get("min_lows", 3)):
+        return None  # gate 3: an ordinary decline, not chop
+
+    k = max(below, key=lambda p: p[0])
+    # O = the nearest confirmed swing high before K, i.e. the top of the leg that
+    # fell into it. Without one there is no O–K pair to seat, so the rule yields.
+    highs = [p for p in pivots if p[2] == PIVOT_HIGH and p[0] < k[0]]
+    if not highs:
+        return None
+    o = max(highs, key=lambda p: p[0])
+    # Activated on K's CONFIRMATION bar, never on K's own bar: the walk must not
+    # know about a pivot before the market proved it, which is the same rule the
+    # rest of this module lives by.
+    return (o[0], o[1]), (k[0], k[1]), k[3]
+
+
+def _walk_structure(closes, pivots, floor_key: str, seed=None) -> dict:
     """Walk bars forward, maintaining the O–K–A–D1 structure; return it as of the
     last bar.
 
@@ -200,8 +281,27 @@ def _walk_structure(closes, pivots, floor_key: str) -> dict:
         "reset_idx": None, "reset_kind": None, "since": 0, "prev_peak": None,
     }
 
+    seed_o, seed_k, seed_at = seed if seed else (None, None, None)
+
     for i in range(n):
         close = closes[i]
+
+        # BỔ SUNG 01 lands here, on K's confirmation bar — not at bar 0. Seeding
+        # up front would let the machine compare closes against an O that had not
+        # formed yet and mark a break months before the market made one.
+        #
+        # `since` buries every trough older than the new K, which is the spec's
+        # "IGNORE older BelowMA200Lows for current cycle": those stale lows are
+        # exactly the noise the rule exists to discard. Newer troughs still apply
+        # normally — the lock is against going BACK to old bottoms, not against
+        # the market making a genuine new one.
+        if seed_at is not None and i == seed_at:
+            st.update({
+                "stage": STAGE_BASE, "O": seed_o, "K": seed_k,
+                "A": None, "D1": None, "broke_idx": None, "complete_idx": None,
+                "trough_since_complete": False, "reset_idx": None,
+                "reset_kind": None, "since": seed_k[0],
+            })
 
         for (idx, val, kind, _ci) in by_confirm.get(i, ()):
             if kind == PIVOT_HIGH:
@@ -426,7 +526,14 @@ def score_timeframe(dates, c, cfg, key: str, tc1: bool, tc2: bool,
     zz = cfg[key]
     pts = cfg["points"][key]
     pivots = zigzag(c, zz["deviation"], zz["depth"])
-    st = _walk_structure(c, pivots, floor_key="O" if weekly else "K")
+    # Daily only. The supplement says so explicitly ("Chỉ áp dụng cho Trend
+    # ngày"), and the weekly chart has no MA200 of its own to chop around — its
+    # base conditions read the DAILY MA200, so the same test there would be a
+    # different question wearing the same name.
+    seed = None
+    if not weekly:
+        seed = _sideway_reset_seed(c, pivots, _ma_series(c, cfg["ma_period"]), cfg)
+    st = _walk_structure(c, pivots, floor_key="O" if weekly else "K", seed=seed)
     state, score = _score_timeframe(
         st, c[-1], tc1, tc2, pts, weekly, cfg["invalidated_bars"], len(c),
     )
