@@ -1132,58 +1132,44 @@ export function ChartClient({
           })}
       </div>
       <div className="flex items-center justify-between flex-wrap gap-2 px-2 pb-2 text-data">
-        {/* Legend for the series that have NO chip of their own.
+        {/* Legend for RSI/MACD only, and only while their pane is open.
             
-            MA20/50/200, the ZigZag and the three RS lines are deliberately
-            absent: the display-chip row directly above already shows each of
-            them with the same colour swatch and the same name, so listing them
-            again just printed the row twice. What stays here is everything the
-            chips cannot express — the volume average, MCDX's four band colours
-            (the MCDX chip toggles the pane but says nothing about what red or
-            gold mean), and the RSI/MACD lines, which appear only when a
-            triggered-signal chip opens their pane. */}
-        <div className="flex items-center gap-4 text-fg-muted flex-wrap">
-          {/* Unconditional, because the line always is. */}
-          <span className="flex items-center gap-1">
-            <span className="inline-block w-3 h-0.5" style={{ backgroundColor: VOLUME_MA_COLOR }} />
-            Vol MA20
-          </span>
-          {features.showRSI && (
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-3 h-0.5" style={{ backgroundColor: RSI_COLOR }} />
-              RSI(14)
-            </span>
-          )}
-          {features.showMACD && (
-            <>
+            Everything else that used to sit here is gone. MA20/50/200, the
+            ZigZag and the RS lines were already in the display-chip row above,
+            with the same swatch and the same name — the row was printing itself
+            twice. Vol MA20 and the four MCDX band colours went next: the volume
+            average is the only line in its pane, and MCDX is read as a shape
+            rather than by naming each band, so both were labels for things
+            nobody was going to confuse.
+            
+            RSI and MACD stay because they are the one case where a pane carries
+            two lines that need telling apart — and they are only ever on screen
+            when a triggered-signal chip opens that pane, so by default this
+            renders nothing at all. Conditional on the whole block, not just its
+            contents: an empty flex child would still take part in the parent's
+            justify-between and shove the chips across. */}
+        {(features.showRSI || features.showMACD) && (
+          <div className="flex items-center gap-4 text-fg-muted flex-wrap">
+            {features.showRSI && (
               <span className="flex items-center gap-1">
-                <span className="inline-block w-3 h-0.5" style={{ backgroundColor: MACD_LINE_COLOR }} />
-                MACD
+                <span className="inline-block w-3 h-0.5" style={{ backgroundColor: RSI_COLOR }} />
+                RSI(14)
               </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-3 h-0.5" style={{ backgroundColor: MACD_SIGNAL_COLOR }} />
-                Signal
-              </span>
-            </>
-          )}
-          {features.showMcdx && (
-            <>
-              {(
-                [
-                  [MCDX_BANKER_COLOR, t(locale, "mcdxLegendBanker")],
-                  [MCDX_BANKER_WEAK_COLOR, t(locale, "mcdxLegendWeak")],
-                  [MCDX_HOTMONEY_COLOR, t(locale, "mcdxLegendHot")],
-                  [MCDX_RETAILER_COLOR, t(locale, "mcdxLegendRetail")],
-                ] as const
-              ).map(([color, label]) => (
-                <span key={label} className="flex items-center gap-1">
-                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
-                  {label}
+            )}
+            {features.showMACD && (
+              <>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 h-0.5" style={{ backgroundColor: MACD_LINE_COLOR }} />
+                  MACD
                 </span>
-              ))}
-            </>
-          )}
-        </div>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 h-0.5" style={{ backgroundColor: MACD_SIGNAL_COLOR }} />
+                  Signal
+                </span>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Indicator chips — click to toggle that indicator's markers/overlays
             on the chart. An "off" chip is muted with a dashed outline; its
