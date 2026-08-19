@@ -37,7 +37,9 @@ It walks the chain in dependency order and exits 1 on any critical gap.
 **Healthy looks like:** every layer within a day or two of the newest trading
 session; `rs_*` and `rs_line_*` ≈ 98-99% of the active universe; `trend_*` ≈ 81%
 (sparse history is legitimate — see `min_bars` in `ta/trend_score.py`);
-`macro_fci_full` tracking `vnindex` exactly.
+`macro_fci_full` tracking `vnindex` exactly. No `<metric> gaps` lines — those
+report dates missing *behind* a series' own newest point, which no staleness
+check can see.
 
 **Read the output in order and fix the FIRST failure.** Everything below it is
 usually its shadow. Recomputing a downstream score over missing bars produces a
@@ -93,6 +95,18 @@ writer used to null the column for all symbols; TA Score weights it 20% and
 scores a missing component as **0**, so scores fell ~8.5 points with nothing
 raising. Now the payload omits the keys instead. Signature: `rs_line_*` at 0%
 coverage while `rs_*` is fine.
+
+**A hole BEHIND a fresh newest date.** Staleness and completeness fail
+independently, and every staleness check in the audit reads the newest date only.
+`interbank_overnight` is stitched from an SBV page showing exactly ONE date and a
+Vietstock feed trailing it by 2-3 business days, so when SBV's own lag shrinks
+between two daily runs the date it skipped is offered to nobody: on 2026-08-19
+the newest overnight rate was 2026-08-18, one day old and green on every check,
+with 2026-08-17 missing behind it. The FCI forward-fills its inputs, so the hole
+reused the previous session's rate rather than raising anything. The audit now
+reports interior gaps (`<metric> gaps` lines) for the VN-calendar series; the
+fallback feed normally fills them within a couple of business days, and
+`refresh_macro.py` turns the run red once one is older than that.
 
 **FCI frozen.** Its grid *is* the VN-Index date index, so a missing `vnindex`
 close means a missing FCI day — no other input can cause it, since the rest are

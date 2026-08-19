@@ -147,6 +147,35 @@ FCI_REFRESH_DAYS = 45  # daily mode rewrites this trailing slice (idempotent)
 # VN-Index grid stopped advancing, which is a data outage rather than a calendar.
 FCI_MAX_LAG_DAYS = 4
 
+# --- Interbank overnight: completeness, not just freshness -------------------
+#
+# The series is stitched from two feeds with complementary blind spots. The SBV
+# portal is authoritative and the freshest thing we have, but it exposes exactly
+# ONE date — whatever it currently calls latest. Vietstock (NormID 293) carries
+# the history but trails by two to three business days. So a given date is only
+# ever offered to us by SBV if our once-a-day sample happens to land while the
+# portal is showing it.
+#
+# On 2026-08-18 the portal read 14/08; on 2026-08-19 it read 18/08. Its own lag
+# had shrunk from three business days to one, and 2026-08-17 was never displayed
+# to any run — the series simply skipped it. Vietstock normally heals such a hole
+# a day or two later, which is why the daily window looks back 21 days instead of
+# 3, but nothing ever CHECKED that it had. The run that lost the day printed
+# "14 daily points" and passed every gate: a count says nothing about WHICH
+# dates, the same lesson the FCI taught when it wrote 270 rows and still ended
+# four days stale.
+#
+# Measured before shipping: 17 interior gaps in eleven years of the series and
+# exactly one in the last 24 months — the 2026-08-17 incident. This check is not
+# a source of routine noise.
+INTERBANK_GAP_LOOKBACK_DAYS = 120
+
+# A gap younger than this is Vietstock still catching up: real, worth showing, not
+# yet worth failing a run over. Past it both feeds have long since published
+# beyond the date, so the hole is permanent unless someone acts — and a permanent
+# hole in an FCI input silently forward-fills the previous session's rate.
+INTERBANK_GAP_ESCALATE_DAYS = 7
+
 
 def compute_fci_rows(client, since: dt.date | None) -> list[dict]:
     """Final pipeline step (design doc §9): recompute the frozen FCI from the
@@ -564,6 +593,76 @@ def protect_stored_sbv_interbank(client, rows: list[dict]) -> list[dict]:
     return kept
 
 
+def _stored_dates(client, metric: str, start: dt.date, end: dt.date) -> set[str]:
+    """Observation dates already stored for `metric` over [start, end]."""
+    out: set[str] = set()
+    frm = 0
+    while True:
+        batch = (client.table("macro_series").select("date")
+                 .eq("metric", metric)
+                 .gte("date", start.isoformat()).lte("date", end.isoformat())
+                 .order("date").range(frm, frm + 999).execute().data or [])
+        out.update(r["date"] for r in batch)
+        if len(batch) < 1000:
+            return out
+        frm += 1000
+
+
+def interbank_interior_gaps(client, end: dt.date) -> list[str]:
+    """Trading dates carrying no overnight rate that sit BEFORE our newest one.
+
+    INTERIOR is the whole point. Both feeds are legitimately a session or three
+    behind on any given day, so measuring completeness against `end` would fire on
+    a perfectly healthy series every single run — and a warning that is always on
+    trains people to ignore the report. A date that is missing while a LATER date
+    is already stored is a different animal: both publishers have moved past it, so
+    it is a hole rather than lag.
+
+    The calendar comes from the stored VN-Index dates rather than Mon-Fri, so Tet
+    and the other VN public holidays are never reported as gaps (the same reason
+    audit_data.py derives its calendar from the data instead of hard-coding one).
+
+    Returns [] on any lookup failure. This is a report about the data, and it must
+    never become the thing that breaks the run.
+    """
+    start = end - dt.timedelta(days=INTERBANK_GAP_LOOKBACK_DAYS)
+    try:
+        stored = _stored_dates(client, METRIC_INTERBANK_ON, start, end)
+        sessions = _stored_dates(client, METRIC_VNINDEX, start, end)
+    except Exception as e:  # noqa: BLE001
+        print(f"  Interbank gap check skipped (lookup failed): {str(e)[:80]}")
+        return []
+    return interior_gaps(stored, sessions)
+
+
+def interior_gaps(stored: set[str], sessions: set[str]) -> list[str]:
+    """The pure half of the check, so it can be pinned without a database."""
+    if not stored or not sessions:
+        return []
+    newest = max(stored)
+    return sorted(d for d in sessions if d < newest and d not in stored)
+
+
+def report_interbank_gaps(client, end: dt.date, st) -> None:
+    """Gate the run on interbank COMPLETENESS, after the write."""
+    gaps = interbank_interior_gaps(client, end)
+    if not gaps:
+        st.ok("interbank_overnight completeness",
+              f"no interior gaps in the last {INTERBANK_GAP_LOOKBACK_DAYS}d")
+        return
+    age = (end - dt.date.fromisoformat(gaps[0])).days
+    msg = (f"{len(gaps)} trading day(s) behind the newest stored point have no "
+           f"overnight rate: {', '.join(gaps)} (oldest {age}d old)")
+    if age > INTERBANK_GAP_ESCALATE_DAYS:
+        st.fail("interbank_overnight completeness",
+                f"{msg}. Vietstock NormID 293 has long since published past these "
+                f"dates, so they will NOT heal on their own — backfill by hand.")
+    else:
+        st.warn("interbank_overnight completeness",
+                f"{msg}. The SBV portal shows only one date at a time; Vietstock "
+                f"normally fills the rest within 2-3 business days.")
+
+
 def overlay_manual_cpi(vietstock_rows: list[dict]) -> list[dict]:
     """Overlay hand-entered CPI months (data/cpi_manual.csv) on the Vietstock rows.
 
@@ -653,6 +752,10 @@ def main():
     args = ap.parse_args()
 
     end = today_vn()
+    # Built before collection, not after: the interbank window is chosen from what
+    # is ALREADY stored, so a hole older than the fixed 21 days still gets covered.
+    # create_client does no network I/O, so this costs nothing on a dry run.
+    client = get_supabase_client()
     central_rows: list[dict] = []
     vcb_rows: list[dict] = []
     vnindex_rows: list[dict] = []
@@ -722,7 +825,16 @@ def main():
         # lets the SBV point win its date; protect_stored_sbv_interbank (below, at
         # upsert) keeps past SBV points from being downgraded by Vietstock.
         print("Interbank overnight (recent):")
-        interbank_rows = overlay_sbv_interbank(collect_interbank(end - dt.timedelta(days=21), end))
+        ib_start = end - dt.timedelta(days=21)
+        ib_gaps = interbank_interior_gaps(client, end)
+        if ib_gaps:
+            # Reach back far enough to actually cover the oldest hole. The fixed
+            # 21-day window heals a gap only by luck of timing; one older than the
+            # window would sit there forever while every run reported success.
+            ib_start = min(ib_start, dt.date.fromisoformat(ib_gaps[0]) - dt.timedelta(days=2))
+            print(f"  Interbank holes to heal: {', '.join(ib_gaps)}"
+                  f" — widening the Vietstock window to start {ib_start}.")
+        interbank_rows = overlay_sbv_interbank(collect_interbank(ib_start, end))
         # OMO is same-day fresh on Vietstock — a short window keeps the daily
         # run cheap while healing any missed days.
         print("OMO (recent):")
@@ -808,7 +920,6 @@ def main():
     ):
         (st.require if critical else st.expect)(f"collect {label}", got, minimum=1, unit="points")
 
-    client = get_supabase_client()
     rows = protect_stored_sbv_interbank(client, rows)  # SBV priority across runs
     n = upsert_macro(client, rows)
     print(f"Upserted {n} rows into macro_series "
@@ -819,6 +930,11 @@ def main():
           f"{len(foreign_rows)} foreign, "
           f"{len(govbond_rows)} govbond, {len(bank_rates_rows)} bankrates, "
           f"{len(bank_lending)} banklending, {len(margin_debt)} margindebt).")
+
+    # Presence is not completeness. Every per-series gate above counts POINTS, and
+    # the run that lost 2026-08-17 collected a perfectly healthy 14 of them. Read
+    # back what is actually stored and gate on the dates.
+    report_interbank_gaps(client, end, st)
 
     since = None if args.backfill else end - dt.timedelta(days=FCI_REFRESH_DAYS)
     print(f"=== FCI (frozen W={FROZEN_FCI['window']}/{FROZEN_FCI['dxy_mode']}): "

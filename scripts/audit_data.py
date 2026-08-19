@@ -77,6 +77,23 @@ MACRO_DAILY = [
     "foreign_net_value", "market_pe", "macro_fci_full", "macro_fci_core",
 ]
 
+# Series that follow the VN TRADING calendar, and so can be checked for interior
+# holes against the stored VN-Index sessions. Deliberately excludes sofr/dxy (US
+# holidays) and govbond_10y (ADB skips its own days) — measured on a healthy
+# database, the trading calendar reports 7-9 phantom gaps a year for each of
+# those, which is exactly the always-on warning that teaches people to skim past
+# the report.
+VN_CALENDAR_DAILY = [
+    "interbank_overnight", "fx_central_rate", "fx_vcb_sell",
+    "omo_net_injection", "foreign_net_value", "market_pe",
+    "macro_fci_full", "macro_fci_core",
+]
+
+# How far back to hunt for interior holes. Bounded so an old scar (a 10-session
+# foreign-flow outage in Feb 2026) does not sit in every report forever; a gap
+# this old is history, not an incident.
+GAP_LOOKBACK_DAYS = 120
+
 OK, WARN, FAIL = "ok", "warn", "fail"
 
 
@@ -267,6 +284,46 @@ class Audit:
                      f"FCI stops at {fci} while vnindex reaches {vn} — recompute needed")
         elif fci and vn:
             self.add("5 macro", "FCI vs vnindex", fci, OK, f"FCI tracks vnindex ({vn})")
+
+        # Freshness is not completeness, and the two fail independently. The
+        # interbank series is stitched from an SBV page that shows exactly ONE
+        # date and a Vietstock feed that trails it by 2-3 business days, so when
+        # SBV's own lag shrinks between two daily runs the date it skipped over is
+        # never offered to anyone. On 2026-08-19 the newest overnight rate was
+        # 2026-08-18 — perfectly fresh by every staleness check above — with
+        # 2026-08-17 missing behind it. A forward-filled FCI input then quietly
+        # reuses the previous session's rate.
+        #
+        # Only INTERIOR gaps count: dates missing while a LATER one is stored.
+        # Most of these feeds are legitimately a session or two behind on any
+        # given day, so measuring against today would flag a healthy database.
+        self._interior_gaps(rows)
+
+    def _interior_gaps(self, rows: list[dict]) -> None:
+        """Report VN-calendar series with holes BEHIND their own newest point."""
+        floor = (today_vn() - timedelta(days=GAP_LOOKBACK_DAYS)).isoformat()
+        by_metric: dict[str, set[str]] = {}
+        for x in rows:
+            if x["date"] >= floor:
+                by_metric.setdefault(x["metric"], set()).add(x["date"])
+        sessions = sorted(by_metric.get("vnindex", ()))
+        if not sessions:
+            return
+        for metric in VN_CALENDAR_DAILY:
+            stored = by_metric.get(metric)
+            if not stored:
+                continue
+            newest = max(stored)
+            gaps = [d for d in sessions if d < newest and d not in stored]
+            if not gaps:
+                continue
+            # WARN, never FAIL. This is a report someone runs deliberately and
+            # reads in full; the escalation to red belongs on the cron that can
+            # actually act on it (refresh_macro.py gates the interbank series once
+            # a hole is too old for the fallback feed to still be catching up).
+            shown = ", ".join(gaps[:6]) + (f" (+{len(gaps) - 6} more)" if len(gaps) > 6 else "")
+            self.add("5 macro", f"{metric} gaps", newest, WARN,
+                     f"{len(gaps)} trading day(s) missing behind the newest point: {shown}")
 
     def layer_aux(self) -> None:
         for table, col, label, allowed in (
