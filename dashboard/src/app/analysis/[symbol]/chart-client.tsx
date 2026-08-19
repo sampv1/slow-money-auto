@@ -20,15 +20,36 @@ import { t, type Locale } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
 import { CHART_LITERAL, VN_INDEX } from "@/lib/chart-theme";
 
-const UP_COLOR = "#16a34a";
-const DOWN_COLOR = "#dc2626";
+// Chart ink, tuned for CONTRAST on the cream #fbf9f5 panel (2026-08-19).
+//
+// The previous set technically cleared the 3:1 graphics floor, but only just —
+// candles at 3.13 and three of the four MAs between 3.39 and 3.56, all in one
+// mid-tone band, so nothing separated from the paper or from each other. The
+// complaint was that the chart read flat, and it was right.
+//
+// Measured against #fbf9f5, old -> new:
+//   candles up   3.13 -> 6.21      MA50   3.39 -> 5.64
+//   candles down 4.59 -> 6.05      MA150  3.56 -> 6.73
+//   MA20         3.53 -> 4.78      MA200  5.12 -> 7.50
+// Worst pairwise ΔE across the whole set is 24.6, so no two lines can be
+// mistaken for one another. Keep both properties if these are ever retuned.
+//
+// MA20 stops being a neutral. It was the VN_INDEX warm grey, which is the token
+// for CONTEXT — deliberately recessive — and a moving average the reader is
+// meant to follow should not wear it. Amber, as on the reference chart.
+const UP_COLOR = "#0c6b4a";
+const DOWN_COLOR = "#b32c24";
 
 const MA_COLOR: Record<number, string> = {
-  20: VN_INDEX,  // warm grey — see the VN_INDEX note in lib/chart-theme.ts
-  50: "#ea580c",  // orange
-  150: "#0d9488", // teal
-  200: "#9333ea", // purple
+  20: "#b45309",  // amber
+  50: "#0369a1",  // blue
+  150: "#3f6212", // moss — off the green candles by ΔE 28
+  200: "#9d174d", // rose
 };
+
+// Roughly twelve months of VN sessions. The chart opens here rather than on the
+// full history so candles are legible without zooming first.
+const DEFAULT_VISIBLE_SESSIONS = 250;
 
 const RSI_COLOR = "#7c3aed";
 const MACD_LINE_COLOR = VN_INDEX;
@@ -398,12 +419,20 @@ export function ChartClient({
   // selection whenever the server hands down a different set (new symbol /
   // ?ind) — done during render (React's adjust-state-on-prop-change pattern),
   // which is why prevSelectedKey is tracked rather than a reset effect.
+  // Triggered-signal chips start OFF (2026-08-19). Every signal that fired
+  // today used to be drawn at once — markers on the candles, reference lines,
+  // and an RSI/MACD pane each — which buried the price action the page exists to
+  // show. The chips are all still there, listed and one click from on.
+  //
+  // The display group (MA20/50/200, ZigZag, MCDX, RS lines) is separate state
+  // and stays ON: those are the always-useful overlays, not "what happened to
+  // fire today".
   const selectedKey = selected.join(",");
-  const [active, setActive] = useState<string[]>(selected);
+  const [active, setActive] = useState<string[]>([]);
   const [prevSelectedKey, setPrevSelectedKey] = useState(selectedKey);
   if (prevSelectedKey !== selectedKey) {
     setPrevSelectedKey(selectedKey);
-    setActive(selected);
+    setActive([]);
   }
 
   const activeSet = useMemo(() => new Set(active), [active]);
@@ -527,9 +556,13 @@ export function ChartClient({
         fontSize: 12,
         panes: { separatorColor: CHART_LITERAL.axis, separatorHoverColor: CHART_LITERAL.label },
       },
+      // No gridlines. They measured 1.36:1 against the panel, so they never
+      // functioned as a scale a reader could actually use — they only added a
+      // texture that competed with the candles and flattened the whole chart.
+      // The price axis and the crosshair readout carry the same information.
       grid: {
-        vertLines: { color: CHART_LITERAL.grid },
-        horzLines: { color: CHART_LITERAL.grid },
+        vertLines: { visible: false },
+        horzLines: { visible: false },
       },
       rightPriceScale: { borderColor: CHART_LITERAL.axis },
       timeScale: {
@@ -573,7 +606,8 @@ export function ChartClient({
     for (const period of features.maPeriods) {
       const line = chart.addSeries(LineSeries, {
         color: MA_COLOR[period] ?? "#888",
-        lineWidth: 1,
+        // 2px, not 1: a hairline at the old zoom disappeared into the candles.
+        lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
         title: `MA${period}`,
@@ -1019,7 +1053,25 @@ export function ChartClient({
     if (saved && saved.candles === candles && saved.range) {
       chart.timeScale().setVisibleLogicalRange(saved.range);
     } else {
-      chart.timeScale().fitContent();
+      // fitContent() used to squeeze the WHOLE history — ~600 sessions, about
+      // 2.4 years — into the pane width, which left candles a pixel or two wide:
+      // unreadable, and their up/down colour invisible at that size. The page
+      // opened needing several scroll-outs before it could be read at all.
+      //
+      // Default to the last DEFAULT_VISIBLE_SESSIONS instead. The older bars are
+      // still there — scroll or zoom out reaches them — and a symbol with less
+      // history than that simply shows everything it has.
+      const n = candles.length;
+      if (n > DEFAULT_VISIBLE_SESSIONS) {
+        chart.timeScale().setVisibleLogicalRange({
+          from: n - DEFAULT_VISIBLE_SESSIONS,
+          // A little past the last bar so the newest candle is not flush
+          // against the price axis.
+          to: n + 2,
+        });
+      } else {
+        chart.timeScale().fitContent();
+      }
     }
 
     return () => {

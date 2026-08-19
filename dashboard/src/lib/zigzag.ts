@@ -119,12 +119,18 @@ export function zigzag(
 /**
  * The one colour the ZigZag wears anywhere in the app.
  *
- * Blue because neither chart's price pane has a blue: the Analysis MAs are warm
- * grey / orange / teal / purple, and every other price overlay (S/R, trendlines,
- * the O/K/A/D1 level lines) is the up/down green-red, which carries direction.
- * The ZigZag is neither an average nor a direction, so it takes the free hue.
+ * VIOLET, matching the reference chart. It was blue, which collided with MA50
+ * once the palette was retuned for contrast (2026-08-19): on screen the swing
+ * line and the 50-day average read as the same line, even though they measured
+ * ΔE 25 apart — adjacent hues at similar lightness are much harder to tell
+ * apart as two thin strokes than the number suggests.
+ *
+ * Violet keeps it out of every other price-pane hue: the MAs are amber / blue /
+ * moss / rose, and every other overlay (S/R, trendlines, the O/K/A/D1 level
+ * lines) is the up-down green-red, which carries direction. The ZigZag is
+ * neither an average nor a direction, so it gets its own.
  */
-export const ZIGZAG_COLOR = "#1d4ed8";
+export const ZIGZAG_COLOR = "#6d28d9";
 
 /** First index at or after `windowDays` before the last bar — the score's window. */
 export function zigzagWindowStart(dates: string[], windowDays = ZIGZAG_WINDOW_DAYS): number {
