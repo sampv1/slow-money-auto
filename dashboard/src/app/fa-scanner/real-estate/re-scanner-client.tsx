@@ -21,7 +21,7 @@ import {
 import type { RePb, UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatBillions, formatNumber, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
-import { TABLE, TABLE_FREEZE, THEAD_STICKY, TH, TH_NUM, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
+import { TABLE, TABLE_FREEZE, TABLE_FULL_BLEED, THEAD_STICKY, TH, TH_NUM, TH_NUM_WRAP, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
 const DEFAULT_MIN_NPAT_BN = 180;
@@ -77,6 +77,36 @@ const BLOCK_HEAD = "bg-sky-100 text-sky-900";
 const BLOCK_BODY = "bg-sky-50";
 const BLOCK_EDGE = "border-l-2 border-sky-300"; // outer edge of the whole block
 const BLOCK_SPLIT = "border-l border-sky-200"; // quarterly | daily divider
+
+/**
+ * Renders a header label with a soft break opportunity after every "/".
+ *
+ * The table is `w-full` with auto layout, so what decides whether it overflows
+ * is its MIN-CONTENT width — the narrowest it can be squeezed to. English
+ * criterion labels are single unbreakable tokens ("Inv/Equity", "Cash/Debt",
+ * "Recv/Adv"), and CSS does not treat a slash as a break point, so each one set
+ * a ~90px floor for a column showing one digit. Vietnamese has spaces
+ * ("Tồn kho/VCSH") and wrapped for free, which is why EN was the WIDER locale
+ * here — the reverse of the usual assumption.
+ *
+ * `<wbr>` rather than `break-words`: overflow-wrap only fires once a line box is
+ * already too narrow, which never happens while the table is free to grow and
+ * overflow instead. A break opportunity lowers min-content itself.
+ */
+function BreakableLabel({ text }: { text: string }) {
+  const parts = text.split("/");
+  return (
+    <>
+      {parts.map((part, i) => (
+        <span key={i}>
+          {i > 0 ? "/" : ""}
+          {i > 0 ? <wbr /> : null}
+          {part}
+        </span>
+      ))}
+    </>
+  );
+}
 
 export function ReScannerClient({
   rows,
@@ -296,7 +326,7 @@ export function ReScannerClient({
         </div>
       ) : (
         <div
-          className={`bg-panel border border-line ${TABLE_FREEZE}${
+          className={`bg-panel border-y border-line ${TABLE_FULL_BLEED} ${TABLE_FREEZE}${
             isPending ? " opacity-50 transition-opacity" : ""
           }`}
         >
@@ -340,13 +370,16 @@ export function ReScannerClient({
                 {RE_COMPONENTS.map((c) => (
                   <th
                     key={c.key}
-                    className={TH_NUM}
+                    // WRAP, not nowrap: every one of these thirteen labels is
+                    // wider than the single-digit score beneath it, and with
+                    // nowrap they alone made this table 1,403px of its 2,164.
+                    className={TH_NUM_WRAP}
                     title={`${locale === "vi" ? c.fVi : c.fEn}\n(${c.w} ${
                       locale === "vi" ? "điểm" : "pts"
                     })`}
                   >
                     <button type="button" onClick={() => toggleSort(c.key)}>
-                      {locale === "vi" ? c.vi : c.en}{arrow(c.key)}
+                      <BreakableLabel text={locale === "vi" ? c.vi : c.en} />{arrow(c.key)}
                     </button>
                   </th>
                 ))}
@@ -361,9 +394,13 @@ export function ReScannerClient({
                     // `min-w` alongside the wrap: see the manufacturing tab —
                     // without a floor the column shrinks to its four-character
                     // data and Vietnamese breaks the label over four lines.
+                    // 5rem floor, not 6.5: with every header wrapping, the
+                    // block height comes from the tallest label rather than
+                    // this one, so the floor only has to stop a four-line
+                    // break — and at 6.5rem these two were the table's widest.
                     className={`${"wrap" in c && c.wrap
-                      ? TH_NUM.replace("whitespace-nowrap", "whitespace-normal leading-tight min-w-[6.5rem]")
-                      : TH_NUM} ${BLOCK_HEAD}`
+                      ? `${TH_NUM_WRAP} min-w-[5rem]`
+                      : TH_NUM_WRAP} ${BLOCK_HEAD}`
                       + (i === 0
                         ? ` ${BLOCK_EDGE}`
                         : c.group === "d" && RE_EXTRA[i - 1].group === "q"
@@ -371,7 +408,7 @@ export function ReScannerClient({
                           : "")}
                   >
                     <button type="button" onClick={() => toggleSort(c.key)}>
-                      {locale === "vi" ? c.vi : c.en}{arrow(c.key)}
+                      <BreakableLabel text={locale === "vi" ? c.vi : c.en} />{arrow(c.key)}
                     </button>
                   </th>
                 ))}

@@ -103,11 +103,14 @@ export default async function RootLayout({
       <body className="min-h-full bg-desk text-fg">
         {/* The sheet. A 1px rule and a lighter ground are what separate it from
             the desk — there is no shadow anywhere in this design.
-            1600px, not a 1280 prose width: every page inheriting this container
-            is a data table, and the FA Scanner alone needs ~1434px for its 17
-            columns. The genuinely text-shaped pages (contact max-w-2xl, login
-            max-w-sm) set their own narrower width, so this does not stretch them. */}
-        <div className="min-h-full flex flex-col max-w-[1600px] mx-auto bg-canvas border-x border-line">
+            NO WIDTH CAP: every page inheriting this container is a data table,
+            and the widest of them (the real-estate FA Scanner, 20 columns) needs
+            more than 2,000px. The previous 1600px cap threw away room a wide
+            monitor already had, and made those tables scroll sideways on a
+            screen big enough to show them whole. The genuinely text-shaped
+            pages (contact max-w-2xl, login max-w-sm) set their own narrower
+            width, so this does not stretch them. */}
+        <div className="min-h-full flex flex-col bg-canvas border-x border-line">
           <header>
             <div className="px-4 sm:px-6 lg:px-8">
               <div className="flex items-center justify-between gap-4 pt-4 pb-3">

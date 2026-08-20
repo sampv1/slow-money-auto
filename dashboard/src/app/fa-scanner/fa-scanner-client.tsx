@@ -15,7 +15,7 @@ import {
   relativeValuationColor,
   relativeValuationPct,
 } from "@/lib/fa";
-import { TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
+import { TABLE_FREEZE, TABLE_FULL_BLEED, THEAD_STICKY } from "@/lib/table";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatBillions, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
@@ -454,7 +454,7 @@ export function FaScannerClient({
         // to be a plain literal — spelled inline here it was glued onto the
         // `${isPending …}` interpolation, which Tailwind's scanner does not read,
         // so this tab was relying on Signal Pro to emit its max-height for it.
-        <div className={`bg-panel rounded-lg border border-line ${TABLE_FREEZE}${isPending ? " opacity-50 transition-opacity" : ""}`}>
+        <div className={`bg-panel border-y border-line ${TABLE_FULL_BLEED} ${TABLE_FREEZE}${isPending ? " opacity-50 transition-opacity" : ""}`}>
           {/* border-separate, NOT collapse — see the note on Signal Pro's table.
               A collapsed border belongs to the TABLE and paints above every
               row-group background, including a sticky <thead>'s, and the table
@@ -493,7 +493,7 @@ export function FaScannerClient({
                   // know which quarter it is measured against, and the selected
                   // quarter is a dropdown.
                   title={`${selectedQuarter} vs ${priorQuarter || "—"}`}
-                  className={`label px-3 py-2 text-center border-b border-line ${BLOCK_HEAD} ${BLOCK_EDGE}`}
+                  className={`label px-2 py-2 text-center border-b border-line ${BLOCK_HEAD} ${BLOCK_EDGE}`}
                 >
                   {t(locale, "faQuarterlyGroup")}
                 </th>
@@ -508,7 +508,10 @@ export function FaScannerClient({
                   <th
                     key={c.pts}
                     title={locale === "vi" ? c.fVi : c.fEn}
-                    className="label px-3 py-2 text-right cursor-pointer select-none whitespace-nowrap"
+                    // WRAP, not nowrap: "Số quý EPS+" held 109px open for a
+                    // one-digit score. The label was sizing the column, so the
+                    // nine of them ran 771px of a 1,767px table.
+                    className="label px-2 py-2 text-right align-bottom cursor-pointer select-none whitespace-normal leading-tight"
                     onClick={() => toggleSort(c.pts)}
                   >
                     {locale === "vi" ? c.vi : c.en}{sortIndicator(c.pts)}
@@ -518,13 +521,20 @@ export function FaScannerClient({
                   <th
                     key={c.key}
                     title={locale === "vi" ? c.fVi : c.fEn}
-                    className={`label px-3 py-2 text-right cursor-pointer select-none ${BLOCK_HEAD} `
+                    className={`label px-2 py-2 text-right align-bottom cursor-pointer select-none ${BLOCK_HEAD} `
                       // `min-w` alongside the wrap: without a floor the column
                       // shrinks to its DATA (four characters) and Vietnamese
                       // then breaks the label over four one-word lines, which
                       // is what makes a sticky header tall. The floor buys two
                       // lines back for ~22px of width.
-                      + ("wrap" in c && c.wrap ? "whitespace-normal leading-tight min-w-[6.5rem]" : "whitespace-nowrap")
+                      // Every header here wraps; `wrap` only adds a min-width,
+                      // for the labels long enough to otherwise break over four
+                      // one-word lines in Vietnamese. 5rem, not the 6.5rem this
+                      // started at: with EVERY header wrapping, the block height
+                      // is set by the tallest label rather than by this one, so
+                      // the floor only has to prevent the four-line break — and
+                      // at 6.5rem these two were the widest columns in the table.
+                      + ("wrap" in c && c.wrap ? "whitespace-normal leading-tight min-w-[5rem]" : "whitespace-normal leading-tight")
                       + (i === 0 ? ` ${BLOCK_EDGE}` : c.group === "d" && FA_EXTRA[i - 1].group === "q" ? ` ${BLOCK_SPLIT}` : "")}
                     onClick={() => toggleSort(c.key)}
                   >
@@ -607,7 +617,7 @@ export function FaScannerClient({
                     return cells.map((cell, i) => (
                       <td
                         key={cell.key}
-                        className={`px-3 py-3 text-right font-mono whitespace-nowrap ${BLOCK_BODY} ${cell.cls}`
+                        className={`px-2 py-3 text-right font-mono whitespace-nowrap ${BLOCK_BODY} ${cell.cls}`
                           + (i === 0 ? ` ${BLOCK_EDGE}` : cell.key === FIRST_DAILY_KEY ? ` ${BLOCK_SPLIT}` : "")}
                       >
                         {cell.node}

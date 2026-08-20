@@ -46,6 +46,24 @@ export const TH_NUM =
   "label row-h px-2 font-normal text-right whitespace-nowrap transition-colors hover:text-fg hover:bg-line-faint cursor-pointer";
 
 /**
+ * Header cell over a column of numbers, allowed to WRAP.
+ *
+ * For the case where the label is much wider than the data under it — a
+ * criterion header like "Phải thu/Trả trước" over a one-digit score, which held
+ * 155px open for the character "8". With `whitespace-nowrap` the LABEL sizes
+ * the column, so thirteen of them made the real-estate scanner 2,164px wide and
+ * forced a horizontal scrollbar on every screen. Wrapping hands the width back
+ * to the data.
+ *
+ * `h-auto` overrides `row-h`'s fixed height, which would otherwise clip the
+ * second line; the header block grows once and every row below it stays on the
+ * 26px rhythm. `align-bottom` keeps one- and two-line labels sitting on the
+ * same baseline so the header does not look ragged.
+ */
+export const TH_NUM_WRAP =
+  "label h-auto py-1 px-2 font-normal text-right align-bottom whitespace-normal leading-tight transition-colors hover:text-fg hover:bg-line-faint cursor-pointer";
+
+/**
  * Body row. `group` lets a frozen cell track the hover via `group-hover:`.
  *
  * Hover is `panel-2`, NOT `panel`: these tables sit inside a `bg-panel`
@@ -112,6 +130,19 @@ export const TABLE_SCROLL = "overflow-x-auto";
  * One shared value also keeps the three scanners scrolling to the same depth.
  */
 export const TABLE_FREEZE = "overflow-auto max-h-[calc(100vh-12rem)]";
+
+/**
+ * Cancels `<main>`'s horizontal padding so a table box spans the FULL sheet.
+ *
+ * Must mirror the padding in `app/layout.tsx` exactly (`px-4 sm:px-6 lg:px-8`),
+ * which is why it lives beside it as one string rather than being spelled out
+ * per page. Worth 64px at `lg` — the margin that decides whether the widest
+ * scanner needs a horizontal scrollbar at 1440px or not.
+ *
+ * Only for the tables that genuinely need it. A narrow table run full-bleed
+ * just looks unmoored from the page around it.
+ */
+export const TABLE_FULL_BLEED = "-mx-4 sm:-mx-6 lg:-mx-8";
 
 /**
  * A `<thead>` frozen to the top of a TABLE_FREEZE box. Use INSTEAD of `THEAD`.
