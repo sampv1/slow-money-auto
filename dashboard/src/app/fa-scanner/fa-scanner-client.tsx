@@ -38,7 +38,10 @@ const FA_COMPONENTS = [
     fEn: "Net income (TTM) ÷ average equity", fVi: "LNST (TTM) ÷ vốn chủ sở hữu bình quân" },
   { pts: "c8_pts", en: "D/E", vi: "Nợ/VCSH",
     fEn: "Total debt ÷ equity", fVi: "Tổng nợ vay ÷ vốn chủ sở hữu" },
-  { pts: "c9_pts", en: "Val", vi: "Định giá",
+  // Named for the comparison, not "Val"/"Định giá": the block heading beside it
+  // is now "Valuation"/"Định giá" too, and in Vietnamese those were the SAME
+  // word twice in one header. Matches the real-estate tab's "P/E vs 20q".
+  { pts: "c9_pts", en: "P/E vs 5y", vi: "P/E vs 5N",
     fEn: "Current P/E vs 5-year median P/E", fVi: "P/E hiện tại so với trung vị P/E 5 năm" },
 ] as const;
 
@@ -59,9 +62,13 @@ const FA_EXTRA = [
   { key: "npat_yoy", group: "q", en: "NPAT YoY", vi: "LNST YoY",
     fEn: "NPAT ÷ NPAT same quarter last year − 1 (÷ |prior|, so a loss→profit swing reads positive)",
     fVi: "LNST ÷ LNST cùng kỳ năm trước − 1 (chia |kỳ trước|, nên lỗ→lãi cho giá trị dương)" },
-  { key: "rs_1m", group: "d", en: "RS 1M", vi: "RS 1T",
-    fEn: "1-month return, ranked 1–99 across the rated universe. Updated daily.",
-    fVi: "Lợi suất 1 tháng, xếp hạng 1–99 trong nhóm được chấm. Cập nhật hằng ngày." },
+  // `wrap`: this label is far longer than the "17.05" beneath it, and a
+  // nowrap header would hold ~170px open for a four-character number. Wrapping
+  // lets the DATA size the column instead — the same fix the Portfolio table
+  // needed in Vietnamese.
+  { key: "pe_5y_median", group: "d", wrap: true, en: "5-Year Median P/E", vi: "Trung vị P/E 5 năm",
+    fEn: "Median of the last 5 annual P/E figures (fa_annual_pe). The yardstick criterion 9 scores the current P/E against.",
+    fVi: "Trung vị P/E 5 năm gần nhất (fa_annual_pe). Đây là mốc mà tiêu chí 9 dùng để so với P/E hiện tại." },
   { key: "pe", group: "d", en: "P/E", vi: "P/E",
     fEn: "Price ÷ trailing-twelve-month EPS. Priced daily for the LATEST quarter only — older quarters show the P/E frozen at that quarter's last scoring.",
     fVi: "Giá ÷ EPS 4 quý gần nhất. Chỉ cập nhật hằng ngày cho quý MỚI NHẤT — các quý cũ giữ P/E tại lần chấm cuối của quý đó." },
@@ -73,6 +80,11 @@ type SortKey = "total_score" | "symbol" | "industry" | PtsKey | ExtraKey;
 
 const N_QUARTERLY = FA_EXTRA.filter((c) => c.group === "q").length;
 const N_DAILY = FA_EXTRA.filter((c) => c.group === "d").length;
+// The quarterly | valuation divider hangs off the FIRST daily column. Derived
+// rather than named literally: the header already computes the boundary from
+// `group`, and the body used to hard-code the key, so renaming that column once
+// moved the divider without any type error.
+const FIRST_DAILY_KEY = FA_EXTRA.find((c) => c.group === "d")!.key;
 
 // Sky, not amber: amber already means "the headline number" on Signal Pro's
 // Final score, so a cool tint reads as "a different kind of data" instead of
@@ -134,12 +146,6 @@ export function FaScannerClient({
   const avgVolBySymbol = useMemo(() => {
     const m = new Map<string, number | null>();
     for (const u of universe) m.set(u.symbol, u.avg_volume_20d);
-    return m;
-  }, [universe]);
-
-  const rs1mBySymbol = useMemo(() => {
-    const m = new Map<string, number | null>();
-    for (const u of universe) m.set(u.symbol, u.rs_1m);
     return m;
   }, [universe]);
 
@@ -224,8 +230,8 @@ export function FaScannerClient({
           return r.c4_rev_yoy;
         case "pe":
           return r.current_pe;
-        case "rs_1m":
-          return rs1mBySymbol.get(r.symbol) ?? null;
+        case "pe_5y_median":
+          return r.pe_5y_median;
         case "rev_bn":
           return quarterlyBySymbol.get(r.symbol)?.revenueBn ?? null;
         case "npat_bn":
@@ -272,7 +278,7 @@ export function FaScannerClient({
       return 0;
     });
     return out;
-  }, [preIndustry, industryFilter, industry, locale, rs1mBySymbol,
+  }, [preIndustry, industryFilter, industry, locale,
       quarterlyBySymbol, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
@@ -481,7 +487,7 @@ export function FaScannerClient({
                   {t(locale, "faQuarterlyGroup")}
                 </th>
                 <th colSpan={N_DAILY} className={`label row-h px-2 text-center border-b border-line ${BLOCK_HEAD} ${BLOCK_SPLIT}`}>
-                  {t(locale, "faDailyGroup")}
+                  {t(locale, "faValuationGroup")}
                 </th>
               </tr>
               {/* No border-b either: THEAD_STICKY's shadow is the header's bottom
@@ -501,7 +507,8 @@ export function FaScannerClient({
                   <th
                     key={c.key}
                     title={locale === "vi" ? c.fVi : c.fEn}
-                    className={`label px-3 py-2 text-right cursor-pointer select-none whitespace-nowrap ${BLOCK_HEAD}`
+                    className={`label px-3 py-2 text-right cursor-pointer select-none ${BLOCK_HEAD} `
+                      + ("wrap" in c && c.wrap ? "whitespace-normal leading-tight" : "whitespace-nowrap")
                       + (i === 0 ? ` ${BLOCK_EDGE}` : c.group === "d" && FA_EXTRA[i - 1].group === "q" ? ` ${BLOCK_SPLIT}` : "")}
                     onClick={() => toggleSort(c.key)}
                   >
@@ -571,14 +578,14 @@ export function FaScannerClient({
                         cls: (q?.npatBn ?? 0) < 0 ? "text-down" : "",
                       },
                       { key: "npat_yoy", node: formatPnl(q?.npatYoy ?? null), cls: pnlColor(q?.npatYoy ?? null) },
-                      { key: "rs_1m", node: rs1mBySymbol.get(row.symbol) ?? "—", cls: "" },
+                      { key: "pe_5y_median", node: fmtRatio(row.pe_5y_median), cls: "" },
                       { key: "pe", node: fmtRatio(row.current_pe), cls: "" },
                     ];
                     return cells.map((cell, i) => (
                       <td
                         key={cell.key}
                         className={`px-3 py-3 text-right font-mono whitespace-nowrap ${BLOCK_BODY} ${cell.cls}`
-                          + (i === 0 ? ` ${BLOCK_EDGE}` : cell.key === "rs_1m" ? ` ${BLOCK_SPLIT}` : "")}
+                          + (i === 0 ? ` ${BLOCK_EDGE}` : cell.key === FIRST_DAILY_KEY ? ` ${BLOCK_SPLIT}` : "")}
                       >
                         {cell.node}
                       </td>

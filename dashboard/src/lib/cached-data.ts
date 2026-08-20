@@ -716,6 +716,65 @@ export const getReRows = unstable_cache(
 );
 
 /**
+ * Current and 5-year-average P/B per real-estate symbol, for one quarter.
+ *
+ * Both come off `fa_re_metrics`, the RAW INPUTS the rubric was scored from —
+ * not off a live price. `pb_now` is the export's P/B TTM and `pb_hist` is the
+ * 20-quarter window (5 years) behind it, so these two columns move once per
+ * FiinProX import rather than daily. That is deliberate: criterion 12 scores
+ * `pb_now ÷ median(pb_hist)`, and reading the same source means the scanner's
+ * P/B column can never disagree with the criterion scored beside it.
+ *
+ * The AVERAGE, not the median criterion 12 uses — they are different numbers
+ * (DIG: 2.20 vs 1.72) and the column is labelled for the one it shows.
+ *
+ * ~118 rows; nulls are dropped before averaging, and a symbol with no usable
+ * history gets `avg5y: null` rather than an average of nothing.
+ */
+export type RePb = { now: number | null; avg5y: number | null };
+
+export const getRePbMetrics = unstable_cache(
+  async (quarter: string): Promise<[string, RePb][]> => {
+    try {
+      const rows = await fetchAllPaged<{
+        symbol: string;
+        metrics: { pb_now?: number | null; pb_hist?: (number | null)[] | null };
+      }>((from, to, withCount) =>
+        supabase
+          .from("fa_re_metrics")
+          .select("symbol,metrics", withCount ? { count: "exact" } : undefined)
+          .eq("as_of_period", quarter)
+          .order("symbol", { ascending: true })
+          .range(from, to),
+      );
+      return rows.map((r) => {
+        const hist = (r.metrics?.pb_hist ?? []).filter(
+          (v): v is number => typeof v === "number" && Number.isFinite(v),
+        );
+        return [
+          r.symbol,
+          {
+            now: r.metrics?.pb_now ?? null,
+            avg5y: hist.length ? hist.reduce((a, b) => a + b, 0) / hist.length : null,
+          },
+        ] as [string, RePb];
+      });
+    } catch (e) {
+      // Non-fatal, unlike the score read: without this the two P/B columns show
+      // "—" and the rest of the page is unaffected, so a missing table must not
+      // take down a scanner that never needed it before.
+      console.warn(
+        "[fa-re] fa_re_metrics unavailable — the P/B columns will be empty:",
+        e instanceof Error ? e.message : e,
+      );
+      return [];
+    }
+  },
+  ["fa-re-pb"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/**
  * Latest real-estate score per symbol: `{symbol, total_score, scorable_weight,
  * as_of_period}`.
  *

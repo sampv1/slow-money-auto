@@ -5,9 +5,10 @@ import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import {
   getReQuarters,
   getReRows,
+  getRePbMetrics,
   getUniverseLiquidity,
   getFaQuarterlyFacts,
-  getFaRows,
+  type RePb,
 } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { ReScannerClient } from "./re-scanner-client";
@@ -32,11 +33,11 @@ export default async function FaScannerRealEstatePage({
   // two quarters are hundreds of KB across the RSC boundary versus a compact
   // map, and the client's filter memo re-runs on every keystroke.
   let quarterly: Map<string, QuarterlyFacts> = new Map();
-  // P/E comes off fa_scores, not fa_re_scores. It is a market fact rather than
-  // a rubric output — refresh_fa.py still prices every symbol daily, including
-  // the real-estate ones this page took over displaying — and reusing that read
-  // means no new query: the entry is the same one the manufacturing tab warmed.
-  let peBySymbol: Map<string, number | null> = new Map();
+  // Current and 5-year-average P/B, both off fa_re_metrics — the same raw
+  // inputs criterion 12 was scored from, so the columns cannot disagree with
+  // the criterion sitting next to them. Entries, not a Map, for the same RSC
+  // reason as `quarterly` above.
+  let pb: [string, RePb][] = [];
   // Hold the ERROR ITSELF, not its message — a failed count query comes back
   // with an empty message, and a truthy check on a string swallows it, which is
   // how this shape once reported "no data" during a Supabase outage.
@@ -45,16 +46,16 @@ export default async function FaScannerRealEstatePage({
     quarters = await getReQuarters();
     selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
     if (selected) {
-      const [re, uni, facts, faRows] = await Promise.all([
+      const [re, uni, facts, pbRows] = await Promise.all([
         getReRows(selected),
         getUniverseLiquidity(),
         getFaQuarterlyFacts(selected),
-        getFaRows(selected),
+        getRePbMetrics(selected),
       ]);
       rows = re;
       universe = uni;
       quarterly = facts;
-      peBySymbol = new Map(faRows.map((r) => [r.symbol, r.current_pe]));
+      pb = pbRows;
     }
   } catch (e) {
     loadError = e ?? new Error("unknown error");
@@ -100,7 +101,7 @@ export default async function FaScannerRealEstatePage({
         selectedQuarter={selected}
         priorQuarter={yearAgoPeriod(selected)}
         quarterly={Array.from(quarterly)}
-        pe={Array.from(peBySymbol)}
+        pb={pb}
       />
     </div>
   );

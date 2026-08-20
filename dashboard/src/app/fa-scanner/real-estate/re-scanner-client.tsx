@@ -13,7 +13,7 @@ import {
   reNoteLabel,
 } from "@/lib/fa-re";
 import { type QuarterlyFacts, fmtRatio } from "@/lib/fa";
-import type { UniverseLiquidityRow } from "@/lib/cached-data";
+import type { RePb, UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatBillions, formatNumber, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { TABLE, TABLE_FREEZE, THEAD_STICKY, TH, TH_NUM, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
@@ -40,12 +40,14 @@ const RE_EXTRA = [
   { key: "npat_yoy", group: "q", en: "NPAT YoY", vi: "LNST YoY",
     fEn: "NPAT ÷ NPAT same quarter last year − 1 (÷ |prior|, so a loss→profit swing reads positive)",
     fVi: "LNST ÷ LNST cùng kỳ năm trước − 1 (chia |kỳ trước|, nên lỗ→lãi cho giá trị dương)" },
-  { key: "rs_1m", group: "d", en: "RS 1M", vi: "RS 1T",
-    fEn: "1-month return, ranked 1–99 across the rated universe. Updated daily.",
-    fVi: "Lợi suất 1 tháng, xếp hạng 1–99 trong nhóm được chấm. Cập nhật hằng ngày." },
-  { key: "pe", group: "d", en: "P/E", vi: "P/E",
-    fEn: "Price ÷ trailing-twelve-month EPS, priced daily. Separate from criterion 13, which compares this P/E to its own 20-quarter median.",
-    fVi: "Giá ÷ EPS 4 quý gần nhất, cập nhật hằng ngày. Khác với tiêu chí 13 — tiêu chí đó so P/E này với trung vị 20 quý của chính nó." },
+  // `wrap`: see the manufacturing tab. In Vietnamese this label ran 171px to
+  // hold a number like "1.18"; wrapping hands the width back to the data.
+  { key: "pb_5y_avg", group: "d", wrap: true, en: "5-Year Average P/B", vi: "P/B trung bình 5 năm",
+    fEn: "Mean P/B over the last 20 quarters. Criterion 12 compares the current P/B to the MEDIAN of the same window, which is a different number.",
+    fVi: "P/B trung bình 20 quý gần nhất. Tiêu chí 12 so P/B hiện tại với TRUNG VỊ của cùng cửa sổ đó — là một con số khác." },
+  { key: "pb", group: "d", en: "P/B", vi: "P/B",
+    fEn: "Price ÷ book value per share, from the quarterly FiinProX export — the same figure criterion 12 is scored from, so it moves once per import rather than daily.",
+    fVi: "Giá ÷ giá trị sổ sách mỗi cổ phiếu, lấy từ file FiinProX theo quý — đúng số mà tiêu chí 12 dùng để chấm, nên chỉ thay đổi mỗi lần nhập file, không cập nhật hằng ngày." },
 ] as const;
 
 type ExtraKey = (typeof RE_EXTRA)[number]["key"];
@@ -53,6 +55,10 @@ type SortKey = "symbol" | "total_score" | ExtraKey | string;
 
 const N_QUARTERLY = RE_EXTRA.filter((c) => c.group === "q").length;
 const N_DAILY = RE_EXTRA.filter((c) => c.group === "d").length;
+// The quarterly | valuation divider hangs off the FIRST daily column. Derived
+// rather than named literally, so renaming that column cannot silently move the
+// divider — the body used to hard-code the key while the header computed it.
+const FIRST_DAILY_KEY = RE_EXTRA.find((c) => c.group === "d")!.key;
 
 // Same sky tint as the manufacturing tab, for the same reason: amber already
 // means "the headline number", so a cool tint reads as "a different kind of
@@ -70,7 +76,7 @@ export function ReScannerClient({
   selectedQuarter,
   priorQuarter,
   quarterly,
-  pe,
+  pb,
 }: {
   rows: ReScore[];
   universe: UniverseLiquidityRow[];
@@ -80,7 +86,7 @@ export function ReScannerClient({
   priorQuarter: string | null;
   /** Entries, not a Map — a Map does not survive the RSC boundary. */
   quarterly: [string, QuarterlyFacts][];
-  pe: [string, number | null][];
+  pb: [string, RePb][];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -94,12 +100,8 @@ export function ReScannerClient({
     () => new Map(universe.map((u) => [u.symbol, u.avg_volume_20d])),
     [universe],
   );
-  const rs1mBySymbol = useMemo(
-    () => new Map(universe.map((u) => [u.symbol, u.rs_1m])),
-    [universe],
-  );
   const quarterlyBySymbol = useMemo(() => new Map(quarterly), [quarterly]);
-  const peBySymbol = useMemo(() => new Map(pe), [pe]);
+  const pbBySymbol = useMemo(() => new Map(pb), [pb]);
 
   const filtered = useMemo(() => {
     const min = minScore === "" ? null : Number(minScore);
@@ -129,10 +131,10 @@ export function ReScannerClient({
       switch (sortKey) {
         case "total_score":
           return r.total_score;
-        case "rs_1m":
-          return rs1mBySymbol.get(r.symbol) ?? null;
-        case "pe":
-          return peBySymbol.get(r.symbol) ?? null;
+        case "pb_5y_avg":
+          return pbBySymbol.get(r.symbol)?.avg5y ?? null;
+        case "pb":
+          return pbBySymbol.get(r.symbol)?.now ?? null;
         case "rev_bn":
           return quarterlyBySymbol.get(r.symbol)?.revenueBn ?? null;
         case "rev_yoy":
@@ -169,8 +171,8 @@ export function ReScannerClient({
       return a.symbol.localeCompare(b.symbol);
     });
     return out;
-  }, [rows, minScore, minAvgVolume, minNpatBn, volBySymbol, rs1mBySymbol,
-      quarterlyBySymbol, peBySymbol, search, sortKey, sortAsc]);
+  }, [rows, minScore, minAvgVolume, minNpatBn, volBySymbol,
+      quarterlyBySymbol, pbBySymbol, search, sortKey, sortAsc]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -317,7 +319,7 @@ export function ReScannerClient({
                   {t(locale, "faQuarterlyGroup")}
                 </th>
                 <th colSpan={N_DAILY} className={`label row-h px-2 text-center ${BLOCK_HEAD} ${BLOCK_SPLIT}`}>
-                  {t(locale, "faDailyGroup")}
+                  {t(locale, "faValuationGroup")}
                 </th>
               </tr>
               <tr>
@@ -338,7 +340,13 @@ export function ReScannerClient({
                   <th
                     key={c.key}
                     title={locale === "vi" ? c.fVi : c.fEn}
-                    className={`${TH_NUM} ${BLOCK_HEAD}`
+                    // TH_NUM carries `whitespace-nowrap`, so a wrapping column
+                    // SWAPS that class rather than appending `whitespace-normal`
+                    // beside it: two same-specificity utilities would be decided
+                    // by generated-stylesheet order, not by the order here.
+                    className={`${"wrap" in c && c.wrap
+                      ? TH_NUM.replace("whitespace-nowrap", "whitespace-normal leading-tight")
+                      : TH_NUM} ${BLOCK_HEAD}`
                       + (i === 0
                         ? ` ${BLOCK_EDGE}`
                         : c.group === "d" && RE_EXTRA[i - 1].group === "q"
@@ -403,8 +411,8 @@ export function ReScannerClient({
                           cls: (q?.npatBn ?? 0) < 0 ? "text-down" : "",
                         },
                         { key: "npat_yoy", node: formatPnl(q?.npatYoy ?? null), cls: pnlColor(q?.npatYoy ?? null) },
-                        { key: "rs_1m", node: rs1mBySymbol.get(r.symbol) ?? "—", cls: "" },
-                        { key: "pe", node: fmtRatio(peBySymbol.get(r.symbol) ?? null), cls: "" },
+                        { key: "pb_5y_avg", node: fmtRatio(pbBySymbol.get(r.symbol)?.avg5y ?? null), cls: "" },
+                        { key: "pb", node: fmtRatio(pbBySymbol.get(r.symbol)?.now ?? null), cls: "" },
                       ];
                       return cells.map((cell, i) => (
                         <td
@@ -412,7 +420,7 @@ export function ReScannerClient({
                           className={`${TD_NUM} ${BLOCK_BODY} ${cell.cls}`
                             + (i === 0
                               ? ` ${BLOCK_EDGE}`
-                              : cell.key === "rs_1m"
+                              : cell.key === FIRST_DAILY_KEY
                                 ? ` ${BLOCK_SPLIT}`
                                 : "")}
                         >
