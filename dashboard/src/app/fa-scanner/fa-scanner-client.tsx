@@ -524,7 +524,19 @@ export function FaScannerClient({
                   </td>
                   <td className="row-h px-2 text-data text-fg-muted">
                     {industry[row.symbol] ? (
-                      <span className="block max-w-[10rem] truncate" title={industry[row.symbol]}>
+                      // Two clamped lines at 8rem, matching Signal Pro. Width
+                      // rather than max-width: the table lays out automatically,
+                      // and once the text may wrap a cap alone lets the column
+                      // collapse well below the target in Vietnamese — narrower
+                      // than intended, and three or four lines per cell. And no
+                      // `block` alongside line-clamp: the clamp needs its own
+                      // display value and `block` silently wins it.
+                      //
+                      // This is the one column allowed to break the 26px row-h
+                      // rhythm. At 12px/1.25 a second line costs ~4px per row,
+                      // which buys back 32px of width on every row of a table
+                      // that is already wide enough to scroll.
+                      <span className="line-clamp-2 w-[8rem] leading-tight" title={industry[row.symbol]}>
                         {industry[row.symbol]}
                       </span>
                     ) : (
