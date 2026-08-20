@@ -53,6 +53,35 @@ const DEFAULT_VISIBLE_SESSIONS = 250;
 
 const RSI_COLOR = "#7c3aed";
 const MACD_LINE_COLOR = VN_INDEX;
+
+// Prices on the price pane are shown in THOUSANDS of VND: 36,550 reads "36.55".
+// Display only — `ta_ohlcv` and every number the pipeline computes stay in
+// whole VND, and the formatter is the only place the ÷1000 happens.
+//
+// This is how every Vietnamese platform quotes a board (nghìn đồng), and it is
+// what makes the axis legible: five digits and two zero decimals per tick was
+// the widest thing on the chart while carrying no information.
+//
+// `toFixed` and its DOT decimal, deliberately, rather than `formatPriceK` from
+// lib/format — which is the same ÷1000 but renders vi-VN, so "36,55". Inside
+// this chart the separator has to match the four panes stacked beneath it
+// (RSI 91.00, MACD, MCDX), all drawn by lightweight-charts' own formatter with
+// a dot. A comma here would make one axis disagree with the rest of its chart.
+//
+// `minMove: 1`, NOT the 10-VND tick this resolution implies. The scale derives
+// `base = Math.round(1 / minMove)`, so any minMove above 1 rounds to base 0 —
+// and PriceTickSpanCalculator throws "something wrong with base" on 0 rather
+// than degrading. Whole VND is safe and the tick span lands on 500/1000 anyway.
+//
+// Series-level, not chart-level: `localization.priceFormatter` OVERRIDES the
+// per-series format (lightweight-charts formats with it and falls back to the
+// series formatter), so setting it there would push ÷1000 onto the volume,
+// RSI, MACD and MCDX panes too.
+const PRICE_FORMAT = {
+  type: "custom" as const,
+  formatter: (price: number) => (price / 1000).toFixed(2),
+  minMove: 1,
+};
 const MACD_SIGNAL_COLOR = "#ea580c";
 // Volume bars: the BOARD tokens at 0.7 alpha, not a pastel.
 //
@@ -586,6 +615,7 @@ export function ChartClient({
 
     // === Pane 0: Price ===========================================
     const candleSeries = chart.addSeries(CandlestickSeries, {
+      priceFormat: PRICE_FORMAT,
       upColor: UP_COLOR,
       downColor: DOWN_COLOR,
       borderUpColor: UP_COLOR,
@@ -605,6 +635,7 @@ export function ChartClient({
 
     for (const period of features.maPeriods) {
       const line = chart.addSeries(LineSeries, {
+        priceFormat: PRICE_FORMAT,
         color: MA_COLOR[period] ?? "#888",
         // 2px, not 1: a hairline at the old zoom disappeared into the candles.
         lineWidth: 2,
@@ -634,6 +665,7 @@ export function ChartClient({
       const { pivots, provisional } = zigzag(closes.slice(w0));
       if (pivots.length >= 2) {
         const zz = chart.addSeries(LineSeries, {
+          priceFormat: PRICE_FORMAT,
           color: ZIGZAG_COLOR,
           lineWidth: 2,
           priceLineVisible: false,
@@ -646,6 +678,7 @@ export function ChartClient({
       const lastPivot = pivots[pivots.length - 1];
       if (lastPivot && provisional && provisional.idx > lastPivot.idx) {
         const open = chart.addSeries(LineSeries, {
+          priceFormat: PRICE_FORMAT,
           color: ZIGZAG_COLOR,
           lineWidth: 2,
           lineStyle: LineStyle.Dashed,
@@ -678,6 +711,7 @@ export function ChartClient({
     for (const tl of activeTl) {
       const isUp = tl.trend_type === "uptrend";
       const tlSeries = chart.addSeries(LineSeries, {
+        priceFormat: PRICE_FORMAT,
         color: isUp ? UP_COLOR : DOWN_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
@@ -696,6 +730,7 @@ export function ChartClient({
       const rh = rollingMax(highs, 20);
       const shifted = candles.map((_, i) => (i > 0 ? rh[i - 1] : null));
       const line = chart.addSeries(LineSeries, {
+        priceFormat: PRICE_FORMAT,
         color: UP_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Dotted,
@@ -710,6 +745,7 @@ export function ChartClient({
       const rl = rollingMin(lows, 20);
       const shifted = candles.map((_, i) => (i > 0 ? rl[i - 1] : null));
       const line = chart.addSeries(LineSeries, {
+        priceFormat: PRICE_FORMAT,
         color: DOWN_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Dotted,
@@ -726,6 +762,7 @@ export function ChartClient({
       const rh = rollingMax(highs, 252);
       const shifted = candles.map((_, i) => (i > 0 ? rh[i - 1] : null));
       const line = chart.addSeries(LineSeries, {
+        priceFormat: PRICE_FORMAT,
         color: UP_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
@@ -740,6 +777,7 @@ export function ChartClient({
       const rl = rollingMin(lows, 252);
       const shifted = candles.map((_, i) => (i > 0 ? rl[i - 1] : null));
       const line = chart.addSeries(LineSeries, {
+        priceFormat: PRICE_FORMAT,
         color: DOWN_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
