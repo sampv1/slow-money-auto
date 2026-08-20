@@ -17,7 +17,7 @@ import {
 } from "@/lib/fa";
 import { TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
-import { formatBillions, formatPercent, formatPnl, pnlColor } from "@/lib/format";
+import { formatBillions, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
 
 // Score components shown as columns: short word-label + formula tooltip, both
@@ -79,8 +79,8 @@ const FA_EXTRA = [
     fEn: "Median of the last 5 annual P/E figures (fa_annual_pe). The yardstick criterion 9 scores the current P/E against.",
     fVi: "Trung vị P/E 5 năm gần nhất (fa_annual_pe). Đây là mốc mà tiêu chí 9 dùng để so với P/E hiện tại." },
   { key: "pe_vs_median", group: "d", wrap: true, en: "P/E vs. 5-Year Median", vi: "P/E vs. trung vị 5 năm",
-    fEn: "Current P/E ÷ 5-year median P/E, as a percentage. 100% is exactly its own normal; above that is a premium (RED), below is a discount (GREEN) — the opposite of the P&L columns, where up is good.",
-    fVi: "P/E hiện tại ÷ trung vị P/E 5 năm, tính theo %. 100% là đúng mức bình thường của chính nó; cao hơn là đắt (ĐỎ), thấp hơn là rẻ (XANH) — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
+    fEn: "Current P/E ÷ 5-year median P/E − 1. RED is above its own history (paying a premium), GREEN is below it — the opposite of the P&L columns, where up is good.",
+    fVi: "P/E hiện tại ÷ trung vị P/E 5 năm − 1. ĐỎ là cao hơn mức bình thường của chính nó (đắt hơn), XANH là thấp hơn — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
 ] as const;
 
 type PtsKey = (typeof FA_COMPONENTS)[number]["pts"];
@@ -584,7 +584,7 @@ export function FaScannerClient({
                     // firms don't report it in this format — the same reason they
                     // score UNRATED). A zero here would read as "no sales".
                     // One computation, used for both the number and its colour.
-                    const peVsMedian = relativeValuationPct(row.current_pe, row.pe_5y_median);
+                    const peGap = relativeValuationPct(row.current_pe, row.pe_5y_median);
                     const cells: { key: ExtraKey; node: ReactNode; cls: string }[] = [
                       { key: "rev_bn", node: formatBillions(q?.revenueBn ?? null), cls: "" },
                       { key: "rev_yoy", node: formatPnl(row.c4_rev_yoy), cls: pnlColor(row.c4_rev_yoy) },
@@ -600,10 +600,8 @@ export function FaScannerClient({
                       { key: "pe_5y_median", node: fmtRatio(row.pe_5y_median), cls: "" },
                       {
                         key: "pe_vs_median",
-                        // formatPercent, not formatPnl: this is a LEVEL, so it
-                        // takes no leading "+" — "126,9%" is not a gain.
-                        node: formatPercent(peVsMedian, 1),
-                        cls: relativeValuationColor(peVsMedian),
+                        node: formatPnl(peGap),
+                        cls: relativeValuationColor(peGap),
                       },
                     ];
                     return cells.map((cell, i) => (
