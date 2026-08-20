@@ -12,6 +12,8 @@ import {
   faNormalizedScore,
   fmtRatio,
   pointsColor,
+  relativeValuationColor,
+  relativeValuationPct,
 } from "@/lib/fa";
 import { TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
@@ -38,10 +40,13 @@ const FA_COMPONENTS = [
     fEn: "Net income (TTM) ÷ average equity", fVi: "LNST (TTM) ÷ vốn chủ sở hữu bình quân" },
   { pts: "c8_pts", en: "D/E", vi: "Nợ/VCSH",
     fEn: "Total debt ÷ equity", fVi: "Tổng nợ vay ÷ vốn chủ sở hữu" },
-  // Named for the comparison, not "Val"/"Định giá": the block heading beside it
-  // is now "Valuation"/"Định giá" too, and in Vietnamese those were the SAME
-  // word twice in one header. Matches the real-estate tab's "P/E vs 20q".
-  { pts: "c9_pts", en: "P/E vs 5y", vi: "P/E vs 5N",
+  // "Val"/"Định giá" is safe again now the block beside it reads "Relative
+  // Valuation"/"Định giá tương đối". It briefly had to be "P/E vs 5y", back
+  // when that block was plain "Định giá" and Vietnamese showed the same word
+  // twice in one header; the longer group name resolves that, and this column
+  // must NOT echo the "P/E vs. 5-Year Median" percent three columns along —
+  // this one is the criterion's POINTS, not the gap.
+  { pts: "c9_pts", en: "Val", vi: "Định giá",
     fEn: "Current P/E vs 5-year median P/E", fVi: "P/E hiện tại so với trung vị P/E 5 năm" },
 ] as const;
 
@@ -62,16 +67,20 @@ const FA_EXTRA = [
   { key: "npat_yoy", group: "q", en: "NPAT YoY", vi: "LNST YoY",
     fEn: "NPAT ÷ NPAT same quarter last year − 1 (÷ |prior|, so a loss→profit swing reads positive)",
     fVi: "LNST ÷ LNST cùng kỳ năm trước − 1 (chia |kỳ trước|, nên lỗ→lãi cho giá trị dương)" },
-  // `wrap`: this label is far longer than the "17.05" beneath it, and a
-  // nowrap header would hold ~170px open for a four-character number. Wrapping
-  // lets the DATA size the column instead — the same fix the Portfolio table
-  // needed in Vietnamese.
-  { key: "pe_5y_median", group: "d", wrap: true, en: "5-Year Median P/E", vi: "Trung vị P/E 5 năm",
-    fEn: "Median of the last 5 annual P/E figures (fa_annual_pe). The yardstick criterion 9 scores the current P/E against.",
-    fVi: "Trung vị P/E 5 năm gần nhất (fa_annual_pe). Đây là mốc mà tiêu chí 9 dùng để so với P/E hiện tại." },
+  // Reading order is the comparison itself: what it costs NOW, what it normally
+  // costs, then the gap between them. `wrap` on the two long labels — each is
+  // far wider than the "17.05" beneath it, and a nowrap header would hold
+  // ~170px open for a four-character number. Wrapping lets the DATA size the
+  // column, the same fix the Portfolio table needed in Vietnamese.
   { key: "pe", group: "d", en: "P/E", vi: "P/E",
     fEn: "Price ÷ trailing-twelve-month EPS. Priced daily for the LATEST quarter only — older quarters show the P/E frozen at that quarter's last scoring.",
     fVi: "Giá ÷ EPS 4 quý gần nhất. Chỉ cập nhật hằng ngày cho quý MỚI NHẤT — các quý cũ giữ P/E tại lần chấm cuối của quý đó." },
+  { key: "pe_5y_median", group: "d", wrap: true, en: "5-Year Median P/E", vi: "Trung vị P/E 5 năm",
+    fEn: "Median of the last 5 annual P/E figures (fa_annual_pe). The yardstick criterion 9 scores the current P/E against.",
+    fVi: "Trung vị P/E 5 năm gần nhất (fa_annual_pe). Đây là mốc mà tiêu chí 9 dùng để so với P/E hiện tại." },
+  { key: "pe_vs_median", group: "d", wrap: true, en: "P/E vs. 5-Year Median", vi: "P/E vs. trung vị 5 năm",
+    fEn: "Current P/E ÷ 5-year median P/E − 1. RED is above its own history (paying a premium), GREEN is below it — the opposite of the P&L columns, where up is good.",
+    fVi: "P/E hiện tại ÷ trung vị P/E 5 năm − 1. ĐỎ là cao hơn mức bình thường của chính nó (đắt hơn), XANH là thấp hơn — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
 ] as const;
 
 type PtsKey = (typeof FA_COMPONENTS)[number]["pts"];
@@ -232,6 +241,8 @@ export function FaScannerClient({
           return r.current_pe;
         case "pe_5y_median":
           return r.pe_5y_median;
+        case "pe_vs_median":
+          return relativeValuationPct(r.current_pe, r.pe_5y_median);
         case "rev_bn":
           return quarterlyBySymbol.get(r.symbol)?.revenueBn ?? null;
         case "npat_bn":
@@ -508,7 +519,12 @@ export function FaScannerClient({
                     key={c.key}
                     title={locale === "vi" ? c.fVi : c.fEn}
                     className={`label px-3 py-2 text-right cursor-pointer select-none ${BLOCK_HEAD} `
-                      + ("wrap" in c && c.wrap ? "whitespace-normal leading-tight" : "whitespace-nowrap")
+                      // `min-w` alongside the wrap: without a floor the column
+                      // shrinks to its DATA (four characters) and Vietnamese
+                      // then breaks the label over four one-word lines, which
+                      // is what makes a sticky header tall. The floor buys two
+                      // lines back for ~22px of width.
+                      + ("wrap" in c && c.wrap ? "whitespace-normal leading-tight min-w-[6.5rem]" : "whitespace-nowrap")
                       + (i === 0 ? ` ${BLOCK_EDGE}` : c.group === "d" && FA_EXTRA[i - 1].group === "q" ? ` ${BLOCK_SPLIT}` : "")}
                     onClick={() => toggleSort(c.key)}
                   >
@@ -567,6 +583,8 @@ export function FaScannerClient({
                     // have no fa_quarterly revenue at all (banks and securities
                     // firms don't report it in this format — the same reason they
                     // score UNRATED). A zero here would read as "no sales".
+                    // One computation, used for both the number and its colour.
+                    const peGap = relativeValuationPct(row.current_pe, row.pe_5y_median);
                     const cells: { key: ExtraKey; node: ReactNode; cls: string }[] = [
                       { key: "rev_bn", node: formatBillions(q?.revenueBn ?? null), cls: "" },
                       { key: "rev_yoy", node: formatPnl(row.c4_rev_yoy), cls: pnlColor(row.c4_rev_yoy) },
@@ -578,8 +596,13 @@ export function FaScannerClient({
                         cls: (q?.npatBn ?? 0) < 0 ? "text-down" : "",
                       },
                       { key: "npat_yoy", node: formatPnl(q?.npatYoy ?? null), cls: pnlColor(q?.npatYoy ?? null) },
-                      { key: "pe_5y_median", node: fmtRatio(row.pe_5y_median), cls: "" },
                       { key: "pe", node: fmtRatio(row.current_pe), cls: "" },
+                      { key: "pe_5y_median", node: fmtRatio(row.pe_5y_median), cls: "" },
+                      {
+                        key: "pe_vs_median",
+                        node: formatPnl(peGap),
+                        cls: relativeValuationColor(peGap),
+                      },
                     ];
                     return cells.map((cell, i) => (
                       <td

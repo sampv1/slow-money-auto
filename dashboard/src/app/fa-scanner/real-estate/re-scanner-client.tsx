@@ -12,7 +12,12 @@ import {
   rePointsColor,
   reNoteLabel,
 } from "@/lib/fa-re";
-import { type QuarterlyFacts, fmtRatio } from "@/lib/fa";
+import {
+  type QuarterlyFacts,
+  fmtRatio,
+  relativeValuationColor,
+  relativeValuationPct,
+} from "@/lib/fa";
 import type { RePb, UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatBillions, formatNumber, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
@@ -40,14 +45,19 @@ const RE_EXTRA = [
   { key: "npat_yoy", group: "q", en: "NPAT YoY", vi: "LNST YoY",
     fEn: "NPAT ÷ NPAT same quarter last year − 1 (÷ |prior|, so a loss→profit swing reads positive)",
     fVi: "LNST ÷ LNST cùng kỳ năm trước − 1 (chia |kỳ trước|, nên lỗ→lãi cho giá trị dương)" },
-  // `wrap`: see the manufacturing tab. In Vietnamese this label ran 171px to
-  // hold a number like "1.18"; wrapping hands the width back to the data.
-  { key: "pb_5y_avg", group: "d", wrap: true, en: "5-Year Average P/B", vi: "P/B trung bình 5 năm",
-    fEn: "Mean P/B over the last 20 quarters. Criterion 12 compares the current P/B to the MEDIAN of the same window, which is a different number.",
-    fVi: "P/B trung bình 20 quý gần nhất. Tiêu chí 12 so P/B hiện tại với TRUNG VỊ của cùng cửa sổ đó — là một con số khác." },
+  // Reading order is the comparison itself, as on the manufacturing tab: what
+  // it costs NOW, what it normally costs, then the gap. `wrap` on the two long
+  // labels — in Vietnamese "P/B trung bình 5 năm" ran 171px to hold a number
+  // like "1.18"; wrapping hands the width back to the data.
   { key: "pb", group: "d", en: "P/B", vi: "P/B",
     fEn: "Price ÷ book value per share, from the quarterly FiinProX export — the same figure criterion 12 is scored from, so it moves once per import rather than daily.",
     fVi: "Giá ÷ giá trị sổ sách mỗi cổ phiếu, lấy từ file FiinProX theo quý — đúng số mà tiêu chí 12 dùng để chấm, nên chỉ thay đổi mỗi lần nhập file, không cập nhật hằng ngày." },
+  { key: "pb_5y_avg", group: "d", wrap: true, en: "5-Year Average P/B", vi: "P/B trung bình 5 năm",
+    fEn: "Mean P/B over the last 20 quarters. Criterion 12 compares the current P/B to the MEDIAN of the same window, which is a different number.",
+    fVi: "P/B trung bình 20 quý gần nhất. Tiêu chí 12 so P/B hiện tại với TRUNG VỊ của cùng cửa sổ đó — là một con số khác." },
+  { key: "pb_vs_avg", group: "d", wrap: true, en: "P/B vs. 5-Year Average", vi: "P/B vs. trung bình 5 năm",
+    fEn: "Current P/B ÷ 5-year average P/B − 1. RED is above its own history (paying a premium), GREEN is below it — the opposite of the P&L columns, where up is good.",
+    fVi: "P/B hiện tại ÷ P/B trung bình 5 năm − 1. ĐỎ là cao hơn mức bình thường của chính nó (đắt hơn), XANH là thấp hơn — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
 ] as const;
 
 type ExtraKey = (typeof RE_EXTRA)[number]["key"];
@@ -131,10 +141,14 @@ export function ReScannerClient({
       switch (sortKey) {
         case "total_score":
           return r.total_score;
-        case "pb_5y_avg":
-          return pbBySymbol.get(r.symbol)?.avg5y ?? null;
         case "pb":
           return pbBySymbol.get(r.symbol)?.now ?? null;
+        case "pb_5y_avg":
+          return pbBySymbol.get(r.symbol)?.avg5y ?? null;
+        case "pb_vs_avg": {
+          const v = pbBySymbol.get(r.symbol);
+          return relativeValuationPct(v?.now, v?.avg5y);
+        }
         case "rev_bn":
           return quarterlyBySymbol.get(r.symbol)?.revenueBn ?? null;
         case "rev_yoy":
@@ -344,8 +358,11 @@ export function ReScannerClient({
                     // SWAPS that class rather than appending `whitespace-normal`
                     // beside it: two same-specificity utilities would be decided
                     // by generated-stylesheet order, not by the order here.
+                    // `min-w` alongside the wrap: see the manufacturing tab —
+                    // without a floor the column shrinks to its four-character
+                    // data and Vietnamese breaks the label over four lines.
                     className={`${"wrap" in c && c.wrap
-                      ? TH_NUM.replace("whitespace-nowrap", "whitespace-normal leading-tight")
+                      ? TH_NUM.replace("whitespace-nowrap", "whitespace-normal leading-tight min-w-[6.5rem]")
                       : TH_NUM} ${BLOCK_HEAD}`
                       + (i === 0
                         ? ` ${BLOCK_EDGE}`
@@ -397,6 +414,10 @@ export function ReScannerClient({
                     })}
                     {(() => {
                       const q = quarterlyBySymbol.get(r.symbol);
+                      // One lookup and one computation, reused for the number
+                      // and its colour.
+                      const v = pbBySymbol.get(r.symbol);
+                      const pbGap = relativeValuationPct(v?.now, v?.avg5y);
                       // "—" for a missing figure, never 0: a symbol with no
                       // fa_quarterly row would otherwise read as "no sales".
                       const cells: { key: ExtraKey; node: ReactNode; cls: string }[] = [
@@ -411,8 +432,13 @@ export function ReScannerClient({
                           cls: (q?.npatBn ?? 0) < 0 ? "text-down" : "",
                         },
                         { key: "npat_yoy", node: formatPnl(q?.npatYoy ?? null), cls: pnlColor(q?.npatYoy ?? null) },
-                        { key: "pb_5y_avg", node: fmtRatio(pbBySymbol.get(r.symbol)?.avg5y ?? null), cls: "" },
-                        { key: "pb", node: fmtRatio(pbBySymbol.get(r.symbol)?.now ?? null), cls: "" },
+                        { key: "pb", node: fmtRatio(v?.now ?? null), cls: "" },
+                        { key: "pb_5y_avg", node: fmtRatio(v?.avg5y ?? null), cls: "" },
+                        {
+                          key: "pb_vs_avg",
+                          node: formatPnl(pbGap),
+                          cls: relativeValuationColor(pbGap),
+                        },
                       ];
                       return cells.map((cell, i) => (
                         <td

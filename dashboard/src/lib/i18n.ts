@@ -331,7 +331,7 @@ export const translations = {
     // FA Scanner column-group headers
     faComponentsGroup: "Score components",
     faQuarterlyGroup: "Quarterly results",
-    faValuationGroup: "Valuation",
+    faValuationGroup: "Relative Valuation",
     faRevenueCol: "Revenue (bn)",
     faRevYoYCol: "Rev YoY",
     faNpatCol: "NPAT (bn)",
@@ -1120,7 +1120,7 @@ export const translations = {
     // FA Scanner column-group headers
     faComponentsGroup: "Thành phần điểm",
     faQuarterlyGroup: "Kết quả kinh doanh quý",
-    faValuationGroup: "Định giá",
+    faValuationGroup: "Định giá tương đối",
     faRevenueCol: "Doanh thu (tỷ)",
     faRevYoYCol: "DT YoY",
     faNpatCol: "LNST (tỷ)",
