@@ -201,16 +201,21 @@ export function fmtRatio(v: number | null): string {
 }
 
 /**
- * How far a current multiple sits above or below its own long-run benchmark,
- * in percent: `current ÷ benchmark − 1`. +26.9 means "26.9% richer than its
- * 5-year normal", −20.4 means "20.4% cheaper".
+ * A current multiple as a PERCENTAGE OF its own long-run benchmark:
+ * `current ÷ benchmark × 100`. 126.9% means "costs 26.9% more than its 5-year
+ * normal"; 79.6% means "costs about a fifth less".
+ *
+ * A LEVEL, not a change — 100% is the neutral point, not 0%. This mirrors the
+ * real-estate rubric, where criterion 12 is literally `pb_now ÷ pb_med` and
+ * `formatReValue` renders it the same way, so the scanner column and the
+ * criterion beside it state the same quantity in the same units.
  *
  * NULL rather than a number when the comparison would be meaningless:
  *   - either side missing (no reading, not a zero);
  *   - a benchmark at or below zero, which happens on the manufacturing tab
  *     because `fa_annual_pe` records loss years as a NEGATIVE annual P/E and
  *     the 5-year MEDIAN of those can land below zero. Dividing by it flips the
- *     sign, so a cheap stock would read as a premium.
+ *     sign, so a cheap stock would read as a discount to a negative yardstick.
  */
 export function relativeValuationPct(
   current: number | null | undefined,
@@ -219,23 +224,24 @@ export function relativeValuationPct(
   if (current === null || current === undefined || !Number.isFinite(current)) return null;
   if (benchmark === null || benchmark === undefined || !Number.isFinite(benchmark)) return null;
   if (benchmark <= 0) return null;
-  return (current / benchmark - 1) * 100;
+  return (current / benchmark) * 100;
 }
 
 /**
- * Colour for that gap — the INVERSE of `pnlColor`, and the reason this is its
- * own function rather than a reuse.
+ * Colour for that level — the INVERSE of `pnlColor`, and pivoting at 100 rather
+ * than 0. Both differences are why this is its own function rather than a reuse.
  *
  * Everywhere else in the app a positive number is good and takes `text-up`.
- * Here a positive number means the stock costs MORE than its own history, which
- * is the unattractive side, so above-benchmark is `text-down` (red) and
- * below-benchmark is `text-up` (green). Passing this through `pnlColor` would
- * paint every expensive stock green — a wrong answer that still looks right.
+ * Here the number is a ratio to the stock's own history: above 100% it costs
+ * MORE than it normally does, which is the unattractive side, so it takes
+ * `text-down` (red) and below 100% takes `text-up` (green). Passing this
+ * through `pnlColor` would paint every one of them green, since every value is
+ * positive.
  */
 export function relativeValuationColor(pct: number | null): string {
   if (pct === null) return "text-fg-faint";
-  if (pct > 0) return "text-down";
-  if (pct < 0) return "text-up";
+  if (pct > 100) return "text-down";
+  if (pct < 100) return "text-up";
   return "text-fg-muted";
 }
 

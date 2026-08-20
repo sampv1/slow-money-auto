@@ -19,7 +19,7 @@ import {
   relativeValuationPct,
 } from "@/lib/fa";
 import type { RePb, UniverseLiquidityRow } from "@/lib/cached-data";
-import { formatBillions, formatNumber, formatPnl, pnlColor } from "@/lib/format";
+import { formatBillions, formatNumber, formatPercent, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { TABLE, TABLE_FREEZE, THEAD_STICKY, TH, TH_NUM, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
 
@@ -56,8 +56,8 @@ const RE_EXTRA = [
     fEn: "Mean P/B over the last 20 quarters. Criterion 12 compares the current P/B to the MEDIAN of the same window, which is a different number.",
     fVi: "P/B trung bình 20 quý gần nhất. Tiêu chí 12 so P/B hiện tại với TRUNG VỊ của cùng cửa sổ đó — là một con số khác." },
   { key: "pb_vs_avg", group: "d", wrap: true, en: "P/B vs. 5-Year Average", vi: "P/B vs. trung bình 5 năm",
-    fEn: "Current P/B ÷ 5-year average P/B − 1. RED is above its own history (paying a premium), GREEN is below it — the opposite of the P&L columns, where up is good.",
-    fVi: "P/B hiện tại ÷ P/B trung bình 5 năm − 1. ĐỎ là cao hơn mức bình thường của chính nó (đắt hơn), XANH là thấp hơn — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
+    fEn: "Current P/B ÷ 5-year average P/B, as a percentage — the same shape as criterion 12, which divides by the MEDIAN. 100% is exactly its own normal; above that is a premium (RED), below is a discount (GREEN).",
+    fVi: "P/B hiện tại ÷ P/B trung bình 5 năm, tính theo % — cùng dạng với tiêu chí 12, nhưng tiêu chí đó chia cho TRUNG VỊ. 100% là đúng mức bình thường của chính nó; cao hơn là đắt (ĐỎ), thấp hơn là rẻ (XANH)." },
 ] as const;
 
 type ExtraKey = (typeof RE_EXTRA)[number]["key"];
@@ -417,7 +417,7 @@ export function ReScannerClient({
                       // One lookup and one computation, reused for the number
                       // and its colour.
                       const v = pbBySymbol.get(r.symbol);
-                      const pbGap = relativeValuationPct(v?.now, v?.avg5y);
+                      const pbVsAvg = relativeValuationPct(v?.now, v?.avg5y);
                       // "—" for a missing figure, never 0: a symbol with no
                       // fa_quarterly row would otherwise read as "no sales".
                       const cells: { key: ExtraKey; node: ReactNode; cls: string }[] = [
@@ -436,8 +436,10 @@ export function ReScannerClient({
                         { key: "pb_5y_avg", node: fmtRatio(v?.avg5y ?? null), cls: "" },
                         {
                           key: "pb_vs_avg",
-                          node: formatPnl(pbGap),
-                          cls: relativeValuationColor(pbGap),
+                          // formatPercent, not formatPnl: this is a LEVEL, so
+                          // it takes no leading "+" — "126,9%" is not a gain.
+                          node: formatPercent(pbVsAvg, 1),
+                          cls: relativeValuationColor(pbVsAvg),
                         },
                       ];
                       return cells.map((cell, i) => (
