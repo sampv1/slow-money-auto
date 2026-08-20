@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TABLE_FREEZE, TABLE_FULL_BLEED } from "@/lib/table";
+import { TABLE_FREEZE } from "@/lib/table";
 import { industryOptions } from "@/lib/symbol-meta";
 import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
@@ -662,7 +662,7 @@ export function SignalProClient({
         // spec, a non-visible overflow on one axis computes the other to `auto`),
         // which meant a `sticky` header anchored to it and never moved while the
         // PAGE scrolled. Capping the height gives it something to scroll against.
-        <div className={`bg-panel border-y border-line ${TABLE_FULL_BLEED} ${TABLE_FREEZE}`}>
+        <div className={`bg-panel rounded-lg border border-line ${TABLE_FREEZE}`}>
           {/* border-separate, NOT the default collapse.
               In collapsed mode a cell's borders belong to the TABLE, and the
               table paints them above every row-group background — including the

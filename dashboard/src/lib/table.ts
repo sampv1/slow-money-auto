@@ -132,19 +132,6 @@ export const TABLE_SCROLL = "overflow-x-auto";
 export const TABLE_FREEZE = "overflow-auto max-h-[calc(100vh-12rem)]";
 
 /**
- * Cancels `<main>`'s horizontal padding so a table box spans the FULL sheet.
- *
- * Must mirror the padding in `app/layout.tsx` exactly (`px-4 sm:px-6 lg:px-8`),
- * which is why it lives beside it as one string rather than being spelled out
- * per page. Worth 64px at `lg` — the margin that decides whether the widest
- * scanner needs a horizontal scrollbar at 1440px or not.
- *
- * Only for the tables that genuinely need it. A narrow table run full-bleed
- * just looks unmoored from the page around it.
- */
-export const TABLE_FULL_BLEED = "-mx-4 sm:-mx-6 lg:-mx-8";
-
-/**
  * A `<thead>` frozen to the top of a TABLE_FREEZE box. Use INSTEAD of `THEAD`.
  *
  * The bottom rule is a shadow rather than a border: Tailwind's preflight sets

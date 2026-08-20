@@ -21,7 +21,7 @@ import {
 import type { RePb, UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatBillions, formatNumber, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
-import { TABLE, TABLE_FREEZE, TABLE_FULL_BLEED, THEAD_STICKY, TH, TH_NUM, TH_NUM_WRAP, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
+import { TABLE, TABLE_FREEZE, THEAD_STICKY, TH, TH_NUM, TH_NUM_WRAP, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
 const DEFAULT_MIN_NPAT_BN = 180;
@@ -326,7 +326,7 @@ export function ReScannerClient({
         </div>
       ) : (
         <div
-          className={`bg-panel border-y border-line ${TABLE_FULL_BLEED} ${TABLE_FREEZE}${
+          className={`bg-panel border border-line ${TABLE_FREEZE}${
             isPending ? " opacity-50 transition-opacity" : ""
           }`}
         >

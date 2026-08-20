@@ -45,15 +45,17 @@ export default async function HomePage() {
 
   if (loadError) return <DataError error={loadError} locale={locale} />;
 
-  // Narrower than the 1600px shell the layout gives every page. That width
-  // exists for the scanners' 17-column tables; at full bleed this page's
-  // 7-column leaderboard spreads a symbol and its score ~1,100px apart and
-  // stops being scannable. Landing pages read better bounded.
+  // Same gutters as every other page: `main` already supplies them, so this
+  // block just fills it. It used to be `max-w-6xl mx-auto`, which centred the
+  // page 351px inside the masthead's own left edge — the content of every other
+  // route starts at the nav's left rule, and this one did not.
   //
-  // mx-auto is load-bearing: bounded but left-aligned left a 404px void down the
-  // right of a 1588px main, which is what the page was reported for.
+  // The width the cap was protecting is now handled where the problem actually
+  // is, inside the grid below: a 7-column leaderboard given 1,000px puts a
+  // symbol and its score that far apart and stops being scannable. Bounding the
+  // whole PAGE to fix one panel also mis-aligned the three that were fine.
   return (
-    <div className="mx-auto flex w-full flex-col gap-6 max-w-6xl">
+    <div className="flex w-full flex-col gap-6">
       <MarketStrip data={macro} locale={locale} />
 
       {/* The leaderboard sits BESIDE the explainer rather than above it.
@@ -68,8 +70,17 @@ export default async function HomePage() {
           the explainer is supporting text. items-start keeps each panel at its
           natural height — stretching the shorter one would open a blank strip
           under the leaderboard's "see all" link. Below lg it stacks back into
-          the original single-column order. */}
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[5fr_4fr]">
+          the original single-column order.
+
+          At 2xl the leaderboard stops taking its share and takes a CAP instead.
+          Its content needs ~495px; a proportional share of a 1,850px page gives
+          it over 1,000 and puts a symbol that far from its own score, which is
+          what the page-level `max-w-6xl` used to prevent — at the cost of
+          centring every other block 351px inside the masthead. Capping the one
+          panel that cannot use the width fixes the same thing locally. The
+          excess goes to the explainer, whose own prose is capped for measure,
+          so it absorbs the width as margin rather than as 150-character lines. */}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[5fr_4fr] 2xl:grid-cols-[minmax(0,44rem)_1fr]">
         <TopScores rows={topScores} universeSize={universeSize} locale={locale} />
         <ScoreExplainer locale={locale} />
       </div>

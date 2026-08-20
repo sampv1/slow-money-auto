@@ -15,7 +15,7 @@ import {
   relativeValuationColor,
   relativeValuationPct,
 } from "@/lib/fa";
-import { TABLE_FREEZE, TABLE_FULL_BLEED, THEAD_STICKY } from "@/lib/table";
+import { TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatBillions, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
@@ -454,7 +454,7 @@ export function FaScannerClient({
         // to be a plain literal — spelled inline here it was glued onto the
         // `${isPending …}` interpolation, which Tailwind's scanner does not read,
         // so this tab was relying on Signal Pro to emit its max-height for it.
-        <div className={`bg-panel border-y border-line ${TABLE_FULL_BLEED} ${TABLE_FREEZE}${isPending ? " opacity-50 transition-opacity" : ""}`}>
+        <div className={`bg-panel rounded-lg border border-line ${TABLE_FREEZE}${isPending ? " opacity-50 transition-opacity" : ""}`}>
           {/* border-separate, NOT collapse — see the note on Signal Pro's table.
               A collapsed border belongs to the TABLE and paints above every
               row-group background, including a sticky <thead>'s, and the table

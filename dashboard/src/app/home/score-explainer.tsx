@@ -21,7 +21,7 @@ function Row({ label, body, formula }: { label: string; body: string; formula: s
           {formula}
         </code>
       </div>
-      <p className="text-body-lg text-fg-muted">{body}</p>
+      <p className="text-body-lg text-fg-muted max-w-[78ch]">{body}</p>
     </div>
   );
 }
@@ -30,7 +30,7 @@ export function ScoreExplainer({ locale }: { locale: Locale }) {
   return (
     <section className="rounded-lg border border-line bg-panel px-4 py-4 sm:px-5 sm:py-5">
       <h2 className="text-title font-semibold text-fg tracking-tight">{t(locale, "homeHowTitle")}</h2>
-      <p className="mt-1 text-body-lg text-fg-muted">{t(locale, "homeHowIntro")}</p>
+      <p className="mt-1 text-body-lg text-fg-muted max-w-[78ch]">{t(locale, "homeHowIntro")}</p>
 
       <div className="mt-3 divide-y divide-line-faint">
         <Row
@@ -50,7 +50,7 @@ export function ScoreExplainer({ locale }: { locale: Locale }) {
         />
       </div>
 
-      <p className="mt-4 text-body text-fg-label">{t(locale, "homeHowNote")}</p>
+      <p className="mt-4 text-body text-fg-label max-w-[78ch]">{t(locale, "homeHowNote")}</p>
     </section>
   );
 }
