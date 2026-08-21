@@ -24,7 +24,8 @@ import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { TABLE, TABLE_FREEZE, THEAD_STICKY, TH, TH_NUM, TH_NUM_WRAP, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
-const DEFAULT_MIN_NPAT_BN = 180;
+// Same floor as the manufacturing tab and Signal Pro — see the note there.
+const DEFAULT_MIN_NPAT_BN = 125;
 
 /**
  * The trailing block: what the business did last quarter, then how the stock is

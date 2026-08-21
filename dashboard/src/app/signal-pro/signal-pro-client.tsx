@@ -31,7 +31,7 @@ const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
 // Scanner so the two pages agree on what "worth looking at" means. Like the
 // volume filter, a symbol with NO figure is excluded rather than assumed to pass
 // — see the hint text in the filter bar for why that matters here.
-const DEFAULT_MIN_NPAT_BN = 180;
+const DEFAULT_MIN_NPAT_BN = 125;
 
 // SCORE_GRADE_CLASS / gradeOf now live in src/lib/format.ts so the homepage
 // renders identical grade badges (imported at the top of this file).

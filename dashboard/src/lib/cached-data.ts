@@ -456,7 +456,7 @@ export const getCorporateActions = unstable_cache(
 /** Signal Pro's default liquidity floor: 20k average 20-session volume. */
 export const HOME_MIN_AVG_VOLUME = 20_000;
 /** Signal Pro's default quarterly NPAT floor, VND billion. */
-export const HOME_MIN_NPAT_BN = 180;
+export const HOME_MIN_NPAT_BN = 125;
 
 export type HomeTopScore = {
   symbol: string;
@@ -515,12 +515,14 @@ const getHomeUniverseRows = unstable_cache(
  * filtered names are dropped. The top of the score table skews illiquid AND
  * small-cap, so both floors bite hardest exactly where the ranking is richest.
  *
- * Measured 2026-08-19 against the current floors (20k volume + 180bn NPAT):
- * 150 candidates yield 19 survivors and 300 yield ~35, against a 10-row list.
- * 150 was sized when the only filter was volume (it yielded 26); adding the NPAT
- * floor cut that to 19, close enough to 10 that a shift in the market could run
- * the list short. 300 is still one `.in(...)` request, far below the 1000-row
- * cap, so the headroom is free.
+ * Measured 2026-08-21 against the current floors (20k volume + 125bn NPAT):
+ * 150 candidates yield 31 survivors and 300 yield 46, against a 10-row list.
+ * 150 was sized when the only filter was volume; adding the NPAT floor cut it
+ * close enough to 10 that a shift in the market could run the list short. 300 is
+ * still one `.in(...)` request, far below the 1000-row cap, so the headroom is
+ * free. Lowering the floor only ever ADDS survivors — at the previous 180bn it
+ * was 24 and 38 on the same day — so this sizing cannot be tightened by a cut to
+ * the NPAT default, only by raising it.
  *
  * Both floors are VIEW-TIME filters, exactly as on the scanners — never
  * conflated with is_active, which means "tracked", not "liquid".
