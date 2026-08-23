@@ -103,14 +103,22 @@ export default async function RootLayout({
       <body className="min-h-full bg-desk text-fg">
         {/* The sheet. A 1px rule and a lighter ground are what separate it from
             the desk — there is no shadow anywhere in this design.
-            NO WIDTH CAP: every page inheriting this container is a data table,
-            and the widest of them (the real-estate FA Scanner, 20 columns) needs
-            more than 2,000px. The previous 1600px cap threw away room a wide
-            monitor already had, and made those tables scroll sideways on a
-            screen big enough to show them whole. The genuinely text-shaped
-            pages (contact max-w-2xl, login max-w-sm) set their own narrower
-            width, so this does not stretch them. */}
-        <div className="min-h-full flex flex-col bg-canvas border-x border-line">
+            1600px, and a FIXED cap rather than a percentage. 1600 is sized off
+            the widest table's min-content: Signal Pro cannot compress below
+            1,479px in English, and 1600 minus the 64px page gutters leaves
+            1,534 — so every table on the site fits inside this cap, with room.
+
+            A percentage gutter (10/80/10) was the alternative and is worse at
+            every width that matters, because it takes the largest bite exactly
+            when the screen is smallest. At 1440 it would leave 1,088px of table
+            room against Signal Pro's 1,390 — a 302px scrollbar on a laptop that
+            currently scrolls 18. It only draws level with this cap above
+            ~1900px, and past that it stops capping at all and goes back to
+            stretching a 7-column leaderboard across a 2,560px monitor.
+
+            The genuinely text-shaped pages (contact max-w-2xl, login max-w-sm)
+            set their own narrower width, so this does not stretch them. */}
+        <div className="min-h-full flex flex-col max-w-[1600px] mx-auto bg-canvas border-x border-line">
           <header>
             <div className="px-4 sm:px-6 lg:px-8">
               <div className="flex items-center justify-between gap-4 pt-4 pb-3">
