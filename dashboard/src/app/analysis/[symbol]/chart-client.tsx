@@ -13,7 +13,7 @@ import {
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
-import type { Candle, RsHist } from "./page";
+import type { Candle, RsHist } from "@/lib/chart-payload";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import { ZIGZAG_COLOR, zigzag, zigzagWindowStart } from "@/lib/zigzag";
 import { t, type Locale } from "@/lib/i18n";

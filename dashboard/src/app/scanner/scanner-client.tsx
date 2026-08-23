@@ -22,6 +22,8 @@ import {
   presetName,
 } from "@/lib/ta-presets";
 import { track } from "@/lib/analytics";
+import { TechnicalAnalysis } from "@/components/technical-analysis";
+import type { ChartProps } from "@/lib/chart-payload";
 import type { LatestClose, TriggeredSignal, UniverseLiquidity } from "./page";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
@@ -183,6 +185,21 @@ export function ScannerClient({
   // don't overwrite the saved selection with the initial empty state.
   const [filterHydrated, setFilterHydrated] = useState(false);
 
+  // The inline chart: which symbol is being charted, and its payload. Held as
+  // one object rather than three parallel flags so the render cannot show a
+  // spinner and a stale chart at the same time.
+  const [chart, setChart] = useState<
+    | { status: "idle" }
+    | { status: "loading"; symbol: string }
+    | { status: "ready"; symbol: string; data: ChartProps }
+    | { status: "error"; symbol: string }
+  >({ status: "idle" });
+
+  // The indicator panel folds away so the chart can use the full width. Its
+  // own state, not derived from whether a chart is open: a user who folded it
+  // to read the table wants it to stay folded when they close the chart.
+  const [indicatorsOpen, setIndicatorsOpen] = useState(true);
+
   useEffect(() => {
     setSavedCombos(loadCombosFromStorage());
     setCombosHydrated(true);
@@ -209,6 +226,51 @@ export function ScannerClient({
       saveFilterToStorage({ indicators: [...selected], minAvgVolume, minCompositeRs });
     }
   }, [selected, minAvgVolume, minCompositeRs, filterHydrated]);
+
+  // Load the chart whenever the charted symbol changes, or the indicator
+  // selection behind it does — the markers on the chart ARE the signals that
+  // matched, so a chart left on the previous selection would contradict the row
+  // the user clicked.
+  //
+  // `ind` carries the scanner's own ticked boxes rather than being omitted, so
+  // the chart opens showing exactly what was scanned for, not the Analysis
+  // page's "whatever fired most recently" default.
+  const chartSymbol = chart.status === "idle" ? null : chart.symbol;
+  const indParam = useMemo(() => [...selected].join(","), [selected]);
+
+  useEffect(() => {
+    if (!chartSymbol) return;
+    const ac = new AbortController();
+    let cancelled = false;
+    // No setState here: the click handler already put us in `loading`, and this
+    // effect also re-runs when the INDICATOR SELECTION changes under an open
+    // chart — where dropping back to a spinner would flash away a chart that is
+    // about to be replaced by a near-identical one. It swaps on arrival instead.
+    fetch(
+      `/api/symbol-chart?symbol=${encodeURIComponent(chartSymbol)}&ind=${encodeURIComponent(indParam)}`,
+      { signal: ac.signal },
+    )
+      .then(async (r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return (await r.json()) as ChartProps;
+      })
+      .then((data) => {
+        // The guard matters: two quick clicks race, and without it the slower
+        // response can land last and chart a symbol the user already moved off.
+        if (!cancelled) setChart({ status: "ready", symbol: chartSymbol, data });
+      })
+      .catch((e) => {
+        if (!cancelled && e?.name !== "AbortError") {
+          setChart({ status: "error", symbol: chartSymbol });
+        }
+      });
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+    // `chart.status` is deliberately NOT a dependency — this effect sets it in
+    // its callbacks, and depending on it would re-fire on its own result.
+  }, [chartSymbol, indParam]);
 
   // Analytics: emit a scan_run event whenever the user has an active selection.
   // Gated on filterHydrated so the initial empty state doesn't fire spuriously.
@@ -477,20 +539,32 @@ export function ScannerClient({
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[380px_1fr] gap-4">
+      {/* One column when the indicator panel is folded, so the results table
+          and the chart under it get the full sheet — which is the point of the
+          fold: the chart is the widest thing on this page. */}
+      <div className={`grid grid-cols-1 gap-4 ${indicatorsOpen ? "md:grid-cols-[380px_1fr]" : ""}`}>
         {/* Indicator multi-select panel */}
-        <aside className="bg-panel rounded-lg border border-line p-4 self-start">
+        <aside className={`bg-panel rounded-lg border border-line p-4 self-start${indicatorsOpen ? "" : " hidden"}`}>
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-medium">{t(locale, "taIndicators")}</h2>
-            {selected.size > 0 && (
+            <div className="flex items-center gap-3">
+              {selected.size > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="text-data text-fg-muted hover:text-fg"
+                >
+                  {t(locale, "taClearAll")} ({selected.size})
+                </button>
+              )}
               <button
                 type="button"
-                onClick={clearAll}
+                onClick={() => setIndicatorsOpen(false)}
                 className="text-data text-fg-muted hover:text-fg"
               >
-                {t(locale, "taClearAll")} ({selected.size})
+                {t(locale, "taHideIndicators")}
               </button>
-            )}
+            </div>
           </div>
 
           {/* Combos — fixed style presets + user's localStorage combos.
@@ -703,11 +777,28 @@ export function ScannerClient({
           </div>
         </aside>
 
-        {/* Results panel — sticky so it stays in view while the user
-            scrolls the indicator menu on the left. */}
-        <section className="md:sticky md:top-4 md:self-start md:max-h-[calc(100vh-2rem)] md:overflow-y-auto">
-          <div className="flex items-baseline justify-between mb-2">
-            <h2 className="font-medium">{t(locale, "taResults")}</h2>
+        {/* Results, and the chart for whichever row was clicked.
+            NOT sticky and NOT full-height any more. Both were right when this
+            column was the only thing here: the table could own the viewport and
+            stay in view while the indicator menu scrolled. With a chart beneath
+            it, a table that grows to `100vh - 2rem` pushes the chart entirely
+            below the fold, so clicking a symbol appeared to do nothing.
+            The table now caps at 45vh once a chart is open and scrolls inside
+            that, which leaves the chart its own ~55vh in the same screen. */}
+        <section className="min-w-0">
+          <div className="flex items-baseline justify-between mb-2 gap-3">
+            <div className="flex items-baseline gap-3">
+              <h2 className="font-medium">{t(locale, "taResults")}</h2>
+              {!indicatorsOpen && (
+                <button
+                  type="button"
+                  onClick={() => setIndicatorsOpen(true)}
+                  className="text-data text-accent hover:underline"
+                >
+                  {t(locale, "taShowIndicators")}
+                </button>
+              )}
+            </div>
             {selected.size > 0 && (
               <span className="text-body-lg text-fg-muted">
                 {results.length} {results.length === 1 ? t(locale, "taSymbolMatched") : t(locale, "taSymbolsMatched")}
@@ -724,7 +815,11 @@ export function ScannerClient({
               {t(locale, "taNoMatches")}
             </div>
           ) : (
-            <div className="bg-panel rounded-lg border border-line overflow-x-auto">
+            <div
+              className={`bg-panel rounded-lg border border-line overflow-auto${
+                chart.status === "idle" ? "" : " max-h-[45vh]"
+              }`}
+            >
               <table className="w-full text-body-lg">
                 <thead className="bg-panel-2 border-y border-line-strong">
                   <tr className="border-b border-line text-left text-fg-muted">
@@ -739,18 +834,30 @@ export function ScannerClient({
                     <th className="row-h px-2 label text-right">{t(locale, "taCompositeRs")}</th>
                     <th className="row-h px-2 label text-right">{t(locale, "taClose")}</th>
                     <th className="row-h px-2 label">{t(locale, "taSignalsFired")}</th>
+                    <th className="row-h px-2 label text-right">{t(locale, "taOpenAnalysis")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {results.map((row) => (
-                    <tr key={row.symbol} className="border-b border-line-faint hover:bg-canvas">
+                    <tr
+                      key={row.symbol}
+                      className={`border-b border-line-faint hover:bg-canvas${
+                        chart.status !== "idle" && chart.symbol === row.symbol ? " bg-panel-2" : ""
+                      }`}
+                    >
+                      {/* The ticker charts the symbol HERE; the Analysis link
+                          moved to its own column at the end of the row. Two
+                          destinations behind one ticker would have been a
+                          coin-flip for the reader. */}
                       <td className="row-h px-2 font-medium">
-                        <Link
-                          href={`/analysis/${row.symbol}?ind=${encodeURIComponent([...selected].join(","))}`}
+                        <button
+                          type="button"
+                          onClick={() => setChart({ status: "loading", symbol: row.symbol })}
                           className="text-accent hover:underline"
+                          title={t(locale, "taChartHint")}
                         >
                           {row.symbol}
-                        </Link>
+                        </button>
                       </td>
                       {/* Capped + truncated: the longest ICB L4 label is 43
                           characters and would set this column's width for every
@@ -804,11 +911,67 @@ export function ScannerClient({
                           })()}
                         </div>
                       </td>
+                      <td className="row-h px-2 text-right whitespace-nowrap">
+                        <Link
+                          href={`/analysis/${row.symbol}?ind=${encodeURIComponent([...selected].join(","))}`}
+                          title={t(locale, "taOpenAnalysisTitle")}
+                          className="text-accent hover:underline"
+                        >
+                          {t(locale, "taOpenAnalysis")} →
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+          )}
+
+          {/* The chart, below the results and inside the same column — so
+              folding the indicator panel widens BOTH, which is what makes the
+              fold worth having. Rendered by the shared <TechnicalAnalysis>, the
+              same component the Analysis page uses, so the two cannot drift. */}
+          {chart.status !== "idle" && (
+            <section className="mt-4">
+              <div className="flex items-baseline justify-between mb-2 gap-3">
+                <h2 className="font-medium">
+                  {t(locale, "taSection")} — <span className="font-mono">{chart.symbol}</span>
+                </h2>
+                <div className="flex items-baseline gap-3">
+                  <Link
+                    href={`/analysis/${chart.symbol}?ind=${encodeURIComponent(indParam)}`}
+                    className="text-data text-accent hover:underline"
+                  >
+                    {t(locale, "taOpenAnalysis")} →
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setChart({ status: "idle" })}
+                    className="text-data text-fg-muted hover:text-fg"
+                  >
+                    {t(locale, "taChartClose")}
+                  </button>
+                </div>
+              </div>
+
+              {chart.status === "loading" && (
+                <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
+                  {t(locale, "taChartLoading")}
+                </div>
+              )}
+              {chart.status === "error" && (
+                <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
+                  {t(locale, "taChartFailed")}
+                </div>
+              )}
+              {chart.status === "ready" && (
+                // Keyed on the symbol so switching rows REMOUNTS the chart.
+                // lightweight-charts holds its series in a ref keyed to the
+                // effect's lifetime; reusing the instance across symbols left
+                // the previous symbol's overlays on the new candles.
+                <TechnicalAnalysis key={chart.symbol} chart={chart.data} locale={locale} />
+              )}
+            </section>
           )}
         </section>
       </div>

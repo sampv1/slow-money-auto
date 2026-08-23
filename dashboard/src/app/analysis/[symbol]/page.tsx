@@ -1,14 +1,14 @@
-import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { CACHE_TTL_SECONDS, TAG_FA, TAG_TA, fetchAllPaged, getActiveSymbols, getSymbolMeta, getSymbolProfile } from "@/lib/cached-data";
+import { getActiveSymbols, getSymbolMeta, getSymbolProfile } from "@/lib/cached-data";
+import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
 import { metaIndustry, metaShortName, metaFullName } from "@/lib/symbol-meta";
 import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import { formatPrice, formatPercent } from "@/lib/format";
-import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
+import { INDICATORS_BY_KEY, MCDX_BANKER_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
 import type { FaScore } from "@/lib/fa";
 import type { ReScore } from "@/lib/fa-re";
-import { ChartClient } from "./chart-client";
+import { TechnicalAnalysis } from "@/components/technical-analysis";
 import { FaSummary } from "./fa-summary";
 import { ReSummary } from "./re-summary";
 import { TaSearch } from "../ta-search";
@@ -18,156 +18,9 @@ import { SymbolLogo } from "@/components/symbol-logo";
 
 export const revalidate = 0;
 
-export type Candle = {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-};
-
-export type RsHist = {
-  dates: string[];
-  rs3m: (number | null)[];
-  rs6m: (number | null)[];
-  rs52w: (number | null)[];
-};
-
-type SrLevel = { price: number; level_type: "support" | "resistance"; touches: number };
-type Trendline = {
-  trend_type: "uptrend" | "downtrend";
-  start_date: string;
-  start_price: number;
-  end_date: string;
-  end_price: number;
-  touches: number;
-};
-type Signal = { date: string; indicator: string; value: number | null };
-
-// Everything this page reads for one symbol, in a single cached unit (~0.2 MB —
-// well under Vercel's 2 MB entry limit). The ?ind= / ?fq= params only choose
-// which slice to SHOW, so they're applied in-memory below rather than baked
-// into the cache key, which would fragment the cache per URL.
-const getSymbolData = unstable_cache(
-  async (symbol: string) => {
-    const [candles, signals, srLevels, trendlines, faRows, rsHist, reRows, industry] = await Promise.all([
-      // Both MUST be paged: a symbol has >1000 triggered signals (and can grow
-      // past 1000 bars), and PostgREST silently truncates at 1000 — which would
-      // drop the NEWEST rows and quietly break the default indicator selection.
-      fetchAllPaged<Candle>((from, to, withCount) =>
-        supabase
-          .from("ta_ohlcv")
-          .select("date,open,high,low,close,volume", withCount ? { count: "exact" } : undefined)
-          .eq("symbol", symbol)
-          .order("date", { ascending: true })
-          .range(from, to),
-      ),
-      fetchAllPaged<Signal>((from, to, withCount) =>
-        supabase
-          .from("ta_signals")
-          .select("date,indicator,value", withCount ? { count: "exact" } : undefined)
-          .eq("symbol", symbol)
-          .eq("triggered", true)
-          .order("date", { ascending: true })
-          .order("indicator", { ascending: true }) // tie-break → deterministic paging
-          .range(from, to),
-      ),
-      (async (): Promise<SrLevel[]> => {
-        const { data } = await supabase
-          .from("ta_sr_levels")
-          .select("price,level_type,touches")
-          .eq("symbol", symbol);
-        return (data ?? []) as SrLevel[];
-      })(),
-      (async (): Promise<Trendline[]> => {
-        const { data } = await supabase
-          .from("ta_trendlines")
-          .select("trend_type,start_date,start_price,end_date,end_price,touches")
-          .eq("symbol", symbol);
-        return (data ?? []) as Trendline[];
-      })(),
-      (async (): Promise<FaScore[]> => {
-        const { data } = await supabase
-          .from("fa_scores")
-          .select("*")
-          .eq("symbol", symbol)
-          .order("as_of_period", { ascending: false });
-        return (data ?? []) as FaScore[];
-      })(),
-      // RS-rating history: the shared trading-date grid lives once in the
-      // ta_rs_hist_meta singleton row (see migration 041 — it used to be
-      // duplicated onto every ta_universe row, which blew the Supabase
-      // statement timeout on ~1,500 symbols); per-symbol percentiles are three
-      // arrays on ta_universe, parallel to that shared grid. Defensive: the
-      // table/columns don't exist until migrations 040+041 are applied and
-      // refresh_rs populates them — any error or length mismatch yields null
-      // and the chart hides the RS group.
-      (async (): Promise<RsHist | null> => {
-        try {
-          const [{ data: meta, error: metaErr }, { data: row, error: rowErr }] = await Promise.all([
-            supabase.from("ta_rs_hist_meta").select("dates").eq("id", 1).maybeSingle(),
-            supabase
-              .from("ta_universe")
-              .select("rs_3m_hist,rs_6m_hist,rs_12m_hist")
-              .eq("symbol", symbol)
-              .maybeSingle(),
-          ]);
-          const dates = meta?.dates as string[] | null | undefined;
-          if (metaErr || rowErr || !dates || dates.length === 0) return null;
-          const rs3m = (row?.rs_3m_hist ?? []) as (number | null)[];
-          const rs6m = (row?.rs_6m_hist ?? []) as (number | null)[];
-          const rs52w = (row?.rs_12m_hist ?? []) as (number | null)[];
-          // A symbol's arrays are written in the same pass as the shared grid,
-          // so lengths should always match; if a partial write ever leaves ANY
-          // of them out of sync, drop RS rather than risk a misaligned chart.
-          if (rs3m.length !== dates.length || rs6m.length !== dates.length || rs52w.length !== dates.length) {
-            return null;
-          }
-          return { dates, rs3m, rs6m, rs52w };
-        } catch {
-          return null;
-        }
-      })(),
-      // Real-estate rubric rows, and the symbol's rubric group. Both are
-      // defensive: neither table exists until migration 048 is applied, and a
-      // throw here would take down the whole Analysis page rather than fall
-      // back to the manufacturing panel it showed before.
-      (async (): Promise<ReScore[]> => {
-        try {
-          const { data } = await supabase
-            .from("fa_re_scores")
-            .select("symbol,as_of_period,total_score,scorable_weight,n_scored,normalized_score,breakdown")
-            .eq("symbol", symbol)
-            .order("as_of_period", { ascending: false });
-          return (data ?? []) as ReScore[];
-        } catch {
-          return [];
-        }
-      })(),
-      (async (): Promise<string | null> => {
-        try {
-          const { data } = await supabase
-            .from("fa_industry")
-            .select("industry_group")
-            .eq("symbol", symbol)
-            .maybeSingle();
-          return (data?.industry_group as string | undefined) ?? null;
-        } catch {
-          return null;
-        }
-      })(),
-    ]);
-    return { candles, signals, srLevels, trendlines, faRows, rsHist, reRows, industry };
-  },
-  // v3: payload gained reRows + industry (v2 gained rsHist). The version bump
-  // matters — cached entries persist across deploys (Vercel Data Cache), so
-  // without it the new code could read old-shape entries for up to the TTL and
-  // every real-estate symbol would keep rendering the manufacturing panel.
-  // Bump again on any payload-shape change.
-  ["symbol-data-v3"],
-  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA, TAG_FA] },
-);
+// Re-exported for the handful of modules that imported these from the page
+// before the fetch moved to lib/chart-payload.
+export type { Candle, RsHist } from "@/lib/chart-payload";
 
 export default async function SymbolDrillDown({
   params,
@@ -181,11 +34,6 @@ export default async function SymbolDrillDown({
   const symbol = raw.toUpperCase();
   const locale = await getLocale();
   const isAdmin = (await getUserRole()) === "admin";
-  const explicitSelection = ind !== undefined;
-  let selected = (ind ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
 
   // Two independent reads → parallel:
   //  - the active universe for the header search box's autocomplete
@@ -231,17 +79,12 @@ export default async function SymbolDrillDown({
   } catch (e) {
     return <DataError error={e} locale={locale} />;
   }
-  const { candles, signals: allSignals, srLevels: allSrLevels, trendlines: allTrendlines, faRows, rsHist, reRows, industry } = data;
+  const { candles, signals: allSignals, faRows, reRows, industry } = data;
 
-  // When no ?ind= is supplied, default to whatever indicators most recently
-  // fired for this symbol — gives the visitor an immediately useful chart.
-  if (!explicitSelection && allSignals.length > 0) {
-    const latestDate = allSignals[allSignals.length - 1].date; // ASC → last = newest
-    selected = allSignals
-      .filter((s) => s.date === latestDate)
-      .map((s) => s.indicator)
-      .filter((k) => k in INDICATORS_BY_KEY && !CHART_HIDDEN_KEYS.has(k));
-  }
+  // Everything the chart renders, derived by the SHARED helper — the scanner's
+  // inline chart calls the same one, so "which indicators does this symbol show
+  // by default" has a single definition.
+  const chart = buildChartProps(symbol, data, ind);
 
   if (candles.length === 0) {
     return (
@@ -265,21 +108,6 @@ export default async function SymbolDrillDown({
     .filter((s) => s.date >= cutoffStr)
     .slice()
     .sort((a, b) => b.date.localeCompare(a.date));
-
-  // Chart markers: triggered signals for *selected* indicators across the
-  // entire visible chart range, sorted ASC (lightweight-charts requirement).
-  const selectedSet = new Set(selected);
-  const chartSignals: { date: string; indicator: string }[] =
-    selected.length > 0
-      ? allSignals
-          .filter((s) => selectedSet.has(s.indicator) && s.date >= candles[0].date)
-          .map((s) => ({ date: s.date, indicator: s.indicator }))
-      : [];
-
-  // S/R levels + trendlines are passed whenever an S/R / trendline indicator is
-  // in the selection; the client re-gates them per chip toggle (same key sets).
-  const srLevels = selected.some((k) => SR_KEYS.has(k)) ? allSrLevels : [];
-  const trendlines = selected.some((k) => TL_KEYS.has(k)) ? allTrendlines : [];
 
   // Fundamental-analysis snapshots — one row per quarter.
   // List the quarters for the dropdown and show the selected one (default = latest).
@@ -381,9 +209,7 @@ export default async function SymbolDrillDown({
         {t(locale, "taSection")}
       </h2>
 
-      <div className="bg-panel rounded-lg border border-line p-2">
-        <ChartClient symbol={symbol} candles={candles} selected={selected} chartSignals={chartSignals} srLevels={srLevels} trendlines={trendlines} rsHist={rsHist} locale={locale} />
-      </div>
+      <TechnicalAnalysis chart={chart} locale={locale} />
 
       <section className="mt-6">
         <h3 className="font-medium mb-2">{t(locale, "taRecentSignals")}</h3>
