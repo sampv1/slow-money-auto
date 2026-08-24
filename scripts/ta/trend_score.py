@@ -531,18 +531,28 @@ def _levels(st, dates) -> dict:
 
 
 def score_timeframe(dates, c, cfg, key: str, tc1: bool, tc2: bool,
-                    ma200: float, dist52w: float) -> dict:
+                    ma200: float, dist52w: float, h=None, low=None) -> dict:
     """Score one timeframe end to end. `key` is 'daily' or 'weekly'.
 
-    Only closes are needed: the ZigZag runs on closes so that every structural
-    level is a close, and every rule in the spec compares a close against one
-    ("A = điểm giá đóng cửa vượt đỉnh O", "Close_A > Close_O"). Highs and lows
-    reach the score exactly once, through the 52-week high.
+    TWO PRICE BASES, and the split is the spec's, not a convenience:
+
+      * the ZigZag finds DAILY pivots on highs and lows — the standard, and what
+        the supplement means by "Low_i < DailyMA200_i". `h`/`low` carry them;
+        omitting both falls back to closes, which is what the WEEKLY timeframe
+        wants ("Giá dùng để xét là giá đóng cửa tuần").
+      * every rule that CROSSES a level compares a close against it
+        ("A = điểm giá đóng cửa vượt đỉnh O", "Close_A > Close_O"), so the walk
+        below still gets `c`.
+
+    So a peak is the price the market actually reached, and taking it out still
+    requires a close. Running the daily pivots on closes clipped every level to
+    the candle body — VNM's 2026-01-20 peak read 71,070 against a real 73,110.
     """
     weekly = key == "weekly"
     zz = cfg[key]
     pts = cfg["points"][key]
-    pivots = zigzag(c, zz["deviation"], zz["depth"])
+    pivots = zigzag(h if h is not None else c, low if low is not None else c,
+                    deviation=zz["deviation"], depth=zz["depth"])
     # Daily only. The supplement says so explicitly ("Chỉ áp dụng cho Trend
     # ngày"), and the weekly chart has no MA200 of its own to chop around — its
     # base conditions read the DAILY MA200, so the same test there would be a
@@ -594,7 +604,9 @@ def score_symbol(dates, o, h, l, c, v, cfg) -> dict | None:
     tc1 = dist52w >= cfg["dist_52w_min"]
     tc2 = close > ma200
 
-    daily = score_timeframe(dates, c, cfg, "daily", tc1, tc2, ma200, dist52w)
+    # Daily pivots come off the highs and lows; weekly deliberately does not
+    # pass them, so it stays on weekly closes as its sheet requires.
+    daily = score_timeframe(dates, c, cfg, "daily", tc1, tc2, ma200, dist52w, h=h, low=l)
     wd, _wo, _wh, _wl, wc, _wv = _to_weekly(dates, o, h, l, c, v)
     weekly = score_timeframe(wd, wc, cfg, "weekly", tc1, tc2, ma200, dist52w)
 

@@ -73,7 +73,7 @@ def _series_with_early_trough():
 
 def test_early_trough_does_not_deadlock():
     v = _series_with_early_trough()
-    piv = zigzag(v, DEV, DEPTH)
+    piv = zigzag(v, v, deviation=DEV, depth=DEPTH)
 
     # The old engine returned exactly two pivots here and then went silent.
     assert len(piv) > 2, (
@@ -97,7 +97,7 @@ def test_trough_sits_on_the_lowest_ELIGIBLE_bar():
     the cheapest bar of the leg. That is the separation rule doing its job; the
     alternative is the freeze this whole file exists to prevent.
     """
-    piv = zigzag(_series_with_early_trough(), DEV, DEPTH)
+    piv = zigzag(_series_with_early_trough(), _series_with_early_trough(), deviation=DEV, depth=DEPTH)
     lows = [p for p in piv if p[2] == PIVOT_LOW]
     after_peak = [p for p in lows if p[0] > 25]
     assert after_peak, "no trough after the peak at bar 25"
@@ -109,7 +109,7 @@ def test_trough_sits_on_the_lowest_ELIGIBLE_bar():
 def test_separation_rule_still_holds():
     """The fix must not buy its liveness by dropping the rule it enforces."""
     for series in (_series_with_early_trough(), _sawtooth()):
-        piv = zigzag(series, DEV, DEPTH)
+        piv = zigzag(series, series, deviation=DEV, depth=DEPTH)
         for a, b in zip(piv, piv[1:]):
             assert b[0] - a[0] >= DEPTH, (
                 f"pivots {a[0]} and {b[0]} are {b[0] - a[0]} bars apart, under depth={DEPTH}"
@@ -118,7 +118,7 @@ def test_separation_rule_still_holds():
 
 def test_alternates_and_confirms_late():
     for series in (_series_with_early_trough(), _sawtooth()):
-        piv = zigzag(series, DEV, DEPTH)
+        piv = zigzag(series, series, deviation=DEV, depth=DEPTH)
         for a, b in zip(piv, piv[1:]):
             assert a[2] != b[2], "two pivots of the same kind in a row"
         for idx, _val, _kind, conf in piv:
@@ -145,7 +145,7 @@ def _sawtooth():
 
 
 def test_sawtooth_emits_every_swing():
-    piv = zigzag(_sawtooth(), DEV, DEPTH)
+    piv = zigzag(_sawtooth(), _sawtooth(), deviation=DEV, depth=DEPTH)
     assert len(piv) >= 4, f"only {len(piv)} pivots on six clean 40% legs"
 
 

@@ -72,7 +72,7 @@ def _chop_series():
 
 
 def _seed_for(closes, cfg=CFG):
-    piv = zigzag(closes, DEV, DEPTH)
+    piv = zigzag(closes, closes, deviation=DEV, depth=DEPTH)
     return _sideway_reset_seed(closes, piv, _ma_series(closes, cfg["ma_period"]), cfg)
 
 
@@ -83,7 +83,7 @@ def test_fires_on_chop_and_reseats_on_the_LATEST_low():
     (o_idx, o_val), (k_idx, k_val), activate = seed
 
     ma = _ma_series(c, CFG["ma_period"])
-    lows = [p for p in zigzag(c, DEV, DEPTH)
+    lows = [p for p in zigzag(c, c, deviation=DEV, depth=DEPTH)
             if p[2] == -1 and ma[p[0]] is not None and p[1] < ma[p[0]]]
     assert len(lows) >= 3
 
@@ -111,7 +111,7 @@ def test_gate_two_fewer_than_three_lows_does_not_fire():
     """The spec's inner ELSE: N < 3 is an ordinary decline, not chop."""
     c = _ramp([(0, 100), (260, 100), (20, 78), (30, 99), (25, 125)])  # one dip only
     ma = _ma_series(c, CFG["ma_period"])
-    lows = [p for p in zigzag(c, DEV, DEPTH)
+    lows = [p for p in zigzag(c, c, deviation=DEV, depth=DEPTH)
             if p[2] == -1 and ma[p[0]] is not None and p[1] < ma[p[0]]]
     assert len(lows) < 3, "fixture must have fewer than the threshold"
     assert _seed_for(c) is None
@@ -190,7 +190,7 @@ def test_no_lookahead_activation_is_the_confirmation_bar():
     """
     c = _chop_series()
     (_o, (k_idx, _kv), activate) = _seed_for(c)
-    piv = [p for p in zigzag(c, DEV, DEPTH) if p[0] == k_idx and p[2] == -1]
+    piv = [p for p in zigzag(c, c, deviation=DEV, depth=DEPTH) if p[0] == k_idx and p[2] == -1]
     assert piv, "K must be a real ZigZag pivot"
     assert activate == piv[0][3], "activation must be the pivot's own confirmation bar"
     assert activate > k_idx, "confirmation always trails the extreme"

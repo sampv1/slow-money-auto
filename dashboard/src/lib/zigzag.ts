@@ -1,6 +1,10 @@
 /**
  * ZigZag pivots — a PORT of scripts/ta/zigzag.py, not a second implementation.
  *
+ * Peaks come off HIGHS and troughs off LOWS, matching the Python and every
+ * reference chart. Pass the same array twice for a close-based ZigZag (what the
+ * weekly timeframe uses).
+ *
  * Shared by the Analysis price chart and Signal Pro's trend-structure popup so
  * the two cannot drift from each other or from the Trend Score. Verified to
  * produce identical pivots (and the same window-start index) to the Python on
@@ -51,11 +55,12 @@ function argExtreme(values: number[], a: number, b: number, wantMax: boolean): n
  * can draw it as something weaker than a confirmed swing.
  */
 export function zigzag(
-  values: number[],
+  highs: number[],
+  lows: number[],
   deviation = ZIGZAG_DEVIATION,
   depth = ZIGZAG_DEPTH,
 ): { pivots: ZigZagPivot[]; provisional: ZigZagPivot | null } {
-  const n = values.length;
+  const n = highs.length;
   const pivots: ZigZagPivot[] = [];
   if (n < depth + 2) return { pivots, provisional: null };
 
@@ -81,30 +86,31 @@ export function zigzag(
   const seed = (start: number, upto: number): [number | null, number | null] =>
     start > upto
       ? [null, null]
-      : [argExtreme(values, start, upto, false), argExtreme(values, start, upto, true)];
+      : [argExtreme(lows, start, upto, false), argExtreme(highs, start, upto, true)];
 
   for (let i = 1; i < n; i++) {
-    const x = values[i];
     // Both running extremes are tracked at all times, not just the one the
     // current direction cares about: when a peak confirms several bars late the
     // trough that confirmed it has usually already formed, and a machine that
     // only looked from the confirmation bar would place the bottom too late.
     if (i - lastI >= depth) {
-      if (hiI === null || x > values[hiI]) hiI = i;
-      if (loI === null || x < values[loI]) loI = i;
+      if (hiI === null || highs[i] > highs[hiI]) hiI = i;
+      if (loI === null || lows[i] < lows[loI]) loI = i;
     }
 
     let peakOk =
       direction >= 0 &&
       hiI !== null &&
-      values[hiI] > 0 &&
-      x <= values[hiI] * (1 - deviation) &&
+      highs[hiI] > 0 &&
+      // The retracement that proves a peak is measured on the LOW, the
+      // furthest price actually traded against it.
+      lows[i] <= highs[hiI] * (1 - deviation) &&
       i - hiI >= depth;
     let troughOk =
       direction <= 0 &&
       loI !== null &&
-      values[loI] > 0 &&
-      x >= values[loI] * (1 + deviation) &&
+      lows[loI] > 0 &&
+      highs[i] >= lows[loI] * (1 + deviation) &&
       i - loI >= depth;
 
     // Both can only qualify while the direction is still unknown (a wide opening
@@ -117,13 +123,13 @@ export function zigzag(
 
     if (peakOk) {
       const at = hiI as number;
-      pivots.push({ idx: at, value: values[at], isHigh: true });
+      pivots.push({ idx: at, value: highs[at], isHigh: true });
       lastI = at;
       direction = -1;
       [loI, hiI] = seed(lastI + depth, i);
     } else if (troughOk) {
       const at = loI as number;
-      pivots.push({ idx: at, value: values[at], isHigh: false });
+      pivots.push({ idx: at, value: lows[at], isHigh: false });
       lastI = at;
       direction = 1;
       [loI, hiI] = seed(lastI + depth, i);
@@ -133,8 +139,8 @@ export function zigzag(
   // After a peak the open leg is seeking a trough, and vice versa. Direction 0
   // means nothing confirmed at all, so there is no leg to extend.
   let provisional: ZigZagPivot | null = null;
-  if (direction === -1 && loI !== null) provisional = { idx: loI, value: values[loI], isHigh: false };
-  else if (direction === 1 && hiI !== null) provisional = { idx: hiI, value: values[hiI], isHigh: true };
+  if (direction === -1 && loI !== null) provisional = { idx: loI, value: lows[loI], isHigh: false };
+  else if (direction === 1 && hiI !== null) provisional = { idx: hiI, value: highs[hiI], isHigh: true };
 
   return { pivots, provisional };
 }

@@ -662,7 +662,9 @@ export function ChartClient({
       // data, and immune to a stale pipeline or a timezone making the chart
       // disagree with itself between renders.
       const w0 = zigzagWindowStart(candles.map((c) => c.date));
-      const { pivots, provisional } = zigzag(closes.slice(w0));
+      // Highs and lows, not closes: a pivot is the price the market actually
+      // reached. See lib/zigzag.ts.
+      const { pivots, provisional } = zigzag(highs.slice(w0), lows.slice(w0));
       if (pivots.length >= 2) {
         const zz = chart.addSeries(LineSeries, {
           priceFormat: PRICE_FORMAT,

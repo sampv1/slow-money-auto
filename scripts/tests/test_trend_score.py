@@ -227,7 +227,7 @@ def test_blend_is_60_40():
 
 def test_zigzag_respects_deviation_and_depth():
     c = _ramp([(0, 100), (40, 130), (40, 95), (40, 125), (40, 100)])
-    piv = zigzag(c, 0.05, 10)
+    piv = zigzag(c, c, deviation=0.05, depth=10)
     assert len(piv) >= 3, piv
     kinds = [p[2] for p in piv]
     assert all(a != b for a, b in zip(kinds, kinds[1:])), "pivots must alternate"
@@ -240,23 +240,31 @@ def test_zigzag_respects_deviation_and_depth():
 def test_zigzag_ignores_moves_under_the_deviation():
     """A 3% wobble is not a pivot at a 5% deviation."""
     c = _ramp([(0, 100), (30, 103), (30, 100), (30, 103), (30, 100)])
-    assert zigzag(c, 0.05, 10) == []
+    assert zigzag(c, c, deviation=0.05, depth=10) == []
 
 
 def test_zigzag_leaves_the_last_depth_bars_unconfirmed():
     c = _ramp([(0, 100), (40, 130), (40, 95)])
-    piv = zigzag(c, 0.05, 10)
+    piv = zigzag(c, c, deviation=0.05, depth=10)
     assert all(p[0] <= len(c) - 1 - 10 for p in piv), \
         "confirmation needs depth bars of hindsight, so the leg in progress has no pivot"
 
 
 def test_window_edge_trough_cannot_pin_k():
-    """A bar-0 trough must be skipped, not recorded — see the module docstring."""
+    """A bar-0 trough must be skipped, not recorded — see the module docstring.
+
+    The levels are the peak's HIGH and the trough's LOW, not their closes: since
+    2026-08-24 the daily ZigZag runs on highs/lows, which is what the supplement
+    means by "Low_i < DailyMA200_i" and what every reference chart draws. `_daily`
+    builds h = close x 1.005 and low = close x 0.995, so the O–K pair at closes
+    200/130 surfaces here as 201/129.
+    """
     # Opens at its lowest price, rises, then forms a genuine O–K pair higher up.
     r = _daily([(0, 100), (200, 100), (60, 200), (40, 130), (20, 140)])["daily"]
     lv = r["levels"]
     assert "O" in lv and "K" in lv, f"a later O–K pair must still be found: {lv}"
-    assert lv["O"]["value"] == 200 and lv["K"]["value"] == 130, lv
+    assert lv["O"]["value"] == round(200 * 1.005), lv
+    assert lv["K"]["value"] == round(130 * 0.995), lv
     assert r["state"] == "ok_below_52w" and r["score"] == 15, (r["state"], r["score"])
 
 

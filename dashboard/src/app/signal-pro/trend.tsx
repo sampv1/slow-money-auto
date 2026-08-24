@@ -461,7 +461,7 @@ export function TrendDetailChart({
   // openTrend() guarantees the fetch reaches back at least ZIGZAG_WINDOW_DAYS;
   // if a caller ever passes less, the slice is simply everything it has.
   const zz0 = zigzagWindowStart(dates);
-  const { pivots: zzPivots, provisional: zzOpen } = zigzag(closes.slice(zz0));
+  const { pivots: zzPivots, provisional: zzOpen } = zigzag(highs.slice(zz0), lows.slice(zz0));
   const zzPoints = zzPivots.map((p) => `${xAt(zz0 + p.idx)},${yAt(p.value)}`).join(" ");
   const zzLast = zzPivots[zzPivots.length - 1];
   // The leg in progress is not the same kind of fact as the ones behind it —
