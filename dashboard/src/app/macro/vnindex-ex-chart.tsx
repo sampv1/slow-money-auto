@@ -96,7 +96,13 @@ export function VnindexExChart({ rows, locale }: { rows: ExRow[]; locale: Locale
     return <p className="text-body-lg text-fg-muted">{t(locale, "macroNoData")}</p>;
   }
 
-  const W = 900, mL = 52, mR = 16; // mL fits 4-digit index levels
+  // W is the viewBox width, and it is what sets this chart's ASPECT — the svg is
+  // `width:100%` over a fixed viewBox, so rendered height = H x (containerPx / W).
+  // At 900 a 1500px-wide sheet scaled everything 1.67x and the panel came out
+  // taller than the viewport; at 1200 the same H renders 25% shorter, the pane
+  // proportions are untouched, and the extra 300 units go to the x axis as real
+  // horizontal resolution. Labels land at 11-14px, the site's own label size.
+  const W = 1200, mL = 52, mR = 16; // mL fits 4-digit index levels
   const iw = W - mL - mR;
   // The hover readout gets its OWN band at the top. It and the panel label are
   // both left-anchored at x=mL, so they must not share a baseline — at y=11 and

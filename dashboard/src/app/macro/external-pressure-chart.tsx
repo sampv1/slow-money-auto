@@ -109,7 +109,13 @@ export function ExternalPressureChart({ rows, locale }: { rows: EpRow[]; locale:
   // --- layout: VN-Index (opt) + DXY + Fed target (opt) + spread + ribbon, shared x ---
   // Fed sits with the other U.S. context series, directly above the spread it
   // helps explain; the spread stays adjacent to the regime ribbon it drives.
-  const W = 900, mL = 54, mR = 16;
+  // W is the viewBox width, and it is what sets this chart's ASPECT — the svg is
+  // `width:100%` over a fixed viewBox, so rendered height = H x (containerPx / W).
+  // At 900 a 1500px-wide sheet scaled everything 1.67x and the panel came out
+  // taller than the viewport; at 1200 the same H renders 25% shorter, the pane
+  // proportions are untouched, and the extra 300 units go to the x axis as real
+  // horizontal resolution. Labels land at 11-14px, the site's own label size.
+  const W = 1200, mL = 54, mR = 16;
   const iw = W - mL - mR;
   const vnTop = 18, vnH = 140;
   const vnBlock = hasVn ? vnH + 30 : 0;

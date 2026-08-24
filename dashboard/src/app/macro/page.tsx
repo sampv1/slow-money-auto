@@ -14,7 +14,7 @@ import { BankRatesChart, type BrRow } from "./bank-rates-chart";
 import { MarginDebtChart, type MdRow } from "./margin-debt-chart";
 import { VnindexExChart, type ExRow } from "./vnindex-ex-chart";
 import { EXVIC_ENABLED } from "./exvic-flag";
-import { MacroToc } from "./macro-toc";
+import { MacroTabs, type MacroSection } from "./macro-tabs";
 import { dataErrorDetail } from "@/lib/errors";
 
 export const revalidate = 0;
@@ -543,31 +543,18 @@ export default async function MacroPage() {
     error = dataErrorDetail(e);
   }
 
-  // Chart index for the sticky nav bar. Order MUST match the sections below;
-  // ex-VIC is included only when its (provisional, flag-gated) panel renders.
-  const tocItems = [
-    { id: "fci", label: t(locale, "tocFci") },
-    { id: "interbank", label: t(locale, "tocInterbank") },
-    { id: "bond", label: t(locale, "tocBond") },
-    { id: "bank", label: t(locale, "tocBank") },
-    { id: "margin", label: t(locale, "tocMargin") },
-    { id: "external", label: t(locale, "tocExternal") },
-    ...(EXVIC_ENABLED && exRows.length >= 2 ? [{ id: "exvic", label: t(locale, "tocExVic") }] : []),
-    { id: "foreign", label: t(locale, "tocForeign") },
-    { id: "fx", label: t(locale, "tocFx") },
-    { id: "cpi", label: t(locale, "tocCpi") },
-  ];
-
-  return (
-    <div>
-      {/* The verdict comes FIRST — before the header blurb and the chart index.
-          A visitor asking "is today risky?" gets the answer, and everything
-          below it becomes the evidence rather than the whole answer. */}
-      {!error && fciRows.length >= 2 && <VerdictBand rows={fciRows} locale={locale} />}
-      {header}
-      <MacroToc items={tocItems} />
-
-      <section id="fci" className="mb-6 scroll-mt-20">
+  // The ten charts, as TABS. Order is the reading order of the page: the
+  // composite first, then the inputs behind it, then the flow and price series.
+  //
+  // Built as data rather than stacked JSX because <MacroTabs> renders ONE of
+  // them at a time — see the note there for why a ten-panel scroll could not
+  // frame a panel on any viewport.
+  const sections: MacroSection[] = [
+    {
+      id: "fci",
+      label: t(locale, "tocFci"),
+      content: (
+        <>
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "mcTitle")}</h2>
           <p className="text-data text-fg-muted">{t(locale, "mcSubtitle")}</p>
@@ -579,9 +566,14 @@ export default async function MacroPage() {
         ) : (
           <FciChart rows={fciRows} locale={locale} />
         )}
-      </section>
-
-      <section id="interbank" className="mb-6 scroll-mt-20">
+        </>
+      ),
+    },
+    {
+      id: "interbank",
+      label: t(locale, "tocInterbank"),
+      content: (
+        <>
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroInterbankTitle")}</h2>
           <p className="text-data text-fg-muted">{t(locale, "macroInterbankSubtitle")}</p>
@@ -593,9 +585,14 @@ export default async function MacroPage() {
         ) : (
           <InterbankRateChart rows={ibRows} locale={locale} />
         )}
-      </section>
-
-      <section id="bond" className="mb-6 scroll-mt-20">
+        </>
+      ),
+    },
+    {
+      id: "bond",
+      label: t(locale, "tocBond"),
+      content: (
+        <>
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "gbTitle")}</h2>
           <p className="text-data text-fg-muted">{t(locale, "gbSubtitle")}</p>
@@ -607,9 +604,14 @@ export default async function MacroPage() {
         ) : (
           <BondYieldChart rows={gbRows} locale={locale} />
         )}
-      </section>
-
-      <section id="bank" className="mb-6 scroll-mt-20">
+        </>
+      ),
+    },
+    {
+      id: "bank",
+      label: t(locale, "tocBank"),
+      content: (
+        <>
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "brTitle")}</h2>
           <p className="text-data text-fg-muted">{t(locale, "brSubtitle")}</p>
@@ -621,9 +623,14 @@ export default async function MacroPage() {
         ) : (
           <BankRatesChart rows={brRows} locale={locale} />
         )}
-      </section>
-
-      <section id="margin" className="mb-6 scroll-mt-20">
+        </>
+      ),
+    },
+    {
+      id: "margin",
+      label: t(locale, "tocMargin"),
+      content: (
+        <>
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "mdTitle")}</h2>
           <p className="text-data text-fg-muted">{t(locale, "mdSubtitle")}</p>
@@ -635,9 +642,14 @@ export default async function MacroPage() {
         ) : (
           <MarginDebtChart rows={mdRows} locale={locale} />
         )}
-      </section>
-
-      <section id="external" className="mb-6 scroll-mt-20">
+        </>
+      ),
+    },
+    {
+      id: "external",
+      label: t(locale, "tocExternal"),
+      content: (
+        <>
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "epTitle")}</h2>
           <p className="text-data text-fg-muted">{t(locale, "epSubtitle")}</p>
@@ -651,22 +663,34 @@ export default async function MacroPage() {
         ) : (
           <ExternalPressureChart rows={epRows} locale={locale} />
         )}
-      </section>
-
-      {/* VN-Index ex-VIC — provisional. Renders only when its own (isolated)
-          read produced data and the flag is on, so it self-hides rather than
-          showing an empty box. Remove this whole block to drop the feature. */}
-      {EXVIC_ENABLED && exRows.length >= 2 && (
-        <section id="exvic" className="mb-6 scroll-mt-20">
-          <div className="mb-2">
-            <h2 className="text-base font-semibold">{t(locale, "exTitle")}</h2>
-            <p className="text-data text-fg-muted">{t(locale, "exSubtitle")}</p>
-          </div>
-          <VnindexExChart rows={exRows} locale={locale} />
-        </section>
-      )}
-
-      <section id="foreign" className="mb-6 scroll-mt-20">
+        </>
+      ),
+    },
+    // ex-VIC is provisional and flag-gated: it becomes a tab only when its
+    // own isolated read produced data, so it self-hides rather than opening
+    // an empty panel.
+    ...(EXVIC_ENABLED && exRows.length >= 2
+      ? [
+        {
+          id: "exvic",
+          label: t(locale, "tocExVic"),
+          content: (
+            <>
+            <div className="mb-2">
+              <h2 className="text-base font-semibold">{t(locale, "exTitle")}</h2>
+              <p className="text-data text-fg-muted">{t(locale, "exSubtitle")}</p>
+            </div>
+            <VnindexExChart rows={exRows} locale={locale} />
+            </>
+          ),
+        },
+        ]
+      : []),
+    {
+      id: "foreign",
+      label: t(locale, "tocForeign"),
+      content: (
+        <>
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "ffTitle")}</h2>
           <p className="text-data text-fg-muted">{t(locale, "ffSubtitle")}</p>
@@ -680,9 +704,14 @@ export default async function MacroPage() {
         ) : (
           <ForeignFlowChart rows={ffRows} locale={locale} />
         )}
-      </section>
-
-      <section id="fx" className="mb-6 scroll-mt-20">
+        </>
+      ),
+    },
+    {
+      id: "fx",
+      label: t(locale, "tocFx"),
+      content: (
+        <>
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroFxTitle")}</h2>
           <p className="text-data text-fg-muted">{t(locale, "macroFxSubtitle")}</p>
@@ -696,9 +725,14 @@ export default async function MacroPage() {
         ) : (
           <ExchangeRateChart rows={rows} locale={locale} pctNearCeiling={pctNearCeiling} chg5dFast={chg5dFast} />
         )}
-      </section>
-
-      <section id="cpi" className="scroll-mt-20">
+        </>
+      ),
+    },
+    {
+      id: "cpi",
+      label: t(locale, "tocCpi"),
+      content: (
+        <>
         <div className="mb-2">
           <h2 className="text-base font-semibold">{t(locale, "macroCpiTitle")}</h2>
           <p className="text-data text-fg-muted">{t(locale, "macroCpiSubtitle")}</p>
@@ -710,7 +744,19 @@ export default async function MacroPage() {
         ) : (
           <CpiChart rows={cpiRows} locale={locale} />
         )}
-      </section>
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      {/* The verdict comes FIRST — before the header blurb and the chart index.
+          A visitor asking "is today risky?" gets the answer, and everything
+          below it becomes the evidence rather than the whole answer. */}
+      {!error && fciRows.length >= 2 && <VerdictBand rows={fciRows} locale={locale} />}
+      {header}
+      <MacroTabs sections={sections} />
     </div>
   );
 }
