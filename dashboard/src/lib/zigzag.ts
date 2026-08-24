@@ -55,10 +55,29 @@ export function zigzag(
   const pivots: ZigZagPivot[] = [];
   if (n < depth + 2) return { pivots, provisional: null };
 
-  let hiI = 0;
-  let loI = 0;
+  // The running extremes, and the region they are allowed to sit in. `depth` is
+  // a MINIMUM SEPARATION between consecutive pivots, so a bar closer than that
+  // to the last pivot can never be promoted — and must therefore never be held
+  // as the candidate.
+  //
+  // This was a gate on the candidate (`loI - lastI >= depth`) rather than a
+  // bound on where the candidate may sit, which DEADLOCKED the machine: `loI`
+  // only moves on a NEW extreme, so once the running low landed inside the
+  // forbidden window it stayed there, failed the gate on every later bar, and
+  // no pivot could confirm again — on 57 of 117 symbols. See the matching note
+  // in scripts/ta/zigzag.py for the VNM walkthrough.
+  let hiI: number | null = 0;
+  let loI: number | null = 0;
   let lastI = -depth; // lets the first pivot sit anywhere, since nothing precedes it
   let direction = 0; // 0 = unknown, +1 = seeking a peak, -1 = seeking a trough
+
+  // Running (low, high) over the bars that may legally hold the next pivot.
+  // Both null while the whole eligible region is still in the future — the
+  // confirmation bar can sit less than `depth` after the pivot it just proved.
+  const seed = (start: number, upto: number): [number | null, number | null] =>
+    start > upto
+      ? [null, null]
+      : [argExtreme(values, start, upto, false), argExtreme(values, start, upto, true)];
 
   for (let i = 1; i < n; i++) {
     const x = values[i];
@@ -66,52 +85,52 @@ export function zigzag(
     // current direction cares about: when a peak confirms several bars late the
     // trough that confirmed it has usually already formed, and a machine that
     // only looked from the confirmation bar would place the bottom too late.
-    if (x > values[hiI]) hiI = i;
-    if (x < values[loI]) loI = i;
+    if (i - lastI >= depth) {
+      if (hiI === null || x > values[hiI]) hiI = i;
+      if (loI === null || x < values[loI]) loI = i;
+    }
 
     let peakOk =
       direction >= 0 &&
+      hiI !== null &&
       values[hiI] > 0 &&
       x <= values[hiI] * (1 - deviation) &&
-      i - hiI >= depth &&
-      hiI - lastI >= depth;
+      i - hiI >= depth;
     let troughOk =
       direction <= 0 &&
+      loI !== null &&
       values[loI] > 0 &&
       x >= values[loI] * (1 + deviation) &&
-      i - loI >= depth &&
-      loI - lastI >= depth;
+      i - loI >= depth;
 
     // Both can only qualify while the direction is still unknown (a wide opening
     // range). Take the earlier extreme, so the sequence starts where the market
     // did rather than wherever the branch order looks first.
     if (peakOk && troughOk) {
-      if (loI < hiI) peakOk = false;
+      if ((loI as number) < (hiI as number)) peakOk = false;
       else troughOk = false;
     }
 
     if (peakOk) {
-      pivots.push({ idx: hiI, value: values[hiI], isHigh: true });
-      lastI = hiI;
+      const at = hiI as number;
+      pivots.push({ idx: at, value: values[at], isHigh: true });
+      lastI = at;
       direction = -1;
-      const nextLo = argExtreme(values, hiI + 1, i, false);
-      hiI = i;
-      loI = nextLo;
+      [loI, hiI] = seed(lastI + depth, i);
     } else if (troughOk) {
-      pivots.push({ idx: loI, value: values[loI], isHigh: false });
-      lastI = loI;
+      const at = loI as number;
+      pivots.push({ idx: at, value: values[at], isHigh: false });
+      lastI = at;
       direction = 1;
-      const nextHi = argExtreme(values, loI + 1, i, true);
-      loI = i;
-      hiI = nextHi;
+      [loI, hiI] = seed(lastI + depth, i);
     }
   }
 
   // After a peak the open leg is seeking a trough, and vice versa. Direction 0
   // means nothing confirmed at all, so there is no leg to extend.
   let provisional: ZigZagPivot | null = null;
-  if (direction === -1) provisional = { idx: loI, value: values[loI], isHigh: false };
-  else if (direction === 1) provisional = { idx: hiI, value: values[hiI], isHigh: true };
+  if (direction === -1 && loI !== null) provisional = { idx: loI, value: values[loI], isHigh: false };
+  else if (direction === 1 && hiI !== null) provisional = { idx: hiI, value: values[hiI], isHigh: true };
 
   return { pivots, provisional };
 }

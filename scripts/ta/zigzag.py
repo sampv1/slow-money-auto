@@ -43,6 +43,18 @@ def _argmin(values: list[float], a: int, b: int) -> int:
     return best
 
 
+def _seed(values: list[float], start: int, upto: int):
+    """Running (low, high) over the bars that may legally hold the next pivot.
+
+    `(None, None)` when the whole eligible region is still in the future — the
+    confirmation bar can sit less than `depth` after the pivot it just proved.
+    The loop then adopts the first eligible bar it reaches.
+    """
+    if start > upto:
+        return None, None
+    return _argmin(values, start, upto), _argmax(values, start, upto)
+
+
 def zigzag(values, deviation: float = 0.05, depth: int = 10) -> list[tuple]:
     """Alternating confirmed pivots over `values`.
 
@@ -55,36 +67,58 @@ def zigzag(values, deviation: float = 0.05, depth: int = 10) -> list[tuple]:
     if n < depth + 2:
         return out
 
-    hi_i = lo_i = 0
+    # The running extremes of the leg in progress, and the region they are
+    # allowed to sit in. `depth` is a MINIMUM SEPARATION between consecutive
+    # pivots, so a bar closer than that to the last pivot can never be promoted
+    # — and must therefore never be held as the candidate.
+    #
+    # This used to be enforced as a gate on the candidate (`lo_i - last_i >=
+    # depth`) instead of a bound on where the candidate may sit, which
+    # DEADLOCKED the machine: `lo_i` only moves on a NEW extreme, so once the
+    # running low landed inside the forbidden window it was stuck there, failing
+    # the gate on every subsequent bar, and no pivot of either kind could ever
+    # confirm again. Measured on 117 symbols, 57 of them (49%) stopped emitting
+    # pivots partway through and never resumed. VNM is the readable case: the
+    # trough after its 2025-12-02 peak seeded 8 bars later, 2 short of the gate,
+    # and the machine then sat blocked for 62 bars — through a rally to 71,070
+    # and back — so a 22% advance and its peak simply never entered the
+    # structure. The chart drew one straight line across the whole thing.
+    #
+    # Bounding the region instead cannot deadlock: `eligible` is true for every
+    # bar from `last_i + depth` onward, so a candidate always exists and always
+    # satisfies the separation rule by construction.
+    hi_i: int | None = 0
+    lo_i: int | None = 0
     # Lets the first pivot sit anywhere, since nothing precedes it.
     last_i = -depth
     direction = 0  # 0 = unknown, +1 = seeking a peak, -1 = seeking a trough
 
     for i in range(1, n):
         x = values[i]
-        # Running extremes of the leg in progress. Both are tracked at all times,
-        # not just the one the current direction cares about: when a peak is
-        # confirmed several bars late, the trough of the leg that confirmed it has
-        # usually already formed, and a machine that started looking only from the
-        # confirmation bar would place K after the actual bottom.
-        if x > values[hi_i]:
-            hi_i = i
-        if x < values[lo_i]:
-            lo_i = i
+        # Both extremes are tracked at all times, not just the one the current
+        # direction cares about: when a peak is confirmed several bars late, the
+        # trough of the leg that confirmed it has usually already formed, and a
+        # machine that started looking only from the confirmation bar would
+        # place K after the actual bottom.
+        if i - last_i >= depth:
+            if hi_i is None or x > values[hi_i]:
+                hi_i = i
+            if lo_i is None or x < values[lo_i]:
+                lo_i = i
 
         peak_ok = (
             direction >= 0
+            and hi_i is not None
             and values[hi_i] > 0
             and x <= values[hi_i] * (1 - deviation)
             and i - hi_i >= depth
-            and hi_i - last_i >= depth
         )
         trough_ok = (
             direction <= 0
+            and lo_i is not None
             and values[lo_i] > 0
             and x >= values[lo_i] * (1 + deviation)
             and i - lo_i >= depth
-            and lo_i - last_i >= depth
         )
 
         # Both can only qualify while the direction is still unknown (a wide
@@ -99,10 +133,10 @@ def zigzag(values, deviation: float = 0.05, depth: int = 10) -> list[tuple]:
         if peak_ok:
             out.append((hi_i, values[hi_i], PIVOT_HIGH, i))
             last_i, direction = hi_i, -1
-            lo_i, hi_i = _argmin(values, hi_i + 1, i), i
+            lo_i, hi_i = _seed(values, last_i + depth, i)
         elif trough_ok:
             out.append((lo_i, values[lo_i], PIVOT_LOW, i))
             last_i, direction = lo_i, +1
-            hi_i, lo_i = _argmax(values, lo_i + 1, i), i
+            lo_i, hi_i = _seed(values, last_i + depth, i)
 
     return out
