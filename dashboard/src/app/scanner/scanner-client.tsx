@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import { formatPrice } from "@/lib/format";
@@ -192,8 +192,29 @@ export function ScannerClient({
     | { status: "idle" }
     | { status: "loading"; symbol: string }
     | { status: "ready"; symbol: string; data: ChartProps }
-    | { status: "error"; symbol: string }
+    // `kind` splits the API's 404 from everything else. Once a symbol can be
+    // TYPED, "we have no bars for XYZ" is the common outcome and a typo is the
+    // usual cause — reporting it as "could not load the chart" would send the
+    // reader looking for a fault that is not there.
+    | { status: "error"; symbol: string; kind: "notfound" | "failed" }
   >({ status: "idle" });
+
+  // What is in the symbol box. Kept in sync with the charted symbol by
+  // `openChart` rather than by an effect watching it — the box is an input the
+  // user edits freely, so the sync belongs at the two moments a chart is
+  // actually opened, not on every render that touches chart state.
+  const [symbolInput, setSymbolInput] = useState("");
+  // Bumped on every open request, including a repeat of the symbol already
+  // charted. Without it, re-submitting the same ticker after an error changes
+  // no effect dependency, so the fetch never re-fires and the retry is dead.
+  const [chartNonce, setChartNonce] = useState(0);
+
+  // The one way a chart is opened, from the table row or the symbol box.
+  const openChart = useCallback((symbol: string) => {
+    setChart({ status: "loading", symbol });
+    setSymbolInput(symbol);
+    setChartNonce((n) => n + 1);
+  }, []);
 
   // The indicator panel folds away so the chart can use the full width. Its
   // own state, not derived from whether a chart is open: a user who folded it
@@ -238,6 +259,24 @@ export function ScannerClient({
   const chartSymbol = chart.status === "idle" ? null : chart.symbol;
   const indParam = useMemo(() => [...selected].join(","), [selected]);
 
+  // Typeahead for the symbol box: prefix matches only, which is how anyone
+  // looks a ticker up, capped so a one-letter query does not render 200 nodes.
+  const symbolSuggestions = useMemo(() => {
+    const q = symbolInput.trim();
+    if (!q) return [];
+    return universe
+      .map((u) => u.symbol)
+      .filter((sym) => sym.startsWith(q))
+      .slice(0, 20);
+  }, [symbolInput, universe]);
+
+  // Shape only — the same test the API applies. Deliberately NOT membership of
+  // `universe`: that is the scanner's ACTIVE set, while the chart reads
+  // ta_ohlcv, which can still hold bars for a symbol that has left it. Refusing
+  // those here would block a chart the server can actually draw, so an unknown
+  // ticker is answered by the route's 404 instead of by a guess made up front.
+  const symbolInputValid = /^[A-Z0-9]{2,10}$/.test(symbolInput.trim());
+
   useEffect(() => {
     if (!chartSymbol) return;
     const ac = new AbortController();
@@ -261,7 +300,14 @@ export function ScannerClient({
       })
       .catch((e) => {
         if (!cancelled && e?.name !== "AbortError") {
-          setChart({ status: "error", symbol: chartSymbol });
+          // The thrown message is the HTTP status (see above); 404 is the
+          // route's "no bars for this symbol", which is a different thing to
+          // tell the reader than a failed request.
+          setChart({
+            status: "error",
+            symbol: chartSymbol,
+            kind: e?.message === "404" ? "notfound" : "failed",
+          });
         }
       });
     return () => {
@@ -270,7 +316,9 @@ export function ScannerClient({
     };
     // `chart.status` is deliberately NOT a dependency — this effect sets it in
     // its callbacks, and depending on it would re-fire on its own result.
-  }, [chartSymbol, indParam]);
+    // `chartNonce` IS one, and is the only way asking for the same symbol twice
+    // re-runs anything.
+  }, [chartSymbol, indParam, chartNonce]);
 
   // Analytics: emit a scan_run event whenever the user has an active selection.
   // Gated on filterHydrated so the initial empty state doesn't fire spuriously.
@@ -852,7 +900,7 @@ export function ScannerClient({
                       <td className="row-h px-2 font-medium">
                         <button
                           type="button"
-                          onClick={() => setChart({ status: "loading", symbol: row.symbol })}
+                          onClick={() => openChart(row.symbol)}
                           className="text-accent hover:underline"
                           title={t(locale, "taChartHint")}
                         >
@@ -930,13 +978,64 @@ export function ScannerClient({
           {/* The chart, below the results and inside the same column — so
               folding the indicator panel widens BOTH, which is what makes the
               fold worth having. Rendered by the shared <TechnicalAnalysis>, the
-              same component the Analysis page uses, so the two cannot drift. */}
-          {chart.status !== "idle" && (
-            <section className="mt-4">
-              <div className="flex items-baseline justify-between mb-2 gap-3">
+              same component the Analysis page uses, so the two cannot drift.
+
+              ALWAYS rendered, not gated on a chart being open. The symbol box
+              lives in this header, and a control that only appears once you
+              have already picked a symbol cannot be how you pick one — on
+              arrival the section is the heading, the box, and one line of
+              instruction. */}
+          <section className="mt-4">
+            <div className="flex flex-wrap items-baseline justify-between mb-2 gap-x-3 gap-y-2">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
                 <h2 className="font-medium">
-                  {t(locale, "taSection")} — <span className="font-mono">{chart.symbol}</span>
+                  {t(locale, "taSection")}
+                  {chartSymbol && (
+                    <>
+                      {" — "}
+                      <span className="font-mono">{chartSymbol}</span>
+                    </>
+                  )}
                 </h2>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (symbolInputValid) openChart(symbolInput.trim());
+                  }}
+                  className="flex items-center gap-1.5"
+                >
+                  <input
+                    value={symbolInput}
+                    // Normalised as typed rather than on submit, so the box
+                    // always shows the ticker that will actually be requested.
+                    onChange={(e) =>
+                      setSymbolInput(e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase())
+                    }
+                    list="ta-chart-symbols"
+                    placeholder={t(locale, "taChartSymbolPlaceholder")}
+                    aria-label={t(locale, "symbol")}
+                    maxLength={10}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="w-32 font-mono text-data px-2 py-1 rounded border border-line bg-panel focus:outline-none focus:border-accent"
+                  />
+                  <datalist id="ta-chart-symbols">
+                    {symbolSuggestions.map((sym) => (
+                      <option key={sym} value={sym} />
+                    ))}
+                  </datalist>
+                  <button
+                    type="submit"
+                    disabled={!symbolInputValid}
+                    className="text-data px-2 py-1 rounded border border-line text-fg-muted hover:bg-panel-2 hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
+                  >
+                    {t(locale, "taChart")}
+                  </button>
+                </form>
+              </div>
+
+              {chart.status !== "idle" && (
                 <div className="flex items-baseline gap-3">
                   <Link
                     href={`/analysis/${chart.symbol}?ind=${encodeURIComponent(indParam)}`}
@@ -946,33 +1045,40 @@ export function ScannerClient({
                   </Link>
                   <button
                     type="button"
+                    // Back to the prompt, box included — "close" is about the
+                    // chart, not about the section it lives in.
                     onClick={() => setChart({ status: "idle" })}
                     className="text-data text-fg-muted hover:text-fg"
                   >
                     {t(locale, "taChartClose")}
                   </button>
                 </div>
-              </div>
+              )}
+            </div>
 
-              {chart.status === "loading" && (
-                <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
-                  {t(locale, "taChartLoading")}
-                </div>
-              )}
-              {chart.status === "error" && (
-                <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
-                  {t(locale, "taChartFailed")}
-                </div>
-              )}
-              {chart.status === "ready" && (
-                // Keyed on the symbol so switching rows REMOUNTS the chart.
-                // lightweight-charts holds its series in a ref keyed to the
-                // effect's lifetime; reusing the instance across symbols left
-                // the previous symbol's overlays on the new candles.
-                <TechnicalAnalysis key={chart.symbol} chart={chart.data} locale={locale} />
-              )}
-            </section>
-          )}
+            {chart.status === "idle" && (
+              <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
+                {t(locale, "taChartPrompt")}
+              </div>
+            )}
+            {chart.status === "loading" && (
+              <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
+                {t(locale, "taChartLoading")}
+              </div>
+            )}
+            {chart.status === "error" && (
+              <div className="bg-panel rounded-lg border border-line p-8 text-center text-fg-muted">
+                {t(locale, chart.kind === "notfound" ? "taChartNotFound" : "taChartFailed")}
+              </div>
+            )}
+            {chart.status === "ready" && (
+              // Keyed on the symbol so switching rows REMOUNTS the chart.
+              // lightweight-charts holds its series in a ref keyed to the
+              // effect's lifetime; reusing the instance across symbols left
+              // the previous symbol's overlays on the new candles.
+              <TechnicalAnalysis key={chart.symbol} chart={chart.data} locale={locale} />
+            )}
+          </section>
         </section>
       </div>
     </div>
