@@ -791,11 +791,22 @@ export function ChartClient({
     }
 
     // === Pane 1: Volume ==========================================
+    //
+    // On the PANE'S OWN RIGHT SCALE, not an overlay. It used to carry
+    // `priceScaleId: "vol"`, and any id that is not "right"/"left" makes an
+    // OVERLAY price scale — which the library never draws an axis for, whatever
+    // you set on it: PriceScaleOptions.visible is documented as "Ignored by
+    // overlay price scales". So the pane had bars and a Vol MA20 with no numbers
+    // anywhere, and "is this a lot?" could only be answered by eye against the
+    // neighbouring bars. Price scales are per-pane in v5, so taking the right
+    // scale here costs the price pane above nothing.
+    //
+    // The `type: "volume"` format is what turns those ticks into 1.23M / 820K
+    // rather than nine digits, which is the whole reason an axis fits at all.
     const volumeSeries = chart.addSeries(
       HistogramSeries,
       {
         priceFormat: { type: "volume" },
-        priceScaleId: "vol",
         lastValueVisible: false,
         title: "Volume",
       },
@@ -824,8 +835,11 @@ export function ChartClient({
     // reference for reading the pane was missing exactly when you were reading
     // it without a signal in mind.
     //
-    // It shares the volume price scale, so it needs no autoscale of its own and
-    // costs one line over data already in memory.
+    // It shares the volume price scale — the pane's right scale, by omitting
+    // priceScaleId exactly as the bars do — so it needs no autoscale of its own
+    // and costs one line over data already in memory. Naming a scale here would
+    // put the average on a SECOND, independently-scaled axis, where it would
+    // cross the bars at a height that means nothing.
     const volMA20 = chart.addSeries(
       LineSeries,
       {
@@ -833,7 +847,6 @@ export function ChartClient({
         lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
-        priceScaleId: "vol",
         title: "Vol MA20",
       },
       panes.volume,
