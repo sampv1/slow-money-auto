@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { CACHE_TTL_SECONDS, TAG_MACRO, fetchAllPaged } from "@/lib/cached-data";
+import { CACHE_TTL_SECONDS, TAG_MACRO, TAG_TA, fetchAllPaged } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { ExchangeRateChart, type FxRow, type Regime } from "./exchange-rate-chart";
 import { CpiChart, type CpiRow } from "./cpi-chart";
@@ -13,6 +13,7 @@ import { BondYieldChart, type GbRow } from "./bond-yield-chart";
 import { BankRatesChart, type BrRow } from "./bank-rates-chart";
 import { MarginDebtChart, type MdRow } from "./margin-debt-chart";
 import { VnindexExChart, type ExRow } from "./vnindex-ex-chart";
+import { ImpliedRiskChart, type IrRow } from "./implied-risk-chart";
 import { EXVIC_ENABLED } from "./exvic-flag";
 import { MacroTabs, type MacroSection } from "./macro-tabs";
 import { dataErrorDetail } from "@/lib/errors";
@@ -184,6 +185,41 @@ const getExVicData = unstable_cache(
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
 );
 
+// --- Implied risk (VN30 futures basis) --------------------------------------
+//
+// This was its own top-level page; it is a panel here now, and /implied-risk
+// permanently redirects to ?c=implied (next.config.ts).
+//
+// Isolated exactly like getExVicData above, and for a stronger reason: this is
+// the only series on the page the MACRO pipeline does not write. implied_risk
+// comes from refresh_implied_risk.py in the TA workflow, so it is invalidated by
+// tag ta-data and can be stale or missing on a night when everything else here
+// is fine. Its own read and its own catch keep that confined to one tab.
+//
+// The VN-Index context line is joined INSIDE the cached unit, so the entry holds
+// ~2k chart rows instead of the full 5,600-point index series alongside them.
+const getImpliedRiskData = unstable_cache(
+  async (): Promise<IrRow[]> => {
+    const [base, vn] = await Promise.all([
+      fetchAllPaged<Omit<IrRow, "vnindex">>((from, to, withCount) =>
+        supabase
+          .from("implied_risk")
+          .select("date,ir,spot,future,expiry,r_days", withCount ? { count: "exact" } : undefined)
+          .order("date", { ascending: true })
+          .range(from, to),
+      ),
+      fetchMetricEntries("vnindex"),
+    ]);
+    const vnMap = new Map(vn);
+    return base.map((r) => ({ ...r, vnindex: vnMap.get(r.date) ?? null }));
+  },
+  // Deliberately NOT the old page's ["implied-risk-data"] key: that entry cached
+  // a different shape ({ base, vn }) and outlives this deploy, so reusing the
+  // name would feed the joined-rows code an object it cannot read.
+  ["macro-implied-risk-v1"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA, TAG_MACRO] },
+);
+
 // CPI: monthly MoM index (prev month=100) → YoY (chained), running YTD-avg YoY,
 // and inflation-budget headroom vs the annual target. Everything derived here so
 // only the raw index is stored. Returns rows ascending by month.
@@ -312,6 +348,16 @@ export default async function MacroPage() {
     }
   }
   const exByDate = new Map(exRows.map((r) => [r.date, r.ex]));
+
+  // Implied risk — same isolation as ex-VIC, its own error string so a stale TA
+  // run shows in this tab only.
+  let irRows: IrRow[] = [];
+  let irError: string | null = null;
+  try {
+    irRows = await getImpliedRiskData();
+  } catch (e) {
+    irError = dataErrorDetail(e);
+  }
 
   try {
     const d = await getMacroData();
@@ -538,12 +584,12 @@ export default async function MacroPage() {
     const smoothed = applyHysteresis(rawRegime, regimeCfg.hysteresis_min_days);
     rows = base.map((r, i) => ({ ...r, regime: smoothed[i] }));
   } catch (e) {
-    // Sanitised here, once, so all ten panels below stay short: an unhealthy
+    // Sanitised here, once, so every panel below stays short: an unhealthy
     // Supabase answers with a whole HTML error page (see lib/errors.ts).
     error = dataErrorDetail(e);
   }
 
-  // The ten charts, as TABS. Order is the reading order of the page: the
+  // The charts, as TABS. Order is the reading order of the page: the
   // composite first, then the inputs behind it, then the flow and price series.
   //
   // Built as data rather than stacked JSX because <MacroTabs> renders ONE of
@@ -703,6 +749,27 @@ export default async function MacroPage() {
           </div>
         ) : (
           <ForeignFlowChart rows={ffRows} locale={locale} />
+        )}
+        </>
+      ),
+    },
+    // Derivatives positioning, next to the other flow panel: both read what
+    // money is DOING rather than what a rate is.
+    {
+      id: "implied",
+      label: t(locale, "tocImplied"),
+      content: (
+        <>
+        <div className="mb-2">
+          <h2 className="text-base font-semibold">{t(locale, "irTitle")}</h2>
+          <p className="text-data text-fg-muted">{t(locale, "irSubtitle")}</p>
+        </div>
+        {irError ? (
+          <p className="text-down text-body-lg">Error loading implied-risk data: {irError}</p>
+        ) : irRows.length < 2 ? (
+          <StubCard title={t(locale, "irTitle")} note={t(locale, "irNoData")} />
+        ) : (
+          <ImpliedRiskChart rows={irRows} locale={locale} />
         )}
         </>
       ),

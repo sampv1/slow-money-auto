@@ -83,7 +83,6 @@ export default async function RootLayout({
     // emphasis and the reading order still means something.
     { href: "/signal-pro", label: t(locale, "navSignalPro"), featured: true },
     { href: "/analysis", label: t(locale, "navStockAnalysis") },
-    { href: "/implied-risk", label: t(locale, "navImpliedRisk") },
     { href: "/portfolio", label: t(locale, "navPortfolio") },
     { href: "/stats", label: t(locale, "navStats") },
     ...(role === "admin" ? [{ href: "/input", label: t(locale, "navInput") }] : []),

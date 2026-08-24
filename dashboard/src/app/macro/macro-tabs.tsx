@@ -21,7 +21,7 @@ import { useSearchParams } from "next/navigation";
  *
  * Every section is still rendered on the server and handed here as a prop, so
  * switching tabs is instant and costs no fetch — the same work the page already
- * did when it stacked all ten.
+ * did when it stacked every panel.
  */
 export type MacroSection = { id: string; label: string; content: ReactNode };
 
@@ -141,7 +141,7 @@ export function MacroTabs({ sections }: { sections: MacroSection[] }) {
                 aria-controls={`panel-${s.id}`}
                 // Only the selected tab is in the tab order; arrow keys move
                 // between them. That is the roving-tabindex the role implies,
-                // and it keeps ten chips from costing ten Tab presses.
+                // and it keeps a dozen chips from costing a dozen Tab presses.
                 tabIndex={on ? 0 : -1}
                 onClick={() => select(s.id)}
                 className={`shrink-0 text-data px-2.5 py-1 rounded-full font-medium transition-colors ${

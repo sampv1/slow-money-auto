@@ -13,7 +13,6 @@ export const translations = {
     navScanner: "TA Scanner",
     navFAScanner: "FA Scanner",
     navSignalPro: "Signal Pro",
-    navImpliedRisk: "Implied Risk",
     navMacro: "Macro",
 
     // Implied Risk page (VN30 futures implied carry / basis)
@@ -67,6 +66,7 @@ export const translations = {
     tocExternal: "External pressure",
     tocExVic: "P/E",
     tocForeign: "Foreign flows",
+    tocImplied: "Implied risk",
     tocFx: "USD/VND",
     tocCpi: "CPI",
     macroInterbankTitle: "Interbank rate",
@@ -89,6 +89,7 @@ export const translations = {
     macroCpiSubtitle: "Headline CPI vs the annual target — how much easing room the SBV has left",
     macroInterbankSubtitle: "Overnight interbank rate (VNIBOR) + SBV open-market operations — the market's real-time read on VND liquidity",
     macroPanelOmo: "SBV OMO net injection (bn VND)",
+    macroPanelImpliedRisk: "Implied risk (−IR, % p.a.)",
     omoInject: "Inject",
     omoWithdraw: "Withdraw",
     omoNet: "Net",
@@ -809,7 +810,6 @@ export const translations = {
     navScanner: "Lọc kỹ thuật",
     navFAScanner: "Lọc cơ bản",
     navSignalPro: "Tín hiệu Pro",
-    navImpliedRisk: "Rủi ro hàm ý",
     navMacro: "Vĩ mô",
 
     // Implied Risk page (VN30 futures implied carry / basis)
@@ -863,6 +863,7 @@ export const translations = {
     tocExternal: "Áp lực ngoài",
     tocExVic: "P/E",
     tocForeign: "Khối ngoại",
+    tocImplied: "Rủi ro hàm ý",
     tocFx: "USD/VND",
     tocCpi: "CPI",
     macroInterbankTitle: "Lãi suất liên ngân hàng",
@@ -885,6 +886,7 @@ export const translations = {
     macroCpiSubtitle: "CPI so với mục tiêu năm — NHNN còn bao nhiêu dư địa nới lỏng",
     macroInterbankSubtitle: "Lãi suất liên ngân hàng qua đêm (VNIBOR) + nghiệp vụ thị trường mở của NHNN — thước đo thanh khoản VND theo thời gian thực",
     macroPanelOmo: "Bơm ròng OMO của NHNN (tỷ đồng)",
+    macroPanelImpliedRisk: "Rủi ro hàm ý (−IR, %/năm)",
     omoInject: "Bơm",
     omoWithdraw: "Hút",
     omoNet: "Ròng",

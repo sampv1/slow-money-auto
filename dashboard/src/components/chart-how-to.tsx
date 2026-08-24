@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 /**
  * The "how is this calculated, and how do I use it?" disclosure under a chart
  * header. One shared component so every chart (the macro panels and the
- * implied-risk page) gets identical styling and placement.
+ * implied-risk panel) gets identical styling and placement.
  *
  * `items` render as bullets — plain strings, or JSX where a bullet needs an
  * inline coloured regime label.

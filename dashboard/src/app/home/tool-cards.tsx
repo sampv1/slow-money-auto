@@ -4,9 +4,11 @@ import { type Locale, t, type TranslationKey } from "@/lib/i18n";
 /**
  * Entry points into the free tools.
  *
- * Titles reuse the existing nav keys so a card and its nav item can never
- * disagree. Every destination is public to anonymous visitors — there is no
- * signup, and none of these routes gates on a role.
+ * Titles reuse the destination's own heading key so a card and the page it
+ * opens can never disagree — nav keys where the destination is a nav item,
+ * and the panel's own h2 key where it is a /macro tab. Every destination is
+ * public to anonymous visitors — there is no signup, and none of these routes
+ * gates on a role.
  */
 const TOOLS: { href: string; title: TranslationKey; body: TranslationKey }[] = [
   { href: "/signal-pro", title: "navSignalPro", body: "homeToolSignalPro" },
@@ -14,7 +16,9 @@ const TOOLS: { href: string; title: TranslationKey; body: TranslationKey }[] = [
   { href: "/fa-scanner", title: "navFAScanner", body: "homeToolFaScanner" },
   { href: "/analysis", title: "navStockAnalysis", body: "homeToolAnalysis" },
   { href: "/macro", title: "navMacro", body: "homeToolMacro" },
-  { href: "/implied-risk", title: "navImpliedRisk", body: "homeToolImpliedRisk" },
+  // A /macro tab since the page was folded in; ?c= is what MacroTabs reads to
+  // open a panel on arrival.
+  { href: "/macro?c=implied", title: "irTitle", body: "homeToolImpliedRisk" },
 ];
 
 export function ToolCards({ locale }: { locale: Locale }) {

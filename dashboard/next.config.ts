@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // /implied-risk became a panel on /macro (?c= is the tab MacroTabs opens on).
   // /active and /history were merged into /portfolio (one row per position,
   // open and closed together). Kept as permanent redirects so old links and
   // bookmarks still land somewhere useful — query strings are passed through,
@@ -9,6 +10,7 @@ const nextConfig: NextConfig = {
     return [
       { source: "/active", destination: "/portfolio", permanent: true },
       { source: "/history", destination: "/portfolio", permanent: true },
+      { source: "/implied-risk", destination: "/macro?c=implied", permanent: true },
     ];
   },
 

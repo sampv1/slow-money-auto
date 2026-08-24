@@ -1,5 +1,17 @@
 "use client";
 
+/**
+ * Implied risk — a /macro panel (tab `implied`).
+ *
+ * Was its own top-level page at /implied-risk; that route is now a permanent
+ * redirect to /macro?c=implied (next.config.ts) and the nav entry is gone, so
+ * this reads like USD/VND or CPI: one tab among the macro series.
+ *
+ * The data is the odd one out on that page — implied_risk is written by the TA
+ * pipeline, not the macro one — which is why /macro reads it through its own
+ * cached unit and its own try/catch. See getImpliedRiskData in page.tsx.
+ */
+
 import { useMemo, useState } from "react";
 import { t, type Locale } from "@/lib/i18n";
 import { ChartHowTo } from "@/components/chart-how-to";
@@ -42,7 +54,7 @@ type P = {
   r_days: number;
 };
 
-export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Locale }) {
+export function ImpliedRiskChart({ rows, locale }: { rows: IrRow[]; locale: Locale }) {
   const [range, setRange] = useState<Range>("1y");
   const [hover, setHover] = useState<number | null>(null);
   const [hoverY, setHoverY] = useState<number | null>(null);
@@ -111,7 +123,10 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
   }
 
   // --- layout: VN-Index (optional) + Implied Risk + Futures Return, shared x ---
-  const W = 900, mL = 54, mR = 16;
+  // 1200, matching every other /macro panel — these SVGs are width:100% over a
+  // fixed viewBox, so a narrower W would render this one taller than its
+  // neighbours at the same sheet width and cost it the fit the tabs exist for.
+  const W = 1200, mL = 54, mR = 16;
   const iw = W - mL - mR;
   const vnTop = 20, vnH = 140;
   const vnBlock = hasVn ? vnH + 34 : 0;
@@ -211,7 +226,7 @@ export function ImpliedRiskStack({ rows, locale }: { rows: IrRow[]; locale: Loca
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="select-none" onMouseMove={onMove} onMouseLeave={() => { setHover(null); setHoverY(null); }} role="img">
         {/* ---- panel titles ---- */}
         {hasVn && <text x={mL + 4} y={vnTop + 12} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelVnindex")}</text>}
-        <text x={mL} y={irTop - 10} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "irTitle")}</text>
+        <text x={mL} y={irTop - 10} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "macroPanelImpliedRisk")}</text>
         <text x={mL} y={frTop - 10} fontSize={11} fill={CHART.labelStrong} fontFamily="monospace">{t(locale, "frTitle")}</text>
 
         {/* ---- VN-Index (context) ---- */}
