@@ -73,15 +73,18 @@ export default async function RootLayout({
   // (including admin). The homepage now serves Macro (/ redirects to /macro).
   // All pages are open to anonymous visitors except Input (admin-only) and the
   // BUY/SELL controls (admin-only, gated inside the pages that render them).
+  // Order is the funnel, widest first: the market as a whole, then the ranked
+  // shortlist across it, then the two single-discipline scanners you narrow
+  // with, then one symbol. The homepage cards carry the SAME order — a reader
+  // who learns it in one place should not have to relearn it in the other.
   const navLinks = [
     { href: "/macro", label: t(locale, "navMacro") },
-    { href: "/scanner", label: t(locale, "navScanner") },
-    { href: "/fa-scanner", label: t(locale, "navFAScanner") },
-    // The flagship page, marked as such in the nav (see FeaturedMark). Kept in
-    // its workflow position — screen the market, then each scanner, then the
-    // composite view — rather than promoted to first, so the mark carries the
-    // emphasis and the reading order still means something.
+    // The flagship page, marked as such in the nav (see FeaturedMark). Second,
+    // directly after the market view: it is the composite the two scanners feed,
+    // so it reads as the shortlist rather than as one more screen.
     { href: "/signal-pro", label: t(locale, "navSignalPro"), featured: true },
+    { href: "/fa-scanner", label: t(locale, "navFAScanner") },
+    { href: "/scanner", label: t(locale, "navScanner") },
     { href: "/analysis", label: t(locale, "navStockAnalysis") },
     { href: "/portfolio", label: t(locale, "navPortfolio") },
     { href: "/stats", label: t(locale, "navStats") },

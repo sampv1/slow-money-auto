@@ -4,21 +4,24 @@ import { type Locale, t, type TranslationKey } from "@/lib/i18n";
 /**
  * Entry points into the free tools.
  *
- * Titles reuse the destination's own heading key so a card and the page it
- * opens can never disagree — nav keys where the destination is a nav item,
- * and the panel's own h2 key where it is a /macro tab. Every destination is
- * public to anonymous visitors — there is no signup, and none of these routes
- * gates on a role.
+ * Titles reuse the destination's nav key so a card and its nav item can never
+ * disagree, and the ORDER matches the nav for the same reason — this is the
+ * funnel stated twice (market, shortlist, the two scanners, one symbol), and a
+ * reader who learns it here should meet the same sequence in the header.
+ *
+ * Implied risk is deliberately absent: it stopped being a destination when it
+ * became a /macro tab, and a card whose only job was to deep-link into another
+ * card's page made the set read like six tools when there are five.
+ *
+ * Every destination is public to anonymous visitors — there is no signup, and
+ * none of these routes gates on a role.
  */
 const TOOLS: { href: string; title: TranslationKey; body: TranslationKey }[] = [
-  { href: "/signal-pro", title: "navSignalPro", body: "homeToolSignalPro" },
-  { href: "/scanner", title: "navScanner", body: "homeToolScanner" },
-  { href: "/fa-scanner", title: "navFAScanner", body: "homeToolFaScanner" },
-  { href: "/analysis", title: "navStockAnalysis", body: "homeToolAnalysis" },
   { href: "/macro", title: "navMacro", body: "homeToolMacro" },
-  // A /macro tab since the page was folded in; ?c= is what MacroTabs reads to
-  // open a panel on arrival.
-  { href: "/macro?c=implied", title: "irTitle", body: "homeToolImpliedRisk" },
+  { href: "/signal-pro", title: "navSignalPro", body: "homeToolSignalPro" },
+  { href: "/fa-scanner", title: "navFAScanner", body: "homeToolFaScanner" },
+  { href: "/scanner", title: "navScanner", body: "homeToolScanner" },
+  { href: "/analysis", title: "navStockAnalysis", body: "homeToolAnalysis" },
 ];
 
 export function ToolCards({ locale }: { locale: Locale }) {
