@@ -8,8 +8,15 @@ import {
   LineStyle,
   createChart,
   createSeriesMarkers,
+  type AutoscaleInfo,
   type IChartApi,
+  type IPrimitivePaneRenderer,
+  type IPrimitivePaneView,
+  type ISeriesApi,
+  type ISeriesPrimitive,
+  type Logical,
   type LogicalRange,
+  type SeriesAttachedParameter,
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
@@ -97,6 +104,177 @@ const MACD_SIGNAL_COLOR = "#ea580c";
 // price pane, not a competitor to it.
 const VOLUME_UP_COLOR = "rgba(12, 107, 74, 0.7)"; // --color-up
 const VOLUME_DOWN_COLOR = "rgba(179, 44, 36, 0.7)"; // --color-down
+
+// Horizontal padding inside the Vol MA20 name badge, and half its extra
+// height — matching the proportions lightweight-charts uses for a series
+// title label so the two badges in this pane look like one family.
+const BADGE_PAD = 4;
+const BADGE_H = 16; // fontSize 12 + BADGE_PAD, the layout the chart is built with
+
+/**
+ * Vol MA20, drawn as a PRIMITIVE on the volume series rather than as a series
+ * of its own.
+ *
+ * Not a style choice — it is the only way to keep the crosshair honest. The
+ * chart runs `crosshair.mode: Magnet`, and the magnet snaps the crosshair to
+ * the nearest value of ANY non-overlay series in the hovered pane. With the
+ * average as a second series in the volume pane, hovering anywhere near that
+ * line snapped to IT, so the price-axis label reported the 20-day average while
+ * the reader was pointing at a bar — a number belonging to a different series,
+ * with nothing on screen to say so (VNM, 23 Apr: the axis read 4.24M against a
+ * bar of roughly a third that).
+ *
+ * lightweight-charts offers no per-series opt-out. `visible: false` removes a
+ * series from the magnet, but the same check drops it from the price scale's
+ * autoscale, so the two are the same switch. A primitive is neither: it draws
+ * inside the pane and the magnet never sees it, which leaves the daily volume
+ * as the ONLY thing the crosshair can snap to in that pane.
+ *
+ * What it gives up, and how that is paid for: a primitive does not contribute
+ * to autoscale, so a zoom whose visible bars are all smaller than the average
+ * would draw the line above the pane. `volumeAutoscale` below hands that job to
+ * the histogram instead — see there.
+ */
+class VolumeMaPrimitive implements ISeriesPrimitive<Time> {
+  private _chart: IChartApi | null = null;
+  private _series: ISeriesApi<"Histogram"> | null = null;
+  private _points: { x: number; y: number }[] = [];
+  private _labelY: number | null = null;
+  private readonly _views: IPrimitivePaneView[];
+
+  constructor(
+    private readonly _values: (number | null)[],
+    /** The bars' own values, for de-overlapping the two badges — see below. */
+    private readonly _volumes: number[],
+    private readonly _color: string,
+  ) {
+    const line: IPrimitivePaneRenderer = {
+      draw: (target) => {
+        if (this._points.length < 2) return;
+        target.useMediaCoordinateSpace(({ context: ctx }) => {
+          ctx.save();
+          ctx.beginPath();
+          ctx.strokeStyle = this._color;
+          ctx.lineWidth = 1;
+          ctx.lineJoin = "round";
+          ctx.lineCap = "round";
+          this._points.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+          ctx.stroke();
+          ctx.restore();
+        });
+      },
+    };
+
+    // The name badge the series used to get free from its `title`, redrawn here
+    // rather than returned as a `priceAxisViews()` entry.
+    //
+    // A primitive's axis view is laid out in the AXIS STRIP, while a series
+    // title sits inside the pane against its right edge — so the axis version
+    // put "Vol MA20" in a different column from "Volume" directly below it and
+    // widened the whole price axis by 8px to fit text no tick needs. Drawn in
+    // the pane, the two badges stack the way they always did.
+    const badge: IPrimitivePaneRenderer = {
+      draw: (target) => {
+        const y = this._labelY;
+        const chart = this._chart;
+        if (y === null || chart === null) return;
+        target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+          const { fontSize, fontFamily } = chart.options().layout;
+          ctx.save();
+          ctx.font = `${fontSize}px ${fontFamily}`;
+          const text = "Vol MA20";
+          const w = ctx.measureText(text).width + BADGE_PAD * 2;
+          const x = mediaSize.width - w;
+          // Clamped so a badge whose value sits off the top of the pane still
+          // shows, which is what the library does with a series title.
+          const cy = Math.max(BADGE_H / 2, Math.min(mediaSize.height - BADGE_H / 2, y));
+          ctx.fillStyle = this._color;
+          ctx.beginPath();
+          ctx.roundRect(x, cy - BADGE_H / 2, w, BADGE_H, 2);
+          ctx.fill();
+          ctx.fillStyle = CHART_LITERAL.panel;
+          ctx.textBaseline = "middle";
+          ctx.fillText(text, x + BADGE_PAD, cy);
+          ctx.restore();
+        });
+      },
+    };
+
+    // 'normal' puts the average OVER the bars, which is where a series added
+    // after the histogram drew it; the badge goes on 'top' so bars cannot
+    // print through it.
+    this._views = [
+      { renderer: () => line, zOrder: () => "normal" },
+      { renderer: () => badge, zOrder: () => "top" },
+    ];
+  }
+
+  attached(param: SeriesAttachedParameter<Time>) {
+    this._chart = param.chart;
+    this._series = param.series as ISeriesApi<"Histogram">;
+  }
+
+  detached() {
+    this._chart = null;
+    this._series = null;
+  }
+
+  /**
+   * Recomputed on every crosshair move and every scroll, so it walks only the
+   * VISIBLE slice rather than all ~560 bars. Index into `_values` is the
+   * logical index: every series on this chart is built from the same candle
+   * array, so bar i is logical i.
+   */
+  updateAllViews() {
+    const chart = this._chart;
+    const series = this._series;
+    this._points = [];
+    if (!chart || !series) return;
+    const range = chart.timeScale().getVisibleLogicalRange();
+    if (!range) return;
+    // One bar of overscan each side, so the line reaches the pane edge instead
+    // of stopping at the last fully-visible bar.
+    const from = Math.max(0, Math.floor(range.from) - 1);
+    const to = Math.min(this._values.length - 1, Math.ceil(range.to) + 1);
+    for (let i = from; i <= to; i++) {
+      const v = this._values[i];
+      if (v === null) continue;
+      const x = chart.timeScale().logicalToCoordinate(i as Logical);
+      const y = series.priceToCoordinate(v);
+      if (x === null || y === null) continue;
+      this._points.push({ x, y });
+    }
+
+    // The badge tracks the LAST value in the series, not the last visible one,
+    // which is where lightweight-charts puts a series title too.
+    this._labelY = null;
+    for (let i = this._values.length - 1; i >= 0; i--) {
+      const v = this._values[i];
+      if (v === null) continue;
+      this._labelY = series.priceToCoordinate(v);
+      break;
+    }
+
+    // Push clear of the histogram's own "Volume" badge when the two last values
+    // are close enough to collide. The library de-overlaps the labels it owns,
+    // but it cannot see one drawn inside the pane by a primitive — and on a
+    // quiet last session the average and the day's volume are only a pixel or
+    // two apart, which is exactly when both badges matter.
+    // From the array we were handed, NOT series.data() — that returns a COPY of
+    // all ~600 points, and this method runs on every crosshair move.
+    const lastVol = this._volumes.length ? this._volumes[this._volumes.length - 1] : undefined;
+    if (this._labelY !== null && lastVol !== undefined) {
+      const volY = series.priceToCoordinate(lastVol);
+      if (volY !== null && Math.abs(volY - this._labelY) < BADGE_H) {
+        this._labelY = this._labelY <= volY ? volY - BADGE_H : volY + BADGE_H;
+      }
+    }
+  }
+
+  paneViews() {
+    return this._views;
+  }
+}
 
 // The SAME treatment as a price MA line: MA_COLOR[20] at lineWidth 1.
 //
@@ -803,12 +981,39 @@ export function ChartClient({
     //
     // The `type: "volume"` format is what turns those ticks into 1.23M / 820K
     // rather than nine digits, which is the whole reason an axis fits at all.
+    // Vol MA20 values, needed BEFORE the series so the autoscale below can see
+    // them. See VolumeMaPrimitive for why the average is not a series.
+    const volMa20 = sma(volumes, 20);
+
     const volumeSeries = chart.addSeries(
       HistogramSeries,
       {
         priceFormat: { type: "volume" },
         lastValueVisible: false,
         title: "Volume",
+        // The pane's scale must cover the AVERAGE as well as the bars, and the
+        // average is a primitive now, which the scale never consults. Widening
+        // the histogram's own range is how that is paid back.
+        //
+        // It matters only on a narrow zoom: MA20 exceeds every visible bar just
+        // after a spike leaves the window, and without this the line would be
+        // drawn above the pane and vanish. `getVisibleLogicalRange` is the same
+        // slice the base implementation measured, read back rather than
+        // recomputed so the two cannot disagree.
+        autoscaleInfoProvider: (base: () => AutoscaleInfo | null): AutoscaleInfo | null => {
+          const res = base();
+          const range = chart.timeScale().getVisibleLogicalRange();
+          if (!res?.priceRange || !range) return res;
+          let maMax = -Infinity;
+          const from = Math.max(0, Math.floor(range.from));
+          const to = Math.min(volMa20.length - 1, Math.ceil(range.to));
+          for (let i = from; i <= to; i++) {
+            const v = volMa20[i];
+            if (v !== null && v > maMax) maMax = v;
+          }
+          if (maMax === -Infinity || maMax <= res.priceRange.maxValue) return res;
+          return { ...res, priceRange: { ...res.priceRange, maxValue: maMax } };
+        },
       },
       panes.volume,
     );
@@ -835,23 +1040,10 @@ export function ChartClient({
     // reference for reading the pane was missing exactly when you were reading
     // it without a signal in mind.
     //
-    // It shares the volume price scale — the pane's right scale, by omitting
-    // priceScaleId exactly as the bars do — so it needs no autoscale of its own
-    // and costs one line over data already in memory. Naming a scale here would
-    // put the average on a SECOND, independently-scaled axis, where it would
-    // cross the bars at a height that means nothing.
-    const volMA20 = chart.addSeries(
-      LineSeries,
-      {
-        color: VOLUME_MA_COLOR,
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        title: "Vol MA20",
-      },
-      panes.volume,
-    );
-    volMA20.setData(linePointsFrom(sma(volumes, 20)));
+    // Attached to the volume series, not added as one — VolumeMaPrimitive
+    // explains why, and it is the whole reason the crosshair in this pane can
+    // only ever report a day's actual volume.
+    volumeSeries.attachPrimitive(new VolumeMaPrimitive(volMa20, volumes, VOLUME_MA_COLOR));
 
     // === Pane 2 (optional): RSI ==================================
     let rsiSeries: ReturnType<typeof chart.addSeries<"Line">> | null = null;
