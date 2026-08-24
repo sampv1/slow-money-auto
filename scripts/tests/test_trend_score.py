@@ -342,8 +342,18 @@ def test_no_structure_has_no_direction():
 
 
 def test_zigzag_settings_are_per_timeframe():
-    """Daily 5%/10, weekly 7%/6 — the weekly chart is not the daily one rescaled."""
-    assert CFG["daily"] == {"deviation": 0.05, "depth": 10}
+    """Daily 5%/3, weekly 7%/6 — the weekly chart is not the daily one rescaled.
+
+    Daily depth was 10 until 2026-08-24. `deviation` is what filters noise (a
+    swing must still travel 5%); `depth` only sets how close two pivots may sit,
+    and at 10 it was merging real moves — VNM's Feb-2026 consolidation swung
+    5.7-8.4% four times in 3-6 bar legs and came out as one straight line.
+
+    The DB `scoring_config` row is deep-merged OVER these defaults and stores
+    `daily.depth`, so this constant and that row have to move together; changing
+    only this one leaves the pipeline on the old value while the tests pass.
+    """
+    assert CFG["daily"] == {"deviation": 0.05, "depth": 3}
     assert CFG["weekly"] == {"deviation": 0.07, "depth": 6}
 
 

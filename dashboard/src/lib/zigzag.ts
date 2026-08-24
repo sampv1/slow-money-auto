@@ -14,7 +14,11 @@
 // deviation 5%, depth 10 candles. Weekly (7% / 6) is a different timeframe and
 // has no meaning on a daily chart.
 export const ZIGZAG_DEVIATION = 0.05;
-export const ZIGZAG_DEPTH = 10;
+// 3, matching trend_score.py's daily row — see the note there for why it is not
+// the 10 this started at. If that changes, change this: the overlay exists to
+// show the structure the Trend Score reasons about, and a different depth draws
+// a different structure.
+export const ZIGZAG_DEPTH = 3;
 
 // The score's own lookback (trend_score.py `window_days`), and the reason the
 // overlay is not simply run over every bar on the chart.

@@ -15,7 +15,7 @@ import {
 } from "lightweight-charts";
 import type { Candle, RsHist } from "@/lib/chart-payload";
 import { CHART_HIDDEN_KEYS, INDICATORS_BY_KEY, MCDX_BANKER_KEYS, SR_KEYS, TL_KEYS, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
-import { ZIGZAG_COLOR, zigzag, zigzagWindowStart } from "@/lib/zigzag";
+import { ZIGZAG_COLOR, ZIGZAG_DEPTH, ZIGZAG_DEVIATION, zigzag, zigzagWindowStart } from "@/lib/zigzag";
 import { t, type Locale } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
 import { CHART_LITERAL, VN_INDEX } from "@/lib/chart-theme";
@@ -1132,7 +1132,7 @@ export function ChartClient({
     { key: "ma20", label: "MA20", color: MA_COLOR[20], show: true },
     { key: "ma50", label: "MA50", color: MA_COLOR[50], show: true },
     { key: "ma200", label: "MA200", color: MA_COLOR[200], show: true },
-    { key: "zigzag", label: "ZigZag 5%/10", color: ZIGZAG_COLOR, show: true,
+    { key: "zigzag", label: `ZigZag ${ZIGZAG_DEVIATION * 100}%/${ZIGZAG_DEPTH}`, color: ZIGZAG_COLOR, show: true,
       hint: t(locale, "zigzagLegend") },
     { key: "mcdx", label: "MCDX", color: MCDX_BANKER_COLOR, show: true },
     { key: "rs3m", label: `RS3M ${rsLatest?.rs3m ?? "—"}`, color: RS3M_COLOR, show: rsAvailable },

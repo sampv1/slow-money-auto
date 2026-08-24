@@ -68,7 +68,24 @@ TREND_DEFAULTS = {
     # one weekly pivot and 3 symbols of 1,158 able to complete a weekly uptrend.
     # 7% / 6 candles asks for a bigger move over a shorter span, which is the
     # right trade on a chart where one bar is a week.
-    "daily": {"deviation": 0.05, "depth": 10},
+    #
+    # DAILY DEPTH IS 3, not the 10 this inherited (2026-08-24). `deviation` is
+    # what filters noise — a swing still has to travel 5% to exist at all — and
+    # `depth` only sets how close two pivots may sit. At 10 it was merging real
+    # moves: VNM's Feb-2026 consolidation swung 5.7-8.4% four times in 3-6 bar
+    # legs, and every one of them was absorbed into a single straight line that
+    # disagreed with every other chart of the same stock. At 3 those pivots land
+    # on the SAME BARS a reference chart marks (5 of 6 exactly, on VNM).
+    #
+    # Cost, measured over 1,156 symbols with the deadlock already fixed: pivots
+    # 12.9 -> 24.4 per symbol over 560 sessions (one swing per ~23 bars, not
+    # noise), 9% of trend scores move, mean +1.7. The state distribution barely
+    # shifts — this is a RESOLUTION change, not a scoring change.
+    #
+    # NB `load_scoring_config` deep-merges the DB row over this, and that row
+    # stores `daily.depth`. Changing this constant alone does nothing to the
+    # pipeline; the scoring_config row has to move with it.
+    "daily": {"deviation": 0.05, "depth": 3},
     "weekly": {"deviation": 0.07, "depth": 6},
     "weights": {"daily": 0.60, "weekly": 0.40},
     # Score → direction, for the two timeframe columns. Descending; the first
