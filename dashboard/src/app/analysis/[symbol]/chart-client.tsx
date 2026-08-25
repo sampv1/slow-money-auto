@@ -30,6 +30,20 @@ import { track } from "@/lib/analytics";
 import { CHART_LITERAL, VN_INDEX } from "@/lib/chart-theme";
 import { ChartToolbar, RANGE_PRESETS, type SeriesType } from "@/components/chart-toolbar";
 import { IndicatorPicker, type PickerItem } from "@/components/indicator-picker";
+import { DrawingRail } from "@/components/drawing-rail";
+import {
+  anchorsFor,
+  hitTest,
+  loadDrawings,
+  newId,
+  projectDrawing,
+  saveDrawings,
+  type Anchor,
+  type Drawing,
+  type DrawingKind,
+  type Tool,
+} from "@/lib/chart-drawings";
+import { DrawingPrimitive } from "@/lib/drawing-primitive";
 import {
   barsForMonths,
   bucketRsHist,
@@ -651,6 +665,51 @@ export function ChartClient({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // --- Drawings -------------------------------------------------------------
+  // The reader's own layer. It opens on "cursor", which captures nothing: pan,
+  // zoom and crosshair behave exactly as they did before the rail existed.
+  //
+  // Held in React state and rendered by a PRIMITIVE, which is what lets the
+  // drawings survive a chart rebuild — and the chart is destroyed and recreated
+  // on every chip toggle. The primitive is disposable; the state is not.
+  const [tool, setTool] = useState<Tool>("cursor");
+  const [drawings, setDrawings] = useState<Drawing[]>(() => loadDrawings(symbol));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Reset when the page switches symbol, during render rather than in an effect
+  // — the same adjust-state-on-prop-change pattern `prevSelectedKey` uses below.
+  const [prevDrawSymbol, setPrevDrawSymbol] = useState(symbol);
+  if (prevDrawSymbol !== symbol) {
+    setPrevDrawSymbol(symbol);
+    setDrawings(loadDrawings(symbol));
+    setSelectedId(null);
+    setTool("cursor");
+  }
+
+  // Mirrors, so the canvas renderer and the mouse handlers read current values
+  // without either of them being re-created on every state change.
+  const drawingsRef = useRef(drawings);
+  const selectedIdRef = useRef(selectedId);
+  const toolRef = useRef(tool);
+  const drawPrimRef = useRef<DrawingPrimitive | null>(null);
+  const priceSeriesRef = useRef<PriceSeries | null>(null);
+  /**
+   * The drag in flight. `draft` is the shape as it currently looks: a NEW shape
+   * while creating, or the edited copy of an existing one while moving. Kept in
+   * a ref rather than in state so a mousemove repaints the canvas without
+   * re-rendering the component — at ~60 events a second that would rebuild the
+   * indicator rows and every memo on this component.
+   */
+  const dragRef = useRef<{
+    mode: "create" | "move" | "handle";
+    id?: string;
+    handleIndex?: number;
+    original?: Drawing;
+    originAnchor: Anchor;
+    originPx: { x: number; y: number };
+    moved: boolean;
+    draft: Drawing | null;
+  } | null>(null);
+
   useEffect(() => {
     track("stock_viewed", { symbol });
   }, [symbol]);
@@ -811,6 +870,250 @@ export function ChartClient({
     return null;
   }, [view]);
 
+  // --- Drawing behaviour ----------------------------------------------------
+
+  useEffect(() => {
+    drawingsRef.current = drawings;
+    selectedIdRef.current = selectedId;
+    drawPrimRef.current?.update();
+  }, [drawings, selectedId]);
+
+  useEffect(() => {
+    toolRef.current = tool;
+    // A live tool must own the drag, or dragging out a trend line would pan the
+    // chart underneath it. Restored the moment the reader picks the cursor.
+    chartRef.current?.applyOptions({
+      handleScroll: tool === "cursor",
+      handleScale: tool === "cursor",
+    });
+  }, [tool]);
+
+  // Persist per symbol. Not per account — see the note in lib/chart-drawings.
+  useEffect(() => {
+    if (prevDrawSymbol === symbol) saveDrawings(symbol, drawings);
+  }, [drawings, symbol, prevDrawSymbol]);
+
+  const deleteSelected = useCallback(() => {
+    setDrawings((prev) => prev.filter((d) => d.id !== selectedIdRef.current));
+    setSelectedId(null);
+  }, []);
+
+  const clearDrawings = useCallback(() => {
+    setDrawings([]);
+    setSelectedId(null);
+  }, []);
+
+  // Esc drops out of a tool or a selection; Delete removes the selected shape.
+  // Guarded on the event target so neither can fire while the reader is typing
+  // in the symbol box that sits above this chart.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.key === "Escape") {
+        if (dragRef.current) {
+          dragRef.current = null;
+          drawPrimRef.current?.update();
+        }
+        setTool("cursor");
+        setSelectedId(null);
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selectedIdRef.current) {
+        e.preventDefault();
+        setDrawings((prev) => prev.filter((d) => d.id !== selectedIdRef.current));
+        setSelectedId(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Pointer handling for the price pane.
+  //
+  // Bound to the CONTAINER, which outlives every chart rebuild, and reading the
+  // chart and series through refs — binding to the chart would mean tearing
+  // these down and re-adding them eight times a session.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    /** Pane 0 only, and never over the price axis. */
+    const geometry = () => {
+      const chart = chartRef.current;
+      const series = priceSeriesRef.current;
+      if (!chart || !series) return null;
+      try {
+        const pane = chart.panes()[0];
+        const size = chart.paneSize(0);
+        if (!pane || !size) return null;
+        return { chart, series, height: pane.getHeight(), width: size.width };
+      } catch {
+        return null;
+      }
+    };
+
+    const toAnchor = (mx: number, my: number): Anchor | null => {
+      const g = geometry();
+      if (!g) return null;
+      const bars = view.candles;
+      // CLAMPED TO THE PANE. A drag is tracked on the window, so the pointer can
+      // leave the price pane mid-stroke — and an unclamped drop would put the
+      // shape at a price outside the visible band, where it renders clipped and
+      // can never be grabbed again. It would still be in the list and still be
+      // counted, which is the worst version: present, invisible, unselectable.
+      const cx = Math.max(0, Math.min(g.width, mx));
+      const cy = Math.max(0, Math.min(g.height, my));
+      const logical = g.chart.timeScale().coordinateToLogical(cx);
+      const price = g.series.coordinateToPrice(cy);
+      if (logical === null || price === null) return null;
+      const i = Math.max(0, Math.min(bars.length - 1, Math.round(logical)));
+      return { time: bars[i].date, price };
+    };
+
+    const indexOf = (time: string) => view.bucketOf.get(time) ?? time;
+    const barIndex = new Map(view.candles.map((c, i) => [c.date, i]));
+
+    /** Shift every anchor of `d` by a whole number of bars and a price delta. */
+    const shifted = (d: Drawing, dBars: number, dPrice: number): Drawing => ({
+      ...d,
+      points: d.points.map((a) => {
+        const i = barIndex.get(indexOf(a.time));
+        const j = i === undefined
+          ? undefined
+          : Math.max(0, Math.min(view.candles.length - 1, i + dBars));
+        return { time: j === undefined ? a.time : view.candles[j].date, price: a.price + dPrice };
+      }),
+    });
+
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      const g = geometry();
+      if (!g) return;
+      const rect = container.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      if (my > g.height || mx > g.width) return; // another pane, or the axis
+      const anchor = toAnchor(mx, my);
+      if (!anchor) return;
+
+      const activeTool = toolRef.current;
+      if (activeTool !== "cursor") {
+        const kind = activeTool as DrawingKind;
+        dragRef.current = {
+          mode: "create",
+          originAnchor: anchor,
+          originPx: { x: mx, y: my },
+          moved: false,
+          draft: {
+            id: newId(),
+            kind,
+            points: anchorsFor(kind) === 1 ? [anchor] : [anchor, anchor],
+          },
+        };
+        drawPrimRef.current?.update();
+        return;
+      }
+
+      // Cursor: topmost drawing wins, so the most recently drawn shape is the
+      // one a click on an overlap picks up.
+      const prim = drawPrimRef.current;
+      if (!prim) return;
+      const proj = prim.projector();
+      for (let i = drawingsRef.current.length - 1; i >= 0; i--) {
+        const d = drawingsRef.current[i];
+        const pts = projectDrawing(d, proj);
+        if (!pts) continue;
+        const hit = hitTest(d, pts, mx, my, g.width);
+        if (!hit) continue;
+        setSelectedId(d.id);
+        dragRef.current = {
+          mode: hit.kind === "handle" ? "handle" : "move",
+          id: d.id,
+          handleIndex: hit.kind === "handle" ? hit.index : undefined,
+          original: d,
+          originAnchor: anchor,
+          originPx: { x: mx, y: my },
+          moved: false,
+          draft: d,
+        };
+        // Hand the drag to the drawing rather than to the chart's panning.
+        g.chart.applyOptions({ handleScroll: false, handleScale: false });
+        e.preventDefault();
+        return;
+      }
+      setSelectedId(null);
+    };
+
+    const onMove = (e: MouseEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const g = geometry();
+      if (!g) return;
+      const rect = container.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const anchor = toAnchor(mx, my);
+      if (!anchor) return;
+      if (Math.abs(mx - drag.originPx.x) > 2 || Math.abs(my - drag.originPx.y) > 2) drag.moved = true;
+
+      if (drag.mode === "create" && drag.draft) {
+        drag.draft = drag.draft.points.length === 1
+          ? { ...drag.draft, points: [anchor] }
+          : { ...drag.draft, points: [drag.draft.points[0], anchor] };
+      } else if (drag.mode === "handle" && drag.original && drag.handleIndex !== undefined) {
+        const pts = [...drag.original.points];
+        pts[drag.handleIndex] = anchor;
+        drag.draft = { ...drag.original, points: pts };
+      } else if (drag.mode === "move" && drag.original) {
+        const from = barIndex.get(indexOf(drag.originAnchor.time)) ?? 0;
+        const to = barIndex.get(indexOf(anchor.time)) ?? 0;
+        drag.draft = shifted(drag.original, to - from, anchor.price - drag.originAnchor.price);
+      }
+      drawPrimRef.current?.update();
+    };
+
+    const onUp = () => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      dragRef.current = null;
+      chartRef.current?.applyOptions({
+        handleScroll: toolRef.current === "cursor",
+        handleScale: toolRef.current === "cursor",
+      });
+
+      const draft = drag.draft;
+      if (!draft) {
+        drawPrimRef.current?.update();
+        return;
+      }
+      if (drag.mode === "create") {
+        // A click with no drag on a two-anchor tool is a zero-length shape,
+        // which is invisible and unselectable — discard it rather than leave
+        // the reader with a drawing they cannot find or remove.
+        if (draft.points.length === 2 && !drag.moved) {
+          drawPrimRef.current?.update();
+          return;
+        }
+        setDrawings((prev) => [...prev, draft]);
+        setSelectedId(draft.id);
+        // Back to the cursor once a shape is down, so the next click selects
+        // rather than starting another copy of the same tool.
+        setTool("cursor");
+      } else if (drag.moved) {
+        setDrawings((prev) => prev.map((d) => (d.id === draft.id ? draft : d)));
+      }
+      drawPrimRef.current?.update();
+    };
+
+    container.addEventListener("mousedown", onDown);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      container.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [view]);
+
   // --- Toolbar behaviour ----------------------------------------------------
 
   // Range presets set the visible window on demand. They deliberately do NOT
@@ -929,6 +1232,10 @@ export function ChartClient({
         secondsVisible: false,
       },
       crosshair: { mode: 1 },
+      // A drawing tool that was live before a chip toggle must still own the
+      // drag after the rebuild, or the first stroke on the new chart pans it.
+      handleScroll: toolRef.current === "cursor",
+      handleScale: toolRef.current === "cursor",
     });
     chartRef.current = chart;
 
@@ -1014,6 +1321,40 @@ export function ChartClient({
       });
       line.setData(linePointsFrom(sma(closes, period)));
     }
+
+    priceSeriesRef.current = candleSeries;
+
+    // The reader's drawing layer. Re-created with the chart every rebuild; the
+    // drawings themselves live in React state and outlive it.
+    //
+    // The index map carries the DAILY dates as well as the bars' own, so a line
+    // drawn on the daily chart still resolves after a switch to weekly — its
+    // anchor is a trading day that is no longer a bar, and `bucketOf` says which
+    // bar now contains it.
+    const drawIndex = new Map<string, number>();
+    candles.forEach((c, i) => drawIndex.set(c.date, i));
+    for (const [daily, bucket] of view.bucketOf) {
+      const i = drawIndex.get(bucket);
+      if (i !== undefined && !drawIndex.has(daily)) drawIndex.set(daily, i);
+    }
+    const drawPrim = new DrawingPrimitive(() => {
+      const drag = dragRef.current;
+      const base = drawingsRef.current;
+      const draft = drag?.draft ?? null;
+      if (!draft) return { drawings: base, selectedId: selectedIdRef.current, preview: null };
+      // A shape being created is not in the list yet; one being edited is, and
+      // has to be SUBSTITUTED or the original would draw underneath the edit.
+      if (drag?.mode === "create") {
+        return { drawings: base, selectedId: selectedIdRef.current, preview: draft };
+      }
+      return {
+        drawings: base.map((d) => (d.id === draft.id ? draft : d)),
+        selectedId: selectedIdRef.current,
+        preview: null,
+      };
+    }, drawIndex);
+    candleSeries.attachPrimitive(drawPrim);
+    drawPrimRef.current = drawPrim;
 
     // ZigZag swing structure on the price pane (5% / 10 candles, on closes).
     //
@@ -1528,6 +1869,8 @@ export function ChartClient({
       }
       chart.remove();
       chartRef.current = null;
+      drawPrimRef.current = null;
+      priceSeriesRef.current = null;
     };
   }, [view, viewRsHist, features, panes, activeSignals, activeSr, activeTl, displayOn, seriesType, timeframe, zzParams]);
 
@@ -1639,11 +1982,22 @@ export function ChartClient({
           locale={locale}
         />
       )}
-      <div
-        ref={containerRef}
-        className={isFullscreen ? "w-full flex-1 min-h-0" : "w-full"}
-        style={isFullscreen ? undefined : { height: chartHeight }}
-      />
+      <div className={isFullscreen ? "flex flex-1 min-h-0" : "flex"}>
+        <DrawingRail
+          tool={tool}
+          onTool={setTool}
+          hasSelection={selectedId !== null}
+          count={drawings.length}
+          onDelete={deleteSelected}
+          onClear={clearDrawings}
+          locale={locale}
+        />
+        <div
+          ref={containerRef}
+          className={`min-w-0 flex-1${tool === "cursor" ? "" : " cursor-crosshair"}`}
+          style={isFullscreen ? undefined : { height: chartHeight }}
+        />
+      </div>
       {/* Display-overlay group — always available, ON by default. Click to
           toggle each overlay (MA/MCDX lines, RS-rating lines) on the chart. */}
       <div className="flex items-center flex-wrap gap-1 px-2 text-data">
