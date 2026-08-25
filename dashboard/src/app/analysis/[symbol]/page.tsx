@@ -199,20 +199,22 @@ export default async function SymbolDrillDown({
         </div>
       </div>
 
-      {/* The written view of the business, FIRST — ahead of the rubric that
-          scores it. A reader who does not yet know what the company does cannot
-          judge what a 78/100 means, and this is the only thing on the page that
-          tells them. The scores that follow then read as evidence for a thesis
-          rather than as a verdict arriving without one.
+      {isRealEstate ? (
+        <ReSummary row={reRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
+      ) : (
+        <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
+      )}
 
-          `mt-6` matches what the FA panel carries, so the block that happens to
-          be first always sits the same distance below the sticky header.
+      {/* The written view of the business, between the rubric and the chart.
+          It belongs to the "is this worth owning" half of the page — it says
+          what the FA score cannot: what the company actually does, why the
+          quarter looked the way it did, what the desk is waiting to see.
 
           Rendered ONLY when a note exists. An empty placeholder on 1,400
           symbols would teach readers to scroll past the heading, and the block
           is worth noticing precisely because it is not on every page. */}
       {business && (
-        <section className="mt-6">
+        <section className="mt-8">
           <h2 className="text-title font-semibold border-b border-line pb-1 mb-3 flex items-baseline justify-between gap-3">
             <span>{t(locale, "baSection")}</span>
             <span className="text-data font-normal text-fg-label font-mono">
@@ -223,12 +225,6 @@ export default async function SymbolDrillDown({
             <Markdown>{business.content}</Markdown>
           </div>
         </section>
-      )}
-
-      {isRealEstate ? (
-        <ReSummary row={reRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
-      ) : (
-        <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
       )}
 
       {/* Technical analysis follows the fundamentals: the FA panel answers
