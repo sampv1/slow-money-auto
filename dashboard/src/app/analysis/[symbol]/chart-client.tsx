@@ -1356,12 +1356,26 @@ export function ChartClient({
     candleSeries.attachPrimitive(drawPrim);
     drawPrimRef.current = drawPrim;
 
-    // ZigZag swing structure on the price pane (5% / 10 candles, on closes).
+    // ZigZag swing structure on the price pane — the O–K–A–D1 legs the Trend
+    // Score reasons about, drawn over the candles. Sensitivity is `zzParams`,
+    // which follows the timeframe; the chip prints whichever pair is in force.
     //
-    // Closes, not highs/lows, because that is what the Trend Score reads — the
-    // spec defines every structural level as a closing price ("A = giá đóng cửa
-    // vượt đỉnh O"), so a ZigZag drawn off the wicks would put its pivots at
-    // prices no rule ever compares against.
+    // THE PRICE BASIS FOLLOWS THE TIMEFRAME TOO, because the Trend Score's does.
+    //
+    // Daily takes peaks off the HIGHS and troughs off the LOWS — a pivot is the
+    // price the market actually reached, and running it on closes clips every
+    // level to the candle body (trend_score.py records VNM's 2026-01-20 peak
+    // reading 71,070 against a real 73,110). Taking a level OUT still requires a
+    // close, which is the walk's job, not the ZigZag's.
+    //
+    // Weekly passes closes for both, because that is what the sheet requires
+    // ("Giá dùng để xét là giá đóng cửa tuần") and what the pipeline does:
+    // `score_timeframe(wd, wc, …)` is called with no h/low, so its weekly
+    // pivots come off weekly closes. Drawing this chart off the weekly wicks
+    // would put pivots the weekly half of the score never saw.
+    //
+    // Monthly has no counterpart in the pipeline and borrows the weekly pair —
+    // basis included, rather than inventing a third rule.
     //
     // Two series, because the last leg is not the same kind of fact as the ones
     // before it: confirming a pivot needs `depth` bars of hindsight, so the leg
@@ -1375,11 +1389,12 @@ export function ChartClient({
       // that same window is ~18 bars, too few for a depth-6 walk to find more
       // than a pivot or two, so the monthly chart uses everything it has.
       const w0 = timeframe === "M" ? 0 : zigzagWindowStart(candles.map((c) => c.date));
-      // Highs and lows, not closes: a pivot is the price the market actually
-      // reached. See lib/zigzag.ts.
+      // See the note above for why the basis changes with the timeframe.
+      const zzHigh = timeframe === "D" ? highs : closes;
+      const zzLow = timeframe === "D" ? lows : closes;
       const { pivots, provisional } = zigzag(
-        highs.slice(w0),
-        lows.slice(w0),
+        zzHigh.slice(w0),
+        zzLow.slice(w0),
         zzParams.deviation,
         zzParams.depth,
       );

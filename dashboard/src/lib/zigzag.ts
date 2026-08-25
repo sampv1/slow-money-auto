@@ -15,8 +15,9 @@
 // reasons about, drawn over the candles.
 //
 // Parameters are the DAILY row of scripts/ta/trend_score.py's ZIGZAG config —
-// deviation 5%, depth 10 candles. Weekly (7% / 6) is a different timeframe and
-// has no meaning on a daily chart.
+// deviation 5%, depth 3 candles (see ZIGZAG_DEPTH below for why it is not the
+// 10 this started at). Weekly is 7% / 6 AND runs on closes; the chart applies
+// both together when its timeframe switch is off "D".
 export const ZIGZAG_DEVIATION = 0.05;
 // 3, matching trend_score.py's daily row — see the note there for why it is not
 // the 10 this started at. If that changes, change this: the overlay exists to
