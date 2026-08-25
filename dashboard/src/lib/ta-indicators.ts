@@ -91,7 +91,7 @@ export const INDICATORS: IndicatorSpec[] = [
   { key: "volume_50_above_avg", category: "volume", direction: "neutral",
     label_en: "Volume +50% above MA20", label_vi: "Khối lượng +50% so với MA20" },
   { key: "pocket_pivot", category: "volume", direction: "bullish",
-    label_en: "Pocket Pivot (O'Neil)", label_vi: "Pocket Pivot (O'Neil)" },
+    label_en: "Pocket Pivot (O'Neil)", label_vi: "Điểm xoay tích lũy (Pocket Pivot)" },
   { key: "wide_range_bar", category: "volume", direction: "neutral",
     label_en: "Wide range bar (>1.5×ATR)", label_vi: "Nến biên độ rộng (>1.5×ATR)" },
 
@@ -131,9 +131,9 @@ export const INDICATORS: IndicatorSpec[] = [
   { key: "dark_cloud_cover", category: "candlestick", direction: "bearish",
     label_en: "Dark Cloud Cover", label_vi: "Mây đen che phủ" },
   { key: "selling_climax", category: "candlestick", direction: "bullish",
-    label_en: "Selling Climax (Wyckoff)", label_vi: "Selling Climax (Wyckoff)" },
+    label_en: "Selling Climax (Wyckoff)", label_vi: "Cao trào bán (Wyckoff)" },
   { key: "buying_climax", category: "candlestick", direction: "bearish",
-    label_en: "Buying Climax (Wyckoff)", label_vi: "Buying Climax (Wyckoff)" },
+    label_en: "Buying Climax (Wyckoff)", label_vi: "Cao trào mua (Wyckoff)" },
 
   // Divergence
   { key: "rsi_bullish_divergence", category: "divergence", direction: "bullish",

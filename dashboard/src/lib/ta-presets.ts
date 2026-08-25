@@ -76,7 +76,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     id: "oneil-pocket-pivot",
     style: "oneil",
     name_en: "Pocket Pivot (O'Neil)",
-    name_vi: "Pocket Pivot (O'Neil)",
+    name_vi: "Điểm xoay tích lũy (Pocket Pivot)",
     description_en: "Today's up-day volume exceeds every down-day volume in the last 10 days, while price holds above MA50. Stealth-accumulation entry that often precedes a breakout.",
     description_vi: "Khối lượng phiên tăng hôm nay vượt mọi phiên giảm trong 10 ngày, giá vẫn trên MA50. Tín hiệu tích lũy âm thầm thường xảy ra trước khi bứt phá.",
     direction: "bullish",

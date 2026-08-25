@@ -131,7 +131,7 @@ INDICATOR_SPECS: list[IndicatorSpec] = [
                   "Volume +50% above MA20", "Khối lượng +50% so với MA20",
                   volume.compute_volume_50_above_avg),
     IndicatorSpec("pocket_pivot", "volume", "bullish",
-                  "Pocket Pivot (O'Neil)", "Pocket Pivot (O'Neil)",
+                  "Pocket Pivot (O'Neil)", "Điểm xoay tích lũy (Pocket Pivot)",
                   volume.compute_pocket_pivot),
     IndicatorSpec("wide_range_bar", "volume", "neutral",
                   "Wide range bar (>1.5×ATR)", "Nến biên độ rộng (>1.5×ATR)",
@@ -189,10 +189,10 @@ INDICATOR_SPECS: list[IndicatorSpec] = [
                   "Dark Cloud Cover", "Mây đen che phủ",
                   candlesticks.compute_dark_cloud_cover),
     IndicatorSpec("selling_climax", "candlestick", "bullish",
-                  "Selling Climax (Wyckoff)", "Selling Climax (Wyckoff)",
+                  "Selling Climax (Wyckoff)", "Cao trào bán (Wyckoff)",
                   climax.compute_selling_climax),
     IndicatorSpec("buying_climax", "candlestick", "bearish",
-                  "Buying Climax (Wyckoff)", "Buying Climax (Wyckoff)",
+                  "Buying Climax (Wyckoff)", "Cao trào mua (Wyckoff)",
                   climax.compute_buying_climax),
 
     # --- Divergence (Tier 3) ---
