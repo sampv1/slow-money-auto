@@ -27,7 +27,7 @@ import type { ChartProps } from "@/lib/chart-payload";
 import type { LatestClose, TriggeredSignal, UniverseLiquidity } from "./page";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
-const DEFAULT_MIN_COMPOSITE_RS = 90;
+const DEFAULT_MIN_TA_SCORE = 90;
 
 // localStorage key + shape for user-saved indicator combos.
 const COMBOS_STORAGE_KEY = "ta-scanner-combos-v1";
@@ -39,7 +39,7 @@ const FILTER_STORAGE_KEY = "ta-scanner-filter-v1";
 type SavedFilter = {
   indicators: string[];
   minAvgVolume: number;
-  minCompositeRs: number;
+  minTaScore: number;
 };
 
 function loadFilterFromStorage(): SavedFilter | null {
@@ -57,8 +57,11 @@ function loadFilterFromStorage(): SavedFilter | null {
       return {
         indicators: parsed.indicators,
         minAvgVolume: parsed.minAvgVolume,
-        // Back-compat: older saved filters predate the RS threshold.
-        minCompositeRs: typeof parsed.minCompositeRs === "number" ? parsed.minCompositeRs : DEFAULT_MIN_COMPOSITE_RS,
+        // Back-compat: older saved filters predate this threshold, and older
+        // ones still carry `minCompositeRs` — a 1-99 percentile, NOT a 0-100
+        // score. Deliberately not migrated: reusing that number here would
+        // silently apply a threshold the user set against a different metric.
+        minTaScore: typeof parsed.minTaScore === "number" ? parsed.minTaScore : DEFAULT_MIN_TA_SCORE,
       };
     }
     return null;
@@ -171,7 +174,7 @@ export function ScannerClient({
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [minAvgVolume, setMinAvgVolume] = useState<number>(DEFAULT_MIN_AVG_VOLUME_20D);
-  const [minCompositeRs, setMinCompositeRs] = useState<number>(DEFAULT_MIN_COMPOSITE_RS);
+  const [minTaScore, setMinTaScore] = useState<number>(DEFAULT_MIN_TA_SCORE);
 
   // Saved combos: hydrated from localStorage on mount, kept in sync after that.
   const [savedCombos, setSavedCombos] = useState<SavedCombo[]>([]);
@@ -236,7 +239,7 @@ export function ScannerClient({
     if (saved) {
       setSelected(new Set(saved.indicators));
       setMinAvgVolume(saved.minAvgVolume);
-      setMinCompositeRs(saved.minCompositeRs);
+      setMinTaScore(saved.minTaScore);
     }
     setFilterHydrated(true);
   }, []);
@@ -244,9 +247,9 @@ export function ScannerClient({
   // Persist the active filter whenever it changes (after hydration).
   useEffect(() => {
     if (filterHydrated) {
-      saveFilterToStorage({ indicators: [...selected], minAvgVolume, minCompositeRs });
+      saveFilterToStorage({ indicators: [...selected], minAvgVolume, minTaScore });
     }
-  }, [selected, minAvgVolume, minCompositeRs, filterHydrated]);
+  }, [selected, minAvgVolume, minTaScore, filterHydrated]);
 
   // Load the chart whenever the charted symbol changes, or the indicator
   // selection behind it does — the markers on the chart ARE the signals that
@@ -436,13 +439,14 @@ export function ScannerClient({
         if (avgVol === null || avgVol === undefined) continue;
         if (avgVol < minAvgVolume) continue;
       }
-      // Composite RS filter: drop symbols below the threshold (or NULL = not
-      // rated, e.g. insufficient history / below the RS liquidity floor).
-      const rsComposite = rsBySymbol.get(symbol) ?? null;
-      if (minCompositeRs > 0) {
-        if (rsComposite === null) continue;
-        if (rsComposite < minCompositeRs) continue;
+      // TA Score filter: drop symbols below the threshold (or NULL = unscored,
+      // which happens only when EVERY component is missing).
+      const taScore = taScoreBySymbol.get(symbol) ?? null;
+      if (minTaScore > 0) {
+        if (taScore === null) continue;
+        if (taScore < minTaScore) continue;
       }
+      const rsComposite = rsBySymbol.get(symbol) ?? null;
       const close = closeBySymbol.get(symbol);
       rows.push({
         symbol,
@@ -451,7 +455,7 @@ export function ScannerClient({
         volume: close?.volume ?? null,
         avgVolume20d: avgVol ?? null,
         rsComposite,
-        taScore: taScoreBySymbol.get(symbol) ?? null,
+        taScore,
       });
     }
     // Rank by TA Score (best first); unscored symbols sink to the bottom,
@@ -465,7 +469,7 @@ export function ScannerClient({
       return a.symbol.localeCompare(b.symbol);
     });
     return rows;
-  }, [selected, signalsBySymbol, closeBySymbol, avgVolBySymbol, minAvgVolume, rsBySymbol, minCompositeRs, taScoreBySymbol]);
+  }, [selected, signalsBySymbol, closeBySymbol, avgVolBySymbol, minAvgVolume, rsBySymbol, minTaScore, taScoreBySymbol]);
 
   function toggle(key: string) {
     setSelected((prev) => {
@@ -559,27 +563,27 @@ export function ScannerClient({
 
         <span className="h-5 w-px bg-line mx-1" aria-hidden />
 
-        <label htmlFor="min-composite-rs" className="text-body-lg text-fg">
-          {t(locale, "taMinCompositeRs")}
+        <label htmlFor="min-ta-score" className="text-body-lg text-fg">
+          {t(locale, "taMinTaScore")}
         </label>
         <input
-          id="min-composite-rs"
+          id="min-ta-score"
           type="number"
           min={0}
-          max={99}
+          max={100}
           step={1}
-          value={Number.isFinite(minCompositeRs) ? minCompositeRs : 0}
+          value={Number.isFinite(minTaScore) ? minTaScore : 0}
           onChange={(e) => {
             const n = Number(e.target.value);
-            setMinCompositeRs(Number.isFinite(n) && n >= 0 ? Math.min(n, 99) : 0);
+            setMinTaScore(Number.isFinite(n) && n >= 0 ? Math.min(n, 100) : 0);
           }}
           className="w-20 rounded border border-line px-2 py-1 text-body-lg font-mono"
         />
-        <span className="text-data text-fg-muted">{t(locale, "taMinCompositeRsHint")}</span>
-        {minCompositeRs !== DEFAULT_MIN_COMPOSITE_RS && (
+        <span className="text-data text-fg-muted">{t(locale, "taMinTaScoreHint")}</span>
+        {minTaScore !== DEFAULT_MIN_TA_SCORE && (
           <button
             type="button"
-            onClick={() => setMinCompositeRs(DEFAULT_MIN_COMPOSITE_RS)}
+            onClick={() => setMinTaScore(DEFAULT_MIN_TA_SCORE)}
             className="text-data text-fg-muted hover:text-fg"
           >
             {t(locale, "reset")}
