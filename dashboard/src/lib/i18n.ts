@@ -673,13 +673,6 @@ export const translations = {
     bySector: "By Sector",
 
     // Input page
-    pushRecommendation: "Push Recommendation",
-    inputDescription: "Paste Claude's JSON output (Phan K) below. Supports raw JSON or markdown code blocks.",
-    validate: "Validate",
-    pushToSupabase: "Push to Supabase",
-    pushing: "Pushing...",
-    pushedSuccessfully: "Pushed successfully",
-    viewInDailyLogs: "View in Daily Logs",
 
     // v5 fields
     macroScore: "Macro Score",
@@ -1482,13 +1475,6 @@ export const translations = {
     bySector: "Theo ngành",
 
     // Input page
-    pushRecommendation: "Nhập khuyến nghị",
-    inputDescription: "Dán JSON từ Claude (Phần K) vào đây. Hỗ trợ JSON hoặc markdown code block.",
-    validate: "Kiểm tra",
-    pushToSupabase: "Đẩy lên Supabase",
-    pushing: "Đang đẩy...",
-    pushedSuccessfully: "Đẩy thành công",
-    viewInDailyLogs: "Xem trong Nhật ký",
 
     // v5 fields
     macroScore: "Điểm vĩ mô",
