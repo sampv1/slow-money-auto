@@ -31,6 +31,14 @@ export default function BusinessAnalysisForm({ locale }: { locale: Locale }) {
   // `symbol` so editing the box after a Load cannot save one company's note
   // under another's ticker.
   const [loaded, setLoaded] = useState<string | null>(null);
+  // The text as of the last load or save — what Cancel returns to. Without a
+  // stored baseline "discard my changes" has nothing to mean: the textarea is
+  // the only copy, and the table keeps no history.
+  const [baseline, setBaseline] = useState("");
+  // What Cancel just threw away, kept for one Undo. Esc is a single keystroke
+  // and this box can hold thousands of characters — a discard with no way back
+  // is a worse failure than the one Cancel exists to prevent.
+  const [discarded, setDiscarded] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [note, setNote] = useState<Note | null>(null);
@@ -93,6 +101,8 @@ export default function BusinessAnalysisForm({ locale }: { locale: Locale }) {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? String(res.status));
         setContent(data.content ?? "");
+        setBaseline(data.content ?? "");
+        setDiscarded(null);
         setUpdatedAt(data.updated_at ?? null);
         setLoaded(sym);
         setNote({
@@ -124,6 +134,9 @@ export default function BusinessAnalysisForm({ locale }: { locale: Locale }) {
       if (!res.ok) throw new Error(data.error ?? String(res.status));
       setUpdatedAt(data.updated_at ?? null);
       setLoaded(symbol);
+      // The save succeeded, so what is in the box IS the stored text now.
+      setBaseline(content);
+      setDiscarded(null);
       setNote({
         kind: "ok",
         text: data.deleted ? t(locale, "baDeleted") : t(locale, "baSaved"),
@@ -147,6 +160,8 @@ export default function BusinessAnalysisForm({ locale }: { locale: Locale }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? String(res.status));
       setContent("");
+      setBaseline("");
+      setDiscarded(null);
       setUpdatedAt(null);
       setLoaded(null);
       setNote({ kind: "ok", text: data.deleted ? t(locale, "baDeleted") : t(locale, "baNothingToDelete") });
@@ -159,13 +174,45 @@ export default function BusinessAnalysisForm({ locale }: { locale: Locale }) {
     }
   }, [symbol, valid, locale, refreshList]);
 
+  // Unsaved edits exist. Also what gates Cancel: with none, there is nothing to
+  // discard and the button says so by being disabled.
+  const dirty = content !== baseline;
+
+  const cancel = useCallback(() => {
+    if (!dirty) return;
+    setDiscarded(content);
+    setContent(baseline);
+    // Back to the editor: cancelling while looking at the preview would change
+    // the text under a rendered view that gives no hint anything happened.
+    setPreview(false);
+    setNote({ kind: "ok", text: t(locale, "baCancelled") });
+  }, [dirty, content, baseline, locale]);
+
+  const undo = useCallback(() => {
+    if (discarded === null) return;
+    setContent(discarded);
+    setDiscarded(null);
+    setNote({ kind: "ok", text: t(locale, "baUndone") });
+  }, [discarded, locale]);
+
   // Saving under a ticker other than the one the text was loaded for is the one
   // mistake this form can make that destroys data, so it is called out rather
   // than merely prevented.
   const mismatch = loaded !== null && loaded !== symbol && content.trim() !== "";
 
   return (
-    <div className="mt-10">
+    <div
+      className="mt-10"
+      // On the wrapper rather than the textarea: Esc should back out of the edit
+      // from wherever focus happens to be inside this block — the symbol box,
+      // the buttons, the preview — and keydown bubbles from all of them. Outside
+      // the block it deliberately does nothing.
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || !dirty) return;
+        e.preventDefault();
+        cancel();
+      }}
+    >
       <h2 className="text-title font-semibold mb-1">{t(locale, "baFormTitle")}</h2>
       <p className="text-body-lg text-fg-muted mb-4">{t(locale, "baFormDescription")}</p>
 
@@ -244,6 +291,19 @@ export default function BusinessAnalysisForm({ locale }: { locale: Locale }) {
         >
           {status === "saving" ? t(locale, "baSaving") : t(locale, "baSave")}
         </button>
+        {/* Always rendered, disabled when there is nothing to discard — a
+            button that appears and vanishes as you type would shift the row
+            under the pointer. */}
+        <button
+          type="button"
+          onClick={cancel}
+          disabled={!dirty || busy}
+          title={t(locale, "baCancelHint")}
+          className="px-4 py-2 text-body-lg border border-line rounded-md hover:bg-canvas disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          {t(locale, "baCancel")}
+        </button>
+
         {/* Offered only for a symbol whose note is actually loaded, so Delete
             can never fire against a ticker the admin has not looked at. */}
         {loaded === symbol && updatedAt && (
@@ -307,6 +367,15 @@ export default function BusinessAnalysisForm({ locale }: { locale: Locale }) {
           }`}
         >
           {note.text}
+          {discarded !== null && (
+            <button
+              type="button"
+              onClick={undo}
+              className="ml-2 underline font-medium hover:no-underline"
+            >
+              {t(locale, "baUndo")}
+            </button>
+          )}
         </div>
       )}
     </div>
