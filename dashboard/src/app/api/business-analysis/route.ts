@@ -33,9 +33,30 @@ function symbolFrom(request: Request): string | null {
   return SYMBOL_RE.test(raw) ? raw : null;
 }
 
+/**
+ * With `?symbol=`, one note. WITHOUT it, the index: every symbol that has one,
+ * newest first.
+ *
+ * The index is what makes editing a posted note possible at all. Without it the
+ * editor could only reach a note whose ticker the admin already remembered,
+ * which is not a way to find something you wrote weeks ago — and there is no
+ * other surface anywhere that lists what has been written.
+ */
 export async function GET(request: Request) {
   const { role } = await getUserAndRole();
   if (role !== "admin") return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  const raw = new URL(request.url).searchParams.get("symbol");
+  if (raw === null) {
+    // No content column: the index is a picker, and the notes are long enough
+    // that shipping all of them to render a list of tickers would be silly.
+    const { data, error } = await supabase
+      .from("business_analysis")
+      .select("symbol,updated_at")
+      .order("updated_at", { ascending: false });
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ items: data ?? [] });
+  }
 
   const symbol = symbolFrom(request);
   if (!symbol) return Response.json({ error: "invalid symbol" }, { status: 400 });
@@ -111,4 +132,37 @@ export async function POST(request: Request) {
   // happened.
   revalidateTag(TAG_BUSINESS, { expire: 0 });
   return Response.json({ symbol, saved: true, updated_at: data?.updated_at ?? null });
+}
+
+/**
+ * Remove a note outright.
+ *
+ * POSTing an empty body already deletes, and still does — but that is a side
+ * effect of "there is nothing to show", not something an admin would find. A
+ * verb that says what it does is what makes removal a feature rather than a
+ * trick, and it is the one action here that cannot be undone: the table keeps
+ * no history, so the UI asks twice before calling this.
+ */
+export async function DELETE(request: Request) {
+  const { role } = await getUserAndRole();
+  if (role !== "admin") return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  const symbol = symbolFrom(request);
+  if (!symbol) return Response.json({ error: "invalid symbol" }, { status: 400 });
+
+  const admin = supabaseAdmin();
+  if (!admin) return adminUnavailable();
+
+  // `select()` so the count is real. A delete that matched nothing returns 204
+  // with no rows, which would otherwise report as a successful removal of a
+  // note that was never there — and the admin would have no way to tell.
+  const { data, error } = await admin
+    .from("business_analysis")
+    .delete()
+    .eq("symbol", symbol)
+    .select("symbol");
+
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  revalidateTag(TAG_BUSINESS, { expire: 0 });
+  return Response.json({ symbol, deleted: (data ?? []).length > 0 });
 }
