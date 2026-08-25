@@ -31,7 +31,7 @@ export async function createSupabaseServer() {
   );
 }
 
-export type UserRole = "admin" | "viewer" | "pro" | null;
+export type UserRole = "admin" | "viewer" | "analyst" | "pro" | null;
 
 /**
  * Get the current user's role, or null if not logged in.
@@ -84,8 +84,31 @@ export async function getUserAndRole(): Promise<{
 /**
  * Staff = admin + viewer. Both see the internal/admin nav block and
  * read-only dashboards. Only admin can also create data (Input page,
- * /api/push endpoint).
+ * FA import, paper trades).
+ *
+ * `analyst` is deliberately NOT staff. It is a writer of one thing, not a
+ * member of the desk: the feedbacks page and its RLS policy (migrations 007 and
+ * 012) name admin and viewer, and quietly widening that here would let an
+ * analyst read every visitor's message — which has nothing to do with writing
+ * company commentary.
  */
 export function isStaff(role: UserRole): boolean {
   return role === "admin" || role === "viewer";
+}
+
+/**
+ * May write Business Analysis notes (migrations 053, 054).
+ *
+ * The ONE capability the `analyst` role carries. It is a function rather than a
+ * `role === "analyst"` test at each call site because there are three of them —
+ * the API route's three verbs, plus the /input page — and a permission spread
+ * across four literal comparisons is one edit away from disagreeing with
+ * itself: a page that renders a control the route then refuses.
+ *
+ * Admin is included because admin can do everything an analyst can. The reverse
+ * must never become true — see the /input page, which renders the FA import
+ * block for admin only.
+ */
+export function canWriteBusinessAnalysis(role: UserRole): boolean {
+  return role === "admin" || role === "analyst";
 }

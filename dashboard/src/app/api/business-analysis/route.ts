@@ -2,15 +2,17 @@ import { revalidateTag } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { supabaseAdmin, adminUnavailable } from "@/lib/supabase-admin";
 import { TAG_BUSINESS } from "@/lib/cached-data";
-import { getUserAndRole } from "@/lib/supabase-server";
+import { canWriteBusinessAnalysis, getUserAndRole } from "@/lib/supabase-server";
 
 /**
  * Read and write one symbol's Business Analysis note (migration 053).
  *
- * ADMIN ONLY, both verbs. GET is gated too even though the content itself is
- * public on the Analysis page: this route is the EDITOR's view, and it answers
- * for a symbol that has no note yet — which is exactly how you would enumerate
- * what the desk has and has not covered. That is not something to hand out.
+ * ADMIN OR ANALYST, every verb — the analyst role (migration 054) exists for
+ * exactly this and carries nothing else. GET is gated too even though the
+ * content itself is public on the Analysis page: this route is the EDITOR's
+ * view, and it answers for a symbol that has no note yet — which is exactly how
+ * you would enumerate what the desk has and has not covered. That is not
+ * something to hand out.
  *
  * The write goes through the service-role client because migration 045 left
  * anon read-only; a denied PostgREST write answers 204 with zero rows affected,
@@ -44,7 +46,7 @@ function symbolFrom(request: Request): string | null {
  */
 export async function GET(request: Request) {
   const { role } = await getUserAndRole();
-  if (role !== "admin") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canWriteBusinessAnalysis(role)) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const raw = new URL(request.url).searchParams.get("symbol");
   if (raw === null) {
@@ -80,7 +82,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const { user, role } = await getUserAndRole();
-  if (role !== "admin") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canWriteBusinessAnalysis(role)) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const symbol = symbolFrom(request);
   if (!symbol) return Response.json({ error: "invalid symbol" }, { status: 400 });
@@ -145,7 +147,7 @@ export async function POST(request: Request) {
  */
 export async function DELETE(request: Request) {
   const { role } = await getUserAndRole();
-  if (role !== "admin") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canWriteBusinessAnalysis(role)) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const symbol = symbolFrom(request);
   if (!symbol) return Response.json({ error: "invalid symbol" }, { status: 400 });

@@ -7,7 +7,7 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 import { AuthButton } from "@/components/auth-button";
 import { NavLinks } from "@/components/nav-links";
 import { GAUserIdentify } from "@/components/ga-user-identify";
-import { getUserAndRole, isStaff } from "@/lib/supabase-server";
+import { canWriteBusinessAnalysis, getUserAndRole, isStaff } from "@/lib/supabase-server";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 
@@ -88,7 +88,10 @@ export default async function RootLayout({
     { href: "/analysis", label: t(locale, "navStockAnalysis") },
     { href: "/portfolio", label: t(locale, "navPortfolio") },
     { href: "/stats", label: t(locale, "navStats") },
-    ...(role === "admin" ? [{ href: "/input", label: t(locale, "navInput") }] : []),
+    // Admin and analyst both land on /input; the page itself decides which
+    // blocks each one sees. Without the link an analyst would have to know the
+    // URL, and the page's own gate is what actually enforces access.
+    ...(canWriteBusinessAnalysis(role) ? [{ href: "/input", label: t(locale, "navInput") }] : []),
     // Staff only, matching the page's own gate and the feedbacks RLS policy —
     // it used to show for any logged-in user, who would then hit a redirect.
     ...(isStaff(role) ? [{ href: "/feedbacks", label: t(locale, "navFeedbacks") }] : []),
