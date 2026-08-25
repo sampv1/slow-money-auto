@@ -2,8 +2,9 @@
  * ZigZag pivots — a PORT of scripts/ta/zigzag.py, not a second implementation.
  *
  * Peaks come off HIGHS and troughs off LOWS, matching the Python and every
- * reference chart. Pass the same array twice for a close-based ZigZag (what the
- * weekly timeframe uses).
+ * reference chart. Pass the same array twice for a close-based ZigZag — which
+ * is what the PIPELINE's weekly half does; the chart draws every timeframe off
+ * highs and lows, so the overlay always shows the range the market traded.
  *
  * Shared by the Analysis price chart and Signal Pro's trend-structure popup so
  * the two cannot drift from each other or from the Trend Score. Verified to
@@ -16,8 +17,8 @@
 //
 // Parameters are the DAILY row of scripts/ta/trend_score.py's ZIGZAG config —
 // deviation 5%, depth 3 candles (see ZIGZAG_DEPTH below for why it is not the
-// 10 this started at). Weekly is 7% / 6 AND runs on closes; the chart applies
-// both together when its timeframe switch is off "D".
+// 10 this started at; the live scoring_config row stores 3 as well). The
+// chart's weekly and monthly timeframes take the weekly pair, 7% / 6.
 export const ZIGZAG_DEVIATION = 0.05;
 // 3, matching trend_score.py's daily row — see the note there for why it is not
 // the 10 this started at. If that changes, change this: the overlay exists to

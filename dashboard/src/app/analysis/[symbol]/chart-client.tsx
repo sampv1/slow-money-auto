@@ -1360,22 +1360,20 @@ export function ChartClient({
     // Score reasons about, drawn over the candles. Sensitivity is `zzParams`,
     // which follows the timeframe; the chip prints whichever pair is in force.
     //
-    // THE PRICE BASIS FOLLOWS THE TIMEFRAME TOO, because the Trend Score's does.
+    // PEAKS OFF THE HIGHS, TROUGHS OFF THE LOWS — on every timeframe. A pivot
+    // is the price the market actually reached; running it on closes clips each
+    // level to the candle body, which is why the same VNM peak reads 71,070 on
+    // closes against a real 73,110. Taking a level back OUT still requires a
+    // close, but that is the state machine's job, not the ZigZag's.
     //
-    // Daily takes peaks off the HIGHS and troughs off the LOWS — a pivot is the
-    // price the market actually reached, and running it on closes clips every
-    // level to the candle body (trend_score.py records VNM's 2026-01-20 peak
-    // reading 71,070 against a real 73,110). Taking a level OUT still requires a
-    // close, which is the walk's job, not the ZigZag's.
-    //
-    // Weekly passes closes for both, because that is what the sheet requires
-    // ("Giá dùng để xét là giá đóng cửa tuần") and what the pipeline does:
-    // `score_timeframe(wd, wc, …)` is called with no h/low, so its weekly
-    // pivots come off weekly closes. Drawing this chart off the weekly wicks
-    // would put pivots the weekly half of the score never saw.
-    //
-    // Monthly has no counterpart in the pipeline and borrows the weekly pair —
-    // basis included, rather than inventing a third rule.
+    // ONE DELIBERATE DIVERGENCE FROM THE PIPELINE, on W and M. trend_score.py
+    // calls `score_timeframe(wd, wc, …)` with no h/low, so the weekly HALF OF
+    // THE SCORE walks weekly closes, as its sheet requires ("Giá dùng để xét là
+    // giá đóng cửa tuần"). This overlay is a reading aid rather than a
+    // re-derivation of the score: it shows the range the market traded on the
+    // timeframe on screen, consistently across all three. The weekly score's
+    // own structure is the narrower close-based one, and the two can therefore
+    // put a weekly pivot on different prices.
     //
     // Two series, because the last leg is not the same kind of fact as the ones
     // before it: confirming a pivot needs `depth` bars of hindsight, so the leg
@@ -1389,12 +1387,9 @@ export function ChartClient({
       // that same window is ~18 bars, too few for a depth-6 walk to find more
       // than a pivot or two, so the monthly chart uses everything it has.
       const w0 = timeframe === "M" ? 0 : zigzagWindowStart(candles.map((c) => c.date));
-      // See the note above for why the basis changes with the timeframe.
-      const zzHigh = timeframe === "D" ? highs : closes;
-      const zzLow = timeframe === "D" ? lows : closes;
       const { pivots, provisional } = zigzag(
-        zzHigh.slice(w0),
-        zzLow.slice(w0),
+        highs.slice(w0),
+        lows.slice(w0),
         zzParams.deviation,
         zzParams.depth,
       );
