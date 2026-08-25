@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { getActiveSymbols, getSymbolMeta, getSymbolProfile } from "@/lib/cached-data";
+import { getActiveSymbols, getBusinessAnalysis, getSymbolMeta, getSymbolProfile } from "@/lib/cached-data";
 import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
 import { metaIndustry, metaShortName, metaFullName } from "@/lib/symbol-meta";
 import { getLocale, t } from "@/lib/i18n";
@@ -15,6 +15,7 @@ import { TaSearch } from "../ta-search";
 import { TradeActions } from "../../signal-pro/trade-actions";
 import { DataError } from "@/components/data-error";
 import { SymbolLogo } from "@/components/symbol-logo";
+import { Markdown } from "@/components/markdown";
 
 export const revalidate = 0;
 
@@ -43,7 +44,7 @@ export default async function SymbolDrillDown({
   //    picks BUY vs SELL in the header (same rule as Signal Pro). Deliberately
   //    UNCACHED so a trade shows up immediately on the router.refresh() that
   //    TradeActions fires after a successful BUY/SELL.
-  const [universe, hasOpenPosition, profile, symbolMeta] = await Promise.all([
+  const [universe, hasOpenPosition, profile, symbolMeta, business] = await Promise.all([
     getActiveSymbols().catch((): string[] => []),
     (async (): Promise<boolean> => {
       if (!isAdmin) return false;
@@ -59,6 +60,9 @@ export default async function SymbolDrillDown({
     // migration 050 costs the header its logo and subtitle, not the page.
     getSymbolProfile(symbol),
     getSymbolMeta(),
+    // The admin's hand-written note, if there is one. Already null-on-failure,
+    // so a deploy that lands before migration 053 simply shows no block.
+    getBusinessAnalysis(symbol),
   ]);
 
   // NB `industry` further down is fa_industry.industry_group — which RUBRIC this
@@ -199,6 +203,28 @@ export default async function SymbolDrillDown({
         <ReSummary row={reRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
       ) : (
         <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
+      )}
+
+      {/* The written view of the business, between the rubric and the chart.
+          It belongs to the "is this worth owning" half of the page — it says
+          what the FA score cannot: what the company actually does, why the
+          quarter looked the way it did, what the desk is waiting to see.
+
+          Rendered ONLY when a note exists. An empty placeholder on 1,400
+          symbols would teach readers to scroll past the heading, and the block
+          is worth noticing precisely because it is not on every page. */}
+      {business && (
+        <section className="mt-8">
+          <h2 className="text-title font-semibold border-b border-line pb-1 mb-3 flex items-baseline justify-between gap-3">
+            <span>{t(locale, "baSection")}</span>
+            <span className="text-data font-normal text-fg-label font-mono">
+              {business.updated_at.slice(0, 10)}
+            </span>
+          </h2>
+          <div className="bg-panel rounded-lg border border-line p-4 sm:p-6">
+            <Markdown>{business.content}</Markdown>
+          </div>
+        </section>
       )}
 
       {/* Technical analysis follows the fundamentals: the FA panel answers

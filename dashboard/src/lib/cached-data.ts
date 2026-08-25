@@ -27,7 +27,11 @@ export const TAG_REC = "rec-data";
 // feedbacks — written by any visitor via /api/feedback, which revalidates it,
 // so a new message still shows up immediately.
 export const TAG_FEEDBACK = "feedback-data";
-export const ALL_TAGS = [TAG_TA, TAG_FA, TAG_MACRO, TAG_REC, TAG_FEEDBACK];
+// business_analysis — hand-written per-symbol notes, saved by an admin on
+// /input. Its own tag rather than TAG_FA: nothing in the FA pipeline writes it,
+// and a nightly FA run should not be expiring an entry an admin typed by hand.
+export const TAG_BUSINESS = "business-data";
+export const ALL_TAGS = [TAG_TA, TAG_FA, TAG_MACRO, TAG_REC, TAG_FEEDBACK, TAG_BUSINESS];
 
 export const CACHE_TTL_SECONDS = 3600;
 
@@ -985,3 +989,33 @@ export const getSymbolProfile = unstable_cache(
   ["symbol-profile-v1"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
 );
+
+// ---------------------------------------------------------------------------
+// Business Analysis — the admin's markdown note for one symbol (migration 053).
+//
+// Cached per symbol, like getSymbolProfile: the Analysis page reads exactly one
+// row and the table is small, so paging the whole thing to cache it once would
+// trade a cheap keyed lookup for a big entry that expires on every edit.
+//
+// Returns null both when there is no note and when the read FAILS — this is
+// commentary beside the numbers, and a symbol with no note looks the same as
+// one whose table does not exist yet (a deploy ahead of the migration). Neither
+// is worth taking the page down for.
+// ---------------------------------------------------------------------------
+export type BusinessAnalysis = { content: string; updated_at: string };
+
+export const getBusinessAnalysis = (symbol: string) =>
+  unstable_cache(
+    async (): Promise<BusinessAnalysis | null> => {
+      const { data, error } = await supabase
+        .from("business_analysis")
+        .select("content,updated_at")
+        .eq("symbol", symbol)
+        .maybeSingle();
+      if (error || !data) return null;
+      const content = (data.content ?? "").trim();
+      return content ? { content, updated_at: data.updated_at } : null;
+    },
+    ["business-analysis", symbol],
+    { revalidate: CACHE_TTL_SECONDS, tags: [TAG_BUSINESS] },
+  )();
