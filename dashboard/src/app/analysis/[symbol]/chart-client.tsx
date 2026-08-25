@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AreaSeries,
+  BarSeries,
   CandlestickSeries,
   HistogramSeries,
   LineSeries,
@@ -26,6 +28,15 @@ import { ZIGZAG_COLOR, ZIGZAG_DEPTH, ZIGZAG_DEVIATION, zigzag, zigzagWindowStart
 import { t, type Locale } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
 import { CHART_LITERAL, VN_INDEX } from "@/lib/chart-theme";
+import { ChartToolbar, RANGE_PRESETS, type SeriesType } from "@/components/chart-toolbar";
+import { IndicatorPicker, type PickerItem } from "@/components/indicator-picker";
+import {
+  barsForMonths,
+  bucketRsHist,
+  resample,
+  zigzagParamsFor,
+  type Timeframe,
+} from "@/lib/chart-resample";
 
 // Chart ink, tuned for CONTRAST on the cream #fbf9f5 panel (2026-08-19).
 //
@@ -451,6 +462,20 @@ type Features = {
 // Display-overlay toggle group (separate from triggered-signal chips): always
 // available, ON by default. MA/MCDX toggle chart overlays; RS3M/6M/52W toggle
 // their lines in the RS pane. Keys are stable ids.
+/**
+ * The price pane's anchor series, whichever presentation is selected.
+ *
+ * A union rather than a widened `ISeriesApi<SeriesType>`, because the members
+ * the rest of the effect calls on it — `createPriceLine`, `attachPrimitive`,
+ * `priceToCoordinate` — are shared by all four, and the union keeps each branch
+ * checking its OWN options object (a bar series has no `topColor`).
+ */
+type PriceSeries =
+  | ISeriesApi<"Candlestick">
+  | ISeriesApi<"Bar">
+  | ISeriesApi<"Line">
+  | ISeriesApi<"Area">;
+
 const DISPLAY_KEYS = ["ma20", "ma50", "ma200", "zigzag", "mcdx", "rs3m", "rs6m", "rs52w"] as const;
 type DisplayKey = (typeof DISPLAY_KEYS)[number];
 const DISPLAY_MA: Record<string, number> = { ma20: 20, ma50: 50, ma200: 200 };
@@ -615,6 +640,17 @@ export function ChartClient({
   // candles) falls through to fitContent.
   const savedRangeRef = useRef<{ range: LogicalRange | null; candles: Candle[] } | null>(null);
 
+  // --- Opt-in view controls (the toolbar) ----------------------------------
+  // Every initial value here reproduces the chart as it behaved before the
+  // toolbar existed: daily bars, candlesticks, and NO range preset applied — the
+  // opening window is still DEFAULT_VISIBLE_SESSIONS, chosen further down.
+  const [timeframe, setTimeframe] = useState<Timeframe>("D");
+  const [seriesType, setSeriesType] = useState<SeriesType>("candles");
+  const [activeRange, setActiveRange] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     track("stock_viewed", { symbol });
   }, [symbol]);
@@ -641,6 +677,21 @@ export function ChartClient({
     setPrevSelectedKey(selectedKey);
     setActive([]);
   }
+
+  // The bars actually drawn. On "D" this is the prop itself (same array
+  // identity), which is what keeps `savedRangeRef` — tagged with the candle set
+  // it was captured on — restoring the reader's zoom across chip toggles.
+  // Switching timeframe yields a different array, so the chart refits instead of
+  // restoring a logical range that means nothing on the new bars.
+  const view = useMemo(() => resample(candles, timeframe), [candles, timeframe]);
+
+  // 5%/3 daily, 7%/6 weekly — the Trend Score's own per-timeframe settings. The
+  // chip prints whichever pair is in force, so the label can never claim the
+  // daily sensitivity while the chart is drawing the weekly one.
+  const zzParams = useMemo(
+    () => zigzagParamsFor(timeframe, ZIGZAG_DEVIATION, ZIGZAG_DEPTH),
+    [timeframe],
+  );
 
   const activeSet = useMemo(() => new Set(active), [active]);
   const toggleKeys = useCallback(
@@ -714,31 +765,126 @@ export function ChartClient({
 
   // Overlays gated on the active set (server sends them whenever ANY S/R or
   // trendline indicator is selected; the client hides them when that chip is off).
+  // Remapped onto the view's bars. Anything the chart places by DATE has to move
+  // with the bars or it lands on a time that does not exist — on a weekly chart
+  // only ~1 trading day in 5 is still a bar. Identity work on "D".
   const activeSignals = useMemo(
-    () => chartSignals.filter((s) => activeSet.has(s.indicator)),
-    [chartSignals, activeSet],
+    () =>
+      chartSignals
+        .filter((s) => activeSet.has(s.indicator))
+        .map((s) => ({ ...s, date: view.bucketOf.get(s.date) ?? s.date })),
+    [chartSignals, activeSet, view],
   );
   const activeSr = useMemo(
     () => (active.some((k) => SR_KEYS.has(k)) ? srLevels : []),
     [srLevels, active],
   );
   const activeTl = useMemo(
-    () => (active.some((k) => TL_KEYS.has(k)) ? trendlines : []),
-    [trendlines, active],
+    () =>
+      active.some((k) => TL_KEYS.has(k))
+        ? trendlines.map((tl) => ({
+            ...tl,
+            start_date: view.bucketOf.get(tl.start_date) ?? tl.start_date,
+            end_date: view.bucketOf.get(tl.end_date) ?? tl.end_date,
+          }))
+        : [],
+    [trendlines, active, view],
+  );
+  const viewRsHist = useMemo(
+    () => (rsHist ? bucketRsHist(rsHist, view.bucketOf) : null),
+    [rsHist, view],
   );
 
   // Current MCDX Banker strength (0..100), from the latest bar. Mirrors
   // scripts/ta/indicators/momentum.py: banker = clip(1.5·(RSI(50)−50), 0, 20),
   // shown as a % of that 0..20 display scale.
+  // Read off the SERIES THE PANE DRAWS, not the daily prop: the chip and the
+  // histogram beneath it must agree, and on a weekly chart the pane is built
+  // from weekly closes.
   const mcdxBankerPct = useMemo(() => {
-    const closes = candles.map((c) => c.close);
+    const closes = view.candles.map((c) => c.close);
     const r = rsi(closes, 50);
     for (let i = r.length - 1; i >= 0; i--) {
       const v = r[i];
       if (v !== null) return (Math.min(Math.max(1.5 * (v - 50), 0), 20) / 20) * 100;
     }
     return null;
-  }, [candles]);
+  }, [view]);
+
+  // --- Toolbar behaviour ----------------------------------------------------
+
+  // Range presets set the visible window on demand. They deliberately do NOT
+  // participate in the chart's opening state: nothing calls this on mount, so an
+  // untouched chart still opens on DEFAULT_VISIBLE_SESSIONS as it always has.
+  const applyRange = useCallback(
+    (months: number | null) => {
+      const chart = chartRef.current;
+      if (!chart) return;
+      const n = view.candles.length;
+      if (months === null) {
+        chart.timeScale().fitContent();
+      } else {
+        const bars = barsForMonths(months, timeframe);
+        chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - bars), to: n + 2 });
+      }
+      setActiveRange(RANGE_PRESETS.find((r) => r.months === months)?.key ?? null);
+    },
+    [view, timeframe],
+  );
+
+  // A lit preset is a claim about what is on screen, so it has to go out the
+  // moment the reader moves the chart themselves. Watching the wheel and a real
+  // drag (>3px) is enough, and it avoids subscribing to the range itself — which
+  // fires for our OWN writes too and would need a flag to tell the two apart.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const clear = () => setActiveRange(null);
+    let downX = 0;
+    let downY = 0;
+    let down = false;
+    const onDown = (e: MouseEvent) => {
+      down = true;
+      downX = e.clientX;
+      downY = e.clientY;
+    };
+    const onMove = (e: MouseEvent) => {
+      if (!down) return;
+      if (Math.abs(e.clientX - downX) > 3 || Math.abs(e.clientY - downY) > 3) {
+        down = false;
+        clear();
+      }
+    };
+    const onUp = () => {
+      down = false;
+    };
+    el.addEventListener("wheel", clear, { passive: true });
+    el.addEventListener("mousedown", onDown);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      el.removeEventListener("wheel", clear);
+      el.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void el.requestFullscreen?.();
+  }, []);
+
+  // Driven by the EVENT, not by the click: Esc and the browser's own chrome exit
+  // fullscreen without going through our button, and a flag set in the handler
+  // would then disagree with the document.
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === wrapperRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
 
   // Chart height is sized to the viewport, NOT to the number of panes, for two
   // reasons: (1) toggling a chip (which adds/removes a subplot pane) never
@@ -752,6 +898,11 @@ export function ChartClient({
   const chartHeight = "clamp(440px, calc(100vh - 170px), 860px)";
 
   useEffect(() => {
+    // The effect draws the VIEW, not the raw daily prop — `timeframe` may have
+    // resampled it. Shadowed rather than renamed at forty-odd call sites below,
+    // and on "D" it is the very same array.
+    const candles = view.candles;
+    const rsHist = viewRsHist;
     const container = containerRef.current;
     if (!container || candles.length === 0) return;
 
@@ -792,24 +943,64 @@ export function ChartClient({
         .filter((x): x is { time: Time; value: number } => x !== null);
 
     // === Pane 0: Price ===========================================
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      priceFormat: PRICE_FORMAT,
-      upColor: UP_COLOR,
-      downColor: DOWN_COLOR,
-      borderUpColor: UP_COLOR,
-      borderDownColor: DOWN_COLOR,
-      wickUpColor: UP_COLOR,
-      wickDownColor: DOWN_COLOR,
-    });
-    candleSeries.setData(
-      candles.map((c) => ({
-        time: c.date as Time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
-    );
+    // Four presentations of the SAME bars. `candleSeries` keeps its name through
+    // all of them because it is the price pane's anchor series — markers, S/R
+    // price lines and the drawing layer all attach to whatever it holds.
+    //
+    // Line and area take the ink colour rather than a green or a red: a single
+    // line through the closes makes no directional claim, and borrowing the
+    // up/down tokens for it would say one the data has not made.
+    const ohlc = candles.map((c) => ({
+      time: c.date as Time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
+    const closeLine = candles.map((c) => ({ time: c.date as Time, value: c.close }));
+
+    let candleSeries: PriceSeries;
+    if (seriesType === "bars") {
+      const s = chart.addSeries(BarSeries, {
+        priceFormat: PRICE_FORMAT,
+        upColor: UP_COLOR,
+        downColor: DOWN_COLOR,
+        thinBars: false,
+      });
+      s.setData(ohlc);
+      candleSeries = s;
+    } else if (seriesType === "line") {
+      const s = chart.addSeries(LineSeries, {
+        priceFormat: PRICE_FORMAT,
+        color: CHART_LITERAL.text,
+        lineWidth: 2,
+        crosshairMarkerVisible: true,
+      });
+      s.setData(closeLine);
+      candleSeries = s;
+    } else if (seriesType === "area") {
+      const s = chart.addSeries(AreaSeries, {
+        priceFormat: PRICE_FORMAT,
+        lineColor: CHART_LITERAL.text,
+        lineWidth: 2,
+        topColor: "rgba(20, 18, 15, 0.20)",
+        bottomColor: "rgba(20, 18, 15, 0.02)",
+      });
+      s.setData(closeLine);
+      candleSeries = s;
+    } else {
+      const s = chart.addSeries(CandlestickSeries, {
+        priceFormat: PRICE_FORMAT,
+        upColor: UP_COLOR,
+        downColor: DOWN_COLOR,
+        borderUpColor: UP_COLOR,
+        borderDownColor: DOWN_COLOR,
+        wickUpColor: UP_COLOR,
+        wickDownColor: DOWN_COLOR,
+      });
+      s.setData(ohlc);
+      candleSeries = s;
+    }
 
     for (const period of features.maPeriods) {
       const line = chart.addSeries(LineSeries, {
@@ -839,10 +1030,18 @@ export function ChartClient({
       // Windowed off the last BAR, not today's clock: deterministic given the
       // data, and immune to a stale pipeline or a timezone making the chart
       // disagree with itself between renders.
-      const w0 = zigzagWindowStart(candles.map((c) => c.date));
+      // 560 calendar days on D and W, matching the Trend Score's window. On M
+      // that same window is ~18 bars, too few for a depth-6 walk to find more
+      // than a pivot or two, so the monthly chart uses everything it has.
+      const w0 = timeframe === "M" ? 0 : zigzagWindowStart(candles.map((c) => c.date));
       // Highs and lows, not closes: a pivot is the price the market actually
       // reached. See lib/zigzag.ts.
-      const { pivots, provisional } = zigzag(highs.slice(w0), lows.slice(w0));
+      const { pivots, provisional } = zigzag(
+        highs.slice(w0),
+        lows.slice(w0),
+        zzParams.deviation,
+        zzParams.depth,
+      );
       if (pivots.length >= 2) {
         const zz = chart.addSeries(LineSeries, {
           priceFormat: PRICE_FORMAT,
@@ -1330,7 +1529,7 @@ export function ChartClient({
       chart.remove();
       chartRef.current = null;
     };
-  }, [candles, features, panes, activeSignals, activeSr, activeTl, displayOn, rsHist]);
+  }, [view, viewRsHist, features, panes, activeSignals, activeSr, activeTl, displayOn, seriesType, timeframe, zzParams]);
 
   // `hint` carries anything the label cannot. The ZigZag's dashed-leg caveat used
   // to be a legend row; it belongs on the control it describes rather than in a
@@ -1339,7 +1538,7 @@ export function ChartClient({
     { key: "ma20", label: "MA20", color: MA_COLOR[20], show: true },
     { key: "ma50", label: "MA50", color: MA_COLOR[50], show: true },
     { key: "ma200", label: "MA200", color: MA_COLOR[200], show: true },
-    { key: "zigzag", label: `ZigZag ${ZIGZAG_DEVIATION * 100}%/${ZIGZAG_DEPTH}`, color: ZIGZAG_COLOR, show: true,
+    { key: "zigzag", label: `ZigZag ${Math.round(zzParams.deviation * 100)}%/${zzParams.depth}`, color: ZIGZAG_COLOR, show: true,
       hint: t(locale, "zigzagLegend") },
     { key: "mcdx", label: "MCDX", color: MCDX_BANKER_COLOR, show: true },
     { key: "rs3m", label: `RS3M ${rsLatest?.rs3m ?? "—"}`, color: RS3M_COLOR, show: rsAvailable },
@@ -1347,12 +1546,103 @@ export function ChartClient({
     { key: "rs52w", label: `RS52W ${rsLatest?.rs52w ?? "—"}`, color: RS52W_COLOR, show: rsAvailable },
   ];
 
+  // --- Indicator dialog rows -------------------------------------------------
+  // Built from the SAME two sources as the chip rows below, and each row's
+  // action is the chip's action. The dialog is a way to find a control, never a
+  // second place where "on" is decided.
+  const pickerActions = new Map<string, () => void>();
+  const pickerItems: PickerItem[] = [];
+  for (const c of displayChips) {
+    if (!c.show) continue;
+    pickerItems.push({
+      key: c.key,
+      label: c.label,
+      color: c.color,
+      on: displayOn.has(c.key),
+      group: "overlay",
+      hint: c.hint,
+    });
+    pickerActions.set(c.key, () => toggleDisplay(c.key));
+  }
+  {
+    const selectedMcdx = selected.filter((k) => MCDX_BANKER_KEYS.has(k));
+    let mcdxShown = false;
+    for (const key of selected) {
+      if (CHART_HIDDEN_KEYS.has(key)) continue;
+      const spec = INDICATORS_BY_KEY[key];
+      if (!spec) continue;
+      const isMcdx = MCDX_BANKER_KEYS.has(key);
+      if (isMcdx) {
+        if (mcdxShown) continue;
+        mcdxShown = true;
+      }
+      const rowKey = isMcdx ? "mcdx_banker" : key;
+      const keys = isMcdx ? selectedMcdx : [key];
+      pickerItems.push({
+        key: rowKey,
+        label: isMcdx ? formatMcdxBanker(mcdxBankerPct) : indicatorLabel(spec, locale),
+        // MCDX has no arrow markers of its own — its chip drives the shared
+        // histogram pane, so its row reads that same state.
+        color: spec.direction === "bullish" ? UP_COLOR : spec.direction === "bearish" ? DOWN_COLOR : "#6b7280",
+        on: isMcdx ? displayOn.has("mcdx") : keys.some((k) => activeSet.has(k)),
+        group: "signal",
+        direction: spec.direction,
+      });
+      pickerActions.set(rowKey, () => (isMcdx ? toggleDisplay("mcdx") : toggleKeys(keys)));
+    }
+  }
+
+  const setAllInGroup = (group: "overlay" | "signal", on: boolean) => {
+    if (group === "overlay") {
+      setDisplayOn(on ? new Set(displayChips.filter((c) => c.show).map((c) => c.key)) : new Set());
+      return;
+    }
+    // Signals: the MCDX row lives in displayOn rather than in `active`, so a
+    // bulk change has to reach both or the dialog would report a state it did
+    // not actually set.
+    const keys = selected.filter((k) => !CHART_HIDDEN_KEYS.has(k) && INDICATORS_BY_KEY[k]);
+    setActive(on ? keys.filter((k) => !MCDX_BANKER_KEYS.has(k)) : []);
+    if (keys.some((k) => MCDX_BANKER_KEYS.has(k))) {
+      setDisplayOn((prev) => {
+        const next = new Set(prev);
+        if (on) next.add("mcdx");
+        else next.delete("mcdx");
+        return next;
+      });
+    }
+  };
+
   return (
-    <div className="space-y-2">
+    <div
+      ref={wrapperRef}
+      className={isFullscreen ? "flex flex-col h-screen bg-panel" : "space-y-2"}
+    >
+      <ChartToolbar
+        timeframe={timeframe}
+        onTimeframe={setTimeframe}
+        seriesType={seriesType}
+        onSeriesType={setSeriesType}
+        onRange={applyRange}
+        activeRange={activeRange}
+        onOpenIndicators={() => setPickerOpen(true)}
+        indicatorCount={pickerItems.filter((i) => i.on).length}
+        isFullscreen={isFullscreen}
+        onFullscreen={toggleFullscreen}
+        locale={locale}
+      />
+      {pickerOpen && (
+        <IndicatorPicker
+          items={pickerItems}
+          onToggle={(k) => pickerActions.get(k)?.()}
+          onSetAll={setAllInGroup}
+          onClose={() => setPickerOpen(false)}
+          locale={locale}
+        />
+      )}
       <div
         ref={containerRef}
-        className="w-full"
-        style={{ height: chartHeight }}
+        className={isFullscreen ? "w-full flex-1 min-h-0" : "w-full"}
+        style={isFullscreen ? undefined : { height: chartHeight }}
       />
       {/* Display-overlay group — always available, ON by default. Click to
           toggle each overlay (MA/MCDX lines, RS-rating lines) on the chart. */}

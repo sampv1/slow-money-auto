@@ -273,6 +273,44 @@ export const translations = {
     // ZigZag overlay legend (Analysis price pane)
     zigzagLegend: "ZigZag — dashed leg unconfirmed",
 
+    // --- Chart toolbar (opt-in controls; every default matches the chart's
+    // pre-toolbar behaviour: daily bars, candles, no range preset applied) ---
+    chartTimeframe: "Timeframe",
+    tfDaily: "Daily",
+    tfWeekly: "Weekly",
+    tfMonthly: "Monthly",
+    chartType: "Chart type",
+    ctCandles: "Candles",
+    ctBars: "Bars",
+    ctLine: "Line",
+    ctArea: "Area",
+    chartRange: "Visible range",
+    chartRangeAll: "All",
+    chartRangeHint: "Show this much history",
+    chartFullscreen: "Fullscreen",
+    chartExitFullscreen: "Exit fullscreen",
+    chartIndicators: "Indicators",
+    chartIndicatorsHint: "Search and toggle what the chart draws",
+    pickerOverlays: "Overlays",
+    pickerSignals: "Triggered signals",
+    pickerSearch: "Search indicators…",
+    pickerShowAll: "Show all",
+    pickerHideAll: "Hide all",
+    pickerNoMatch: "No indicator matches that.",
+
+    // --- Drawing tools ---
+    drawTools: "Drawing tools",
+    drawCursor: "Cursor",
+    drawTrendline: "Trend line",
+    drawHorizontal: "Horizontal line",
+    drawRect: "Rectangle",
+    drawFib: "Fibonacci retracement",
+    drawDelete: "Delete selected",
+    drawClear: "Remove all drawings",
+    drawClearConfirm: "Remove all?",
+    drawHint: "Drag on the chart to draw. Esc cancels.",
+    drawCount: "drawings",
+
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Enter a stock symbol to view TA chart and quarterly FA data.",
     taSymbolLabel: "Symbol",
@@ -616,6 +654,7 @@ export const translations = {
     closedManual: "Closed Manual",
     filter: "Filter",
     reset: "Reset",
+    close: "Close",
     winRate: "Win Rate",
     avgPnl: "Avg P&L",
 
@@ -1096,6 +1135,44 @@ export const translations = {
     // ZigZag overlay legend (Analysis price pane)
     zigzagLegend: "ZigZag — nhánh nét đứt chưa xác nhận",
 
+    // --- Thanh công cụ biểu đồ (tùy chọn; mặc định giữ nguyên hành vi cũ:
+    // nến ngày, kiểu nến, không áp khoảng xem nào) ---
+    chartTimeframe: "Khung thời gian",
+    tfDaily: "Ngày",
+    tfWeekly: "Tuần",
+    tfMonthly: "Tháng",
+    chartType: "Kiểu biểu đồ",
+    ctCandles: "Nến",
+    ctBars: "Thanh",
+    ctLine: "Đường",
+    ctArea: "Vùng",
+    chartRange: "Khoảng hiển thị",
+    chartRangeAll: "Tất cả",
+    chartRangeHint: "Hiển thị khoảng lịch sử này",
+    chartFullscreen: "Toàn màn hình",
+    chartExitFullscreen: "Thoát toàn màn hình",
+    chartIndicators: "Chỉ báo",
+    chartIndicatorsHint: "Tìm và bật/tắt những gì biểu đồ vẽ",
+    pickerOverlays: "Lớp phủ",
+    pickerSignals: "Tín hiệu đã kích hoạt",
+    pickerSearch: "Tìm chỉ báo…",
+    pickerShowAll: "Hiện tất cả",
+    pickerHideAll: "Ẩn tất cả",
+    pickerNoMatch: "Không có chỉ báo nào khớp.",
+
+    // --- Công cụ vẽ ---
+    drawTools: "Công cụ vẽ",
+    drawCursor: "Con trỏ",
+    drawTrendline: "Đường xu hướng",
+    drawHorizontal: "Đường ngang",
+    drawRect: "Hình chữ nhật",
+    drawFib: "Fibonacci thoái lui",
+    drawDelete: "Xóa hình đã chọn",
+    drawClear: "Xóa tất cả hình vẽ",
+    drawClearConfirm: "Xóa tất cả?",
+    drawHint: "Kéo trên biểu đồ để vẽ. Esc để hủy.",
+    drawCount: "hình vẽ",
+
     // TA page (single-symbol drill-down entry)
     taSearchSubtitle: "Nhập mã cổ phiếu để xem biểu đồ TA và FA theo quý.",
     taSymbolLabel: "Mã cổ phiếu",
@@ -1431,6 +1508,7 @@ export const translations = {
     closedManual: "Đóng thủ công",
     filter: "Lọc",
     reset: "Đặt lại",
+    close: "Đóng",
     winRate: "Tỷ lệ thắng",
     avgPnl: "TB lãi/lỗ",
 
