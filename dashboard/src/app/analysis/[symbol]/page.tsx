@@ -9,6 +9,7 @@ import { INDICATORS_BY_KEY, MCDX_BANKER_KEYS, directionColor, formatMcdxBanker, 
 import type { FaScore } from "@/lib/fa";
 import type { ReScore } from "@/lib/fa-re";
 import { TechnicalAnalysis } from "@/components/technical-analysis";
+import { CollapsibleSection } from "@/components/collapsible-section";
 import { FaSummary } from "./fa-summary";
 import { ReSummary } from "./re-summary";
 import { TaSearch } from "../ta-search";
@@ -230,70 +231,73 @@ export default async function SymbolDrillDown({
       {/* Technical analysis follows the fundamentals: the FA panel answers
           "is this a business worth owning", the chart answers "is this a
           moment worth buying". mt-8 replaces the leading margin the FA
-          section used to supply when it sat last. */}
-      <h2 className="mt-8 text-title font-semibold border-b border-line pb-1 mb-3">
-        {t(locale, "taSection")}
-      </h2>
+          section used to supply when it sat last.
 
-      <TechnicalAnalysis chart={chart} locale={locale} />
+          FOLDED BY DEFAULT, and the chart does not mount until it is opened —
+          see CollapsibleSection. Recent signals is inside the fold too: it is
+          the same reading, in a table, and leaving it behind would put a list
+          of indicator names on screen with no chart to place them on. */}
+      <CollapsibleSection className="mt-8" title={t(locale, "taSection")} locale={locale}>
+        <TechnicalAnalysis chart={chart} locale={locale} />
 
-      <section className="mt-6">
-        <h3 className="font-medium mb-2">{t(locale, "taRecentSignals")}</h3>
-        {signals.length === 0 ? (
-          <div className="bg-panel rounded-lg border border-line p-6 text-center text-fg-muted">
-            {t(locale, "taNoRecentSignals")}
-          </div>
-        ) : (
-          <div className="bg-panel rounded-lg border border-line overflow-x-auto">
-            <table className="w-full text-body-lg">
-              <thead>
-                <tr className="border-b border-line text-left text-fg-muted">
-                  <th className="px-4 py-2 font-medium">{t(locale, "date")}</th>
-                  <th className="px-4 py-2 font-medium">{t(locale, "taSignalsFired")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(
-                  signals.reduce<Record<string, typeof signals>>((acc, s) => {
-                    (acc[s.date] = acc[s.date] || []).push(s);
-                    return acc;
-                  }, {})
-                ).map(([date, rows]) => (
-                  <tr key={date} className="border-b border-line-faint">
-                    <td className="px-4 py-2 font-mono whitespace-nowrap">{date}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex flex-wrap gap-1">
-                        {rows.map((s) => {
-                          const spec = INDICATORS_BY_KEY[s.indicator];
-                          if (!spec) return null;
-                          return (
-                            <span
-                              key={s.indicator}
-                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-data rounded ${spec.direction === "bullish"
-                                  ? "bg-green-50 text-up"
-                                  : spec.direction === "bearish"
-                                    ? "bg-red-50 text-down"
-                                    : "bg-panel-2 text-fg-muted"
-                                }`}
-                            >
-                              <span className={directionColor(spec.direction)}>
-                                {spec.direction === "bullish" ? "▲" : spec.direction === "bearish" ? "▼" : "●"}
-                              </span>
-                              {MCDX_BANKER_KEYS.has(s.indicator)
-                                ? formatMcdxBanker(s.value)
-                                : indicatorLabel(spec, locale)}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </td>
+        <section className="mt-6">
+          <h3 className="font-medium mb-2">{t(locale, "taRecentSignals")}</h3>
+          {signals.length === 0 ? (
+            <div className="bg-panel rounded-lg border border-line p-6 text-center text-fg-muted">
+              {t(locale, "taNoRecentSignals")}
+            </div>
+          ) : (
+            <div className="bg-panel rounded-lg border border-line overflow-x-auto">
+              <table className="w-full text-body-lg">
+                <thead>
+                  <tr className="border-b border-line text-left text-fg-muted">
+                    <th className="px-4 py-2 font-medium">{t(locale, "date")}</th>
+                    <th className="px-4 py-2 font-medium">{t(locale, "taSignalsFired")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {Object.entries(
+                    signals.reduce<Record<string, typeof signals>>((acc, s) => {
+                      (acc[s.date] = acc[s.date] || []).push(s);
+                      return acc;
+                    }, {})
+                  ).map(([date, rows]) => (
+                    <tr key={date} className="border-b border-line-faint">
+                      <td className="px-4 py-2 font-mono whitespace-nowrap">{date}</td>
+                      <td className="px-4 py-2">
+                        <div className="flex flex-wrap gap-1">
+                          {rows.map((s) => {
+                            const spec = INDICATORS_BY_KEY[s.indicator];
+                            if (!spec) return null;
+                            return (
+                              <span
+                                key={s.indicator}
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-data rounded ${spec.direction === "bullish"
+                                    ? "bg-green-50 text-up"
+                                    : spec.direction === "bearish"
+                                      ? "bg-red-50 text-down"
+                                      : "bg-panel-2 text-fg-muted"
+                                  }`}
+                              >
+                                <span className={directionColor(spec.direction)}>
+                                  {spec.direction === "bullish" ? "▲" : spec.direction === "bearish" ? "▼" : "●"}
+                                </span>
+                                {MCDX_BANKER_KEYS.has(s.indicator)
+                                  ? formatMcdxBanker(s.value)
+                                  : indicatorLabel(spec, locale)}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </CollapsibleSection>
 
     </div>
   );
