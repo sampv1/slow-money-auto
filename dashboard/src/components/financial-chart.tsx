@@ -39,6 +39,8 @@ import {
   buildSeries,
   metricById,
   shortPeriod,
+  SPAN_YEARS,
+  spanPeriods,
   type FinancialPoint,
 } from "@/lib/financial-metrics";
 import type { VnstockStatementRow } from "@/lib/cached-data";
@@ -46,8 +48,9 @@ import { t, type Locale } from "@/lib/i18n";
 
 type PeriodType = "quarter" | "year";
 
-/** Opens on ~5 years of quarters, matching the source template. */
-const DEFAULT_SPAN = 20;
+/** Opens on five years, matching the source template. */
+const DEFAULT_SPAN_YEARS = 5;
+const HERO_SPAN_YEARS = 10;
 
 /**
  * VND → TỶ ĐỒNG, the unit Vietnamese statements are read in.
@@ -105,13 +108,17 @@ export function FinancialChart({
   rows,
   metricId,
   locale,
+  /** "hero" is the full-width headline chart; "compact" sits in the grid. */
+  variant = "compact",
 }: {
   rows: VnstockStatementRow[];
   metricId: string;
   locale: Locale;
+  variant?: "hero" | "compact";
 }) {
-  const [periodType, setPeriodType] = useState<PeriodType>("quarter");
-  const [span, setSpan] = useState(DEFAULT_SPAN);
+  const hero = variant === "hero";
+  const [periodType, setPeriodType] = useState<PeriodType>(hero ? "year" : "quarter");
+  const [spanY, setSpanY] = useState<number>(hero ? HERO_SPAN_YEARS : DEFAULT_SPAN_YEARS);
   const [cross, setCross] = useState<Cross>(null);
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -131,7 +138,10 @@ export function FinancialChart({
     return buildSeries(scoped, metric.id, periodType);
   }, [rows, metric, periodType]);
 
-  const shown = useMemo(() => series.slice(-span), [series, span]);
+  const shown = useMemo(() => {
+    const n = spanPeriods(spanY, periodType);
+    return Number.isFinite(n) ? series.slice(-n) : series;
+  }, [series, spanY, periodType]);
   const showYoy = !!metric?.yoy && shown.some((d) => d.yoy !== null);
   // The most recent reading, stated in full. A chart answers "what is the
   // shape"; a reader's first question is "what is it now", and hovering to
@@ -155,6 +165,16 @@ export function FinancialChart({
     const span = Math.abs(toBn(domain[1] - domain[0]));
     return span >= 100 ? 0 : span >= 10 ? 1 : 2;
   }, [domain]);
+
+  // Width from the WIDEST label this axis will actually print. Fixed at 38px it
+  // clipped "100.000" to "0.000" the moment the annual tab was opened — the
+  // label is data-dependent, so the space reserved for it has to be too.
+  const axisWidth = useMemo(() => {
+    const longest = [domain[0], domain[1]]
+      .map((v) => (metric?.unit === "percent" ? `${(v * 100).toFixed(0)}%` : formatVnd(v, axisDigits)))
+      .reduce((a, b) => (b.length > a.length ? b : a), "");
+    return Math.max(34, longest.length * 6.2 + 10);
+  }, [domain, axisDigits, metric]);
 
   const measurePlot = useCallback(() => {
     const wrap = wrapRef.current;
@@ -247,17 +267,17 @@ export function FinancialChart({
           ))}
         </div>
         <div className="inline-flex rounded-sm border border-line overflow-hidden ml-auto" role="group">
-          {[8, 20, 999].map((n) => (
+          {SPAN_YEARS.map((y) => (
             <button
-              key={n}
+              key={y}
               type="button"
-              onClick={() => setSpan(n)}
-              aria-pressed={span === n}
-              className={`h-6 px-2 text-data cursor-pointer transition-colors ${
-                span === n ? "bg-fg text-canvas" : "bg-transparent text-fg-muted hover:bg-panel-2"
+              onClick={() => setSpanY(y)}
+              aria-pressed={spanY === y}
+              className={`h-6 px-2 text-data cursor-pointer transition-colors whitespace-nowrap ${
+                spanY === y ? "bg-fg text-canvas" : "bg-transparent text-fg-muted hover:bg-panel-2"
               }`}
             >
-              {n === 999 ? t(locale, "finSpanAll") : n}
+              {y === 0 ? t(locale, "finSpanAll") : `${y}${t(locale, "finSpanYearSuffix")}`}
             </button>
           ))}
         </div>
@@ -265,7 +285,7 @@ export function FinancialChart({
 
       <div
         ref={wrapRef}
-        className="h-56 relative"
+        className={`${hero ? "h-72" : "h-40"} relative`}
         onMouseMove={onMove}
         onMouseLeave={onLeave}
       >
@@ -285,7 +305,7 @@ export function FinancialChart({
               domain={domain}
               tick={{ fontSize: 9, fill: CHART_LITERAL.label }}
               stroke={CHART_LITERAL.axis}
-              width={38}
+              width={axisWidth}
               tickFormatter={(v: number) =>
                 metric.unit === "percent" ? `${(v * 100).toFixed(0)}%` : formatVnd(v, axisDigits)
               }
@@ -326,7 +346,7 @@ export function FinancialChart({
                   : [formatValue(n, metric.unit), label];
               }}
             />
-            <Bar yAxisId="value" dataKey="value" fill={CHART_LITERAL.accent} maxBarSize={22} />
+            <Bar yAxisId="value" dataKey="value" fill={CHART_LITERAL.accent} maxBarSize={hero ? 42 : 22} />
             {showYoy && (
               <Line
                 yAxisId="yoy"

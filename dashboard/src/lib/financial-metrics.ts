@@ -156,3 +156,19 @@ export const FINANCIAL_PANELS: PanelSlot[] = [
   { slot: "slot-8", metricId: null },
   { slot: "slot-9", metricId: null },
 ];
+
+/**
+ * Span presets, named in YEARS.
+ *
+ * The controls used to read "8 / 20 / Tất cả" — a count of periods, which means
+ * something different on the quarterly and annual tabs and nothing at all to a
+ * reader. Five years is five years on both.
+ */
+export const SPAN_YEARS = [5, 10, 0] as const; // 0 = all
+export type SpanYears = (typeof SPAN_YEARS)[number];
+
+/** How many periods of `periodType` cover `years`. 0 (all) returns Infinity. */
+export function spanPeriods(years: number, periodType: "quarter" | "year"): number {
+  if (!years) return Number.POSITIVE_INFINITY;
+  return periodType === "quarter" ? years * 4 : years;
+}
