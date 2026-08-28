@@ -1,17 +1,18 @@
 "use client";
 
 /**
- * The financial-statement grid: nine cards, three across.
+ * The financial-statement grid: one card per defined metric, three across.
  *
  * THREE COLUMNS, NOT A CAROUSEL OR A TAB STRIP. These figures are read against
  * each other — revenue beside profit beside cash flow is the comparison, and
  * anything that shows one at a time destroys it. Three across is what keeps a
- * ~380px card wide enough for twenty quarterly bars at 1440.
+ * ~390px card wide enough for twenty quarterly bars at 1280.
  *
- * RESERVED SLOTS ARE DRAWN, NOT OMITTED. Eight empty frames say "eight more are
- * coming and this is where they go"; a single card alone would read as the
- * finished feature. They are deliberately unlabelled — naming them now would
- * invent a specification that has not been written.
+ * UNDEFINED SLOTS ARE NOT DRAWN. They were, briefly, as eight dashed frames
+ * reading "chart not yet defined" — which made the emptiness the largest thing
+ * on the page and buried the one card that had something to say. A section is
+ * judged on what it shows, so it shows only that; one quiet line carries the
+ * fact that more are coming, at the weight that fact deserves.
  */
 
 import type { VnstockStatementRow } from "@/lib/cached-data";
@@ -19,21 +20,11 @@ import { FINANCIAL_PANELS, metricById } from "@/lib/financial-metrics";
 import { FinancialChart } from "@/components/financial-chart";
 import { t, type Locale } from "@/lib/i18n";
 
-function Card({
-  title,
-  muted = false,
-  children,
-}: {
-  title: string;
-  muted?: boolean;
-  children: React.ReactNode;
-}) {
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-panel rounded-lg border border-line p-3 flex flex-col min-w-0">
       <h3
-        className={`text-label font-semibold tracking-wide uppercase mb-2 truncate ${
-          muted ? "text-fg-faint" : "text-fg"
-        }`}
+        className="text-label font-semibold tracking-wide uppercase mb-1.5 truncate text-fg"
         title={title}
       >
         {title}
@@ -50,30 +41,24 @@ export function FinancialPanels({
   rows: VnstockStatementRow[];
   locale: Locale;
 }) {
+  const defined = FINANCIAL_PANELS.flatMap((p) => {
+    const metric = p.metricId ? metricById(p.metricId) : undefined;
+    return metric ? [{ slot: p.slot, metric }] : [];
+  });
+  const pending = FINANCIAL_PANELS.length - defined.length;
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-      {FINANCIAL_PANELS.map((p) => {
-        const metric = p.metricId ? metricById(p.metricId) : undefined;
-
-        if (!metric) {
-          return (
-            <Card key={p.slot} title={t(locale, "finSlotReserved")} muted>
-              {/* Same height as a live card, so filling a slot never reflows
-                  the grid around it. */}
-              <div className="h-56 flex items-center justify-center border border-dashed border-line rounded-sm">
-                <span className="text-data text-fg-faint">{t(locale, "finSlotEmpty")}</span>
-              </div>
-              <div className="mt-1.5 h-[14px]" aria-hidden />
-            </Card>
-          );
-        }
-
-        return (
-          <Card key={p.slot} title={locale === "vi" ? metric.label_vi : metric.label_en}>
+    <>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {defined.map(({ slot, metric }) => (
+          <Card key={slot} title={locale === "vi" ? metric.label_vi : metric.label_en}>
             <FinancialChart rows={rows} metricId={metric.id} locale={locale} />
           </Card>
-        );
-      })}
-    </div>
+        ))}
+      </div>
+      {pending > 0 && (
+        <p className="mt-2 text-data text-fg-faint">{t(locale, "finMore")}</p>
+      )}
+    </>
   );
 }

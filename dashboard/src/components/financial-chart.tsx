@@ -49,13 +49,46 @@ type PeriodType = "quarter" | "year";
 /** Opens on ~5 years of quarters, matching the source template. */
 const DEFAULT_SPAN = 20;
 
-/** VND → a short, readable magnitude. Statements are in units of VND. */
-function formatVnd(v: number): string {
-  const abs = Math.abs(v);
-  if (abs >= 1e12) return `${(v / 1e12).toFixed(abs >= 1e13 ? 0 : 1)}k`;
-  if (abs >= 1e9) return `${(v / 1e9).toFixed(0)}`;
-  if (abs >= 1e6) return `${(v / 1e6).toFixed(1)}m`;
-  return v.toFixed(0);
+/**
+ * VND → TỶ ĐỒNG, the unit Vietnamese statements are read in.
+ *
+ * Statements arrive in units of VND, where FPT's quarterly revenue is
+ * 1.3788e13 — a number nobody reads. The card states "(TỶ ĐỒNG)" once, under
+ * the title, and every figure below it is then plain: 13.789. That is what the
+ * reference layout does, and it is the difference between an axis labelled
+ * "13k" (thirteen thousand what?) and one labelled 13.789.
+ *
+ * Grouped vi-VN in BOTH locales, matching `formatNumber` — a deliberate
+ * project-wide decision, so "13.789" on the English page is correct.
+ */
+function toBn(v: number): number {
+  return v / 1e9;
+}
+
+function formatVnd(v: number, digits?: number): string {
+  const bn = toBn(v);
+  const abs = Math.abs(bn);
+  const d = digits ?? (abs >= 100 ? 0 : abs >= 10 ? 1 : 2);
+  return bn.toLocaleString("vi-VN", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+/**
+ * Round the axis up to a human step, so the ticks land on 0 / 5.500 / 11.000
+ * rather than on 21.843 — an exact 8% pad above the tallest bar, which is a
+ * true number and a useless label. The domain still has to be EXPLICIT for the
+ * crosshair to convert a pixel back to a value, so it is rounded here rather
+ * than handed to recharts' "auto".
+ */
+function niceCeil(v: number): number {
+  if (v <= 0) return 0;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const norm = v / mag;
+  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10;
+  return step * mag;
+}
+
+function niceFloor(v: number): number {
+  return v >= 0 ? 0 : -niceCeil(-v);
 }
 
 function formatValue(v: number, unit: "vnd" | "percent"): string {
@@ -100,6 +133,10 @@ export function FinancialChart({
 
   const shown = useMemo(() => series.slice(-span), [series, span]);
   const showYoy = !!metric?.yoy && shown.some((d) => d.yoy !== null);
+  // The most recent reading, stated in full. A chart answers "what is the
+  // shape"; a reader's first question is "what is it now", and hovering to
+  // find that out is a step the card can simply skip.
+  const latest = shown.length ? shown[shown.length - 1] : null;
 
   // The value axis is pinned to an explicit domain so the crosshair can convert
   // a pixel back to a number. Left to "auto" recharts picks a nice range we
@@ -109,9 +146,15 @@ export function FinancialChart({
     const vals = shown.map((d) => d.value);
     const max = Math.max(...vals, 0);
     const min = Math.min(...vals, 0);
-    const pad = (max - min) * 0.08 || 1;
-    return [min < 0 ? min - pad : 0, max + pad];
+    return [niceFloor(min), niceCeil(max) || 1];
   }, [shown]);
+
+  // Decimals for the value axis, chosen once from the domain so every tick
+  // agrees — per-value digits rendered the zero tick as "0,00".
+  const axisDigits = useMemo(() => {
+    const span = Math.abs(toBn(domain[1] - domain[0]));
+    return span >= 100 ? 0 : span >= 10 ? 1 : 2;
+  }, [domain]);
 
   const measurePlot = useCallback(() => {
     const wrap = wrapRef.current;
@@ -160,6 +203,33 @@ export function FinancialChart({
 
   return (
     <div>
+      {/* Unit and latest reading, above the controls: the two facts that make
+          the card legible before anyone touches it. */}
+      <div className="flex items-baseline justify-between gap-2 mb-1.5 min-w-0">
+        <span className="text-label text-fg-label uppercase tracking-wide shrink-0">
+          {metric.unit === "percent" ? "%" : t(locale, "finUnitBn")}
+        </span>
+        {latest && (
+          <span className="flex items-baseline gap-1.5 min-w-0 truncate">
+            <span className="font-mono tabular-nums text-body font-semibold text-fg">
+              {formatValue(latest.value, metric.unit)}
+            </span>
+            {latest.yoy !== null && (
+              <span
+                className="font-mono tabular-nums text-data"
+                style={{ color: latest.yoy >= 0 ? CHART_LITERAL.up : CHART_LITERAL.down }}
+              >
+                {latest.yoy >= 0 ? "+" : ""}
+                {latest.yoy.toFixed(1)}%
+              </span>
+            )}
+            <span className="text-label text-fg-faint shrink-0">
+              {periodType === "quarter" ? shortPeriod(latest.period) : latest.period}
+            </span>
+          </span>
+        )}
+      </div>
+
       <div className="flex flex-wrap items-center gap-1.5 mb-2">
         <div className="inline-flex rounded-sm border border-line overflow-hidden" role="group">
           {(["quarter", "year"] as PeriodType[]).map((p) => (
@@ -217,7 +287,7 @@ export function FinancialChart({
               stroke={CHART_LITERAL.axis}
               width={38}
               tickFormatter={(v: number) =>
-                metric.unit === "percent" ? `${(v * 100).toFixed(0)}%` : formatVnd(v)
+                metric.unit === "percent" ? `${(v * 100).toFixed(0)}%` : formatVnd(v, axisDigits)
               }
             />
             {showYoy && (
@@ -301,7 +371,7 @@ export function FinancialChart({
             >
               {metric.unit === "percent"
                 ? `${(cross.value * 100).toFixed(1)}%`
-                : formatVnd(cross.value)}
+                : formatVnd(cross.value, axisDigits)}
             </div>
           </div>
         )}
