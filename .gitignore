@@ -24,3 +24,6 @@ dashboard/out/
 
 # OS
 .DS_Store
+
+# vnstock auto-writes this on import; see VNSTOCK_DISABLE_AGENT_SETUP
+/AGENTS.md
