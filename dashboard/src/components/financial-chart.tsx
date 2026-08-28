@@ -1,27 +1,28 @@
 "use client";
 
 /**
- * Reported figure as bars, YoY growth as a line, on two axes.
+ * One metric's history: reported figure as bars, YoY growth as a line, two axes.
+ *
+ * ONE FIXED METRIC PER CARD — the card title is the metric, so there is no
+ * metric dropdown here. Nine cards each carrying an identical dropdown would
+ * force the reader to open every one to learn what it shows.
  *
  * RECHARTS, not lightweight-charts. The price chart's engine is a time-series
- * one: these are CATEGORICAL quarter buckets with a second axis in different
- * units, which it fights. `ComposedChart` does bar + line + dual axis natively,
- * and recharts is already a dependency.
+ * one; these are CATEGORICAL quarter buckets with a second axis in different
+ * units, which it fights. `ComposedChart` does bar + line + dual axis natively.
  *
- * TWO AXES BECAUSE THE UNITS ARE UNRELATED. Revenue in the thousands of
- * billions and growth in tens of percent cannot share a scale — on one axis the
- * YoY line flattens onto the baseline and says nothing. Left carries the bars
- * (the subject), right the percentage, matching the convention the macro panels
- * already use.
+ * TWO AXES BECAUSE THE UNITS ARE UNRELATED. Revenue in thousands of billions and
+ * growth in tens of percent cannot share a scale — on one axis the YoY line
+ * flattens onto the baseline and says nothing.
  *
  * Colours come from CHART_LITERAL, never `var()`: chart-theme.ts is explicit
  * that a charting LIBRARY parses the string itself, so custom properties never
  * resolve. Accent for the bars, reference-amber for the line — deliberately not
- * up-green/down-red, because a rising cost is not a good thing and board
- * semantics would assert that it is.
+ * up-green/down-red, because a rising cost is not good news and board semantics
+ * would assert that it is.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Bar,
   CartesianGrid,
@@ -36,8 +37,6 @@ import {
 import { CHART_LITERAL } from "@/lib/chart-theme";
 import {
   buildSeries,
-  DEFAULT_METRIC_ID,
-  FINANCIAL_METRICS,
   metricById,
   shortPeriod,
   type FinancialPoint,
@@ -47,7 +46,7 @@ import { t, type Locale } from "@/lib/i18n";
 
 type PeriodType = "quarter" | "year";
 
-/** How many periods the chart opens on. ~5 years of quarters, like the source. */
+/** Opens on ~5 years of quarters, matching the source template. */
 const DEFAULT_SPAN = 20;
 
 /** VND → a short, readable magnitude. Statements are in units of VND. */
@@ -63,31 +62,36 @@ function formatValue(v: number, unit: "vnd" | "percent"): string {
   return unit === "percent" ? `${(v * 100).toFixed(2)}%` : formatVnd(v);
 }
 
+/** Where the crosshair is, in container pixels, plus the value under it.
+ *  Carries the plot's left/width too, so render never reads the measurement
+ *  ref — React 19 forbids touching a ref during render, and the geometry is
+ *  already known at the moment the pointer moved. */
+type Cross = { y: number; value: number; left: number; w: number } | null;
+
 export function FinancialChart({
   rows,
+  metricId,
   locale,
 }: {
   rows: VnstockStatementRow[];
+  metricId: string;
   locale: Locale;
 }) {
-  const [metricId, setMetricId] = useState(DEFAULT_METRIC_ID);
   const [periodType, setPeriodType] = useState<PeriodType>("quarter");
   const [span, setSpan] = useState(DEFAULT_SPAN);
+  const [cross, setCross] = useState<Cross>(null);
 
-  const metric = metricById(metricId)!;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // The plot rectangle, measured from the rendered grid rather than derived
+  // from margins and axis widths — recharts sizes the axes from their own tick
+  // text, so any arithmetic here would drift the moment a label got longer.
+  // Cached per hover and invalidated on leave, so it costs one layout read.
+  const plotRef = useRef<{ left: number; top: number; w: number; h: number } | null>(null);
 
-  // Which metrics this symbol can actually draw. A bank has no gross margin and
-  // a securities firm no inventories; offering a row that renders an empty
-  // frame is worse than not offering it.
-  const available = useMemo(() => {
-    const present = new Set<string>();
-    for (const r of rows) {
-      for (const k of Object.keys(r.items ?? {})) present.add(k);
-    }
-    return FINANCIAL_METRICS.filter((m) => present.has(m.id));
-  }, [rows]);
+  const metric = metricById(metricId);
 
   const series: FinancialPoint[] = useMemo(() => {
+    if (!metric) return [];
     const scoped = rows.filter(
       (r) => r.period_type === periodType && r.statement === metric.statement,
     );
@@ -95,13 +99,60 @@ export function FinancialChart({
   }, [rows, metric, periodType]);
 
   const shown = useMemo(() => series.slice(-span), [series, span]);
-  const showYoy = metric.yoy && shown.some((d) => d.yoy !== null);
+  const showYoy = !!metric?.yoy && shown.some((d) => d.yoy !== null);
 
-  if (available.length === 0 || shown.length === 0) {
+  // The value axis is pinned to an explicit domain so the crosshair can convert
+  // a pixel back to a number. Left to "auto" recharts picks a nice range we
+  // cannot see, and the readout would be a guess.
+  const domain = useMemo<[number, number]>(() => {
+    if (shown.length === 0) return [0, 1];
+    const vals = shown.map((d) => d.value);
+    const max = Math.max(...vals, 0);
+    const min = Math.min(...vals, 0);
+    const pad = (max - min) * 0.08 || 1;
+    return [min < 0 ? min - pad : 0, max + pad];
+  }, [shown]);
+
+  const measurePlot = useCallback(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return null;
+    const grid = wrap.querySelector(".recharts-cartesian-grid");
+    if (!grid) return null;
+    const g = (grid as SVGGElement).getBoundingClientRect();
+    const w = wrap.getBoundingClientRect();
+    return { left: g.left - w.left, top: g.top - w.top, w: g.width, h: g.height };
+  }, []);
+
+  const onMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      if (!plotRef.current) plotRef.current = measurePlot();
+      const p = plotRef.current;
+      if (!p || p.h <= 0) return;
+      const r = wrap.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      if (x < p.left || x > p.left + p.w || y < p.top || y > p.top + p.h) {
+        setCross(null);
+        return;
+      }
+      // Pixels grow downward, values upward — hence the inversion.
+      const frac = (y - p.top) / p.h;
+      const value = domain[1] - frac * (domain[1] - domain[0]);
+      setCross({ y, value, left: p.left, w: p.w });
+    },
+    [domain, measurePlot],
+  );
+
+  const onLeave = useCallback(() => {
+    setCross(null);
+    plotRef.current = null; // re-measure next hover, in case the card resized
+  }, []);
+
+  if (!metric || shown.length === 0) {
     return (
-      <p className="text-body text-fg-muted py-6 text-center">
-        {t(locale, "finNoData")}
-      </p>
+      <p className="text-body text-fg-muted py-10 text-center">{t(locale, "finNoData")}</p>
     );
   }
 
@@ -109,23 +160,7 @@ export function FinancialChart({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <select
-          value={metricId}
-          onChange={(e) => setMetricId(e.target.value)}
-          aria-label={t(locale, "finMetric")}
-          className="h-7 px-2 rounded-sm border border-line bg-canvas text-body cursor-pointer
-                     focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
-        >
-          {available.map((m) => (
-            <option key={m.id} value={m.id}>
-              {locale === "vi" ? m.label_vi : m.label_en}
-            </option>
-          ))}
-        </select>
-
-        {/* Quý / Năm. A segmented pair rather than a second dropdown: two
-            mutually exclusive options read faster as buttons. */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-2">
         <div className="inline-flex rounded-sm border border-line overflow-hidden" role="group">
           {(["quarter", "year"] as PeriodType[]).map((p) => (
             <button
@@ -133,7 +168,7 @@ export function FinancialChart({
               type="button"
               onClick={() => setPeriodType(p)}
               aria-pressed={periodType === p}
-              className={`h-7 px-2.5 text-body cursor-pointer transition-colors ${
+              className={`h-6 px-2 text-data cursor-pointer transition-colors ${
                 periodType === p ? "bg-fg text-canvas" : "bg-transparent text-fg-muted hover:bg-panel-2"
               }`}
             >
@@ -141,7 +176,6 @@ export function FinancialChart({
             </button>
           ))}
         </div>
-
         <div className="inline-flex rounded-sm border border-line overflow-hidden ml-auto" role="group">
           {[8, 20, 999].map((n) => (
             <button
@@ -149,7 +183,7 @@ export function FinancialChart({
               type="button"
               onClick={() => setSpan(n)}
               aria-pressed={span === n}
-              className={`h-7 px-2.5 text-data cursor-pointer transition-colors ${
+              className={`h-6 px-2 text-data cursor-pointer transition-colors ${
                 span === n ? "bg-fg text-canvas" : "bg-transparent text-fg-muted hover:bg-panel-2"
               }`}
             >
@@ -159,23 +193,29 @@ export function FinancialChart({
         </div>
       </div>
 
-      <div className="h-72">
+      <div
+        ref={wrapRef}
+        className="h-56 relative"
+        onMouseMove={onMove}
+        onMouseLeave={onLeave}
+      >
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={shown} margin={{ top: 6, right: 8, bottom: 4, left: 4 }}>
+          <ComposedChart data={shown} margin={{ top: 6, right: 4, bottom: 2, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_LITERAL.grid} vertical={false} />
             <XAxis
               dataKey="period"
               tickFormatter={periodType === "quarter" ? shortPeriod : (v: string) => v}
-              tick={{ fontSize: 10, fill: CHART_LITERAL.label }}
+              tick={{ fontSize: 9, fill: CHART_LITERAL.label }}
               stroke={CHART_LITERAL.axis}
               interval="preserveStartEnd"
-              minTickGap={12}
+              minTickGap={14}
             />
             <YAxis
               yAxisId="value"
-              tick={{ fontSize: 10, fill: CHART_LITERAL.label }}
+              domain={domain}
+              tick={{ fontSize: 9, fill: CHART_LITERAL.label }}
               stroke={CHART_LITERAL.axis}
-              width={46}
+              width={38}
               tickFormatter={(v: number) =>
                 metric.unit === "percent" ? `${(v * 100).toFixed(0)}%` : formatVnd(v)
               }
@@ -184,26 +224,27 @@ export function FinancialChart({
               <YAxis
                 yAxisId="yoy"
                 orientation="right"
-                tick={{ fontSize: 10, fill: CHART_LITERAL.reference }}
+                tick={{ fontSize: 9, fill: CHART_LITERAL.reference }}
                 stroke={CHART_LITERAL.reference}
-                width={42}
+                width={34}
                 tickFormatter={(v: number) => `${v.toFixed(0)}%`}
               />
             )}
-            {/* Zero matters on both: profit and cash flow go negative, and a YoY
-                line is read against 0 rather than against its own minimum. */}
+            {/* Profit and cash flow go negative, and a YoY line is read against
+                zero rather than against its own minimum. */}
             <ReferenceLine yAxisId="value" y={0} stroke={CHART_LITERAL.axis} />
             <Tooltip
-              cursor={{ fill: "rgba(20,18,15,0.05)" }}
+              // The vertical half of the crosshair: recharts already snaps this
+              // to the hovered category, which is more useful on a bar chart
+              // than a free-floating line between two bars.
+              cursor={{ stroke: CHART_LITERAL.label, strokeWidth: 1, strokeDasharray: "3 3" }}
               contentStyle={{
                 background: CHART_LITERAL.panel,
                 border: `1px solid ${CHART_LITERAL.axis}`,
                 borderRadius: 0,
-                fontSize: 12,
+                fontSize: 11,
                 color: CHART_LITERAL.text,
               }}
-              // recharts 3 types these as ReactNode/ValueType, so narrow here
-              // rather than asserting the shape at the call site.
               labelFormatter={(v) =>
                 periodType === "quarter" ? shortPeriod(String(v)) : String(v)
               }
@@ -215,14 +256,14 @@ export function FinancialChart({
                   : [formatValue(n, metric.unit), label];
               }}
             />
-            <Bar yAxisId="value" dataKey="value" fill={CHART_LITERAL.accent} maxBarSize={26} />
+            <Bar yAxisId="value" dataKey="value" fill={CHART_LITERAL.accent} maxBarSize={22} />
             {showYoy && (
               <Line
                 yAxisId="yoy"
                 type="monotone"
                 dataKey="yoy"
                 stroke={CHART_LITERAL.reference}
-                strokeWidth={1.75}
+                strokeWidth={1.5}
                 dot={false}
                 // A missing year-ago period breaks the line rather than drawing
                 // a straight segment across a gap that was never measured.
@@ -231,20 +272,52 @@ export function FinancialChart({
             )}
           </ComposedChart>
         </ResponsiveContainer>
+
+        {/* The HORIZONTAL half of the crosshair, drawn over the chart rather
+            than inside it. A ReferenceLine would need a data value to sit on;
+            this follows the pointer continuously, which is the point — it lets
+            the reader carry one bar's height across to another. */}
+        {cross && (
+          <div className="pointer-events-none absolute inset-0" aria-hidden>
+            <div
+              className="absolute border-t border-dashed"
+              style={{
+                left: cross.left,
+                width: cross.w,
+                top: cross.y,
+                borderColor: CHART_LITERAL.label,
+              }}
+            />
+            <div
+              className="absolute font-mono tabular-nums px-1 leading-none"
+              style={{
+                left: 0,
+                top: cross.y - 6,
+                fontSize: 9,
+                background: CHART_LITERAL.panel,
+                color: CHART_LITERAL.text,
+                border: `1px solid ${CHART_LITERAL.axis}`,
+              }}
+            >
+              {metric.unit === "percent"
+                ? `${(cross.value * 100).toFixed(1)}%`
+                : formatVnd(cross.value)}
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center gap-4 mt-2 text-data text-fg-label">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block w-3 h-2" style={{ background: CHART_LITERAL.accent }} />
+      <div className="flex items-center gap-3 mt-1.5 text-label text-fg-label">
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-2.5 h-2" style={{ background: CHART_LITERAL.accent }} />
           {label}
         </span>
         {showYoy && (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block w-3 h-0.5" style={{ background: CHART_LITERAL.reference }} />
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block w-2.5 h-0.5" style={{ background: CHART_LITERAL.reference }} />
             {t(locale, "finYoy")}
           </span>
         )}
-        <span className="ml-auto">{t(locale, "finSource")}</span>
       </div>
     </div>
   );

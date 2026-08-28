@@ -117,3 +117,42 @@ export function shortPeriod(period: string): string {
   const m = /^(\d{4})-Q([1-4])$/.exec(period);
   return m ? `Q${m[2]}/${m[1].slice(2)}` : period;
 }
+
+
+// --- Panel grid -------------------------------------------------------------
+
+/**
+ * The nine cards on the Analysis page, in reading order.
+ *
+ * A FIXED METRIC PER CARD, following the template this was built from: the card
+ * title IS the metric, so there is no per-card metric dropdown. That is what
+ * makes nine charts readable at a glance — a grid of nine identical dropdowns
+ * would make the reader open each one to find out what they are looking at.
+ *
+ * `metricId: null` is a RESERVED SLOT, drawn as an explicit placeholder rather
+ * than omitted. Nine cards with one filled says "eight more are coming"; one
+ * card alone says "this is the feature". The slots are deliberately not guessed
+ * at — filling them with plausible-looking metrics would be inventing a
+ * specification that has not been written yet.
+ */
+export type PanelSlot = {
+  /** Stable key for React and for the eventual per-card settings. */
+  slot: string;
+  /** null = reserved, not yet specified. */
+  metricId: string | null;
+  /** Only used for reserved slots; a live card takes its title from the metric. */
+  title_en?: string;
+  title_vi?: string;
+};
+
+export const FINANCIAL_PANELS: PanelSlot[] = [
+  { slot: "revenue", metricId: "IS_NET_REVENUE" },
+  { slot: "slot-2", metricId: null },
+  { slot: "slot-3", metricId: null },
+  { slot: "slot-4", metricId: null },
+  { slot: "slot-5", metricId: null },
+  { slot: "slot-6", metricId: null },
+  { slot: "slot-7", metricId: null },
+  { slot: "slot-8", metricId: null },
+  { slot: "slot-9", metricId: null },
+];

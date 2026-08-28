@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { getActiveSymbols, getBusinessAnalysis, getSymbolMeta, getSymbolProfile, getVnstockStatements } from "@/lib/cached-data";
-import { FinancialChart } from "@/components/financial-chart";
+import { FinancialPanels } from "@/components/financial-panels";
 import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
 import { metaIndustry, metaShortName, metaFullName } from "@/lib/symbol-meta";
 import { getLocale, t } from "@/lib/i18n";
@@ -244,9 +244,7 @@ export default async function SymbolDrillDown({
           <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
             {t(locale, "finTitle")}
           </h2>
-          <div className="bg-panel rounded-lg border border-line p-4 sm:p-6">
-            <FinancialChart rows={vnstockStatements} locale={locale} />
-          </div>
+          <FinancialPanels rows={vnstockStatements} locale={locale} />
         </section>
       )}
 
