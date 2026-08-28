@@ -128,6 +128,7 @@ export default async function SymbolDrillDown({
   // falling back to a manufacturing number the FA Scanner already stopped
   // showing for it.
   const isRealEstate = industry === "real_estate";
+  const twoColumn = vnstockStatements.length > 0 && !!business;
   const faQuarters = (isRealEstate ? reRows : faRows).map((r) => r.as_of_period);
   const selectedFq = fq && faQuarters.includes(fq) ? fq : faQuarters[0];
   const faRow: FaScore | null =
@@ -220,10 +221,11 @@ export default async function SymbolDrillDown({
           no statements, and most symbols have no written note. Whichever
           survives takes the full width rather than leaving a hole — hence the
           grid is only applied when BOTH are present. */}
+      {/* Both halves present decides the layout AND how the panel is sized. */}
       {(vnstockStatements.length > 0 || business) && (
         <div
-          className={`mt-8 grid gap-6 items-start ${
-            vnstockStatements.length > 0 && business
+          className={`mt-8 grid gap-6 items-stretch ${
+            twoColumn
               ? "grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"
               : "grid-cols-1"
           }`}
@@ -238,14 +240,29 @@ export default async function SymbolDrillDown({
           )}
 
           {business && (
-            <section className="min-w-0">
+            <section className="min-w-0 flex flex-col">
               <h2 className="text-title font-semibold border-b border-line pb-1 mb-3 flex items-baseline justify-between gap-3">
                 <span>{t(locale, "baSection")}</span>
                 <span className="text-data font-normal text-fg-label font-mono">
                   {business.updated_at.slice(0, 10)}
                 </span>
               </h2>
-              <BusinessPanel content={business.content} locale={locale} />
+              {/* SIDE BY SIDE, THE PANEL IS TAKEN OUT OF FLOW.
+                  A stretched grid row is as tall as its TALLEST item, and this
+                  note is 12,000px of prose against ~950px of charts — so left in
+                  flow it set the row height and dragged the charts column down
+                  with it, which is the misalignment this is fixing. Absolutely
+                  positioned it reports no height, the row is sized by the
+                  charts, and `inset-0` makes the panel exactly that tall.
+
+                  Only from `lg`, and only when there ARE charts: stacked, or
+                  alone on the page, it must lay out normally or it would
+                  collapse to nothing. */}
+              <div className={twoColumn ? "flex-1 min-h-0 lg:relative" : ""}>
+                <div className={twoColumn ? "lg:absolute lg:inset-0" : ""}>
+                  <BusinessPanel content={business.content} />
+                </div>
+              </div>
             </section>
           )}
         </div>
