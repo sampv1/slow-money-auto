@@ -48,9 +48,17 @@ import { t, type Locale } from "@/lib/i18n";
 
 type PeriodType = "quarter" | "year";
 
-/** Opens on five years, matching the source template. */
-const DEFAULT_SPAN_YEARS = 5;
-const HERO_SPAN_YEARS = 10;
+/**
+ * Opens on ten ANNUAL bars.
+ *
+ * A card in this grid is ~248px at a 1440 viewport, which twenty quarterly bars
+ * do not fit — they collapse to 12px of width each and the axis drops most of
+ * its labels. Ten years of annual bars is the same span of history in a third
+ * of the marks, and it is what the reference layout shows in its small cards.
+ * The Quý tab is one click away for anyone who wants the detail.
+ */
+const DEFAULT_SPAN_YEARS = 10;
+const DEFAULT_PERIOD: PeriodType = "year";
 
 /**
  * VND → TỶ ĐỒNG, the unit Vietnamese statements are read in.
@@ -108,17 +116,13 @@ export function FinancialChart({
   rows,
   metricId,
   locale,
-  /** "hero" is the full-width headline chart; "compact" sits in the grid. */
-  variant = "compact",
 }: {
   rows: VnstockStatementRow[];
   metricId: string;
   locale: Locale;
-  variant?: "hero" | "compact";
 }) {
-  const hero = variant === "hero";
-  const [periodType, setPeriodType] = useState<PeriodType>(hero ? "year" : "quarter");
-  const [spanY, setSpanY] = useState<number>(hero ? HERO_SPAN_YEARS : DEFAULT_SPAN_YEARS);
+  const [periodType, setPeriodType] = useState<PeriodType>(DEFAULT_PERIOD);
+  const [spanY, setSpanY] = useState<number>(DEFAULT_SPAN_YEARS);
   const [cross, setCross] = useState<Cross>(null);
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -285,7 +289,7 @@ export function FinancialChart({
 
       <div
         ref={wrapRef}
-        className={`${hero ? "h-72" : "h-40"} relative`}
+        className="h-40 relative"
         onMouseMove={onMove}
         onMouseLeave={onLeave}
       >
@@ -346,7 +350,7 @@ export function FinancialChart({
                   : [formatValue(n, metric.unit), label];
               }}
             />
-            <Bar yAxisId="value" dataKey="value" fill={CHART_LITERAL.accent} maxBarSize={hero ? 42 : 22} />
+            <Bar yAxisId="value" dataKey="value" fill={CHART_LITERAL.accent} maxBarSize={26} />
             {showYoy && (
               <Line
                 yAxisId="yoy"

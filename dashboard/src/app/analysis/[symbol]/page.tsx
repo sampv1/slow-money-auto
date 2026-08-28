@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { getActiveSymbols, getBusinessAnalysis, getSymbolMeta, getSymbolProfile, getVnstockStatements } from "@/lib/cached-data";
 import { FinancialPanels } from "@/components/financial-panels";
+import { BusinessPanel } from "@/components/business-panel";
 import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
 import { metaIndustry, metaShortName, metaFullName } from "@/lib/symbol-meta";
 import { getLocale, t } from "@/lib/i18n";
@@ -17,7 +18,6 @@ import { TaSearch } from "../ta-search";
 import { TradeActions } from "../../signal-pro/trade-actions";
 import { DataError } from "@/components/data-error";
 import { SymbolLogo } from "@/components/symbol-logo";
-import { Markdown } from "@/components/markdown";
 
 export const revalidate = 0;
 
@@ -245,9 +245,7 @@ export default async function SymbolDrillDown({
                   {business.updated_at.slice(0, 10)}
                 </span>
               </h2>
-              <div className="bg-panel rounded-lg border border-line p-4 sm:p-5">
-                <Markdown>{business.content}</Markdown>
-              </div>
+              <BusinessPanel content={business.content} locale={locale} />
             </section>
           )}
         </div>
