@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
-import { getActiveSymbols, getBusinessAnalysis, getSymbolMeta, getSymbolProfile } from "@/lib/cached-data";
+import { getActiveSymbols, getBusinessAnalysis, getSymbolMeta, getSymbolProfile, getVnstockStatements } from "@/lib/cached-data";
+import { FinancialChart } from "@/components/financial-chart";
 import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
 import { metaIndustry, metaShortName, metaFullName } from "@/lib/symbol-meta";
 import { getLocale, t } from "@/lib/i18n";
@@ -45,7 +46,7 @@ export default async function SymbolDrillDown({
   //    picks BUY vs SELL in the header (same rule as Signal Pro). Deliberately
   //    UNCACHED so a trade shows up immediately on the router.refresh() that
   //    TradeActions fires after a successful BUY/SELL.
-  const [universe, hasOpenPosition, profile, symbolMeta, business] = await Promise.all([
+  const [universe, hasOpenPosition, profile, symbolMeta, business, vnstockStatements] = await Promise.all([
     getActiveSymbols().catch((): string[] => []),
     (async (): Promise<boolean> => {
       if (!isAdmin) return false;
@@ -64,6 +65,9 @@ export default async function SymbolDrillDown({
     // The admin's hand-written note, if there is one. Already null-on-failure,
     // so a deploy that lands before migration 053 simply shows no block.
     getBusinessAnalysis(symbol),
+    // Financial statements (migration 055). Returns [] if the migration has not
+    // been applied, so this ships ahead of the table existing.
+    getVnstockStatements(symbol),
   ]);
 
   // NB `industry` further down is fa_industry.industry_group — which RUBRIC this
@@ -224,6 +228,24 @@ export default async function SymbolDrillDown({
           </h2>
           <div className="bg-panel rounded-lg border border-line p-4 sm:p-6">
             <Markdown>{business.content}</Markdown>
+          </div>
+        </section>
+      )}
+
+      {/* Reported results over time, between the rubric and the price chart.
+          The FA panel scores ONE quarter; this shows the trajectory that
+          produced it, which is the question a reader asks next.
+
+          Rendered only when there are statements — like the business note, an
+          empty frame on symbols the importer has not reached yet would teach
+          readers to scroll past the heading. */}
+      {vnstockStatements.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
+            {t(locale, "finTitle")}
+          </h2>
+          <div className="bg-panel rounded-lg border border-line p-4 sm:p-6">
+            <FinancialChart rows={vnstockStatements} locale={locale} />
           </div>
         </section>
       )}

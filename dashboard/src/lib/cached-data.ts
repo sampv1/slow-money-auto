@@ -1019,3 +1019,47 @@ export const getBusinessAnalysis = (symbol: string) =>
     ["business-analysis", symbol],
     { revalidate: CACHE_TTL_SECONDS, tags: [TAG_BUSINESS] },
   )();
+
+/**
+ * One symbol's financial statements from vnstock_data (migration 055).
+ *
+ * ITS OWN CACHE UNIT, not folded into `getSymbolData`. That entry is already
+ * ~0.2 MB of bars and signals, and Vercel drops any cache entry over 2 MB
+ * SILENTLY — the page then refetches from Supabase on every request with
+ * nothing to warn you. Statements are read by one panel, so they get one key.
+ *
+ * DISPLAY-ONLY DATA, tagged TAG_FA so the FA revalidation already in place
+ * expires it. Degrades to [] when migration 055 has not been applied, which is
+ * what lets the panel ship before the table exists.
+ */
+export type VnstockStatementRow = {
+  period: string;
+  period_type: "quarter" | "year";
+  statement: string;
+  items: Record<string, number>;
+};
+
+export async function getVnstockStatements(symbol: string): Promise<VnstockStatementRow[]> {
+  return unstable_cache(
+    async (): Promise<VnstockStatementRow[]> => {
+      // Paged: 34 quarters x 12 years x 4 statements stays under 1000 for one
+      // symbol today, but PostgREST truncates silently and the ceiling is not
+      // ours to control.
+      try {
+        return await fetchAllPaged<VnstockStatementRow>((from, to, withCount) =>
+          supabase
+            .from("fa_vnstock_statements")
+            .select("period,period_type,statement,items", withCount ? { count: "exact" } : undefined)
+            .eq("symbol", symbol)
+            .order("period", { ascending: true })
+            .order("statement", { ascending: true }) // tie-break → deterministic paging
+            .range(from, to),
+        );
+      } catch {
+        return [];
+      }
+    },
+    ["vnstock-statements", symbol],
+    { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+  )();
+}

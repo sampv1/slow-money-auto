@@ -94,4 +94,10 @@ export const CHART_LITERAL = {
   panel: "#fbf9f5", // --color-panel
   up: "#0c6b4a", // --color-up
   down: "#b32c24", // --color-down
+  /* The financial-statement chart (components/financial-chart.tsx) pairs these
+     two: accent carries the reported figure, reference the YoY line. They are
+     ΔE-far apart and neither is a board semantic, so a rising bar cannot be
+     misread as "up" when the metric is a cost. */
+  accent: "#1d3f73", // --color-accent
+  reference: "#7d5806", // --color-reference
 } as const;
