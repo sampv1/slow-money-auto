@@ -263,6 +263,12 @@ export default async function SymbolDrillDown({
                   <BusinessPanel content={business.content} />
                 </div>
               </div>
+              {/* The charts column carries a provenance line under its grid, so
+                  without one here the panel would sit a line lower than the last
+                  row of cards. It is not a spacer: the two halves have different
+                  sources, and saying so is the honest way to make them level —
+                  the numbers come from vnstock, this is the desk's own writing. */}
+              <p className="mt-3 text-data text-fg-faint">{t(locale, "baSource")}</p>
             </section>
           )}
         </div>
