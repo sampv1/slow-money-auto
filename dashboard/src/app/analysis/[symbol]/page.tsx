@@ -210,42 +210,47 @@ export default async function SymbolDrillDown({
         <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
       )}
 
-      {/* The written view of the business, between the rubric and the chart.
-          It belongs to the "is this worth owning" half of the page — it says
-          what the FA score cannot: what the company actually does, why the
-          quarter looked the way it did, what the desk is waiting to see.
+      {/* THE NUMBERS AND THE ARGUMENT, SIDE BY SIDE.
+          Charts left, the written view right — they answer the same question
+          from two directions, and reading one while the other is a screen away
+          is what the single-column stack made you do. The split is ~1.35:1, so
+          three chart cards still fit across the left column at 1280.
 
-          Rendered ONLY when a note exists. An empty placeholder on 1,400
-          symbols would teach readers to scroll past the heading, and the block
-          is worth noticing precisely because it is not on every page. */}
-      {business && (
-        <section className="mt-8">
-          <h2 className="text-title font-semibold border-b border-line pb-1 mb-3 flex items-baseline justify-between gap-3">
-            <span>{t(locale, "baSection")}</span>
-            <span className="text-data font-normal text-fg-label font-mono">
-              {business.updated_at.slice(0, 10)}
-            </span>
-          </h2>
-          <div className="bg-panel rounded-lg border border-line p-4 sm:p-6">
-            <Markdown>{business.content}</Markdown>
-          </div>
-        </section>
-      )}
+          Either half may be absent: a symbol the importer has not reached has
+          no statements, and most symbols have no written note. Whichever
+          survives takes the full width rather than leaving a hole — hence the
+          grid is only applied when BOTH are present. */}
+      {(vnstockStatements.length > 0 || business) && (
+        <div
+          className={`mt-8 grid gap-6 items-start ${
+            vnstockStatements.length > 0 && business
+              ? "grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"
+              : "grid-cols-1"
+          }`}
+        >
+          {vnstockStatements.length > 0 && (
+            <section className="min-w-0">
+              <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
+                {t(locale, "finTitle")}
+              </h2>
+              <FinancialPanels rows={vnstockStatements} locale={locale} />
+            </section>
+          )}
 
-      {/* Reported results over time, between the rubric and the price chart.
-          The FA panel scores ONE quarter; this shows the trajectory that
-          produced it, which is the question a reader asks next.
-
-          Rendered only when there are statements — like the business note, an
-          empty frame on symbols the importer has not reached yet would teach
-          readers to scroll past the heading. */}
-      {vnstockStatements.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
-            {t(locale, "finTitle")}
-          </h2>
-          <FinancialPanels rows={vnstockStatements} locale={locale} />
-        </section>
+          {business && (
+            <section className="min-w-0">
+              <h2 className="text-title font-semibold border-b border-line pb-1 mb-3 flex items-baseline justify-between gap-3">
+                <span>{t(locale, "baSection")}</span>
+                <span className="text-data font-normal text-fg-label font-mono">
+                  {business.updated_at.slice(0, 10)}
+                </span>
+              </h2>
+              <div className="bg-panel rounded-lg border border-line p-4 sm:p-5">
+                <Markdown>{business.content}</Markdown>
+              </div>
+            </section>
+          )}
+        </div>
       )}
 
       {/* Technical analysis follows the fundamentals: the FA panel answers

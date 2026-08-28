@@ -98,7 +98,12 @@ export function FinancialPanels({
     p.metric ? (locale === "vi" ? p.metric.label_vi : p.metric.label_en) : t(locale, "finSlotReserved");
 
   return (
-    <div className="flex flex-col gap-3">
+    // @container, not viewport breakpoints: this section sits in a ~57% column
+    // beside the written analysis, so `xl:` (a 1280px VIEWPORT) would reason
+    // about space this grid does not have. Measured: at a 1440 viewport the
+    // column is 767px — one pixel under @3xl — so the third column has to come
+    // in at @2xl (672px) or it never arrives at the width people actually use.
+    <div className="@container flex flex-col gap-3">
       <Card index={first.index} title={titleOf(first)} muted={!first.metric}>
         {first.metric ? (
           <FinancialChart rows={rows} metricId={first.metric.id} locale={locale} variant="hero" />
@@ -107,7 +112,7 @@ export function FinancialPanels({
         )}
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3 gap-3">
         {rest.map((p) => (
           <Card key={p.slot} index={p.index} title={titleOf(p)} muted={!p.metric}>
             {p.metric ? (
