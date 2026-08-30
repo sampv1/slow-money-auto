@@ -235,7 +235,14 @@ export default async function SymbolDrillDown({
               <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
                 {t(locale, "finTitle")}
               </h2>
-              <FinancialPanels rows={vnstockStatements} locale={locale} />
+              <FinancialPanels
+                rows={vnstockStatements}
+                locale={locale}
+                /* The newest traded close, so chart 6's current quarter
+                   prices itself off today rather than off whatever price
+                   the provider last stamped onto the statement. */
+                latestClose={candles.at(-1)?.close ?? null}
+              />
             </section>
           )}
 

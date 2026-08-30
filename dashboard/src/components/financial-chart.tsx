@@ -1,25 +1,27 @@
 "use client";
 
 /**
- * One metric's history: reported figure as bars, YoY growth as a line, two axes.
+ * One chart card: bars and lines over a period grid, driven entirely by a
+ * `ChartSpec`.
  *
- * ONE FIXED METRIC PER CARD — the card title is the metric, so there is no
- * metric dropdown here. Nine cards each carrying an identical dropdown would
- * force the reader to open every one to learn what it shows.
+ * NO METRIC DROPDOWN — the card title IS the chart. Nine cards each carrying an
+ * identical dropdown would force the reader to open every one to learn what it
+ * shows.
  *
  * RECHARTS, not lightweight-charts. The price chart's engine is a time-series
- * one; these are CATEGORICAL quarter buckets with a second axis in different
- * units, which it fights. `ComposedChart` does bar + line + dual axis natively.
+ * one; these are CATEGORICAL period buckets, which it fights. `ComposedChart`
+ * does stacked bars + grouped bars + lines natively.
  *
- * TWO AXES BECAUSE THE UNITS ARE UNRELATED. Revenue in thousands of billions and
- * growth in tens of percent cannot share a scale — on one axis the YoY line
- * flattens onto the baseline and says nothing.
+ * A SECOND AXIS ONLY WHERE A SERIES ASKS FOR ONE. Growth in tens of percent
+ * cannot share a scale with revenue in thousands of billions — on one axis the
+ * growth line flattens onto the baseline and says nothing. Charts whose series
+ * are all one unit (margins, customer advances) get a single axis, which is the
+ * honest default; the second is opt-in per series via `axis: "growth"`.
  *
- * Colours come from CHART_LITERAL, never `var()`: chart-theme.ts is explicit
- * that a charting LIBRARY parses the string itself, so custom properties never
- * resolve. Accent for the bars, reference-amber for the line — deliberately not
- * up-green/down-red, because a rising cost is not good news and board semantics
- * would assert that it is.
+ * Colours come from SERIES_FIN, never `var()`: chart-theme.ts is explicit that
+ * a charting LIBRARY parses the string itself, so custom properties never
+ * resolve. Each series pins its own slot, so a series that goes absent for one
+ * symbol does not repaint its siblings.
  */
 
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -36,46 +38,46 @@ import {
 } from "recharts";
 import { CHART_LITERAL } from "@/lib/chart-theme";
 import {
-  buildSeries,
-  metricById,
+  buildFrames,
+  DEFAULT_RESIDUAL_LIMIT,
+  evaluate,
   shortPeriod,
   SPAN_YEARS,
   spanPeriods,
-  type FinancialPoint,
+  type ChartSpec,
+  type Layer,
+  type SeriesSpec,
+  type Unit,
 } from "@/lib/financial-metrics";
 import type { VnstockStatementRow } from "@/lib/cached-data";
 import { t, type Locale } from "@/lib/i18n";
 
-type PeriodType = "quarter" | "year";
-
 /**
- * Opens on ten ANNUAL bars.
+ * Opens on the widest layer the chart offers, ten years deep.
  *
  * A card in this grid is ~248px at a 1440 viewport, which twenty quarterly bars
- * do not fit — they collapse to 12px of width each and the axis drops most of
- * its labels. Ten years of annual bars is the same span of history in a third
- * of the marks, and it is what the reference layout shows in its small cards.
- * The Quý tab is one click away for anyone who wants the detail.
+ * do not fit — they collapse to 12px each and the axis drops most of its
+ * labels. Ten years of annual bars is the same span of history in a third of
+ * the marks. Charts with no annual layer (the balance-sheet three) open on
+ * quarters by necessity, where the same width argues for a shorter span.
  */
 const DEFAULT_SPAN_YEARS = 10;
-const DEFAULT_PERIOD: PeriodType = "year";
+const QUARTER_ONLY_SPAN_YEARS = 5;
 
-/**
- * VND → TỶ ĐỒNG, the unit Vietnamese statements are read in.
- *
- * Statements arrive in units of VND, where FPT's quarterly revenue is
- * 1.3788e13 — a number nobody reads. The card states "(TỶ ĐỒNG)" once, under
- * the title, and every figure below it is then plain: 13.789. That is what the
- * reference layout does, and it is the difference between an axis labelled
- * "13k" (thirteen thousand what?) and one labelled 13.789.
- *
- * Grouped vi-VN in BOTH locales, matching `formatNumber` — a deliberate
- * project-wide decision, so "13.789" on the English page is correct.
- */
 function toBn(v: number): number {
   return v / 1e9;
 }
 
+/**
+ * VND → TỶ ĐỒNG, the unit Vietnamese statements are read in.
+ *
+ * Statements arrive in VND, where FPT's quarterly revenue is 1.3788e13 — a
+ * number nobody reads. The card states the unit once, under the title, and
+ * every figure below it is then plain: 13.789.
+ *
+ * Grouped vi-VN in BOTH locales, matching `formatNumber` — a deliberate
+ * project-wide decision, so "13.789" on the English page is correct.
+ */
 function formatVnd(v: number, digits?: number): string {
   const bn = toBn(v);
   const abs = Math.abs(bn);
@@ -84,11 +86,42 @@ function formatVnd(v: number, digits?: number): string {
 }
 
 /**
- * Round the axis up to a human step, so the ticks land on 0 / 5.500 / 11.000
- * rather than on 21.843 — an exact 8% pad above the tallest bar, which is a
- * true number and a useless label. The domain still has to be EXPLICIT for the
- * crosshair to convert a pixel back to a value, so it is rounded here rather
- * than handed to recharts' "auto".
+ * `digits` is the CALLER's choice, because the same value wants different
+ * precision in different places: 13,6× is the right headline and 14× / 28× /
+ * 42× are the right axis ticks. Left undefined, each unit picks a sensible
+ * default from the magnitude.
+ */
+function formatUnit(v: number, unit: Unit, digits?: number): string {
+  switch (unit) {
+    case "percent":
+      return `${v.toFixed(digits ?? (Math.abs(v) >= 100 ? 0 : 1))}%`;
+    case "x": {
+      const d = digits ?? 1;
+      return `${v.toLocaleString("vi-VN", { minimumFractionDigits: d, maximumFractionDigits: d })}×`;
+    }
+    case "perShare":
+      return v.toLocaleString("vi-VN", { maximumFractionDigits: digits ?? 0 });
+    default:
+      return formatVnd(v, digits);
+  }
+}
+
+/**
+ * Ticks agree on ONE precision, chosen from the range they span — per-value
+ * digits rendered the zero tick as "0,00" beside a "50" and read as two
+ * different scales. A range wider than ten needs no decimal at all.
+ */
+function axisDecimals(unit: Unit, span: number): number | undefined {
+  if (unit === "vnd") return span >= 100 ? 0 : span >= 10 ? 1 : 2;
+  if (unit === "x" || unit === "percent") return span >= 10 ? 0 : 1;
+  return undefined;
+}
+
+/**
+ * Round the axis out to a human step, so the ticks land on 0 / 5.500 / 11.000
+ * rather than on 21.843 — a true number and a useless label. The domain must be
+ * EXPLICIT for the crosshair to convert a pixel back to a value, so it is
+ * rounded here rather than handed to recharts' "auto".
  */
 function niceCeil(v: number): number {
   if (v <= 0) return 0;
@@ -102,27 +135,41 @@ function niceFloor(v: number): number {
   return v >= 0 ? 0 : -niceCeil(-v);
 }
 
-function formatValue(v: number, unit: "vnd" | "percent"): string {
-  return unit === "percent" ? `${(v * 100).toFixed(2)}%` : formatVnd(v);
-}
-
 /** Where the crosshair is, in container pixels, plus the value under it.
  *  Carries the plot's left/width too, so render never reads the measurement
  *  ref — React 19 forbids touching a ref during render, and the geometry is
  *  already known at the moment the pointer moved. */
 type Cross = { y: number; value: number; left: number; w: number } | null;
 
+/** One x-position, flattened for recharts. */
+type ChartRow = { period: string; total: number | null } & Record<string, number | string | null>;
+
+const layerKey = (l: Layer) =>
+  l === "quarter" ? "finQuarterly" : l === "ttm" ? "finTtm" : "finAnnual";
+
 export function FinancialChart({
+  spec,
   rows,
-  metricId,
   locale,
+  latestClose,
 }: {
+  spec: ChartSpec;
   rows: VnstockStatementRow[];
-  metricId: string;
   locale: Locale;
+  latestClose: number | null;
 }) {
-  const [periodType, setPeriodType] = useState<PeriodType>(DEFAULT_PERIOD);
-  const [spanY, setSpanY] = useState<number>(DEFAULT_SPAN_YEARS);
+  // The widest layer the chart offers is the one it opens on: annual where it
+  // exists, then TTM (smoother than raw quarters), then quarters.
+  const initialLayer: Layer = spec.layers.includes("year")
+    ? "year"
+    : spec.layers.includes("ttm")
+      ? "ttm"
+      : "quarter";
+  const [layer, setLayer] = useState<Layer>(initialLayer);
+  const [spanY, setSpanY] = useState<number>(
+    spec.defaultSpanYears ??
+      (spec.layers.includes("year") ? DEFAULT_SPAN_YEARS : QUARTER_ONLY_SPAN_YEARS),
+  );
   const [cross, setCross] = useState<Cross>(null);
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -132,53 +179,89 @@ export function FinancialChart({
   // Cached per hover and invalidated on leave, so it costs one layout read.
   const plotRef = useRef<{ left: number; top: number; w: number; h: number } | null>(null);
 
-  const metric = metricById(metricId);
+  const quarterFrames = useMemo(() => buildFrames(rows, "quarter"), [rows]);
+  const yearFrames = useMemo(() => buildFrames(rows, "year"), [rows]);
 
-  const series: FinancialPoint[] = useMemo(() => {
-    if (!metric) return [];
-    const scoped = rows.filter(
-      (r) => r.period_type === periodType && r.statement === metric.statement,
-    );
-    return buildSeries(scoped, metric.id, periodType);
-  }, [rows, metric, periodType]);
+  const points = useMemo(
+    () => evaluate(spec, quarterFrames, yearFrames, layer, latestClose),
+    [spec, quarterFrames, yearFrames, layer, latestClose],
+  );
 
-  const shown = useMemo(() => {
-    const n = spanPeriods(spanY, periodType);
-    return Number.isFinite(n) ? series.slice(-n) : series;
-  }, [series, spanY, periodType]);
-  const showYoy = !!metric?.yoy && shown.some((d) => d.yoy !== null);
-  // The most recent reading, stated in full. A chart answers "what is the
-  // shape"; a reader's first question is "what is it now", and hovering to
-  // find that out is a step the card can simply skip.
-  const latest = shown.length ? shown[shown.length - 1] : null;
+  // Flatten to the row shape recharts wants, one key per series. Typed as an
+  // open record because the keys are the SPEC's series keys, known only at
+  // runtime — recharts reads them by string anyway.
+  const data = useMemo<ChartRow[]>(() => {
+    const n = spanPeriods(spanY, layer);
+    const scoped = Number.isFinite(n) ? points.slice(-n) : points;
+    return scoped.map((p) => ({ period: p.period, total: p.total, ...p.values }));
+  }, [points, spanY, layer]);
 
-  // The value axis is pinned to an explicit domain so the crosshair can convert
-  // a pixel back to a number. Left to "auto" recharts picks a nice range we
-  // cannot see, and the readout would be a guess.
-  const domain = useMemo<[number, number]>(() => {
-    if (shown.length === 0) return [0, 1];
-    const vals = shown.map((d) => d.value);
-    const max = Math.max(...vals, 0);
-    const min = Math.min(...vals, 0);
-    return [niceFloor(min), niceCeil(max) || 1];
-  }, [shown]);
+  // A series with nothing to show is dropped from the axes AND the legend —
+  // a legend entry for an empty series tells the reader to look for a mark
+  // that is not there.
+  const live = useMemo(
+    () => spec.series.filter((s) => data.some((d) => typeof d[s.key] === "number")),
+    [spec.series, data],
+  );
 
-  // Decimals for the value axis, chosen once from the domain so every tick
-  // agrees — per-value digits rendered the zero tick as "0,00".
+  const valueSeries = live.filter((s) => s.axis === "value");
+  const growthSeries = live.filter((s) => s.axis === "growth");
+  const hasGrowthAxis = growthSeries.length > 0;
+
+  // Stacked bars are summed for the domain; grouped bars and lines are not.
+  const domain = useMemo<[number, number]>(
+    () => domainFor(data, valueSeries),
+    [data, valueSeries],
+  );
+  const growthDomain = useMemo<[number, number]>(
+    () => domainFor(data, growthSeries),
+    [data, growthSeries],
+  );
+
   const axisDigits = useMemo(() => {
-    const span = Math.abs(toBn(domain[1] - domain[0]));
-    return span >= 100 ? 0 : span >= 10 ? 1 : 2;
-  }, [domain]);
+    const raw = domain[1] - domain[0];
+    return axisDecimals(spec.unit, Math.abs(spec.unit === "vnd" ? toBn(raw) : raw));
+  }, [domain, spec.unit]);
 
   // Width from the WIDEST label this axis will actually print. Fixed at 38px it
   // clipped "100.000" to "0.000" the moment the annual tab was opened — the
   // label is data-dependent, so the space reserved for it has to be too.
   const axisWidth = useMemo(() => {
     const longest = [domain[0], domain[1]]
-      .map((v) => (metric?.unit === "percent" ? `${(v * 100).toFixed(0)}%` : formatVnd(v, axisDigits)))
+      .map((v) => formatUnit(v, spec.unit, axisDigits))
       .reduce((a, b) => (b.length > a.length ? b : a), "");
-    return Math.max(34, longest.length * 6.2 + 10);
-  }, [domain, axisDigits, metric]);
+    return Math.max(34, longest.length * 6.2 + 8);
+  }, [domain, axisDigits, spec.unit]);
+
+  const growthUnit: Unit = growthSeries[0]?.unit ?? "percent";
+  const growthDigits = useMemo(
+    () => axisDecimals(growthUnit, Math.abs(growthDomain[1] - growthDomain[0])),
+    [growthUnit, growthDomain],
+  );
+  const growthWidth = useMemo(() => {
+    const longest = [growthDomain[0], growthDomain[1]]
+      .map((v) => formatUnit(v, growthUnit, growthDigits))
+      .reduce((a, b) => (b.length > a.length ? b : a), "");
+    return Math.max(30, longest.length * 6.2 + 6);
+  }, [growthDomain, growthUnit, growthDigits]);
+
+  /**
+   * The residual's MEDIAN share of the total across the shown periods. Median,
+   * not mean or max, so one quarter with an odd filing cannot condemn a chart
+   * that is fine everywhere else.
+   */
+  const residualShare = useMemo(() => {
+    if (!spec.residualKey || !spec.total) return null;
+    const shares: number[] = [];
+    for (const row of data) {
+      const r = row[spec.residualKey];
+      const tot = row.total;
+      if (typeof r === "number" && typeof tot === "number" && tot > 0) shares.push(r / tot);
+    }
+    if (shares.length === 0) return null;
+    shares.sort((a, b) => a - b);
+    return shares[Math.floor(shares.length / 2)];
+  }, [data, spec.residualKey, spec.total]);
 
   const measurePlot = useCallback(() => {
     const wrap = wrapRef.current;
@@ -217,59 +300,77 @@ export function FinancialChart({
     plotRef.current = null; // re-measure next hover, in case the card resized
   }, []);
 
-  if (!metric || shown.length === 0) {
+  if (data.length === 0 || live.length === 0) {
+    return <p className="text-body text-fg-muted py-10 text-center">{t(locale, "finNoData")}</p>;
+  }
+
+  // A decomposition whose balancing segment swamps the named ones is not
+  // describing this company — say that, rather than draw an almost-solid grey
+  // bar the reader would take as a fact about its balance sheet.
+  if (residualShare !== null && residualShare > (spec.residualLimit ?? DEFAULT_RESIDUAL_LIMIT)) {
     return (
-      <p className="text-body text-fg-muted py-10 text-center">{t(locale, "finNoData")}</p>
+      <p className="text-body text-fg-muted py-10 text-center">
+        {t(locale, "finRubricMismatch")}
+      </p>
     );
   }
 
-  const label = locale === "vi" ? metric.label_vi : metric.label_en;
+  const nameOf = (s: SeriesSpec) => (locale === "vi" ? s.label_vi : s.label_en);
+  const last = data[data.length - 1];
+  // The headline reading, stated in full. A chart answers "what is the shape";
+  // a reader's first question is "what is it now", and hovering to find that
+  // out is a step the card can skip.
+  //
+  // WHICH series that is has to be chosen, not defaulted to the first: on a
+  // stacked balance-sheet card the first series is one component of many, and
+  // "Tài sản 8.843" (the cash line) directly contradicts the card's own title.
+  // A spec carrying a reconciliation total headlines that.
+  const headline = spec.headline ? (live.find((s) => s.key === spec.headline) ?? live[0]) : live[0];
+  const totalValue = typeof last.total === "number" ? last.total : null;
+  const useTotal = !!spec.total && totalValue !== null;
+  const headlineValue = useTotal
+    ? totalValue
+    : typeof last[headline.key] === "number"
+      ? (last[headline.key] as number)
+      : null;
+  const headlineUnit: Unit = useTotal ? spec.unit : (headline.unit ?? spec.unit);
 
   return (
     <div>
-      {/* Unit and latest reading, above the controls: the two facts that make
-          the card legible before anyone touches it. */}
       <div className="flex items-baseline justify-between gap-2 mb-1.5 min-w-0">
         <span className="text-label text-fg-label uppercase tracking-wide shrink-0">
-          {metric.unit === "percent" ? "%" : t(locale, "finUnitBn")}
+          {(locale === "vi" ? spec.caption_vi : spec.caption_en) ?? unitCaption(spec.unit, locale)}
         </span>
-        {latest && (
+        {headlineValue !== null && (
           <span className="flex items-baseline gap-1.5 min-w-0 truncate">
             <span className="font-mono tabular-nums text-body font-semibold text-fg">
-              {formatValue(latest.value, metric.unit)}
+              {formatUnit(headlineValue, headlineUnit)}
             </span>
-            {latest.yoy !== null && (
-              <span
-                className="font-mono tabular-nums text-data"
-                style={{ color: latest.yoy >= 0 ? CHART_LITERAL.up : CHART_LITERAL.down }}
-              >
-                {latest.yoy >= 0 ? "+" : ""}
-                {latest.yoy.toFixed(1)}%
-              </span>
-            )}
             <span className="text-label text-fg-faint shrink-0">
-              {periodType === "quarter" ? shortPeriod(latest.period) : latest.period}
+              {layer === "year" ? last.period : shortPeriod(String(last.period))}
             </span>
           </span>
         )}
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 mb-2">
-        <div className="inline-flex rounded-sm border border-line overflow-hidden" role="group">
-          {(["quarter", "year"] as PeriodType[]).map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPeriodType(p)}
-              aria-pressed={periodType === p}
-              className={`h-6 px-2 text-data cursor-pointer transition-colors ${
-                periodType === p ? "bg-fg text-canvas" : "bg-transparent text-fg-muted hover:bg-panel-2"
-              }`}
-            >
-              {t(locale, p === "quarter" ? "finQuarterly" : "finAnnual")}
-            </button>
-          ))}
-        </div>
+        {spec.layers.length > 1 && (
+          <div className="inline-flex rounded-sm border border-line overflow-hidden" role="group">
+            {spec.layers.map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => setLayer(l)}
+                aria-pressed={layer === l}
+                className={`h-6 px-2 text-data cursor-pointer transition-colors ${
+                  layer === l ? "bg-fg text-canvas" : "bg-transparent text-fg-muted hover:bg-panel-2"
+                }`}
+              >
+                {t(locale, layerKey(l))}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="inline-flex rounded-sm border border-line overflow-hidden ml-auto" role="group">
           {SPAN_YEARS.map((y) => (
             <button
@@ -287,18 +388,13 @@ export function FinancialChart({
         </div>
       </div>
 
-      <div
-        ref={wrapRef}
-        className="h-40 relative"
-        onMouseMove={onMove}
-        onMouseLeave={onLeave}
-      >
+      <div ref={wrapRef} className="h-40 relative" onMouseMove={onMove} onMouseLeave={onLeave}>
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={shown} margin={{ top: 6, right: 4, bottom: 2, left: 0 }}>
+          <ComposedChart data={data} margin={{ top: 6, right: 4, bottom: 2, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_LITERAL.grid} vertical={false} />
             <XAxis
               dataKey="period"
-              tickFormatter={periodType === "quarter" ? shortPeriod : (v: string) => v}
+              tickFormatter={(v: string) => (layer === "year" ? v : shortPeriod(v))}
               tick={{ fontSize: 9, fill: CHART_LITERAL.label }}
               stroke={CHART_LITERAL.axis}
               interval="preserveStartEnd"
@@ -310,60 +406,83 @@ export function FinancialChart({
               tick={{ fontSize: 9, fill: CHART_LITERAL.label }}
               stroke={CHART_LITERAL.axis}
               width={axisWidth}
-              tickFormatter={(v: number) =>
-                metric.unit === "percent" ? `${(v * 100).toFixed(0)}%` : formatVnd(v, axisDigits)
-              }
+              tickFormatter={(v: number) => formatUnit(v, spec.unit, axisDigits)}
             />
-            {showYoy && (
+            {hasGrowthAxis && (
               <YAxis
-                yAxisId="yoy"
+                yAxisId="growth"
                 orientation="right"
-                tick={{ fontSize: 9, fill: CHART_LITERAL.reference }}
-                stroke={CHART_LITERAL.reference}
-                width={34}
-                tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+                domain={growthDomain}
+                tick={{ fontSize: 9, fill: CHART_LITERAL.label }}
+                stroke={CHART_LITERAL.axis}
+                width={growthWidth}
+                tickFormatter={(v: number) => formatUnit(v, growthUnit, growthDigits)}
               />
             )}
-            {/* Profit and cash flow go negative, and a YoY line is read against
-                zero rather than against its own minimum. */}
+            {/* Profit, cash flow and growth all go negative, and a growth line
+                is read against zero rather than against its own minimum. */}
             <ReferenceLine yAxisId="value" y={0} stroke={CHART_LITERAL.axis} />
             <Tooltip
               // The vertical half of the crosshair: recharts already snaps this
               // to the hovered category, which is more useful on a bar chart
               // than a free-floating line between two bars.
               cursor={{ stroke: CHART_LITERAL.label, strokeWidth: 1, strokeDasharray: "3 3" }}
-              contentStyle={{
-                background: CHART_LITERAL.panel,
-                border: `1px solid ${CHART_LITERAL.axis}`,
-                borderRadius: 0,
-                fontSize: 11,
-                color: CHART_LITERAL.text,
-              }}
-              labelFormatter={(v) =>
-                periodType === "quarter" ? shortPeriod(String(v)) : String(v)
+              // THE ELEMENT FORM, not a render prop: recharts clones it and
+              // injects `active` / `label` / `payload`, which is the documented
+              // path for a custom tooltip.
+              content={
+                <FinTooltip rows={data} spec={spec} series={live} layer={layer} locale={locale} />
               }
-              formatter={(value, name) => {
-                const n = typeof value === "number" ? value : Number(value);
-                if (!Number.isFinite(n)) return ["—", String(name)];
-                return String(name) === "yoy"
-                  ? [`${n.toFixed(1)}%`, t(locale, "finYoy")]
-                  : [formatValue(n, metric.unit), label];
-              }}
             />
-            <Bar yAxisId="value" dataKey="value" fill={CHART_LITERAL.accent} maxBarSize={26} />
-            {showYoy && (
-              <Line
-                yAxisId="yoy"
-                type="monotone"
-                dataKey="yoy"
-                stroke={CHART_LITERAL.reference}
-                strokeWidth={1.5}
-                dot={false}
-                // A missing year-ago period breaks the line rather than drawing
-                // a straight segment across a gap that was never measured.
-                connectNulls={false}
-              />
-            )}
+
+            {/* Bars before lines, so a line is never hidden behind a bar. */}
+            {valueSeries
+              .filter((s) => s.kind === "bar")
+              .map((s) => (
+                <Bar
+                  key={s.key}
+                  yAxisId="value"
+                  dataKey={s.key}
+                  stackId={s.stack}
+                  fill={s.color}
+                  maxBarSize={26}
+                  // A 1px surface-coloured rule between stacked segments, so
+                  // adjacent fills read as two marks rather than one gradient.
+                  stroke={s.stack ? CHART_LITERAL.panel : undefined}
+                  strokeWidth={s.stack ? 0.5 : 0}
+                  isAnimationActive={false}
+                />
+              ))}
+            {growthSeries
+              .filter((s) => s.kind === "bar")
+              .map((s) => (
+                <Bar
+                  key={s.key}
+                  yAxisId="growth"
+                  dataKey={s.key}
+                  fill={s.color}
+                  maxBarSize={26}
+                  isAnimationActive={false}
+                />
+              ))}
+            {live
+              .filter((s) => s.kind === "line")
+              .map((s) => (
+                <Line
+                  key={s.key}
+                  yAxisId={s.axis === "growth" ? "growth" : "value"}
+                  type="monotone"
+                  dataKey={s.key}
+                  stroke={s.color}
+                  strokeWidth={1.5}
+                  strokeDasharray={s.dashed ? "4 3" : undefined}
+                  dot={false}
+                  // A missing period breaks the line rather than drawing a
+                  // straight segment across a gap that was never measured.
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+              ))}
           </ComposedChart>
         </ResponsiveContainer>
 
@@ -393,26 +512,162 @@ export function FinancialChart({
                 border: `1px solid ${CHART_LITERAL.axis}`,
               }}
             >
-              {metric.unit === "percent"
-                ? `${(cross.value * 100).toFixed(1)}%`
-                : formatVnd(cross.value, axisDigits)}
+              {formatUnit(cross.value, spec.unit, axisDigits)}
             </div>
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-3 mt-1.5 text-label text-fg-label">
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block w-2.5 h-2" style={{ background: CHART_LITERAL.accent }} />
-          {label}
-        </span>
-        {showYoy && (
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block w-2.5 h-0.5" style={{ background: CHART_LITERAL.reference }} />
-            {t(locale, "finYoy")}
+      {/* A legend is PRESENT WHENEVER THERE IS MORE THAN ONE SERIES, so identity
+          is never carried by colour alone. One series needs none — the card
+          title already names it. */}
+      {live.length > 1 && (
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1.5 text-label text-fg-label">
+          {live.map((s) => (
+            <span key={s.key} className="inline-flex items-center gap-1 min-w-0">
+              <span
+                className={`inline-block shrink-0 ${s.kind === "bar" ? "w-2.5 h-2" : "w-2.5 h-0.5"}`}
+                style={{ background: s.color }}
+              />
+              <span className="truncate">{nameOf(s)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {live.length <= 1 && <div className="mt-1.5 h-[14px]" aria-hidden />}
+    </div>
+  );
+}
+
+/**
+ * The value range an axis has to cover.
+ *
+ * STACKED SERIES ARE SUMMED PER PERIOD; grouped bars and lines take their own
+ * extremes. Taking the max across all series regardless would leave a stacked
+ * chart's tallest bar running off the top of the plot.
+ */
+function domainFor(
+  data: Record<string, unknown>[],
+  series: SeriesSpec[],
+): [number, number] {
+  if (series.length === 0) return [0, 1];
+  let max = 0;
+  let min = 0;
+  for (const row of data) {
+    // Positive and negative stack members grow the bar in opposite directions,
+    // so they accumulate separately.
+    const stackPos = new Map<string, number>();
+    const stackNeg = new Map<string, number>();
+    for (const s of series) {
+      const v = row[s.key];
+      if (typeof v !== "number" || !Number.isFinite(v)) continue;
+      if (s.stack) {
+        const m = v >= 0 ? stackPos : stackNeg;
+        m.set(s.stack, (m.get(s.stack) ?? 0) + v);
+      } else {
+        if (v > max) max = v;
+        if (v < min) min = v;
+      }
+    }
+    for (const v of stackPos.values()) if (v > max) max = v;
+    for (const v of stackNeg.values()) if (v < min) min = v;
+  }
+  return [niceFloor(min), niceCeil(max) || 1];
+}
+
+function unitCaption(unit: Unit, locale: Locale): string {
+  switch (unit) {
+    case "percent":
+      return "%";
+    case "x":
+      return t(locale, "finUnitTimes");
+    case "perShare":
+      return t(locale, "finUnitPerShare");
+    default:
+      return t(locale, "finUnitBn");
+  }
+}
+
+
+/**
+ * The hover readout.
+ *
+ * CUSTOM, not recharts' default, for two reasons. A stacked card has up to
+ * eight segments and the default lists them BOTTOM-UP — the reverse of the
+ * legend and of the stack as drawn, so the reader has to re-map every row. And
+ * a decomposition is only checkable against its total, which the default has no
+ * way to show: reading "Tài sản" as eight components with no "Tổng tài sản" row
+ * asks the reader to add eight numbers to find out whether they add up.
+ *
+ * Reads from the FLATTENED ROW rather than from recharts' payload, so a series
+ * whose value is null at this period still gets a row (an em dash) instead of
+ * silently vanishing — absent is a fact about the filing, not about the chart.
+ */
+function FinTooltip({
+  active,
+  label,
+  rows,
+  spec,
+  series,
+  layer,
+  locale,
+}: {
+  /** Injected by recharts when it clones this element. */
+  active?: boolean;
+  label?: string | number;
+  rows: ChartRow[];
+  spec: ChartSpec;
+  series: SeriesSpec[];
+  layer: Layer;
+  locale: Locale;
+}) {
+  const row = rows.find((r) => r.period === label) ?? null;
+  if (!active || !row) return null;
+  const period = layer === "year" ? String(label) : shortPeriod(String(label));
+  const total = typeof row.total === "number" ? row.total : null;
+
+  return (
+    <div
+      className="font-mono tabular-nums"
+      style={{
+        background: CHART_LITERAL.panel,
+        border: `1px solid ${CHART_LITERAL.axis}`,
+        color: CHART_LITERAL.text,
+        fontSize: 11,
+        padding: "4px 6px",
+        lineHeight: 1.5,
+      }}
+    >
+      <div className="font-semibold mb-0.5">{period}</div>
+      {series.map((sr) => {
+        const v = row[sr.key];
+        return (
+          <div key={sr.key} className="flex items-center gap-1.5 whitespace-nowrap">
+            <span
+              className="inline-block shrink-0"
+              style={{ width: 8, height: sr.kind === "bar" ? 8 : 2, background: sr.color }}
+            />
+            <span style={{ color: CHART_LITERAL.label }}>
+              {locale === "vi" ? sr.label_vi : sr.label_en}
+            </span>
+            <span className="ml-auto pl-2 font-semibold">
+              {typeof v === "number" ? formatUnit(v, sr.unit ?? spec.unit) : "—"}
+            </span>
+          </div>
+        );
+      })}
+      {spec.total && (
+        <div
+          className="flex items-center gap-1.5 whitespace-nowrap mt-0.5 pt-0.5 font-semibold"
+          style={{ borderTop: `1px solid ${CHART_LITERAL.axis}` }}
+        >
+          <span style={{ width: 8 }} aria-hidden />
+          <span>{locale === "vi" ? spec.total.label_vi : spec.total.label_en}</span>
+          <span className="ml-auto pl-2">
+            {total !== null ? formatUnit(total, spec.unit) : "—"}
           </span>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

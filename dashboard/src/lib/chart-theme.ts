@@ -85,6 +85,43 @@ export const SERIES = [
   "#3f6212", // moss
 ] as const;
 
+/**
+ * Categorical slots for the FINANCIAL-STATEMENT charts, in fixed order of use.
+ *
+ * EIGHT, because chart 7 (Tài sản) stacks seven balance-sheet components plus a
+ * residual. `SERIES` above stops at six and cannot be extended in place: it is
+ * already painted onto the macro panels, and slot order IS the colourblind-
+ * safety mechanism here, so appending to it would repaint existing charts.
+ *
+ * VALIDATED, not chosen by eye. Against the panel surface #fbf9f5:
+ * lightness band PASS, chroma floor PASS, worst adjacent CVD ΔE 8.3 (protan,
+ * target ≥8), worst adjacent normal-vision ΔE 17.3 (floor ≥15), and all eight
+ * clear 3:1 contrast — so none of them needs the "relief" escape of mandatory
+ * direct labels. The stock reference palette also passes, but three of its
+ * slots sit under 3:1 on this warm paper ground; these are its hues stepped
+ * darker to suit it.
+ *
+ * ADJACENT pairs are what matter for these forms (stacked segments, grouped
+ * bars, overlaid lines) — neighbouring slots are the ones a reader compares.
+ * Re-run scripts/validate_palette.js before reordering: the order is load-
+ * bearing, not cosmetic.
+ */
+export const SERIES_FIN = [
+  "#2a6fbf", // blue
+  "#d1622e", // orange
+  "#12916a", // teal
+  "#bd7e00", // amber
+  "#c9628c", // magenta
+  "#4b7a1f", // moss
+  "#5b46b8", // violet
+  "#c0392b", // red
+] as const;
+
+/** The residual "everything else" segment — deliberately NOT a categorical hue.
+ *  A stack's balancing figure is not a line item anyone reported; giving it a
+ *  colour of its own would let it read as one. */
+export const SERIES_RESIDUAL = "#a8a196";
+
 /** Literal twins of the structural tokens, for charting libraries only. */
 export const CHART_LITERAL = {
   grid: "#ddd7ca", // --color-line-faint

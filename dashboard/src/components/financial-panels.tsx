@@ -11,35 +11,32 @@
  *
  * CARDS ARE NUMBERED. Nine untitled frames in a grid have no reading order, and
  * "chart 6" is how a reader refers to one in a conversation about the page.
- *
- * An undefined slot renders the FULL card skeleton — number, title line, unit
- * line, plot area, legend line — rather than an empty box. The point of a
- * placeholder is to show what the finished layout will do to the page, and a
- * blank rectangle of the wrong height answers none of that.
  */
 
 import type { VnstockStatementRow } from "@/lib/cached-data";
-import { FINANCIAL_PANELS, metricById, shortPeriod } from "@/lib/financial-metrics";
+import { FINANCIAL_CHARTS, shortPeriod } from "@/lib/financial-metrics";
 import { FinancialChart } from "@/components/financial-chart";
 import { t, type Locale } from "@/lib/i18n";
 
 function Card({
   index,
   title,
-  muted = false,
   children,
 }: {
   index: number;
   title: string;
-  muted?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div className="bg-panel rounded-lg border border-line p-3 flex flex-col min-w-0">
+      {/* WRAPS, never truncates. At 1280 the card is 220px and the longest
+          Vietnamese title — "Cơ cấu lợi nhuận trước thuế" — was being cut mid
+          word, while its English "Pre-tax profit mix" fit; a card whose title
+          is unreadable in the default locale is the failure this grid can least
+          afford. Two lines cost this row a few pixels of height, which the
+          stretched cards absorb. */}
       <h3
-        className={`text-label font-semibold tracking-wide uppercase mb-1.5 truncate ${
-          muted ? "text-fg-faint" : "text-fg"
-        }`}
+        className="text-label font-semibold tracking-wide uppercase mb-1.5 leading-tight text-fg"
         title={title}
       >
         <span className="font-mono tabular-nums mr-1">{index}.</span>
@@ -50,43 +47,16 @@ function Card({
   );
 }
 
-/** A reserved slot, drawn at the height and shape a live card will occupy. */
-function PlaceholderBody({ locale }: { locale: Locale }) {
-  return (
-    <>
-      <div className="flex items-baseline justify-between gap-2 mb-1.5">
-        <span className="text-label text-fg-faint uppercase tracking-wide">—</span>
-      </div>
-      {/* TWO rows, because that is what the real controls do at this width: the
-          period toggle and the span presets together exceed a 248px card and
-          wrap. A one-row skeleton would review at the wrong height, which is
-          the one thing a placeholder must not get wrong. */}
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <span className="h-6 w-20 rounded-sm border border-dashed border-line" aria-hidden />
-      </div>
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className="h-6 w-32 rounded-sm border border-dashed border-line ml-auto" aria-hidden />
-      </div>
-      <div className="h-40 border border-dashed border-line rounded-sm flex items-center justify-center">
-        <span className="text-data text-fg-faint">{t(locale, "finSlotTodo")}</span>
-      </div>
-      <div className="mt-1.5 h-[14px]" aria-hidden />
-    </>
-  );
-}
-
 export function FinancialPanels({
   rows,
   locale,
+  latestClose = null,
 }: {
   rows: VnstockStatementRow[];
   locale: Locale;
+  /** Newest traded close, for the live P/E and P/B on chart 6. */
+  latestClose?: number | null;
 }) {
-  const panels = FINANCIAL_PANELS.map((p, i) => ({
-    ...p,
-    index: i + 1,
-    metric: p.metricId ? metricById(p.metricId) : undefined,
-  }));
   // The newest period any statement covers — the section's own provenance line,
   // which is more honest than "today" and is what a reader needs to judge it.
   const latestPeriod = rows
@@ -94,9 +64,6 @@ export function FinancialPanels({
     .map((r) => r.period)
     .sort()
     .pop();
-
-  const titleOf = (p: (typeof panels)[number]) =>
-    p.metric ? (locale === "vi" ? p.metric.label_vi : p.metric.label_en) : t(locale, "finSlotReserved");
 
   return (
     // @container, not viewport breakpoints: this section sits in a ~57% column
@@ -106,18 +73,23 @@ export function FinancialPanels({
     // in at @2xl (672px) or it never arrives at the width people actually use.
     <div className="@container flex flex-col gap-3">
       <div className="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3 gap-3">
-        {panels.map((p) => (
-          <Card key={p.slot} index={p.index} title={titleOf(p)} muted={!p.metric}>
-            {p.metric ? (
-              <FinancialChart rows={rows} metricId={p.metric.id} locale={locale} />
-            ) : (
-              <PlaceholderBody locale={locale} />
-            )}
+        {FINANCIAL_CHARTS.map((spec, i) => (
+          <Card
+            key={spec.id}
+            index={i + 1}
+            title={locale === "vi" ? spec.title_vi : spec.title_en}
+          >
+            <FinancialChart
+              spec={spec}
+              rows={rows}
+              locale={locale}
+              latestClose={latestClose}
+            />
           </Card>
         ))}
       </div>
 
-      <p className="text-data text-fg-faint flex items-center gap-2">
+      <p className="text-data text-fg-faint flex items-center gap-2 flex-wrap">
         <span>{t(locale, "finSource")}</span>
         {latestPeriod && (
           <>
