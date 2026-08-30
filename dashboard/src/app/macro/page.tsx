@@ -15,8 +15,10 @@ import { MarginDebtChart, type MdRow } from "./margin-debt-chart";
 import { VnindexExChart, type ExRow } from "./vnindex-ex-chart";
 import { ImpliedRiskChart, type IrRow } from "./implied-risk-chart";
 import { EXVIC_ENABLED } from "./exvic-flag";
-import { MacroTabs, type MacroSection } from "./macro-tabs";
+import { MacroGrid, type MacroCard, type MacroSection } from "./macro-grid";
+import type { MacroPreview, PreviewTone } from "./macro-preview";
 import { dataErrorDetail } from "@/lib/errors";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 export const revalidate = 0;
 
@@ -308,6 +310,89 @@ function StubCard({ title, note }: { title: string; note: string }) {
   );
 }
 
+
+/**
+ * A card summary for one chart, built from the SAME rows the chart is drawn
+ * from. Nothing is recomputed here — a second derivation of any of these
+ * series would be a second thing to keep correct.
+ */
+const SPARK_POINTS = 90;
+
+function buildPreview<T extends { date: string }>(
+  rows: T[],
+  pick: (r: T) => number | null,
+  fmtValue: (v: number) => string,
+  fmtDelta: (d: number) => string,
+  state?: { label: string; tone: PreviewTone } | null,
+): MacroPreview | null {
+  const withValue = rows.filter((r) => {
+    const v = pick(r);
+    return v !== null && Number.isFinite(v);
+  });
+  if (withValue.length === 0) return null;
+
+  const last = withValue[withValue.length - 1];
+  const prev = withValue.length > 1 ? withValue[withValue.length - 2] : null;
+  const lastV = pick(last) as number;
+  const prevV = prev ? (pick(prev) as number) : null;
+
+  return {
+    value: fmtValue(lastV),
+    delta: prevV === null ? null : fmtDelta(lastV - prevV),
+    asOf: last.date,
+    // Sliced off the FULL row list, not the filtered one, so a hole in the
+    // series stays a hole in the sparkline instead of being closed up.
+    spark: rows.slice(-SPARK_POINTS).map(pick),
+    state: state ?? null,
+  };
+}
+
+const MINUS = "\u2212";
+
+/**
+ * "+" / "\u2212" / "" — an unchanged reading gets no sign, because a sign on
+ * nothing is noise and these series sit still for days at a time.
+ *
+ * Callers sign the ROUNDED value, not the raw one: the 10-year yield moved
+ * 0,0004pp overnight, which rounds to 0 bp, and signing the raw delta printed
+ * "+0 bp" — a plus in front of nothing.
+ */
+const signOf = (d: number) => (d > 0 ? "+" : d < 0 ? MINUS : "");
+
+/** Percent-valued metric: "4,85%", with the change in basis points. */
+function pctPreview<T extends { date: string }>(
+  rows: T[],
+  pick: (r: T) => number | null,
+  digits = 2,
+  state?: { label: string; tone: PreviewTone } | null,
+) {
+  return buildPreview(
+    rows,
+    pick,
+    (v) => formatPercent(v, digits),
+    (d) => { const bp = Math.round(d * 100); return `${signOf(bp)}${formatNumber(Math.abs(bp), 0)} bp`; },
+    state,
+  );
+}
+
+/** Whole-number metric (tỷ đồng, VND), signed change in the same unit. */
+function intPreview<T extends { date: string }>(
+  rows: T[],
+  pick: (r: T) => number | null,
+  state?: { label: string; tone: PreviewTone } | null,
+  unit?: string,
+) {
+  const p = buildPreview(
+    rows,
+    pick,
+    (v) => formatNumber(v, 0),
+    (d) => { const n = Math.round(d); return `${signOf(n)}${formatNumber(Math.abs(n), 0)}`; },
+    state,
+  );
+  return p ? { ...p, unit: unit ?? null } : null;
+}
+
+
 export default async function MacroPage() {
   const locale = await getLocale();
 
@@ -589,12 +674,12 @@ export default async function MacroPage() {
     error = dataErrorDetail(e);
   }
 
-  // The charts, as TABS. Order is the reading order of the page: the
-  // composite first, then the inputs behind it, then the flow and price series.
+  // The charts. Order is the reading order of the page: the composite first,
+  // then the inputs behind it, then the flow and price series.
   //
-  // Built as data rather than stacked JSX because <MacroTabs> renders ONE of
-  // them at a time — see the note there for why a ten-panel scroll could not
-  // frame a panel on any viewport.
+  // Built as data rather than stacked JSX because <MacroGrid> shows a SUMMARY
+  // of each and renders only the one a reader opens — see the note there for
+  // why a grid of the charts themselves cannot work.
   const sections: MacroSection[] = [
     {
       id: "fci",
@@ -816,6 +901,61 @@ export default async function MacroPage() {
     },
   ];
 
+  // The only two panels that compute a REGIME of their own. Everything else
+  // gets no chip: inventing a good/bad reading for a rate or a flow would
+  // assert a direction of goodness the chart itself does not claim.
+  const epLatest = epRows.length ? epRows[epRows.length - 1] : null;
+  const epState = epLatest
+    ? {
+        label: t(locale, epLatest.regime === "positive" ? "epRegimePositive"
+          : epLatest.regime === "mild" ? "epRegimeMild" : "epRegimeDeep"),
+        // Tone follows the CHART'S OWN regime colours, so a chip and the panel
+        // it opens can never disagree: positive is the up colour, deep the
+        // down colour, and mild the amber that is neither.
+        tone: (epLatest.regime === "positive" ? "up"
+          : epLatest.regime === "deep" ? "down" : "neutral") as PreviewTone,
+      }
+    : null;
+  const fxLatest = rows.length ? rows[rows.length - 1] : null;
+  const fxState = fxLatest
+    ? {
+        label: t(locale, fxLatest.regime === "stable" ? "macroRegimeStable"
+          : fxLatest.regime === "leading" ? "macroRegimeLeading"
+            : fxLatest.regime === "compressed" ? "macroRegimeCompressed"
+              : "macroRegimeRelease"),
+        tone: (fxLatest.regime === "stable" ? "up"
+          : fxLatest.regime === "release" ? "down" : "neutral") as PreviewTone,
+      }
+    : null;
+
+  // Attached BY ID rather than inline in the array above, which is already a
+  // 200-line literal with a flag-gated entry spliced into the middle of it.
+  const previews: Record<string, MacroPreview | null> = {
+    interbank: pctPreview(ibRows, (r) => r.rate, 2),
+    bond: pctPreview(gbRows, (r) => r.yield10y, 2),
+    bank: pctPreview(brRows, (r) => r.deposit, 2),
+    margin: intPreview(mdRows, (r) => r.margin, null, t(locale, "mdUnit")),
+    external: pctPreview(epRows, (r) => r.spread, 2, epState),
+    exvic: buildPreview(
+      exRows,
+      (r) => r.pe,
+      (v) => `${formatNumber(v, 1)}\u00d7`,
+      (d) => `${d >= 0 ? "+" : MINUS}${formatNumber(Math.abs(d), 1)}`,
+    ),
+    foreign: intPreview(ffRows, (r) => r.cum20, null, t(locale, "ffBnVnd")),
+    // MATCHES THE PANEL'S OWN HEADLINE: `ir` is a fraction and the chart shows
+    // -ir x 100 (the "fear" reading), so the raw field rendered as a percent
+    // came out "\u22120,00%" for a panel reading +2,45%.
+    implied: pctPreview(irRows, (r) => (r.ir === null ? null : -r.ir * 100), 2),
+    fx: intPreview(rows, (r) => r.vcbSell, fxState),
+    cpi: pctPreview(cpiRows, (r) => r.yoy, 2),
+  };
+
+  const fciSection: MacroSection = sections[0];
+  const rest: MacroCard[] = sections
+    .slice(1)
+    .map((s) => ({ ...s, preview: previews[s.id] ?? null }));
+
   return (
     <div>
       {/* The verdict comes FIRST — before the header blurb and the chart index.
@@ -823,7 +963,13 @@ export default async function MacroPage() {
           below it becomes the evidence rather than the whole answer. */}
       {!error && fciRows.length >= 2 && <VerdictBand rows={fciRows} locale={locale} />}
       {header}
-      <MacroTabs sections={sections} />
+      {/* THE FCI STAYS FULL-WIDTH AND ALWAYS OPEN. It is the page's conclusion
+          and the other ten are its evidence; putting it in the grid behind a
+          click would bury the one chart the verdict band above is explaining. */}
+      <section aria-label={t(locale, "mcTitle")} className="mb-6">
+        {fciSection.content}
+      </section>
+      <MacroGrid cards={rest} locale={locale} />
     </div>
   );
 }
