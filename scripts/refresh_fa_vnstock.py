@@ -76,6 +76,8 @@ def main() -> int:
 
     t0 = time.time()
     n_rows = n_metrics = n_ok = n_empty = n_fail = 0
+    n_partial = 0          # symbols whose provider calls did not all answer
+    partial_syms: list[str] = []
     seen_metrics: dict[str, dict] = {}
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -83,11 +85,21 @@ def main() -> int:
         for i, fut in enumerate(as_completed(futures), 1):
             sym = futures[fut]
             try:
-                rows, metrics = fut.result()
+                rows, metrics, failed_calls = fut.result()
             except Exception as exc:
                 n_fail += 1
                 print(f"  [{i}/{len(symbols)}] {sym:<6} FAIL {type(exc).__name__}: {str(exc)[:70]}")
                 continue
+
+            # A SYMBOL WITH FAILED CALLS IS NOT A CLEAN SYMBOL, even when some
+            # of its statements came back. Left unreported, the run prints "ok"
+            # for a symbol that is missing a whole statement, and the hole only
+            # surfaces later as three blank cards on its Analysis page.
+            if failed_calls:
+                n_partial += 1
+                partial_syms.append(sym)
+                print(f"  [{i}/{len(symbols)}] {sym:<6} ::warning:: "
+                      f"{failed_calls} provider call(s) failed after retries")
 
             if not rows:
                 n_empty += 1
@@ -114,8 +126,15 @@ def main() -> int:
 
     verb = "would write" if args.dry_run else "wrote"
     print(f"\n{verb} {n_rows} statement rows, {n_metrics or len(seen_metrics)} metric labels")
-    print(f"  {n_ok} ok, {n_empty} with no statements, {n_fail} failed"
+    print(f"  {n_ok} ok, {n_empty} with no statements, {n_partial} partial, {n_fail} failed"
           f"  in {(time.time() - t0) / 60:.1f} min")
+
+
+    # The re-run list, printed so a partial pass is one copy-paste from being
+    # repaired rather than an audit of the database.
+    if partial_syms:
+        print(f"::warning:: {len(partial_syms)} symbol(s) had provider calls fail; re-run with:")
+        print(f"  python3 refresh_fa_vnstock.py --symbols {','.join(sorted(partial_syms))}")
     # A run where nothing landed is a failure, not a quiet success -- the same
     # rule the daily pipeline learned on 2026-08-18.
     if not args.dry_run and n_ok == 0:

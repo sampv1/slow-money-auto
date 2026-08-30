@@ -19,6 +19,7 @@ under 'Securities' against 79.
 from __future__ import annotations
 
 import math
+import time
 
 # Provider method name -> the `statement` value stored in the table.
 STATEMENTS = {
@@ -69,27 +70,52 @@ def _num(v):
     return f if math.isfinite(f) else None
 
 
-def fetch_symbol(symbol: str) -> tuple[list[dict], list[dict]]:
-    """(statement rows, metric-dictionary rows) for one symbol.
+# How many times one statement is asked for before its failure is accepted.
+# The provider is flaky per-call rather than per-symbol: on the first full pass
+# 625 of 1,734 symbols came back missing at least one of their eight
+# statement/period combinations, and re-fetching a sample got half of them on
+# the very next try (VNM's quarterly balance sheet -- 4,012 rows -- among them).
+_STATEMENT_ATTEMPTS = 3
+_RETRY_PAUSE_S = 1.5
 
-    Returns ([], []) rather than raising when the provider has nothing for the
+
+def fetch_symbol(symbol: str) -> tuple[list[dict], list[dict], int]:
+    """(statement rows, metric-dictionary rows, failed-call count) for one symbol.
+
+    Returns empty rows rather than raising when the provider has nothing for the
     symbol -- a company that has never filed is absence of data, not an error,
     and must not abort a 1,700-symbol run.
+
+    THE THIRD RETURN VALUE IS THE POINT. A statement that RAISED and one the
+    provider genuinely does not publish both used to end as "no rows", which
+    made a transient network failure indistinguishable from a company that
+    files no cash-flow statement -- and silently cost VNM charts 7, 8 and 9
+    while the run reported success. Only the caller can decide what to do about
+    that, so the count is handed up rather than swallowed here.
     """
     Fundamental, _ = _require_vnstock_data()
     eq = Fundamental().equity(symbol)
 
     rows: list[dict] = []
     metrics: dict[str, dict] = {}
+    failed_calls = 0
 
     for method, stmt in STATEMENTS.items():
         for ptype in PERIOD_TYPES:
-            try:
-                df = getattr(eq, method)(period=ptype)
-            except Exception:
-                # One statement missing (banks have no cash-flow detail under
-                # some taxonomies) must not cost the symbol its other three.
-                continue
+            df = None
+            for attempt in range(_STATEMENT_ATTEMPTS):
+                try:
+                    df = getattr(eq, method)(period=ptype)
+                    break
+                except Exception:
+                    # One statement missing (banks have no cash-flow detail
+                    # under some taxonomies) must not cost the symbol its other
+                    # three -- but nor should one flaky call be taken as proof
+                    # the statement does not exist.
+                    if attempt == _STATEMENT_ATTEMPTS - 1:
+                        failed_calls += 1
+                    else:
+                        time.sleep(_RETRY_PAUSE_S * (attempt + 1))
             if df is None or not len(df):
                 continue
             if not {"period", "id", "value"}.issubset(df.columns):
@@ -130,7 +156,7 @@ def fetch_symbol(symbol: str) -> tuple[list[dict], list[dict]]:
                     "items": items,
                 })
 
-    return rows, list(metrics.values())
+    return rows, list(metrics.values()), failed_calls
 
 
 def _int(v):
