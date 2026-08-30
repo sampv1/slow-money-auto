@@ -293,6 +293,7 @@ export const translations = {
     // Financial-statement chart (components/financial-chart.tsx)
     finTitle: "Financial charts",
     finMetric: "Metric",
+    finLayer: "Period basis",
     finQuarterly: "Quarterly",
     finTtm: "TTM",
     finAnnual: "Annual",
@@ -1177,6 +1178,7 @@ export const translations = {
     // Financial-statement chart (components/financial-chart.tsx)
     finTitle: "Biểu đồ tài chính",
     finMetric: "Chỉ tiêu",
+    finLayer: "Kỳ dữ liệu",
     finQuarterly: "Quý",
     finTtm: "TTM",
     finAnnual: "Năm",
@@ -1193,7 +1195,7 @@ export const translations = {
     finUnitTimes: "lần",
     finUnitPerShare: "Đồng / cổ phiếu",
     finMore: "Các biểu đồ khác đang được bổ sung.",
-    finSpanYearSuffix: " năm",
+    finSpanYearSuffix: "N",
     finSlotTodo: "Chưa định nghĩa",
     finUpdated: "Dữ liệu đến",
     chartIndicatorsHint: "Tìm và bật/tắt những gì biểu đồ vẽ",

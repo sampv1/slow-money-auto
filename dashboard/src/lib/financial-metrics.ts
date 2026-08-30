@@ -765,13 +765,13 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
     // BALANCE-SHEET CHARTS ARE QUARTERLY ONLY, per the specification.
     layers: ["quarter"],
     series: [
-      bsStack("cash", "Cash & equivalents", "Tiền và tương đương tiền", [BS.cash], C[0]),
+      bsStack("cash", "Cash & equivalents", "Tiền và tương đương", [BS.cash], C[0]),
       bsStack("stInvest", "Short-term investments", "Đầu tư TC ngắn hạn", [BS.stInvest], C[1]),
       bsStack("ltInvest", "Long-term investments", "Đầu tư TC dài hạn", [BS.ltInvest], C[2]),
       bsStack("receivables", "Receivables", "Các khoản phải thu", [BS.stRecv, BS.ltRecv], C[3]),
       bsStack("inventories", "Inventories", "Tồn kho", [BS.inventories], C[4]),
       bsStack("fixed", "Fixed assets", "Tài sản cố định", [BS.fixed], C[5]),
-      bsStack("cip", "Construction in progress", "Tài sản dở dang dài hạn", [BS.cip], C[6]),
+      bsStack("cip", "Construction in progress", "TS dở dang dài hạn", [BS.cip], C[6]),
       {
         key: "otherAssets",
         label_en: "Other",
@@ -810,8 +810,8 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
     series: [
       bsStack("stBorrow", "Short-term borrowings", "Vay ngắn hạn", [BS.stBorrow], C[0]),
       bsStack("payables", "Trade payables", "Phải trả người bán", [BS.payables], C[1]),
-      bsStack("advances", "Customer advances", "Người mua trả tiền trước", [BS.advancesST, BS.advancesLT], C[2]),
-      bsStack("unearned", "Unearned revenue", "Doanh thu chưa thực hiện", [BS.unearnedST, BS.unearnedLT], C[3]),
+      bsStack("advances", "Customer advances", "Người mua trả trước", [BS.advancesST, BS.advancesLT], C[2]),
+      bsStack("unearned", "Unearned revenue", "DT chưa thực hiện", [BS.unearnedST, BS.unearnedLT], C[3]),
       bsStack("ltBorrow", "Long-term borrowings", "Vay dài hạn", [BS.ltBorrow], C[4]),
       bsStack("equity", "Equity", "Vốn chủ sở hữu", [BS.equity], C[5]),
       {
@@ -847,10 +847,10 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
     unit: "vnd",
     layers: ["quarter"],
     series: [
-      bsStack("advST", "Advances, short-term", "Trả tiền trước ngắn hạn", [BS.advancesST], C[0]),
-      bsStack("advLT", "Advances, long-term", "Trả tiền trước dài hạn", [BS.advancesLT], C[1]),
-      bsStack("unST", "Unearned revenue, short-term", "DT chưa thực hiện ngắn hạn", [BS.unearnedST], C[2]),
-      bsStack("unLT", "Unearned revenue, long-term", "DT chưa thực hiện dài hạn", [BS.unearnedLT], C[3]),
+      bsStack("advST", "Advances, short-term", "Trả trước ngắn hạn", [BS.advancesST], C[0]),
+      bsStack("advLT", "Advances, long-term", "Trả trước dài hạn", [BS.advancesLT], C[1]),
+      bsStack("unST", "Unearned revenue, short-term", "DT chưa thực hiện NH", [BS.unearnedST], C[2]),
+      bsStack("unLT", "Unearned revenue, long-term", "DT chưa thực hiện DH", [BS.unearnedLT], C[3]),
     ],
   },
 ];

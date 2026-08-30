@@ -139,7 +139,16 @@ function niceFloor(v: number): number {
  *  Carries the plot's left/width too, so render never reads the measurement
  *  ref — React 19 forbids touching a ref during render, and the geometry is
  *  already known at the moment the pointer moved. */
-type Cross = { y: number; value: number; left: number; w: number } | null;
+type Cross = {
+  y: number;
+  value: number;
+  left: number;
+  top: number;
+  w: number;
+  h: number;
+  /** Index of the band under the pointer — what the axis pill names. */
+  index: number;
+} | null;
 
 /** One x-position, flattened for recharts. */
 type ChartRow = { period: string; total: number | null } & Record<string, number | string | null>;
@@ -263,6 +272,8 @@ export function FinancialChart({
     return shares[Math.floor(shares.length / 2)];
   }, [data, spec.residualKey, spec.total]);
 
+  const dataLen = data.length;
+
   const measurePlot = useCallback(() => {
     const wrap = wrapRef.current;
     if (!wrap) return null;
@@ -290,9 +301,14 @@ export function FinancialChart({
       // Pixels grow downward, values upward — hence the inversion.
       const frac = (y - p.top) / p.h;
       const value = domain[1] - frac * (domain[1] - domain[0]);
-      setCross({ y, value, left: p.left, w: p.w });
+      // The band under the pointer, computed the way a band scale lays them
+      // out — so the pill lands on the same category recharts' own cursor
+      // snapped to, rather than a pixel or two off it.
+      const n = Math.max(1, dataLen);
+      const index = Math.min(n - 1, Math.max(0, Math.floor(((x - p.left) / p.w) * n)));
+      setCross({ y, value, left: p.left, top: p.top, w: p.w, h: p.h, index });
     },
-    [domain, measurePlot],
+    [domain, measurePlot, dataLen],
   );
 
   const onLeave = useCallback(() => {
@@ -353,23 +369,25 @@ export function FinancialChart({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 mb-2">
+      {/* ONE control row, following the reference terminal's header: the layer
+          is a dropdown rather than a segmented strip, which is what makes the
+          two controls fit on a single line at a 220px card. The pair used to
+          wrap onto two rows and spend ~24px of a ~300px card on chrome —
+          height this plot can put to better use. */}
+      <div className="flex items-center gap-1.5 mb-2">
         {spec.layers.length > 1 && (
-          <div className="inline-flex rounded-sm border border-line overflow-hidden" role="group">
+          <select
+            value={layer}
+            onChange={(e) => setLayer(e.target.value as Layer)}
+            aria-label={t(locale, "finLayer")}
+            className="h-6 pl-1.5 pr-0.5 text-data text-fg bg-panel border border-line rounded-sm cursor-pointer hover:bg-panel-2 transition-colors"
+          >
             {spec.layers.map((l) => (
-              <button
-                key={l}
-                type="button"
-                onClick={() => setLayer(l)}
-                aria-pressed={layer === l}
-                className={`h-6 px-2 text-data cursor-pointer transition-colors ${
-                  layer === l ? "bg-fg text-canvas" : "bg-transparent text-fg-muted hover:bg-panel-2"
-                }`}
-              >
+              <option key={l} value={l}>
                 {t(locale, layerKey(l))}
-              </button>
+              </option>
             ))}
-          </div>
+          </select>
         )}
         <div className="inline-flex rounded-sm border border-line overflow-hidden ml-auto" role="group">
           {SPAN_YEARS.map((y) => (
@@ -390,7 +408,13 @@ export function FinancialChart({
 
       <div ref={wrapRef} className="h-40 relative" onMouseMove={onMove} onMouseLeave={onLeave}>
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 6, right: 4, bottom: 2, left: 0 }}>
+          <ComposedChart
+              data={data}
+              margin={{ top: 6, right: 4, bottom: 2, left: 0 }}
+              // Thin marks with real gaps between them, which is what lets a
+              // reader see individual periods rather than a solid block.
+              barCategoryGap="22%"
+            >
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_LITERAL.grid} vertical={false} />
             <XAxis
               dataKey="period"
@@ -426,7 +450,12 @@ export function FinancialChart({
               // The vertical half of the crosshair: recharts already snaps this
               // to the hovered category, which is more useful on a bar chart
               // than a free-floating line between two bars.
-              cursor={{ stroke: CHART_LITERAL.label, strokeWidth: 1, strokeDasharray: "3 3" }}
+              cursor={{ stroke: CHART_LITERAL.label, strokeWidth: 1, strokeDasharray: "4 2 1 2" }}
+              // Keep the box inside the plot: at this card width the tooltip is
+              // nearly as wide as the chart, so without this it hangs over the
+              // neighbouring card — and off the section in the last column.
+              allowEscapeViewBox={{ x: false, y: false }}
+              offset={8}
               // THE ELEMENT FORM, not a render prop: recharts clones it and
               // injects `active` / `label` / `payload`, which is the documented
               // path for a custom tooltip.
@@ -445,7 +474,7 @@ export function FinancialChart({
                   dataKey={s.key}
                   stackId={s.stack}
                   fill={s.color}
-                  maxBarSize={26}
+                  maxBarSize={18}
                   // A 1px surface-coloured rule between stacked segments, so
                   // adjacent fills read as two marks rather than one gradient.
                   stroke={s.stack ? CHART_LITERAL.panel : undefined}
@@ -461,7 +490,7 @@ export function FinancialChart({
                   yAxisId="growth"
                   dataKey={s.key}
                   fill={s.color}
-                  maxBarSize={26}
+                  maxBarSize={18}
                   isAnimationActive={false}
                 />
               ))}
@@ -501,18 +530,40 @@ export function FinancialChart({
                 borderColor: CHART_LITERAL.label,
               }}
             />
+            {/* The value under the pointer, as a pill on the value axis. */}
             <div
-              className="absolute font-mono tabular-nums px-1 leading-none"
+              className="absolute font-mono tabular-nums px-1 leading-none rounded-sm"
               style={{
                 left: 0,
                 top: cross.y - 6,
                 fontSize: 9,
-                background: CHART_LITERAL.panel,
-                color: CHART_LITERAL.text,
-                border: `1px solid ${CHART_LITERAL.axis}`,
+                background: CHART_LITERAL.text,
+                color: CHART_LITERAL.panel,
               }}
             >
               {formatUnit(cross.value, spec.unit, axisDigits)}
+            </div>
+            {/* THE HOVERED PERIOD, AS A PILL ON THE X AXIS. The tooltip names
+                the period too, but it floats near the pointer and moves; the
+                pill stays on the axis where the reader is already looking to
+                place a bar in time, and it survives the tooltip being read for
+                its numbers rather than its date. */}
+            <div
+              className="absolute font-mono tabular-nums px-1 leading-none rounded-sm whitespace-nowrap"
+              style={{
+                left: cross.left + ((cross.index + 0.5) / Math.max(1, data.length)) * cross.w,
+                top: cross.top + cross.h + 3,
+                transform: "translateX(-50%)",
+                fontSize: 9,
+                paddingTop: 2,
+                paddingBottom: 2,
+                background: CHART_LITERAL.text,
+                color: CHART_LITERAL.panel,
+              }}
+            >
+              {layer === "year"
+                ? String(data[cross.index]?.period ?? "")
+                : shortPeriod(String(data[cross.index]?.period ?? ""))}
             </div>
           </div>
         )}
@@ -526,7 +577,9 @@ export function FinancialChart({
           {live.map((s) => (
             <span key={s.key} className="inline-flex items-center gap-1 min-w-0">
               <span
-                className={`inline-block shrink-0 ${s.kind === "bar" ? "w-2.5 h-2" : "w-2.5 h-0.5"}`}
+                className={`inline-block shrink-0 ${
+                  s.kind === "bar" ? "w-2 h-2 rounded-[1px]" : "w-2.5 h-0.5"
+                }`}
                 style={{ background: s.color }}
               />
               <span className="truncate">{nameOf(s)}</span>
@@ -628,29 +681,37 @@ function FinTooltip({
 
   return (
     <div
-      className="font-mono tabular-nums"
+      className="font-mono tabular-nums rounded-sm shadow-sm"
       style={{
         background: CHART_LITERAL.panel,
         border: `1px solid ${CHART_LITERAL.axis}`,
         color: CHART_LITERAL.text,
-        fontSize: 11,
+        fontSize: 10,
         padding: "4px 6px",
-        lineHeight: 1.5,
+        lineHeight: 1.45,
+        // CAPPED TO THE CARD. Uncapped, an eight-row stack with Vietnamese
+        // labels measured 234-261px inside a 220px card and spilled onto its
+        // neighbour — and off the section entirely in the rightmost column.
+        // The labels WRAP inside the cap rather than truncate: a tooltip that
+        // hides half of "Tài sản dở dang dài hạn" is not worth opening.
+        maxWidth: 176,
       }}
     >
-      <div className="font-semibold mb-0.5">{period}</div>
+      <div className="font-semibold mb-0.5" style={{ color: CHART_LITERAL.label }}>
+        {period}
+      </div>
       {series.map((sr) => {
         const v = row[sr.key];
         return (
-          <div key={sr.key} className="flex items-center gap-1.5 whitespace-nowrap">
+          <div key={sr.key} className="flex items-start gap-1.5">
             <span
-              className="inline-block shrink-0"
-              style={{ width: 8, height: sr.kind === "bar" ? 8 : 2, background: sr.color }}
+              className="inline-block shrink-0 rounded-full mt-[3px]"
+              style={{ width: 6, height: 6, background: sr.color }}
             />
-            <span style={{ color: CHART_LITERAL.label }}>
+            <span className="min-w-0" style={{ color: CHART_LITERAL.label }}>
               {locale === "vi" ? sr.label_vi : sr.label_en}
             </span>
-            <span className="ml-auto pl-2 font-semibold">
+            <span className="ml-auto pl-1.5 font-semibold whitespace-nowrap">
               {typeof v === "number" ? formatUnit(v, sr.unit ?? spec.unit) : "—"}
             </span>
           </div>
@@ -658,12 +719,12 @@ function FinTooltip({
       })}
       {spec.total && (
         <div
-          className="flex items-center gap-1.5 whitespace-nowrap mt-0.5 pt-0.5 font-semibold"
+          className="flex items-start gap-1.5 mt-0.5 pt-0.5 font-semibold"
           style={{ borderTop: `1px solid ${CHART_LITERAL.axis}` }}
         >
-          <span style={{ width: 8 }} aria-hidden />
+          <span className="shrink-0" style={{ width: 6 }} aria-hidden />
           <span>{locale === "vi" ? spec.total.label_vi : spec.total.label_en}</span>
-          <span className="ml-auto pl-2">
+          <span className="ml-auto pl-1.5 whitespace-nowrap">
             {total !== null ? formatUnit(total, spec.unit) : "—"}
           </span>
         </div>
