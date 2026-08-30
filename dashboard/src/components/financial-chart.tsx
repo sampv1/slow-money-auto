@@ -123,11 +123,23 @@ function axisDecimals(unit: Unit, span: number): number | undefined {
  * EXPLICIT for the crosshair to convert a pixel back to a value, so it is
  * rounded here rather than handed to recharts' "auto".
  */
+/**
+ * Steps the axis maximum can take, as multiples of the value's magnitude.
+ *
+ * The set used to be 1 / 2 / 2.5 / 5 / 10, which wastes up to half the plot:
+ * anything just over 5×mag rounds all the way to 10×. That is invisible until
+ * a series is switched off — hiding FPT's short-term investments drops the
+ * asset stack from 88.142 to ~58.500 and the axis stayed pinned at 100.000, so
+ * the chart the reader asked to see used 58% of its own height. The extra
+ * steps are all still round numbers, so the ticks stay readable.
+ */
+const AXIS_STEPS = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+
 function niceCeil(v: number): number {
   if (v <= 0) return 0;
   const mag = Math.pow(10, Math.floor(Math.log10(v)));
   const norm = v / mag;
-  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10;
+  const step = AXIS_STEPS.find((x) => norm <= x) ?? 10;
   return step * mag;
 }
 
@@ -189,6 +201,15 @@ export function FinancialChart({
       (initialLayer === "year" ? DEFAULT_SPAN_YEARS : QUARTER_ONLY_SPAN_YEARS),
   );
   const [cross, setCross] = useState<Cross>(null);
+  /**
+   * Series the reader has switched off from the legend.
+   *
+   * Kept as KEYS rather than indices so it survives a layer change, where a
+   * series can drop out for want of data and the list shortens under it. It
+   * also survives zooming, because the card keeps its React key when the grid
+   * collapses to one child.
+   */
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
 
   const wrapRef = useRef<HTMLDivElement>(null);
   // The plot rectangle, measured from the rendered grid rather than derived
@@ -222,8 +243,33 @@ export function FinancialChart({
     [spec.series, data],
   );
 
-  const valueSeries = live.filter((s) => s.axis === "value");
-  const growthSeries = live.filter((s) => s.axis === "growth");
+  // What is actually drawn. Everything downstream — axes, domains, marks and
+  // the readout — works from this, so hiding a series RESCALES the chart rather
+  // than just blanking a mark. That is the point of the control: a stack whose
+  // largest segment is switched off should let the reader see the rest.
+  const visible = useMemo(() => live.filter((s) => !hidden.has(s.key)), [live, hidden]);
+
+  const toggleSeries = useCallback(
+    (key: string) => {
+      setHidden((cur) => {
+        const next = new Set(cur);
+        if (next.has(key)) {
+          next.delete(key);
+          return next;
+        }
+        // NEVER HIDE THE LAST ONE. An empty plot with live axes reads as a
+        // broken chart rather than as a choice the reader made, and the way out
+        // of it is not obvious.
+        if (live.filter((s) => !next.has(s.key)).length <= 1) return cur;
+        next.add(key);
+        return next;
+      });
+    },
+    [live],
+  );
+
+  const valueSeries = visible.filter((s) => s.axis === "value");
+  const growthSeries = visible.filter((s) => s.axis === "growth");
   const hasGrowthAxis = growthSeries.length > 0;
 
   // Stacked bars are summed for the domain; grouped bars and lines are not.
@@ -350,7 +396,10 @@ export function FinancialChart({
   // stacked balance-sheet card the first series is one component of many, and
   // "Tài sản 8.843" (the cash line) directly contradicts the card's own title.
   // A spec carrying a reconciliation total headlines that.
-  const headline = spec.headline ? (live.find((s) => s.key === spec.headline) ?? live[0]) : live[0];
+  const headline =
+    (spec.headline ? visible.find((s) => s.key === spec.headline) : undefined) ??
+    visible[0] ??
+    live[0];
   const totalValue = typeof last.total === "number" ? last.total : null;
   const useTotal = !!spec.total && totalValue !== null;
   const headlineValue = useTotal
@@ -480,7 +529,7 @@ export function FinancialChart({
                 <FinTooltip
                   rows={data}
                   spec={spec}
-                  series={live}
+                  series={visible}
                   layer={layer}
                   locale={locale}
                   focusValue={cross?.value ?? null}
@@ -523,7 +572,7 @@ export function FinancialChart({
                   isAnimationActive={false}
                 />
               ))}
-            {live
+            {visible
               .filter((s) => s.kind === "line")
               .map((s) => (
                 <Line
@@ -600,20 +649,51 @@ export function FinancialChart({
 
       {/* A legend is PRESENT WHENEVER THERE IS MORE THAN ONE SERIES, so identity
           is never carried by colour alone. One series needs none — the card
-          title already names it. */}
+          title already names it.
+
+          EACH ENTRY IS A SWITCH. On the decomposition cards one segment often
+          dwarfs the rest — core operations is 84% of FPT's pre-tax profit, and
+          short-term investments 40% of its assets — so the others are drawn a
+          few pixels tall and cannot be read at all. Switching the big one off
+          rescales the axis onto what is left, which is the only way to see
+          those series in a 250px card.
+
+          A hidden entry keeps its COLOUR SWATCH hollow rather than dropping it:
+          the swatch is how the reader knows which series they are turning back
+          on, so it has to stay legible while off. */}
       {live.length > 1 && (
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1.5 text-label text-fg-label">
-          {live.map((s) => (
-            <span key={s.key} className="inline-flex items-center gap-1 min-w-0">
-              <span
-                className={`inline-block shrink-0 ${
-                  s.kind === "bar" ? "w-2 h-2 rounded-[1px]" : "w-2.5 h-0.5"
-                }`}
-                style={{ background: s.color }}
-              />
-              <span className="truncate">{nameOf(s)}</span>
-            </span>
-          ))}
+          {live.map((s) => {
+            const off = hidden.has(s.key);
+            const last = !off && visible.length <= 1;
+            return (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => toggleSeries(s.key)}
+                aria-pressed={!off}
+                aria-disabled={last}
+                title={t(locale, off ? "finSeriesShow" : last ? "finSeriesLast" : "finSeriesHide")}
+                className={`inline-flex items-center gap-1 min-w-0 rounded-sm px-0.5 -mx-0.5 transition-colors ${
+                  last ? "cursor-default" : "cursor-pointer hover:bg-panel-2"
+                } ${off ? "text-fg-faint" : "text-fg-label"}`}
+              >
+                <span
+                  className={`inline-block shrink-0 ${
+                    s.kind === "bar" ? "w-2 h-2 rounded-[1px]" : "w-2.5 h-0.5"
+                  }`}
+                  style={
+                    off
+                      ? { background: "transparent", boxShadow: `inset 0 0 0 1px ${s.color}` }
+                      : { background: s.color }
+                  }
+                />
+                <span className={`truncate ${off ? "line-through decoration-1" : ""}`}>
+                  {nameOf(s)}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
       {live.length <= 1 && <div className="mt-1.5 h-[14px]" aria-hidden />}
