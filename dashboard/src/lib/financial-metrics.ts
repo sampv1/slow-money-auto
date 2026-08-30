@@ -373,6 +373,21 @@ export type ChartSpec = {
   /** Offered layers, in the order the toggle shows them. */
   layers: Layer[];
   /**
+   * Which layer the card opens on. Defaults to the widest it offers, which is
+   * right for the trend cards and WRONG for valuation: annual's newest point is
+   * the last completed YEAR-END, so card 6 opened on FPT's 31/12/2025 P/E of
+   * 13,6× while the live figure was 12,4× — and the live one is only reachable
+   * by changing the layer, which is not where a reader looks for "what is it
+   * trading at". A valuation chart is a question about the present.
+   */
+  defaultLayer?: Layer;
+  /**
+   * True where the newest point is priced off the latest close rather than the
+   * period's own. The readout says so, because "Q2/26 · P/E 12,4×" otherwise
+   * implies a 30/06 price when the number is marked to 26/08.
+   */
+  livePriced?: boolean;
+  /**
    * Which series the card states in full above the plot. Defaults to the first,
    * which is wrong wherever the first series is not what the title names: card 2
    * is "Lợi nhuận sau thuế" and led with GROSS profit, cards 7 and 8 are "Tài
@@ -707,6 +722,8 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
     caption_en: "times · %",
     caption_vi: "Lần · %",
     layers: ["ttm", "year"],
+    defaultLayer: "ttm",
+    livePriced: true,
     series: [
       {
         key: "pe",

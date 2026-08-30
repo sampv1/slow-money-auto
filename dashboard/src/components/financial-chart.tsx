@@ -161,26 +161,32 @@ export function FinancialChart({
   rows,
   locale,
   latestClose,
+  latestCloseDate = null,
   zoomed = false,
 }: {
   spec: ChartSpec;
   rows: VnstockStatementRow[];
   locale: Locale;
   latestClose: number | null;
+  /** Date of `latestClose`, shown on the live point so the price is not a guess. */
+  latestCloseDate?: string | null;
   /** Filling the section on its own, rather than one of nine in the grid. */
   zoomed?: boolean;
 }) {
   // The widest layer the chart offers is the one it opens on: annual where it
   // exists, then TTM (smoother than raw quarters), then quarters.
-  const initialLayer: Layer = spec.layers.includes("year")
-    ? "year"
-    : spec.layers.includes("ttm")
-      ? "ttm"
-      : "quarter";
+  const initialLayer: Layer =
+    spec.defaultLayer && spec.layers.includes(spec.defaultLayer)
+      ? spec.defaultLayer
+      : spec.layers.includes("year")
+        ? "year"
+        : spec.layers.includes("ttm")
+          ? "ttm"
+          : "quarter";
   const [layer, setLayer] = useState<Layer>(initialLayer);
   const [spanY, setSpanY] = useState<number>(
     spec.defaultSpanYears ??
-      (spec.layers.includes("year") ? DEFAULT_SPAN_YEARS : QUARTER_ONLY_SPAN_YEARS),
+      (initialLayer === "year" ? DEFAULT_SPAN_YEARS : QUARTER_ONLY_SPAN_YEARS),
   );
   const [cross, setCross] = useState<Cross>(null);
 
@@ -479,6 +485,10 @@ export function FinancialChart({
                   locale={locale}
                   focusValue={cross?.value ?? null}
                   zoomed={zoomed}
+                  livePriceDate={
+                    spec.livePriced && layer !== "year" ? latestCloseDate : null
+                  }
+                  latestPeriod={data.length ? String(data[data.length - 1].period) : null}
                 />
               }
             />
@@ -707,6 +717,8 @@ function FinTooltip({
   locale,
   focusValue,
   zoomed = false,
+  livePriceDate = null,
+  latestPeriod = null,
 }: {
   /** Injected by recharts when it clones this element. */
   active?: boolean;
@@ -719,6 +731,9 @@ function FinTooltip({
   /** Value under the pointer on the left axis; null when it is not over the plot. */
   focusValue: number | null;
   zoomed?: boolean;
+  /** Set only where the newest point is marked to this close. */
+  livePriceDate?: string | null;
+  latestPeriod?: string | null;
 }) {
   const row = rows.find((r) => r.period === label) ?? null;
   if (!active || !row) return null;
@@ -759,6 +774,9 @@ function FinTooltip({
     >
       <div className="font-semibold mb-0.5" style={{ color: CHART_LITERAL.label }}>
         {period}
+        {livePriceDate && latestPeriod === row.period && (
+          <span className="font-normal"> · {t(locale, "finAtPrice")} {shortDate(livePriceDate)}</span>
+        )}
       </div>
       {shown.map((sr) => {
         const v = num(sr.key);
@@ -841,4 +859,10 @@ function pickFocused(
     }
   }
   return { series: best, outsideStack: false };
+}
+
+/** '2026-08-26' -> '26/08', the form Vietnamese dates are read in. */
+function shortDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}/${m[2]}` : iso;
 }

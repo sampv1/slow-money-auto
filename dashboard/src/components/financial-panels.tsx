@@ -91,11 +91,14 @@ export function FinancialPanels({
   rows,
   locale,
   latestClose = null,
+  latestCloseDate = null,
 }: {
   rows: VnstockStatementRow[];
   locale: Locale;
   /** Newest traded close, for the live P/E and P/B on chart 6. */
   latestClose?: number | null;
+  /** Its date, so the live point can name the price behind it. */
+  latestCloseDate?: string | null;
 }) {
   const [zoomedId, setZoomedId] = useState<string | null>(null);
 
@@ -160,6 +163,7 @@ export function FinancialPanels({
                 rows={rows}
                 locale={locale}
                 latestClose={latestClose}
+                latestCloseDate={latestCloseDate}
                 zoomed={isZoomed}
               />
             </Card>

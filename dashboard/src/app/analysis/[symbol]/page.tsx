@@ -242,6 +242,7 @@ export default async function SymbolDrillDown({
                    prices itself off today rather than off whatever price
                    the provider last stamped onto the statement. */
                 latestClose={candles.at(-1)?.close ?? null}
+                latestCloseDate={candles.at(-1)?.date ?? null}
               />
             </section>
           )}
