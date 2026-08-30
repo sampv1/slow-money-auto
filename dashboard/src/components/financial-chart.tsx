@@ -460,7 +460,14 @@ export function FinancialChart({
               // injects `active` / `label` / `payload`, which is the documented
               // path for a custom tooltip.
               content={
-                <FinTooltip rows={data} spec={spec} series={live} layer={layer} locale={locale} />
+                <FinTooltip
+                  rows={data}
+                  spec={spec}
+                  series={live}
+                  layer={layer}
+                  locale={locale}
+                  focusValue={cross?.value ?? null}
+                />
               }
             />
 
@@ -656,6 +663,28 @@ function unitCaption(unit: Unit, locale: Locale): string {
  * whose value is null at this period still gets a row (an em dash) instead of
  * silently vanishing — absent is a fact about the filing, not about the chart.
  */
+/**
+ * The hover readout — ONE SERIES, the one under the pointer.
+ *
+ * It used to list every series plus the total, which on the decomposition
+ * cards is nine rows and, at this card size, a box that covers most of the
+ * plot it is annotating. Enlarging the card is not available and shrinking the
+ * type only goes so far; the reference terminal solves it by naming the mark
+ * you are pointing AT, which is one row whatever the chart holds.
+ *
+ * WHICH mark that is comes from the pointer's own value: for a stack, the
+ * segment whose cumulative band contains it; otherwise the nearest series by
+ * value. Positive and negative stack members accumulate separately, since they
+ * grow the bar in opposite directions from the baseline.
+ *
+ * Second-axis series are ALWAYS shown, never focused. They are on a different
+ * scale, so the pointer's value cannot be compared with them — and the growth
+ * reading is the one number a reader wants alongside whatever they picked.
+ *
+ * Reads from the FLATTENED ROW rather than recharts' payload, so a series that
+ * is null here still gets a row (an em dash) instead of silently vanishing —
+ * absent is a fact about the filing, not about the chart.
+ */
 function FinTooltip({
   active,
   label,
@@ -664,6 +693,7 @@ function FinTooltip({
   series,
   layer,
   locale,
+  focusValue,
 }: {
   /** Injected by recharts when it clones this element. */
   active?: boolean;
@@ -673,11 +703,28 @@ function FinTooltip({
   series: SeriesSpec[];
   layer: Layer;
   locale: Locale;
+  /** Value under the pointer on the left axis; null when it is not over the plot. */
+  focusValue: number | null;
 }) {
   const row = rows.find((r) => r.period === label) ?? null;
   if (!active || !row) return null;
   const period = layer === "year" ? String(label) : shortPeriod(String(label));
   const total = typeof row.total === "number" ? row.total : null;
+
+  const num = (k: string) => (typeof row[k] === "number" ? (row[k] as number) : null);
+  const onValueAxis = series.filter((sr) => sr.axis === "value");
+  const secondAxis = series.filter((sr) => sr.axis !== "value");
+
+  const { series: focused, outsideStack } = pickFocused(onValueAxis, num, focusValue);
+  // Pointing ABOVE the stack is not pointing at any segment, so name none —
+  // the total is the only honest reading there, and it is already its own row
+  // below. Highlighting the largest segment instead (the old nearest-by-value
+  // fallback) put a dot beside a bar the pointer was nowhere near.
+  const shown = outsideStack
+    ? secondAxis
+    : focused
+      ? [focused, ...secondAxis]
+      : [...onValueAxis, ...secondAxis];
 
   return (
     <div
@@ -689,19 +736,18 @@ function FinTooltip({
         fontSize: 10,
         padding: "4px 6px",
         lineHeight: 1.45,
-        // CAPPED TO THE CARD. Uncapped, an eight-row stack with Vietnamese
-        // labels measured 234-261px inside a 220px card and spilled onto its
-        // neighbour — and off the section entirely in the rightmost column.
-        // The labels WRAP inside the cap rather than truncate: a tooltip that
-        // hides half of "Tài sản dở dang dài hạn" is not worth opening.
+        // Capped to the card: uncapped it measured up to 261px inside a 220px
+        // card and hung over its neighbour. Labels WRAP inside the cap rather
+        // than truncate — a readout hiding half of "Tài sản dở dang dài hạn"
+        // is not worth opening.
         maxWidth: 176,
       }}
     >
       <div className="font-semibold mb-0.5" style={{ color: CHART_LITERAL.label }}>
         {period}
       </div>
-      {series.map((sr) => {
-        const v = row[sr.key];
+      {shown.map((sr) => {
+        const v = num(sr.key);
         return (
           <div key={sr.key} className="flex items-start gap-1.5">
             <span
@@ -712,7 +758,7 @@ function FinTooltip({
               {locale === "vi" ? sr.label_vi : sr.label_en}
             </span>
             <span className="ml-auto pl-1.5 font-semibold whitespace-nowrap">
-              {typeof v === "number" ? formatUnit(v, sr.unit ?? spec.unit) : "—"}
+              {v !== null ? formatUnit(v, sr.unit ?? spec.unit) : "—"}
             </span>
           </div>
         );
@@ -731,4 +777,54 @@ function FinTooltip({
       )}
     </div>
   );
+}
+
+/**
+ * The mark under the pointer.
+ *
+ * `outsideStack` distinguishes "the pointer is past the top of the bar" from
+ * "there is nothing to choose from" — on a stacked card those want opposite
+ * answers, and collapsing them made the tooltip name a segment the pointer had
+ * cleared by thousands of tỷ.
+ */
+function pickFocused(
+  candidates: SeriesSpec[],
+  num: (k: string) => number | null,
+  focusValue: number | null,
+): { series: SeriesSpec | null; outsideStack: boolean } {
+  const live = candidates.filter((sr) => num(sr.key) !== null);
+  if (live.length === 0) return { series: null, outsideStack: false };
+  if (live.length === 1) return { series: live[0], outsideStack: false };
+  if (focusValue === null) return { series: null, outsideStack: false };
+
+  const stacked = live.filter((sr) => sr.stack);
+  if (stacked.length > 0) {
+    // Walk the stack in draw order, accumulating each sign away from zero, and
+    // return the segment whose band the pointer falls inside.
+    let up = 0;
+    let down = 0;
+    for (const sr of stacked) {
+      const v = num(sr.key)!;
+      if (v >= 0) {
+        if (focusValue >= up && focusValue <= up + v) return { series: sr, outsideStack: false };
+        up += v;
+      } else {
+        if (focusValue <= down && focusValue >= down + v) return { series: sr, outsideStack: false };
+        down += v;
+      }
+    }
+    return { series: null, outsideStack: true };
+  }
+
+  // Grouped bars and lines: the nearest series by value.
+  let best = live[0];
+  let bestGap = Math.abs(num(best.key)! - focusValue);
+  for (const sr of live.slice(1)) {
+    const gap = Math.abs(num(sr.key)! - focusValue);
+    if (gap < bestGap) {
+      best = sr;
+      bestGap = gap;
+    }
+  }
+  return { series: best, outsideStack: false };
 }
