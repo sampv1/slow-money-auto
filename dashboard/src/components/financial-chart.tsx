@@ -161,11 +161,14 @@ export function FinancialChart({
   rows,
   locale,
   latestClose,
+  zoomed = false,
 }: {
   spec: ChartSpec;
   rows: VnstockStatementRow[];
   locale: Locale;
   latestClose: number | null;
+  /** Filling the section on its own, rather than one of nine in the grid. */
+  zoomed?: boolean;
 }) {
   // The widest layer the chart offers is the one it opens on: annual where it
   // exists, then TTM (smoother than raw quarters), then quarters.
@@ -406,7 +409,15 @@ export function FinancialChart({
         </div>
       </div>
 
-      <div ref={wrapRef} className="h-40 relative" onMouseMove={onMove} onMouseLeave={onLeave}>
+      {/* Clamped rather than a bare vh: on a short laptop 52vh is under 300px
+          and the zoom buys nothing, while on a tall monitor it would run past
+          the fold and put the legend off screen. */}
+      <div
+        ref={wrapRef}
+        className={`relative ${zoomed ? "h-[clamp(320px,52vh,560px)]" : "h-40"}`}
+        onMouseMove={onMove}
+        onMouseLeave={onLeave}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
               data={data}
@@ -419,15 +430,15 @@ export function FinancialChart({
             <XAxis
               dataKey="period"
               tickFormatter={(v: string) => (layer === "year" ? v : shortPeriod(v))}
-              tick={{ fontSize: 9, fill: CHART_LITERAL.label }}
+              tick={{ fontSize: zoomed ? 11 : 9, fill: CHART_LITERAL.label }}
               stroke={CHART_LITERAL.axis}
               interval="preserveStartEnd"
-              minTickGap={14}
+              minTickGap={zoomed ? 24 : 14}
             />
             <YAxis
               yAxisId="value"
               domain={domain}
-              tick={{ fontSize: 9, fill: CHART_LITERAL.label }}
+              tick={{ fontSize: zoomed ? 11 : 9, fill: CHART_LITERAL.label }}
               stroke={CHART_LITERAL.axis}
               width={axisWidth}
               tickFormatter={(v: number) => formatUnit(v, spec.unit, axisDigits)}
@@ -437,7 +448,7 @@ export function FinancialChart({
                 yAxisId="growth"
                 orientation="right"
                 domain={growthDomain}
-                tick={{ fontSize: 9, fill: CHART_LITERAL.label }}
+                tick={{ fontSize: zoomed ? 11 : 9, fill: CHART_LITERAL.label }}
                 stroke={CHART_LITERAL.axis}
                 width={growthWidth}
                 tickFormatter={(v: number) => formatUnit(v, growthUnit, growthDigits)}
@@ -467,6 +478,7 @@ export function FinancialChart({
                   layer={layer}
                   locale={locale}
                   focusValue={cross?.value ?? null}
+                  zoomed={zoomed}
                 />
               }
             />
@@ -481,7 +493,7 @@ export function FinancialChart({
                   dataKey={s.key}
                   stackId={s.stack}
                   fill={s.color}
-                  maxBarSize={18}
+                  maxBarSize={zoomed ? 34 : 18}
                   // A 1px surface-coloured rule between stacked segments, so
                   // adjacent fills read as two marks rather than one gradient.
                   stroke={s.stack ? CHART_LITERAL.panel : undefined}
@@ -497,7 +509,7 @@ export function FinancialChart({
                   yAxisId="growth"
                   dataKey={s.key}
                   fill={s.color}
-                  maxBarSize={18}
+                  maxBarSize={zoomed ? 34 : 18}
                   isAnimationActive={false}
                 />
               ))}
@@ -694,6 +706,7 @@ function FinTooltip({
   layer,
   locale,
   focusValue,
+  zoomed = false,
 }: {
   /** Injected by recharts when it clones this element. */
   active?: boolean;
@@ -705,6 +718,7 @@ function FinTooltip({
   locale: Locale;
   /** Value under the pointer on the left axis; null when it is not over the plot. */
   focusValue: number | null;
+  zoomed?: boolean;
 }) {
   const row = rows.find((r) => r.period === label) ?? null;
   if (!active || !row) return null;
@@ -733,14 +747,14 @@ function FinTooltip({
         background: CHART_LITERAL.panel,
         border: `1px solid ${CHART_LITERAL.axis}`,
         color: CHART_LITERAL.text,
-        fontSize: 10,
+        fontSize: zoomed ? 12 : 10,
         padding: "4px 6px",
         lineHeight: 1.45,
         // Capped to the card: uncapped it measured up to 261px inside a 220px
         // card and hung over its neighbour. Labels WRAP inside the cap rather
         // than truncate — a readout hiding half of "Tài sản dở dang dài hạn"
         // is not worth opening.
-        maxWidth: 176,
+        maxWidth: zoomed ? 320 : 176,
       }}
     >
       <div className="font-semibold mb-0.5" style={{ color: CHART_LITERAL.label }}>
