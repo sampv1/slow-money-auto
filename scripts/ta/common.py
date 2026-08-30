@@ -164,6 +164,10 @@ _TRANSIENT_ERROR_TYPES = frozenset({
     "TimeoutError",            # builtin (also socket.timeout)
     "SSLError",                # ssl.SSLError, incl. SSLEOFError
     "IncompleteRead",
+    # DNS. `httpx.ConnectError` already covers the wrapped case, but a bare
+    # resolution failure from any other client would otherwise read as a real
+    # error and abort a multi-hour job over a blip.
+    "gaierror",
 })
 
 # Message substrings for failures whose TYPE is generic. PostgREST can't parse a

@@ -112,7 +112,23 @@ def main() -> int:
             # Written per symbol rather than batched at the end: a run this long
             # must leave completed work behind when it is interrupted, which is
             # also what makes --resume meaningful.
-            written = upsert_statements(client, rows, dry_run=args.dry_run)
+            #
+            # THE WRITE IS GUARDED TOO. `safe_execute` already retries a network
+            # blip and correctly classes DNS failure as transient, but its
+            # backoff spans about seven seconds -- so an outage longer than that
+            # exhausts the retries and re-raises. That exception used to escape
+            # the loop entirely and end the run: on 2026-08-30 a DNS drop killed
+            # the backfill at symbol 717 of 1,751. One symbol's write failing is
+            # a reason to lose that symbol, not the other thousand.
+            try:
+                written = upsert_statements(client, rows, dry_run=args.dry_run)
+            except Exception as exc:
+                n_fail += 1
+                if sym not in partial_syms:
+                    partial_syms.append(sym)
+                print(f"  [{i}/{len(symbols)}] {sym:<6} ::warning:: write failed, "
+                      f"{type(exc).__name__}: {str(exc)[:70]}")
+                continue
             n_rows += written or len(rows)
             n_ok += 1
             if i % 25 == 0 or len(symbols) <= 25:
