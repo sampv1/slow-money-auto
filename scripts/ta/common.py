@@ -241,6 +241,35 @@ def load_scoring_config(client, key: str, default: dict) -> dict:
     return default
 
 
+PAGE_SIZE = 1000
+
+
+def paged_select(build, label: str = "paged read") -> list[dict]:
+    """Read every row a query matches, past PostgREST's 1000-row cap.
+
+    THE CAP IS SILENT. An unbounded `.select()` returns at most 1000 rows with
+    no error, no truncation flag and no warning — so a read that works today
+    starts losing rows the moment the table grows, and the loss looks like data
+    that was never there. Under an ASC order the rows dropped are the NEWEST,
+    which is the worst possible failure: the caller sees a complete-looking
+    history that simply stops before the present.
+
+    `build(offset, limit)` must return a query builder with the range applied.
+    Its ORDER BY MUST BE A TOTAL ORDER — the primary key, or enough columns to
+    be unique. Offset paging over a partially-ordered select relies on Postgres
+    heap order, which shifts as rows are rewritten, so page boundaries silently
+    skip or duplicate rows.
+    """
+    out: list[dict] = []
+    offset = 0
+    while True:
+        rows = safe_execute(build(offset, PAGE_SIZE), label=label).data or []
+        out.extend(rows)
+        if len(rows) < PAGE_SIZE:
+            return out
+        offset += PAGE_SIZE
+
+
 def safe_execute(query_builder, label: str = "query", max_retries: int = 4, base_delay: float = 1.0):
     """Execute a Supabase / postgrest query builder with retry-on-transient.
 

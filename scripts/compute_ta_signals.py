@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pandas as pd
 
 from ta.benchmark import get_vnindex_closes
-from ta.common import get_supabase_client, safe_execute, today_vn
+from ta.common import get_supabase_client, paged_select, safe_execute, today_vn
 from ta.registry import INDICATOR_SPECS, all_keys
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
@@ -65,18 +65,35 @@ def _compute_kwargs_for(fn, *, levels, trendlines, benchmark) -> dict:
 
 
 def load_ohlcv(client, symbol: str) -> pd.DataFrame:
-    """Load full OHLCV history for a symbol from ta_ohlcv as a date-indexed DataFrame."""
-    result = safe_execute(
-        client.table("ta_ohlcv")
-        .select("date,open,high,low,close,volume")
-        .eq("symbol", symbol)
-        .order("date", desc=False),
+    """Load full OHLCV history for a symbol from ta_ohlcv as a date-indexed DataFrame.
+
+    PAGED, and it has to be. This read has no date bound by design — every
+    indicator computes over the whole series — so it grows with the symbol's
+    history, and PostgREST silently caps an unbounded select at 1000 rows.
+    Ordered ASC, the rows it drops are the NEWEST: past 1000 bars this would
+    have gone on returning a clean-looking DataFrame that stopped before the
+    present, computing today's signals from years-old data with no error
+    anywhere. Nothing warns you. The deepest symbol currently holds ~604 bars,
+    so the cap has not bitten yet — it would have arrived silently with the
+    first deeper OHLCV backfill.
+
+    (symbol, date) is ta_ohlcv's primary key, so ordering by date under a
+    single-symbol filter is the total order that offset paging requires.
+    """
+    data = paged_select(
+        lambda off, lim: (
+            client.table("ta_ohlcv")
+            .select("date,open,high,low,close,volume")
+            .eq("symbol", symbol)
+            .order("date", desc=False)
+            .range(off, off + lim - 1)
+        ),
         label=f"ohlcv load {symbol}",
     )
-    if not result.data:
+    if not data:
         return pd.DataFrame()
 
-    df = pd.DataFrame(result.data)
+    df = pd.DataFrame(data)
     df["date"] = pd.to_datetime(df["date"]).dt.date
     df = df.set_index("date").sort_index()
     # Ensure numeric dtypes
