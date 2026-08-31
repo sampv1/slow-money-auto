@@ -24,11 +24,17 @@
  * holds whichever chart the reader picked, and the grid underneath keeps all
  * nine the same size, so the hierarchy is the reader's and not the layout's.
  *
+ * NO ESCAPE HATCH, BECAUSE THERE IS NO MODE. The large panel always holds a
+ * chart and the grid is never hidden, so there is nothing to back out of —
+ * picking another card IS the control. A window-level Esc would also have sat
+ * on a page that carries a symbol search box, where Esc means "dismiss what I
+ * am typing in", not "throw away the chart I chose".
+ *
  * CARDS ARE NUMBERED. Nine untitled frames in a grid have no reading order, and
  * "chart 6" is how a reader refers to one in a conversation about the page.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { VnstockStatementRow } from "@/lib/cached-data";
 import { FINANCIAL_CHARTS, shortPeriod } from "@/lib/financial-metrics";
 import { FinancialChart } from "@/components/financial-chart";
@@ -146,23 +152,6 @@ export function FinancialPanels({
     });
   }, []);
 
-  /**
-   * ESC RETURNS THE PANEL TO CHART 1. There is no longer a mode to leave —
-   * the panel is part of the resting layout — so Esc is given the only honest
-   * meaning left to it, "put it back", and the listener exists ONLY while the
-   * panel is off its default. A permanent window-level handler on a page that
-   * also carries a search box and a chart of its own would be swallowing a key
-   * those want.
-   */
-  useEffect(() => {
-    if (featuredId === DEFAULT_FEATURED) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFeaturedId(DEFAULT_FEATURED);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [featuredId]);
-
   // The newest period any statement covers — the section's own provenance line,
   // which is more honest than "today" and is what a reader needs to judge it.
   const latestPeriod = rows
@@ -173,7 +162,6 @@ export function FinancialPanels({
 
   const featuredIndex = FINANCIAL_CHARTS.findIndex((c) => c.id === featuredId);
   const featured = featuredIndex >= 0 ? FINANCIAL_CHARTS[featuredIndex] : FINANCIAL_CHARTS[0];
-  const offDefault = featuredId !== DEFAULT_FEATURED;
 
   return (
     // @container, not viewport breakpoints: this section sits in a ~57% column
@@ -184,23 +172,11 @@ export function FinancialPanels({
     <div className="@container flex flex-col gap-3">
       {featured && (
         <div ref={featuredRef} className="bg-panel rounded-lg border border-line p-3 flex flex-col min-w-0">
-          <div className="flex items-start gap-2 mb-1.5">
-            <h3 className="text-label font-semibold tracking-wide uppercase leading-tight text-fg min-w-0 flex-1">
+          <div className="mb-1.5">
+            <h3 className="text-label font-semibold tracking-wide uppercase leading-tight text-fg">
               <span className="font-mono tabular-nums mr-1">{featuredIndex + 1}.</span>
               {locale === "vi" ? featured.title_vi : featured.title_en}
             </h3>
-            {/* Only shown once the panel is off its default, which is exactly
-                when Esc does something — a hint for a key that currently has no
-                effect is worse than no hint. */}
-            {offDefault && (
-              <button
-                type="button"
-                onClick={() => setFeaturedId(DEFAULT_FEATURED)}
-                className="shrink-0 text-data text-fg-muted hover:text-fg underline underline-offset-2 cursor-pointer"
-              >
-                {t(locale, "finFeaturedReset")}
-              </button>
-            )}
           </div>
           {/* KEYED ON THE CHART ID so React REMOUNTS instead of reusing the
               instance. `layer`, `spanY` and `hidden` inside FinancialChart are
