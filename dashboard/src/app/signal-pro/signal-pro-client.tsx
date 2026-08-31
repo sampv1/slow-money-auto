@@ -728,7 +728,8 @@ export function SignalProClient({
                 <th className="px-2 py-1 label text-right border-l border-line cursor-pointer select-none" onClick={() => toggleSort("rs_3m")}>
                   {t(locale, "taRs3m")}{sortIndicator("rs_3m")}
                 </th>
-                <th className="px-2 py-1 label text-right cursor-pointer select-none" onClick={() => toggleSort("rs_composite")}>
+                <th className="px-2 py-1 label text-right cursor-pointer select-none"
+                  title={t(locale, "taCompositeRsFull")} onClick={() => toggleSort("rs_composite")}>
                   {t(locale, "taCompositeRs")}{sortIndicator("rs_composite")}
                 </th>
                 <th className="px-2 py-1 label">{t(locale, "taRsLine")}</th>

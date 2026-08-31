@@ -511,7 +511,12 @@ export const translations = {
     faMinNpatYoyHint: "Percent. Also hides names with no year-ago quarter to compare against. Set 0 to turn it off; a negative value is allowed.",
     taMinTaScore: "TA Score ≥",
     taMinTaScoreHint: "(0–100)",
-    taCompositeRs: "Composite RS",
+    // "COMPOSITE" is a 9-character word in an uppercase MONOSPACE header, so it
+    // alone held the column 38px wider than its two-digit data needed —
+    // Vietnamese "RS tổng hợp" wraps into 4-char words and sizes to the data.
+    // "RS Comp" also reads consistently beside its neighbours RS 3M and RS Line.
+    taCompositeRs: "RS Comp",
+    taCompositeRsFull: "Composite RS",
     taRs1m: "RS 1M",
     taRs3m: "RS 3M",
     taRsLine: "RS Line",
@@ -546,7 +551,12 @@ export const translations = {
     spTrendActionTitle: "What the status implies. A stock already deep in an uptrend reads Watch — entries are on a breakout or after a healthy correction.",
     spTrendWeeklyTitle: "Weekly structure. 0 whenever the close is below the daily MA200 — that rule has no exceptions.",
     spTrendDailyTitle: "Daily structure. O → K → A → D1 → A1; 60 on a downtrend break, 100 once the uptrend is complete.",
-    spCatalyst: "Catalyst",
+    // Abbreviated for the same monospace reason as taCompositeRs: "CATALYST" is
+    // one 8-character word, so it held the column 31px wider than the one-decimal
+    // score it shows, while Vietnamese "CHẤT XÚC TÁC" wraps into 4-char words and
+    // sizes to the data. The th keeps spCatalystTitle on hover, and the table
+    // already abbreviates elsewhere (RS 3M, FA Score).
+    spCatalyst: "Cat.",
     spCatalystTitle: "Catalyst score (CAN SLIM \"N\")",
     catNone: "No catalysts found.",
     catMateriality: "Materiality",
@@ -1406,6 +1416,7 @@ export const translations = {
     taMinTaScore: "Điểm TA ≥",
     taMinTaScoreHint: "(0–100)",
     taCompositeRs: "RS tổng hợp",
+    taCompositeRsFull: "RS tổng hợp",
     taRs1m: "RS 1T",
     taRs3m: "RS 3T",
     taRsLine: "Đường RS",

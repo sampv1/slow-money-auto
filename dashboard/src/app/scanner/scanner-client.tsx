@@ -883,7 +883,7 @@ export function ScannerClient({
                     >
                       {t(locale, "spTaScore")}
                     </th>
-                    <th className="row-h px-2 label text-right">{t(locale, "taCompositeRs")}</th>
+                    <th className="row-h px-2 label text-right" title={t(locale, "taCompositeRsFull")}>{t(locale, "taCompositeRs")}</th>
                     <th className="row-h px-2 label text-right">{t(locale, "taClose")}</th>
                     <th className="row-h px-2 label">{t(locale, "taSignalsFired")}</th>
                     <th className="row-h px-2 label text-right">{t(locale, "taOpenAnalysis")}</th>
