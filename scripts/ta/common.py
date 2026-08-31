@@ -103,6 +103,17 @@ def today_vn() -> date:
     return datetime.now(VN_TZ).date()
 
 
+def now_vn() -> datetime:
+    """The current instant in Vietnam timezone (GMT+7).
+
+    `today_vn()` answers "what day is it", which is the wrong question whenever
+    the thing being judged is a trading SESSION: a run that starts at 02:52 VN
+    is asking about a market that last traded the previous calendar day. Callers
+    deciding whether a bar is final need the clock, not just the date.
+    """
+    return datetime.now(VN_TZ)
+
+
 def resolve_supabase_key() -> tuple[str, str]:
     """(key, label) for the pipeline's Supabase credential.
 

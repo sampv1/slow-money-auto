@@ -335,5 +335,5 @@ import); each new quarter import is followed by a `score` run that adds that qua
 - `dashboard/src/lib/fa.ts`, `dashboard/src/lib/i18n.ts`, `fa-summary.tsx` — field renames + YoY labels
 - `.github/workflows/fa-quarterly.yml` → replace with `fa-score-daily.yml`
 - TA pipeline aligned to FA universe (DONE 2026-06-20): `scripts/ta/universe.py` (`align_universe_to_fa`,
-  paged `get_active_symbols`), `scripts/ta/ohlcv.py` (`fetch_today_snapshot` via `price_board`),
+  paged `get_active_symbols`), `scripts/ta/ohlcv.py` (`fetch_latest_session` via `price_board`),
   `scripts/refresh_ta_universe.py` (`--source fa`), `scripts/update_ta_daily.py` (bulk-snapshot Step 1)

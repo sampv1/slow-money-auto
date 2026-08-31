@@ -36,8 +36,9 @@ from ta.run_status import RunStatus, write_job_summary
 # Fraction of tracked members that must receive a bar before Step 1 counts as a
 # real collection. See the Step 1 gate for why a bare "> 0" is not enough.
 MIN_SNAPSHOT_FRACTION = 0.25
-from ta.common import REQUEST_DELAY, get_supabase_client, safe_execute, today_vn
-from ta.ohlcv import fetch_today_snapshot, upsert_ohlcv
+from ta.common import REQUEST_DELAY, get_supabase_client, now_vn, safe_execute, today_vn
+from ta.ohlcv import (MARKET_CLOSE_VN, SESSION_SETTLE, fetch_latest_session,
+                      is_session_final, stored_bar_count, upsert_ohlcv)
 from ta.rs_rating import compute_rs_ratings
 from ta.trend_score import compute_trend_scores
 from ta.ta_score import compute_ta_score
@@ -149,50 +150,83 @@ def main():
     ohlcv_total = 0
     failed_first_pass: list[str] = []
     final_failed: list[str] = []
-    # Bulk snapshot path: vnstock price_board returns today's full OHLCV bar for
-    # the whole universe in a few requests (~600 symbols/call). It only ever
-    # returns the latest session, so the today-only guard (expected_date) ensures
-    # a stale snapshot — run on a holiday or before today's close is published —
-    # is never written as a new bar. Multi-day gaps (a fully missed cron) are
-    # repaired with `backfill_ta_ohlcv.py`, not here.
+    # Bulk snapshot path: vnstock price_board returns the latest bar for the
+    # whole universe in a few requests (~600 symbols/call).
+    #
+    # THE TARGET IS THE MARKET'S LATEST SESSION, NOT TODAY'S DATE. Demanding
+    # `trading_date == today_vn()` threw away two entire sessions on 2026-08-27
+    # and 2026-08-28: GitHub delayed the cron past VN midnight, so the run asked
+    # for a date the market had not reached yet, rejected a perfectly good
+    # snapshot as "stale", and reported a holiday. See ta.ohlcv.fetch_latest_session.
+    #
+    # Three questions replace that one, each answered by whatever actually knows:
+    #   * WHICH session did the provider give us?   -> max(trading_date)
+    #   * Is that session FINAL, or still trading?  -> is_session_final (the clock)
+    #   * Is it NEW, or one we already hold?        -> stored_bar_count (the DB)
+    # Multi-day gaps (a fully missed cron) are still repaired with
+    # `backfill_ta_ohlcv.py`, not here.
     recovered_count = 0
+    session_str = today_str
     if args.dry_run:
-        print(f"(dry-run) would fetch today's ({today_str}) snapshot for {len(members)} members")
+        print(f"(dry-run) would fetch the latest-session snapshot for {len(members)} members")
     else:
         t0 = time.time()
-        rows, snap_stats = fetch_today_snapshot(members, expected_date=today_str)
-        # Chunked upsert keeps payloads well under PostgREST limits.
-        for j in range(0, len(rows), 500):
-            upsert_ohlcv(client, rows[j:j + 500])
-        ohlcv_total = len(rows)
-        written_syms = {r["symbol"] for r in rows}
-        ohlcv_ok = len(written_syms)
-        print(f"OHLCV snapshot: {ohlcv_ok}/{len(members)} members, {ohlcv_total:,} rows in {time.time()-t0:.1f}s "
-              f"(no-price today: {snap_stats['skipped_no_price']}, stale skipped: {snap_stats['skipped_stale']})")
-        if snap_stats["skipped_stale"]:
-            print(f"  NOTE: snapshot trading_date(s) {sorted(snap_stats['stale_dates'])} != {today_str} "
-                  f"— likely a non-trading day or close not yet published; those rows were NOT written.")
+        rows, snap_stats = fetch_latest_session(members)
+        session = snap_stats["session_date"]
+        now = now_vn()
+        if session is not None:
+            session_str = session.isoformat()
+        held_before = stored_bar_count(client, session_str) if session is not None else 0
+        settle_min = int(SESSION_SETTLE.total_seconds() // 60)
+        print(f"price_board: {snap_stats['returned']:,} symbols answered in {time.time() - t0:.1f}s; "
+              f"latest session {session or 'none'} carries {len(rows):,} priced bars "
+              f"({held_before:,} already stored). Skipped: {snap_stats['skipped_older']:,} at an "
+              f"older session (dormant), {snap_stats['skipped_no_price']} unpriced, "
+              f"{snap_stats['skipped_undated']} never traded.")
 
         # THE gate this whole pipeline was missing. "No exception raised" is not
         # evidence that bars were collected: on 2026-08-18 every price_board
         # chunk failed, 0 rows were written, and the run still went green.
         #
-        # The two ways this legitimately writes nothing are told apart by
-        # failed_chunks (see fetch_today_snapshot):
+        # The ways this legitimately writes nothing are told apart by evidence,
+        # never by assumption:
         #   provider outage — nothing came back at all           => CRITICAL
-        #   holiday / close not published — rows came back but
-        #   the staleness guard rejected them                    => warning
+        #   session still open — an intraday print is not a close => warning
+        #   no new session — we already hold every bar on offer   => warning
+        writable = False
         if snap_stats["failed_chunks"]:
             st.fail("Step 1 OHLCV snapshot",
-                    f"{snap_stats['failed_chunks']}/{snap_stats['chunks']} price_board "
-                    f"chunks failed; wrote {ohlcv_total:,} rows for {ohlcv_ok}/{len(members)} "
-                    f"members. The provider, not the market, is the problem.")
-        elif snap_stats["returned"] and not ohlcv_total and snap_stats["skipped_stale"]:
+                    f"{snap_stats['failed_chunks']}/{snap_stats['chunks']} price_board chunks "
+                    f"failed; wrote nothing for {len(members)} members. The provider, not the "
+                    f"market, is the problem.")
+        elif session is None:
+            st.fail("Step 1 OHLCV snapshot",
+                    f"price_board answered for {snap_stats['returned']:,} symbols but not one "
+                    f"carried both a usable trading_date and a price — no session could be "
+                    f"identified, so nothing was written.")
+        elif not is_session_final(session, now):
             st.warn("Step 1 OHLCV snapshot",
-                    f"no fresh bar for {today_str} — the snapshot carried "
-                    f"{sorted(snap_stats['stale_dates'])}, i.e. a non-trading day or a "
-                    f"close not yet published. Nothing written, by design.")
+                    f"the latest session {session} is still open at {now:%H:%M} VN "
+                    f"(close {MARKET_CLOSE_VN:%H:%M} + {settle_min}m settle) — an intraday print "
+                    f"is not a close. Nothing written, by design.")
+        elif session < now.date() and held_before >= len(rows):
+            # A holiday, a weekend, or simply a second run before the market has
+            # traded again. Distinguished from the delayed-cron case by the DB:
+            # there, held_before is 0 and the session is genuinely new.
+            st.warn("Step 1 OHLCV snapshot",
+                    f"no new session — the market's latest completed session is {session}, and all "
+                    f"{held_before:,} of its bars are already stored. Nothing written, by design.")
         else:
+            writable = True
+
+        if writable:
+            # Chunked upsert keeps payloads well under PostgREST limits.
+            for j in range(0, len(rows), 500):
+                upsert_ohlcv(client, rows[j:j + 500])
+            ohlcv_total = len(rows)
+            written_syms = {r["symbol"] for r in rows}
+            ohlcv_ok = len(written_syms)
+
             # A PROPORTIONAL floor, because minimum=1 would have passed the
             # 2026-08-17 run that wrote 29 bars of the ~890 a normal session
             # produces. That run reported success too.
@@ -204,15 +238,17 @@ def main():
             # backup cron re-runs it — which is the outcome we want, since
             # price_board is cheap and a partial day corrupts every percentile.
             floor = max(1, int(len(members) * MIN_SNAPSHOT_FRACTION))
+            repair = f", repairing a partial session ({held_before:,} held)" if held_before else ""
             st.require("Step 1 OHLCV snapshot", ohlcv_ok, minimum=floor, unit="members",
-                       detail=f"of {len(members)} tracked, {ohlcv_total:,} bars")
+                       detail=f"of {len(members)} tracked, {ohlcv_total:,} bars for "
+                              f"session {session}{repair}")
 
-        # Symbols with no fresh bar today (halted / untraded / stale). Not a
-        # hard failure, but surfaced in the summary for visibility.
-        # Scoped to ACTIVE symbols: a dormant member legitimately has no bar
-        # today, and listing 100+ of them every night would bury a real failure.
-        failed_first_pass = [s for s in symbols if s not in written_syms]
-        final_failed = failed_first_pass
+            # Symbols with no bar in this session (halted / untraded / dormant).
+            # Not a hard failure, but surfaced in the summary for visibility.
+            # Scoped to ACTIVE symbols: a dormant member legitimately has no bar,
+            # and listing 100+ of them every night would bury a real failure.
+            failed_first_pass = [s for s in symbols if s not in written_syms]
+            final_failed = failed_first_pass
 
     # Step 1b: corporate-action adjustment repair. ta_ohlcv is append-only, so a
     # symbol that just went ex-dividend / ex-rights / bonus / split keeps stale
@@ -263,7 +299,7 @@ def main():
     print(f"\n--- Step 2: compute signals (latest date) ---")
     run_id = None
     if not args.dry_run:
-        run_id = start_run(client, today_str)
+        run_id = start_run(client, session_str)
 
     # VN-Index benchmark for relative-strength indicators. One-off fetch per
     # run; passed into each symbol's compute pass. If the fetch fails, RS
@@ -334,8 +370,8 @@ def main():
         if not args.dry_run:
             finish_run(client, run_id, "success", processed, total_signals,
                        trading_date=max_written_date)
-            if max_written_date and max_written_date != today_str:
-                print(f"  ta_runs trading_date corrected {today_str} -> "
+            if max_written_date and max_written_date != session_str:
+                print(f"  ta_runs trading_date corrected {session_str} -> "
                       f"{max_written_date} (the newest date actually written).")
         # Signals are computed from stored OHLCV, so this failing means the DB
         # read or the write failed — not the market.
@@ -429,7 +465,8 @@ def main():
         summary_lines = [
             "## TA Daily Update Summary",
             "",
-            f"- **Trading date**: {today_str}",
+            f"- **Trading session**: {session_str}"
+            + (f" (run started {today_str} VN)" if session_str != today_str else ""),
             f"- **Universe**: {len(members)} members, {len(symbols)} active (scored)",
             f"- **OHLCV snapshot**: {ohlcv_ok}/{len(members)} members ({ohlcv_total:,} rows)",
         ]

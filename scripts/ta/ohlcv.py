@@ -5,7 +5,7 @@ matching the convention used elsewhere in this repo (see update_prices.py).
 """
 
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, time as clock_time, timedelta
 
 from .common import REQUEST_DELAY, VNSTOCK_SOURCE, safe_execute, today_vn
 
@@ -82,17 +82,44 @@ def fetch_ohlcv(symbol: str, start: date, end: date) -> list[dict] | None:
     return rows
 
 
-# --- Bulk daily snapshot via price_board -----------------------------------
+# --- Bulk latest-session snapshot via price_board ---------------------------
 #
 # After the ATC auction, vnstock's Trading.price_board returns a complete daily
 # OHLCV snapshot (open/high/low/last/volume) for an arbitrary list of symbols in
 # a SINGLE request — ~600 symbols in <1s. Verified byte-for-byte identical to
 # history() for the same trading day. Unlike history(), price_board values are
-# already in raw VND (no ×1000) and it only ever returns the latest session, so
-# it is used exclusively for the daily incremental path; history() remains the
-# backfill / gap-fill path.
+# already in raw VND (no x1000) and it only ever returns each symbol's LATEST
+# bar, so it is used exclusively for the daily incremental path; history()
+# remains the backfill / gap-fill path.
 
 PRICE_BOARD_CHUNK = 500
+
+# The VN cash market closes at 15:00 ICT. The settling margin covers the gap
+# between the bell and the provider publishing a final ATC print.
+MARKET_CLOSE_VN = clock_time(15, 0)
+SESSION_SETTLE = timedelta(minutes=15)
+
+
+def is_session_final(session: date, now: datetime) -> bool:
+    """Is `session` a COMPLETED trading day as of `now` (VN time)?
+
+    This is the question the daily path actually needs answered, and it is a
+    question about the clock, not about date equality:
+
+      * a session older than today is complete by definition, whatever time it
+        is now — this is the case a delayed cron lands in;
+      * today's session is complete only once the 15:00 ICT close plus a
+        settling margin has passed;
+      * a session dated in the FUTURE means the provider's clock disagrees with
+        ours, which is not something to guess about — refuse it.
+    """
+    today = now.date()
+    if session < today:
+        return True
+    if session > today:
+        return False
+    close = datetime.combine(today, MARKET_CLOSE_VN, tzinfo=now.tzinfo) + SESSION_SETTLE
+    return now >= close
 
 
 def _make_trading():
@@ -117,36 +144,58 @@ def _coerce_num(v):
         return None
 
 
-def fetch_today_snapshot(symbols: list[str], expected_date: str | None = None,
+def fetch_latest_session(symbols: list[str],
                          chunk_size: int = PRICE_BOARD_CHUNK) -> tuple[list[dict], dict]:
-    """Fetch today's OHLCV bar for many symbols via bulk price_board calls.
+    """Fetch the market's LATEST SESSION for many symbols via bulk price_board.
 
     Returns (rows, stats). Each row has keys symbol, date, open, high, low,
-    close, volume — prices in raw VND. Rows whose snapshot trading_date does not
-    equal `expected_date` (when given) are skipped, so a stale snapshot (run on a
-    holiday, or before today's close is published) never gets written as a new
-    bar. Symbols with no match price (halted / untraded today) are also skipped.
+    close, volume — prices in raw VND.
 
-    stats keys: requested, returned, written, skipped_stale, skipped_no_price,
-    stale_dates (set of distinct off-dates seen), chunks, failed_chunks.
+    THE TARGET IS THE MARKET'S LATEST SESSION, NOT THE WALL-CLOCK DATE.
+    price_board reports each symbol's OWN last trading_date, so one snapshot
+    legitimately carries dozens of dates: the actively-traded names share the
+    newest session while dormant UPCOM lines still show whenever they last
+    printed. The session is therefore the MAXIMUM of those dates. Rows at any
+    older date belong to symbols that did not trade in it and are skipped —
+    they are not stale data, they are other symbols' last trades.
+
+    Asking instead for `trading_date == today_vn()` cost two whole sessions on
+    2026-08-27 and 2026-08-28. GitHub delayed the 09:23 UTC cron by ~10 hours,
+    so the run began at 02:52 VN on the FOLLOWING day; the snapshot correctly
+    carried the previous session, every row was rejected as "stale", and the
+    holiday branch reported "a non-trading day ... Nothing written, by design"
+    and exited 0 — which in turn let the backup cron's precheck skip, because a
+    successful run already existed for the day. Nothing was wrong with the data;
+    the run was asking the wrong question.
+
+    Deciding whether that session may be WRITTEN is the caller's job, via
+    `is_session_final` — this function reports what it saw and writes nothing.
+
+    stats keys: requested, returned, written, session_date (a `date` or None),
+    other_dates (dates seen that are not the session), skipped_older,
+    skipped_no_price, skipped_undated, chunks, failed_chunks.
 
     `failed_chunks` is what separates the two ways this returns nothing, and the
-    caller MUST branch on it: a holiday returns rows that the staleness guard
-    rejects (failed_chunks == 0), whereas a provider outage returns nothing at
-    all (failed_chunks == chunks). Both produced "0 rows written" on 2026-08-18,
-    and with no way to tell them apart the run reported success.
+    caller MUST branch on it: a holiday returns a session the caller already has
+    (failed_chunks == 0), whereas a provider outage returns nothing at all
+    (failed_chunks == chunks). Both wrote "0 rows" on 2026-08-18 and, with no
+    way to tell them apart, the run reported success.
     """
     stats = {
         "requested": len(symbols),
         "returned": 0,
         "written": 0,
-        "skipped_stale": 0,
+        "session_date": None,
+        "other_dates": set(),
+        "skipped_older": 0,
         "skipped_no_price": 0,
-        "stale_dates": set(),
+        "skipped_undated": 0,
         "chunks": 0,
         "failed_chunks": 0,
     }
-    rows: list[dict] = []
+    # (bar_date, row) for every priced symbol; the session is picked afterwards,
+    # because it cannot be known until every chunk has been seen.
+    dated: list[tuple[date, dict]] = []
     trading = _make_trading()
 
     for start in range(0, len(symbols), chunk_size):
@@ -185,10 +234,11 @@ def fetch_today_snapshot(symbols: list[str], expected_date: str | None = None,
         stats["returned"] += n
         for i in range(n):
             sym = listing["symbol"].iloc[i]
-            bar_date = str(listing["trading_date"].iloc[i])[:10]
-            if expected_date is not None and bar_date != expected_date:
-                stats["skipped_stale"] += 1
-                stats["stale_dates"].add(bar_date)
+            try:
+                bar_date = date.fromisoformat(str(listing["trading_date"].iloc[i])[:10])
+            except (TypeError, ValueError):
+                # 'None' / 'nan' — a symbol the provider has never printed.
+                stats["skipped_undated"] += 1
                 continue
             close = _coerce_num(match["match_price"].iloc[i])
             if close is None or close <= 0:
@@ -198,20 +248,42 @@ def fetch_today_snapshot(symbols: list[str], expected_date: str | None = None,
             h = _coerce_num(match["highest"].iloc[i])
             l = _coerce_num(match["lowest"].iloc[i])
             vol = _coerce_num(match["accumulated_volume"].iloc[i])
-            rows.append({
+            dated.append((bar_date, {
                 "symbol": sym,
-                "date": bar_date,
-                # price_board is already raw VND (no ×1000). Fall back to close
+                "date": bar_date.isoformat(),
+                # price_board is already raw VND (no x1000). Fall back to close
                 # for any missing OHLC field so the bar is always well-formed.
                 "open": o if o and o > 0 else close,
                 "high": h if h and h > 0 else close,
                 "low": l if l and l > 0 else close,
                 "close": close,
                 "volume": int(vol) if vol is not None else 0,
-            })
+            }))
 
+    if not dated:
+        return [], stats
+
+    session = max(d for d, _ in dated)
+    stats["session_date"] = session
+    rows = [r for d, r in dated if d == session]
+    stats["other_dates"] = {d for d, _ in dated if d != session}
+    stats["skipped_older"] = len(dated) - len(rows)
     stats["written"] = len(rows)
     return rows, stats
+
+
+def stored_bar_count(client, session_iso: str) -> int:
+    """How many ta_ohlcv bars we already hold for one date.
+
+    Separates "the market produced a new session" from "we are looking at a
+    session we already collected", which is what a holiday, a same-day re-run
+    and a delayed cron all look like from inside the snapshot alone.
+    """
+    res = safe_execute(
+        client.table("ta_ohlcv").select("symbol", count="exact").eq("date", session_iso).limit(1),
+        label=f"stored bars {session_iso}",
+    )
+    return res.count or 0
 
 
 def upsert_ohlcv(client, rows: list[dict]) -> int:
