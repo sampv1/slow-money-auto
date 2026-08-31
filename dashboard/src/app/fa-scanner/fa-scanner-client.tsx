@@ -19,6 +19,8 @@ import { TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatBillions, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
+import { PinButton } from "@/components/pin-button";
+import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
 
 // Score components shown as columns: short word-label + formula tooltip, both
 // bilingual. This set is the manufacturing rubric; real estate / banks rubrics
@@ -222,6 +224,8 @@ export function FaScannerClient({
     });
   }, [rows, minScore, minAvgVolume, minNpatBn, minNpatYoy, avgVolBySymbol, quarterlyBySymbol, search]);
 
+  const { pinned, toggle: togglePin } = usePinnedSymbols();
+
   const industryChoices = useMemo(
     () => industryOptions(preIndustry.map((r) => r.symbol), industry, locale),
     [preIndustry, industry, locale],
@@ -293,9 +297,12 @@ export function FaScannerClient({
       if (av > bv) return sortAsc ? 1 : -1;
       return 0;
     });
-    return out;
+    // Pinned rows ride on top of the sort, keeping their own relative order.
+    // After the filters too: a pinned symbol that fails a floor stays hidden,
+    // or the row count above the table would stop describing what is in it.
+    return floatPinned(out, pinned, (r) => r.symbol);
   }, [preIndustry, industryFilter, industry, locale,
-      quarterlyBySymbol, sortKey, sortAsc]);
+      quarterlyBySymbol, sortKey, sortAsc, pinned]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -549,16 +556,29 @@ export function FaScannerClient({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => (
-                <tr key={row.symbol} className="group transition-colors hover:bg-panel-2 [&>td]:border-b [&>td]:border-line-faint">
+              {filtered.map((row, rowIdx) => {
+                // `rowIdx`, not `i` — this table nests a cell map that
+                // uses `i` for its own column index, and shadowing it here
+                // would be correct today and a silent bug on the next edit.
+                const lastPinned = pinned.has(row.symbol)
+                  && (rowIdx === filtered.length - 1 || !pinned.has(filtered[rowIdx + 1].symbol));
+                return (
+                <tr key={row.symbol} className={`group transition-colors hover:bg-panel-2 [&>td]:border-b [&>td]:border-line-faint${
+                  pinned.has(row.symbol) ? " bg-accent-soft" : ""}${
+                  lastPinned ? " [&>td]:!border-b-line-strong" : ""}`}>
                   {/* Frozen identity column. Needs its own opaque background —
                       it paints over the cells scrolling beneath it — and
                       group-hover so it tracks the row highlight instead of
                       staying stubbornly white. */}
-                  <td className="sticky left-0 z-10 bg-panel group-hover:bg-panel-2 row-h px-2 text-body font-semibold text-accent">
-                    <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
-                      {row.symbol}
-                    </Link>
+                  <td className={`sticky left-0 z-10 group-hover:bg-panel-2 row-h px-2 text-body font-semibold text-accent ${
+                    pinned.has(row.symbol) ? "bg-accent-soft" : "bg-panel"}`}>
+                    <span className="inline-flex items-center gap-1">
+                      <PinButton symbol={row.symbol} pinned={pinned.has(row.symbol)}
+                        onToggle={togglePin} locale={locale} />
+                      <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
+                        {row.symbol}
+                      </Link>
+                    </span>
                   </td>
                   <td className="row-h px-2 text-data text-fg-muted">
                     {industry[row.symbol] ? (
@@ -630,7 +650,8 @@ export function FaScannerClient({
                     ));
                   })()}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

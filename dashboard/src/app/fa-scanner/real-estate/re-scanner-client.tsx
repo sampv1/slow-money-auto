@@ -22,6 +22,8 @@ import type { RePb, UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatBillions, formatNumber, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { TABLE, TABLE_FREEZE, THEAD_STICKY, TH, TH_NUM, TH_NUM_WRAP, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
+import { PinButton } from "@/components/pin-button";
+import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
 // Same floor as the manufacturing tab and Signal Pro — see the note there.
@@ -144,6 +146,8 @@ export function ReScannerClient({
   const quarterlyBySymbol = useMemo(() => new Map(quarterly), [quarterly]);
   const pbBySymbol = useMemo(() => new Map(pb), [pb]);
 
+  const { pinned, toggle: togglePin } = usePinnedSymbols();
+
   const filtered = useMemo(() => {
     const min = minScore === "" ? null : Number(minScore);
     const q = search.trim().toUpperCase();
@@ -215,9 +219,10 @@ export function ReScannerClient({
       if (av > bv) return sortAsc ? 1 : -1;
       return a.symbol.localeCompare(b.symbol);
     });
-    return out;
+    // Pinned rows ride on top of the sort, keeping their own relative order.
+    return floatPinned(out, pinned, (r) => r.symbol);
   }, [rows, minScore, minAvgVolume, minNpatBn, volBySymbol,
-      quarterlyBySymbol, pbBySymbol, search, sortKey, sortAsc]);
+      quarterlyBySymbol, pbBySymbol, search, sortKey, sortAsc, pinned]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -416,13 +421,27 @@ export function ReScannerClient({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => {
+              {filtered.map((r, rowIdx) => {
+                // `rowIdx`, not `i` — this table nests a cell map that
+                // uses `i` for its own column index, and shadowing it here
+                // would be correct today and a silent bug on the next edit.
+                const lastPinned = pinned.has(r.symbol)
+                  && (rowIdx === filtered.length - 1 || !pinned.has(filtered[rowIdx + 1].symbol));
                 return (
-                  <tr key={r.symbol} className={TR}>
-                    <td className={`${TD_SYMBOL} sticky left-0 z-10 bg-panel group-hover:bg-panel-2`}>
-                      <Link href={`/analysis/${r.symbol}`} className="hover:underline">
-                        {r.symbol}
-                      </Link>
+                  <tr key={r.symbol} className={`${TR}${pinned.has(r.symbol) ? " bg-accent-soft" : ""}${
+                    lastPinned ? " [&>td]:!border-b-line-strong" : ""}`}>
+                    {/* The frozen cell paints its own background over the row,
+                        so the pinned tint has to be repeated here or the marker
+                        would stop at the first scrolling column. */}
+                    <td className={`${TD_SYMBOL} sticky left-0 z-10 group-hover:bg-panel-2 ${
+                      pinned.has(r.symbol) ? "bg-accent-soft" : "bg-panel"}`}>
+                      <span className="inline-flex items-center gap-1">
+                        <PinButton symbol={r.symbol} pinned={pinned.has(r.symbol)}
+                          onToggle={togglePin} locale={locale} />
+                        <Link href={`/analysis/${r.symbol}`} className="hover:underline">
+                          {r.symbol}
+                        </Link>
+                      </span>
                     </td>
                     <td className={`${TD_NUM} font-semibold border-r border-line-faint`}>
                       {formatNumber(r.total_score, 0)}

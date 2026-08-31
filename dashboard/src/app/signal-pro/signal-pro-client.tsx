@@ -18,6 +18,8 @@ import {
   trendActionLabel, trendActionClass,
 } from "./trend";
 import { CatalystDetail, type CatalystRow } from "./catalyst";
+import { PinButton } from "@/components/pin-button";
+import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
 import { TradeActions } from "./trade-actions";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { SPARKLINE_BATCH, type SymbolCharts } from "@/lib/sparkline";
@@ -138,6 +140,8 @@ export function SignalProClient({
   /** Latest real-estate score per symbol; empty before migration 048. */
   reScores?: ReScoreBrief[];
 }) {
+  const { pinned, toggle: togglePin } = usePinnedSymbols();
+
   const activeSet = useMemo(() => new Set(activeSymbols), [activeSymbols]);
   // Reliable "as of" date: the most recent close-price date among displayed rows
   // (current_price_date is refreshed daily by the FA score job).
@@ -474,8 +478,12 @@ export function SignalProClient({
       if (av > bv) return sortAsc ? 1 : -1;
       return 0;
     });
-    return out;
-  }, [preIndustry, industryFilter, industry, locale, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, faScoreBySymbol, trendBySymbol, sortKey, sortAsc]);
+    // Pinned rows ride on top of whatever the sort produced, keeping their own
+    // relative order. Applied AFTER the sort and AFTER the filters: a pinned
+    // symbol that fails the liquidity or NPAT floor stays hidden, or the row
+    // count above the table would stop describing what is in it.
+    return floatPinned(out, pinned, (r) => r.symbol);
+  }, [preIndustry, industryFilter, industry, locale, rsBySymbol, rs3mBySymbol, taScoreBySymbol, finalBySymbol, faScoreBySymbol, trendBySymbol, sortKey, sortAsc, pinned]);
 
   // Fetch sparkline data for the rows currently on screen, once they are known.
   //
@@ -760,7 +768,12 @@ export function SignalProClient({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => {
+              {filtered.map((row, rowIdx) => {
+                // `rowIdx`, not `i` — this table nests a cell map that
+                // uses `i` for its own column index, and shadowing it here
+                // would be correct today and a silent bug on the next edit.
+                const lastPinned = pinned.has(row.symbol)
+                  && (rowIdx === filtered.length - 1 || !pinned.has(filtered[rowIdx + 1].symbol));
                 const rs = rsBySymbol.get(row.symbol) ?? null;
                 const rs3m = rs3mBySymbol.get(row.symbol) ?? null;
                 const rsLine = rsLineBySymbol.get(row.symbol) ?? null;
@@ -770,11 +783,20 @@ export function SignalProClient({
                 const trend = trendBySymbol.get(row.symbol);
                 const catScore = catalystBySymbol.get(row.symbol) ?? null;
                 return (
-                  <tr key={row.symbol} className="group transition-colors hover:bg-panel-2 [&>td]:border-b [&>td]:border-line-faint">
+                  <tr key={row.symbol} className={`group transition-colors hover:bg-panel-2 [&>td]:border-b [&>td]:border-line-faint${
+                    pinned.has(row.symbol) ? " bg-accent-soft" : ""}${
+                    // A rule under the LAST pinned row. Without it a reader who
+                    // has sorted by score sees the top rows out of order with
+                    // nothing to say why — the band needs an edge, not just a tint.
+                    lastPinned ? " [&>td]:!border-b-line-strong" : ""}`}>
                     <td className="px-2 py-1 font-medium">
-                      <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
-                        {row.symbol}
-                      </Link>
+                      <span className="inline-flex items-center gap-1">
+                        <PinButton symbol={row.symbol} pinned={pinned.has(row.symbol)}
+                          onToggle={togglePin} locale={locale} />
+                        <Link href={`/analysis/${row.symbol}`} className="text-accent hover:underline">
+                          {row.symbol}
+                        </Link>
+                      </span>
                     </td>
                     <td className="px-2 py-1 text-data text-fg-muted">
                       {industry[row.symbol] ? (
