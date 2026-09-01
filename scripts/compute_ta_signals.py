@@ -163,23 +163,58 @@ def filter_dates(rows: list[dict], since: date | None, latest_only: bool, ohlcv:
     return rows
 
 
-def upsert_signals(client, rows: list[dict]) -> int:
-    """Upsert signal rows in chunks. Returns total rows written.
+def write_signals(client, rows: list[dict]) -> int:
+    """Persist a symbol's signal rows, storing ONLY the triggered ones.
 
-    Each chunk uses `safe_execute` so transient HTTP/2 stream exhaustion
-    (common after thousands of upserts on one connection) survives a retry
-    instead of crashing the whole job.
+    Untriggered rows — an indicator that ran and answered "no" — are computed
+    and then dropped. Every reader filters `triggered = true`: the TA Scanner's
+    two date-scoped reads and the Analysis chart's marker read. Nothing has ever
+    asked which symbols did NOT fire, so the ~82% of rows answering "no" were an
+    unread archive growing ~1.4 GB a year. The underlying value stays
+    recomputable from ta_ohlcv, which is the actual source of record.
+
+    DELETE-THEN-INSERT, not a bare upsert, and that is the whole safety of it.
+    The upsert this replaces kept history honest by OVERWRITING a stale
+    `triggered = true` with the `false` that a recomputation produced. Once the
+    false rows are no longer written, that repair silently disappears: a re-run
+    (`--since`, `--all-dates`, or a resweep after refresh_adjustments.py
+    re-backfills a corporate action and changes what those bars trigger) would
+    leave the old true row standing forever — a signal the scanner still lists
+    and the chart still marks, for a bar that no longer produces it.
+
+    The cleared span comes from `rows` BEFORE the triggered filter, because a
+    symbol-date whose signals all turned false must still clear its old rows,
+    and by then it has nothing left to name the date with. On the daily path the
+    span is one fresh date, so the delete matches nothing and costs one indexed
+    lookup on (symbol, date).
+
+    The insert stays an upsert so a `safe_execute` retry after a partially
+    applied chunk is idempotent rather than a primary-key violation.
     """
     if not rows:
         return 0
+
+    by_symbol: dict[str, list[dict]] = {}
+    for r in rows:
+        by_symbol.setdefault(r["symbol"], []).append(r)
+
     total = 0
-    for i in range(0, len(rows), UPSERT_CHUNK_SIZE):
-        chunk = rows[i : i + UPSERT_CHUNK_SIZE]
+    for symbol, srows in by_symbol.items():
+        dates = [r["date"] for r in srows]
+        lo, hi = min(dates), max(dates)
         safe_execute(
-            client.table("ta_signals").upsert(chunk, on_conflict="date,symbol,indicator"),
-            label=f"upsert ta_signals chunk[{i // UPSERT_CHUNK_SIZE}]",
+            client.table("ta_signals").delete()
+            .eq("symbol", symbol).gte("date", lo).lte("date", hi),
+            label=f"clear ta_signals {symbol} {lo}..{hi}",
         )
-        total += len(chunk)
+        keep = [r for r in srows if r["triggered"]]
+        for i in range(0, len(keep), UPSERT_CHUNK_SIZE):
+            chunk = keep[i : i + UPSERT_CHUNK_SIZE]
+            safe_execute(
+                client.table("ta_signals").upsert(chunk, on_conflict="date,symbol,indicator"),
+                label=f"write ta_signals {symbol} chunk[{i // UPSERT_CHUNK_SIZE}]",
+            )
+        total += len(keep)
     return total
 
 
@@ -341,6 +376,7 @@ def main():
               "— relative-strength indicators will be skipped for this run.")
 
     total_signals = 0
+    total_evaluated = 0
     processed = 0
     max_written_date: str | None = None
     start = time.time()
@@ -382,15 +418,19 @@ def main():
                 max_written_date = d if max_written_date is None else max(max_written_date, d)
 
             if not args.dry_run:
-                upsert_signals(client, rows)
+                write_signals(client, rows)
 
-            total_signals += len(rows)
+            # Count what is STORED, not what was evaluated — total_signals feeds
+            # ta_runs.signals_written and the caller's floor gate.
+            total_signals += n_triggered
+            total_evaluated += len(rows)
             processed += 1
-            print(f"[{i}/{len(symbols)}] {symbol}: {len(rows)} rows ({n_triggered} triggered, {len(levels)} S/R, {len(lines)} TL)")
+            print(f"[{i}/{len(symbols)}] {symbol}: {n_triggered} triggered of {len(rows)} evaluated, {len(levels)} S/R, {len(lines)} TL")
 
         elapsed = time.time() - start
         action = "would write" if args.dry_run else "wrote"
-        print(f"\n{action.capitalize()} {total_signals:,} signal rows for {processed} symbols in {elapsed:.1f}s.")
+        print(f"\n{action.capitalize()} {total_signals:,} triggered signal rows "
+              f"({total_evaluated:,} evaluated) for {processed} symbols in {elapsed:.1f}s.")
 
         if not args.dry_run:
             finish_run(client, run_id, "success", processed, total_signals,

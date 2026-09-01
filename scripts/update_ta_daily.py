@@ -112,7 +112,7 @@ from compute_ta_signals import (  # noqa: E402
     finish_run,
     load_ohlcv,
     start_run,
-    upsert_signals,
+    write_signals,
 )
 
 
@@ -310,7 +310,7 @@ def main():
               "— RS indicators will be skipped for this run.")
 
     total_signals = 0
-    triggered_total = 0
+    total_evaluated = 0
     processed = 0
     # The date the signals are FOR, which is not necessarily today — see
     # finish_run in compute_ta_signals.py. A run started after midnight VN would
@@ -354,18 +354,20 @@ def main():
                 d = max(r["date"] for r in rows)
                 max_written_date = d if max_written_date is None else max(max_written_date, d)
             n_triggered = sum(1 for r in rows if r["triggered"])
-            triggered_total += n_triggered
 
             if not args.dry_run:
-                upsert_signals(client, rows)
+                write_signals(client, rows)
 
-            total_signals += len(rows)
+            # Only triggered rows are stored, so the gate below and
+            # ta_runs.signals_written must count those, not what was evaluated.
+            total_signals += n_triggered
+            total_evaluated += len(rows)
             processed += 1
 
         elapsed = time.time() - t0
         action = "would write" if args.dry_run else "wrote"
-        print(f"Signals: {action} {total_signals:,} rows for {processed} symbols "
-              f"({triggered_total} triggered) in {elapsed:.1f}s")
+        print(f"Signals: {action} {total_signals:,} triggered rows "
+              f"({total_evaluated:,} evaluated) for {processed} symbols in {elapsed:.1f}s")
 
         if not args.dry_run:
             finish_run(client, run_id, "success", processed, total_signals,
@@ -376,7 +378,7 @@ def main():
         # Signals are computed from stored OHLCV, so this failing means the DB
         # read or the write failed — not the market.
         st.require("Step 2 signals", total_signals, minimum=1, unit="rows",
-                   detail=f"{processed} symbols, {triggered_total} triggered")
+                   detail=f"{processed} symbols, {total_evaluated:,} evaluated")
 
         # Step 3: RS ratings (cross-sectional). Isolated so a failure here does
         # not undo the already-committed signal run.
@@ -471,7 +473,7 @@ def main():
             f"- **OHLCV snapshot**: {ohlcv_ok}/{len(members)} members ({ohlcv_total:,} rows)",
         ]
         summary_lines.append(f"- **Adjustments repaired**: {adj_repaired}")
-        summary_lines.append(f"- **Signals written**: {total_signals:,} ({triggered_total} triggered)")
+        summary_lines.append(f"- **Signals written**: {total_signals:,} triggered ({total_evaluated:,} evaluated)")
         summary_lines.append(f"- **RS scored**: {rs_stats['scored']} liquid (rs_date {rs_stats['rs_date']})")
         summary_lines.append(
             f"- **Trend scored**: {trend_stats['scored']} "
