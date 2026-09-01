@@ -404,6 +404,7 @@ export const translations = {
     faQuarter: "Quarter",
     faUnrated: "Not rated — insufficient or unsupported data",
     // FA Scanner column-group headers
+    faScoreCol: "Score",
     faComponentsGroup: "Score components",
     faQuarterlyGroup: "Quarterly results",
     faValuationGroup: "Relative Valuation",
@@ -1314,6 +1315,7 @@ export const translations = {
     faQuarter: "Quý",
     faUnrated: "Chưa xếp hạng — dữ liệu thiếu hoặc không hỗ trợ",
     // FA Scanner column-group headers
+    faScoreCol: "Điểm",
     faComponentsGroup: "Thành phần điểm",
     faQuarterlyGroup: "Kết quả kinh doanh quý",
     faValuationGroup: "Định giá tương đối",

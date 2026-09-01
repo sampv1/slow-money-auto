@@ -7,6 +7,9 @@ import { type Locale, t } from "@/lib/i18n";
 import {
   type ReScore,
   RE_COMPONENTS,
+  RE_EXTRA,
+  type ReExtraKey,
+  reExtraCells,
   RE_MAX_SCORE,
   formatReValue,
   rePointsColor,
@@ -35,35 +38,7 @@ const DEFAULT_MIN_NPAT_BN = 125;
  * manufacturing tab — these are facts about the company, not rubric output, so
  * they must not look like a third scoring system.
  */
-const RE_EXTRA = [
-  { key: "rev_bn", group: "q", en: "Revenue (bn)", vi: "Doanh thu (tỷ)",
-    fEn: "Net revenue for the selected quarter, VND billion",
-    fVi: "Doanh thu thuần của quý đã chọn, tỷ VND" },
-  { key: "rev_yoy", group: "q", en: "Rev YoY", vi: "DT YoY",
-    fEn: "Revenue ÷ revenue same quarter last year − 1",
-    fVi: "Doanh thu ÷ doanh thu cùng kỳ năm trước − 1" },
-  { key: "npat_bn", group: "q", en: "NPAT (bn)", vi: "LNST (tỷ)",
-    fEn: "Net profit after tax = net margin × revenue, VND billion (total NPAT, not the parent-only figure)",
-    fVi: "Lợi nhuận sau thuế = biên LN ròng × doanh thu, tỷ VND (LNST TNDN, không phải phần của chủ sở hữu)" },
-  { key: "npat_yoy", group: "q", en: "NPAT YoY", vi: "LNST YoY",
-    fEn: "NPAT ÷ NPAT same quarter last year − 1 (÷ |prior|, so a loss→profit swing reads positive)",
-    fVi: "LNST ÷ LNST cùng kỳ năm trước − 1 (chia |kỳ trước|, nên lỗ→lãi cho giá trị dương)" },
-  // Reading order is the comparison itself, as on the manufacturing tab: what
-  // it costs NOW, what it normally costs, then the gap. `wrap` on the two long
-  // labels — in Vietnamese "P/B trung bình 5 năm" ran 171px to hold a number
-  // like "1.18"; wrapping hands the width back to the data.
-  { key: "pb", group: "d", en: "P/B", vi: "P/B",
-    fEn: "Price ÷ book value per share, from the quarterly FiinProX export — the same figure criterion 12 is scored from, so it moves once per import rather than daily.",
-    fVi: "Giá ÷ giá trị sổ sách mỗi cổ phiếu, lấy từ file FiinProX theo quý — đúng số mà tiêu chí 12 dùng để chấm, nên chỉ thay đổi mỗi lần nhập file, không cập nhật hằng ngày." },
-  { key: "pb_5y_avg", group: "d", wrap: true, en: "5-Year Average P/B", vi: "P/B trung bình 5 năm",
-    fEn: "Mean P/B over the last 20 quarters. Criterion 12 compares the current P/B to the MEDIAN of the same window, which is a different number.",
-    fVi: "P/B trung bình 20 quý gần nhất. Tiêu chí 12 so P/B hiện tại với TRUNG VỊ của cùng cửa sổ đó — là một con số khác." },
-  { key: "pb_vs_avg", group: "d", wrap: true, en: "P/B vs. 5-Year Average", vi: "P/B vs. trung bình 5 năm",
-    fEn: "Current P/B ÷ 5-year average P/B − 1. RED is above its own history (paying a premium), GREEN is below it — the opposite of the P&L columns, where up is good.",
-    fVi: "P/B hiện tại ÷ P/B trung bình 5 năm − 1. ĐỎ là cao hơn mức bình thường của chính nó (đắt hơn), XANH là thấp hơn — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
-] as const;
-
-type ExtraKey = (typeof RE_EXTRA)[number]["key"];
+type ExtraKey = ReExtraKey;
 type SortKey = "symbol" | "total_score" | ExtraKey | string;
 
 const N_QUARTERLY = RE_EXTRA.filter((c) => c.group === "q").length;

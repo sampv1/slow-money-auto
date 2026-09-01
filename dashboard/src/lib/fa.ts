@@ -301,6 +301,33 @@ export const FA_EXTRA = [
     fVi: "P/E hiện tại ÷ trung vị P/E 5 năm − 1. ĐỎ là cao hơn mức bình thường của chính nó (đắt hơn), XANH là thấp hơn — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
 ] as const;
 
+export const FA_COMPONENTS = [
+  { pts: "c1_pts", en: "EPS YoY", vi: "EPS YoY",
+    fEn: "Latest-quarter EPS ÷ EPS same quarter last year − 1", fVi: "EPS quý mới nhất ÷ EPS cùng kỳ năm trước − 1" },
+  { pts: "c2_pts", en: "EPS 3Q", vi: "EPS BQ 3Q",
+    fEn: "Average EPS YoY growth over the last 3 quarters", fVi: "Trung bình tăng trưởng EPS YoY của 3 quý gần nhất" },
+  { pts: "c3_pts", en: "EPS+ Qs", vi: "Số quý EPS+",
+    fEn: "Number of the last 3 quarters with positive EPS YoY (0–3)", fVi: "Số quý trong 3 quý gần nhất có EPS YoY dương (0–3)" },
+  { pts: "c4_pts", en: "Revenue YoY", vi: "DT YoY",
+    fEn: "Latest-quarter revenue ÷ revenue same quarter last year − 1", fVi: "Doanh thu quý mới nhất ÷ doanh thu cùng kỳ năm trước − 1" },
+  { pts: "c5_pts", en: "GM Δ", vi: "Biên gộp Δ",
+    fEn: "Gross margin − gross margin same quarter last year (pp)", fVi: "Biên LN gộp − biên LN gộp cùng kỳ năm trước (điểm %)" },
+  { pts: "c6_pts", en: "NM Δ", vi: "Biên ròng Δ",
+    fEn: "Net margin − net margin same quarter last year (pp)", fVi: "Biên LN ròng − biên LN ròng cùng kỳ năm trước (điểm %)" },
+  { pts: "c7_pts", en: "ROE", vi: "ROE",
+    fEn: "Net income (TTM) ÷ average equity", fVi: "LNST (TTM) ÷ vốn chủ sở hữu bình quân" },
+  { pts: "c8_pts", en: "D/E", vi: "Nợ/VCSH",
+    fEn: "Total debt ÷ equity", fVi: "Tổng nợ vay ÷ vốn chủ sở hữu" },
+  // "Val"/"Định giá" is safe again now the block beside it reads "Relative
+  // Valuation"/"Định giá tương đối". It briefly had to be "P/E vs 5y", back
+  // when that block was plain "Định giá" and Vietnamese showed the same word
+  // twice in one header; the longer group name resolves that, and this column
+  // must NOT echo the "P/E vs. 5-Year Median" percent three columns along —
+  // this one is the criterion's POINTS, not the gap.
+  { pts: "c9_pts", en: "Val", vi: "Định giá",
+    fEn: "Current P/E vs 5-year median P/E", fVi: "P/E hiện tại so với trung vị P/E 5 năm" },
+] as const;
+
 /** The sky-blue block's own colours, shared so the FA Scanner and the Analysis
  *  page cannot end up painting the same seven figures two different shades. */
 export const FA_BLOCK_HEAD = "bg-sky-100 text-sky-900";

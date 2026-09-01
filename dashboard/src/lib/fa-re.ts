@@ -1,4 +1,6 @@
 import type { Locale } from "./i18n";
+import { formatBillions, formatPnl, pnlColor } from "./format";
+import { fmtRatio, relativeValuationColor, relativeValuationPct } from "./fa";
 
 /**
  * Real-estate (BĐS) FA scoring — the TS side of scripts/fa/real_estate.py.
@@ -155,4 +157,64 @@ export function reNoteLabel(note: string | undefined, locale: Locale): string | 
   if (!note) return null;
   const hit = NOTE_LABELS[note];
   return hit ? hit[locale === "vi" ? "vi" : "en"] : note;
+}
+
+export const RE_EXTRA = [
+  { key: "rev_bn", group: "q", en: "Revenue (bn)", vi: "Doanh thu (tỷ)",
+    fEn: "Net revenue for the selected quarter, VND billion",
+    fVi: "Doanh thu thuần của quý đã chọn, tỷ VND" },
+  { key: "rev_yoy", group: "q", en: "Rev YoY", vi: "DT YoY",
+    fEn: "Revenue ÷ revenue same quarter last year − 1",
+    fVi: "Doanh thu ÷ doanh thu cùng kỳ năm trước − 1" },
+  { key: "npat_bn", group: "q", en: "NPAT (bn)", vi: "LNST (tỷ)",
+    fEn: "Net profit after tax = net margin × revenue, VND billion (total NPAT, not the parent-only figure)",
+    fVi: "Lợi nhuận sau thuế = biên LN ròng × doanh thu, tỷ VND (LNST TNDN, không phải phần của chủ sở hữu)" },
+  { key: "npat_yoy", group: "q", en: "NPAT YoY", vi: "LNST YoY",
+    fEn: "NPAT ÷ NPAT same quarter last year − 1 (÷ |prior|, so a loss→profit swing reads positive)",
+    fVi: "LNST ÷ LNST cùng kỳ năm trước − 1 (chia |kỳ trước|, nên lỗ→lãi cho giá trị dương)" },
+  // Reading order is the comparison itself, as on the manufacturing tab: what
+  // it costs NOW, what it normally costs, then the gap. `wrap` on the two long
+  // labels — in Vietnamese "P/B trung bình 5 năm" ran 171px to hold a number
+  // like "1.18"; wrapping hands the width back to the data.
+  { key: "pb", group: "d", en: "P/B", vi: "P/B",
+    fEn: "Price ÷ book value per share, from the quarterly FiinProX export — the same figure criterion 12 is scored from, so it moves once per import rather than daily.",
+    fVi: "Giá ÷ giá trị sổ sách mỗi cổ phiếu, lấy từ file FiinProX theo quý — đúng số mà tiêu chí 12 dùng để chấm, nên chỉ thay đổi mỗi lần nhập file, không cập nhật hằng ngày." },
+  { key: "pb_5y_avg", group: "d", wrap: true, en: "5-Year Average P/B", vi: "P/B trung bình 5 năm",
+    fEn: "Mean P/B over the last 20 quarters. Criterion 12 compares the current P/B to the MEDIAN of the same window, which is a different number.",
+    fVi: "P/B trung bình 20 quý gần nhất. Tiêu chí 12 so P/B hiện tại với TRUNG VỊ của cùng cửa sổ đó — là một con số khác." },
+  { key: "pb_vs_avg", group: "d", wrap: true, en: "P/B vs. 5-Year Average", vi: "P/B vs. trung bình 5 năm",
+    fEn: "Current P/B ÷ 5-year average P/B − 1. RED is above its own history (paying a premium), GREEN is below it — the opposite of the P&L columns, where up is good.",
+    fVi: "P/B hiện tại ÷ P/B trung bình 5 năm − 1. ĐỎ là cao hơn mức bình thường của chính nó (đắt hơn), XANH là thấp hơn — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
+] as const;
+
+export type ReExtraKey = (typeof RE_EXTRA)[number]["key"];
+
+/**
+ * The real-estate block's seven values for ONE symbol, formatted and coloured.
+ *
+ * The manufacturing twin of this is faExtraCells in lib/fa.ts. They are NOT the
+ * same function and must not be merged: this rubric values a developer on P/B
+ * against its own 5-year AVERAGE, because a property book is the asset, while
+ * the manufacturing one uses P/E against a 5-year MEDIAN. Same shape, different
+ * question.
+ *
+ * Shared by the RE Scanner's rows and the Analysis page's real-estate panel.
+ */
+export function reExtraCells(
+  facts: { revenueBn: number | null; revYoy: number | null; npatBn: number | null; npatYoy: number | null } | undefined,
+  pb: { now: number | null; avg5y: number | null } | undefined,
+): { key: ReExtraKey; text: string; cls: string }[] {
+  const pbGap = relativeValuationPct(pb?.now ?? null, pb?.avg5y ?? null);
+  const npat = facts?.npatBn ?? null;
+  return [
+    { key: "rev_bn", text: formatBillions(facts?.revenueBn ?? null), cls: "" },
+    { key: "rev_yoy", text: formatPnl(facts?.revYoy ?? null), cls: pnlColor(facts?.revYoy ?? null) },
+    // Loss quarters are common in this sector; flag them the same red the YoY
+    // columns use rather than leaving a bare minus sign to carry it.
+    { key: "npat_bn", text: formatBillions(npat), cls: npat !== null && npat < 0 ? "text-down" : "" },
+    { key: "npat_yoy", text: formatPnl(facts?.npatYoy ?? null), cls: pnlColor(facts?.npatYoy ?? null) },
+    { key: "pb", text: fmtRatio(pb?.now ?? null), cls: "" },
+    { key: "pb_5y_avg", text: fmtRatio(pb?.avg5y ?? null), cls: "" },
+    { key: "pb_vs_avg", text: formatPnl(pbGap), cls: relativeValuationColor(pbGap) },
+  ];
 }

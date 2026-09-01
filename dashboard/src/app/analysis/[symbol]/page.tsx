@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
-import { getActiveSymbols, getBusinessAnalysis, getFaQuarterlyFacts, getSymbolMeta, getSymbolProfile, getVnstockStatements } from "@/lib/cached-data";
+import type { RePb } from "@/lib/cached-data";
+import { getActiveSymbols, getBusinessAnalysis, getFaQuarterlyFacts, getRePbMetrics, getSymbolMeta, getSymbolProfile, getVnstockStatements } from "@/lib/cached-data";
 import { FinancialPanels } from "@/components/financial-panels";
 import { BusinessPanel } from "@/components/business-panel";
 import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
@@ -145,11 +146,31 @@ export default async function SymbolDrillDown({
   // Non-fatal: this is context beside a score that renders fine without it, so a
   // failure here must not take the page down the way a missing score would.
   let faFacts: QuarterlyFacts | undefined;
-  if (!isRealEstate && selectedFq) {
+  let rePb: RePb | undefined;
+  if (selectedFq) {
     try {
-      faFacts = (await getFaQuarterlyFacts(selectedFq)).get(symbol);
+      // Both rubrics need the quarter's revenue/NPAT; only real estate needs
+      // P/B, and only manufacturing has a P/E on its score row. Fetched through
+      // the SAME cached readers the two scanner tabs use, so on a warm cache
+      // this costs nothing and no page can disagree about a symbol's quarter.
+      if (isRealEstate) {
+        // Note getFaQuarterlyFacts, not a real-estate twin: revenue and NPAT
+        // come from the same fa_quarterly rows for both rubrics, which is why
+        // the RE Scanner tab calls this one too.
+        const [facts, pb] = await Promise.all([
+          getFaQuarterlyFacts(selectedFq),
+          getRePbMetrics(selectedFq),
+        ]);
+        faFacts = facts.get(symbol);
+        rePb = new Map(pb).get(symbol);
+      } else {
+        faFacts = (await getFaQuarterlyFacts(selectedFq)).get(symbol);
+      }
     } catch {
+      // Context beside a score that renders fine without it — a failure here
+      // must not take the page down the way a missing score would.
       faFacts = undefined;
+      rePb = undefined;
     }
   }
 
@@ -223,7 +244,7 @@ export default async function SymbolDrillDown({
       </div>
 
       {isRealEstate ? (
-        <ReSummary row={reRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
+        <ReSummary row={reRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} facts={faFacts} pb={rePb} />
       ) : (
         <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} facts={faFacts} />
       )}

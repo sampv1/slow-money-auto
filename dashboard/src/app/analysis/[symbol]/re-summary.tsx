@@ -2,11 +2,17 @@ import { type Locale, t } from "@/lib/i18n";
 import {
   type ReScore,
   RE_COMPONENTS,
+  RE_EXTRA,
   RE_MAX_SCORE,
   formatReValue,
   rePointsColor,
+  reExtraCells,
   reNoteLabel,
 } from "@/lib/fa-re";
+import type { QuarterlyFacts } from "@/lib/fa";
+import { yearAgoPeriod } from "@/lib/fa";
+import type { RePb } from "@/lib/cached-data";
+import { FaScannerRow } from "@/components/fa-scanner-row";
 import { formatNumber } from "@/lib/format";
 import { FaQuarterSelect } from "./fa-quarter-select";
 import { RubricBadge } from "@/components/rubric-badge";
@@ -28,11 +34,19 @@ export function ReSummary({
   locale,
   quarters,
   selectedQuarter,
+  facts,
+  pb,
 }: {
   row: ReScore | null;
   locale: Locale;
   quarters: string[];
   selectedQuarter: string | null;
+  /** The quarter's revenue / NPAT, from the same fa_quarterly rows the
+   *  manufacturing rubric uses — both scanner tabs read them. */
+  facts?: QuarterlyFacts;
+  /** Current P/B and its 5-year average; this rubric values a developer
+   *  on book, not earnings. */
+  pb?: RePb;
 }) {
   const heading = (
     <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
@@ -80,6 +94,42 @@ export function ReSummary({
           )}
         </div>
       </div>
+
+      {/* THE RE SCANNER'S OWN ROW for this symbol — score, the thirteen
+          criterion points, then its sky-blue block. Same shape as the
+          manufacturing panel's, and same reason: a reader arriving from the
+          scanner should see the line they clicked. The block differs because
+          the rubric does — P/B against a 5-year AVERAGE, since a property book
+          is the asset, where manufacturing uses P/E against a median. */}
+      <FaScannerRow
+        locale={locale}
+        score={formatNumber(row.total_score, 0)}
+        scoreMax={RE_MAX_SCORE}
+        criteria={RE_COMPONENTS.map((c) => ({
+          key: c.key, label: locale === "vi" ? c.vi : c.en, title: locale === "vi" ? c.fVi : c.fEn,
+        }))}
+        criterionCells={RE_COMPONENTS.map((c) => {
+          const b = row.breakdown?.[c.key];
+          return {
+            key: c.key,
+            text: b?.points === null || b?.points === undefined ? "—" : String(b.points),
+            cls: rePointsColor(b?.points ?? null, c.w),
+            // Raw value → band → note as the tooltip, exactly as the scanner
+            // does it: thirteen ratio columns would be unreadable, but the
+            // number behind a score must stay reachable.
+            title: b
+              ? `${formatReValue(c.key, b.value, locale)}${b.band ? ` → ${b.band}` : ""}${
+                  b.note ? ` (${reNoteLabel(b.note, locale)})` : ""}`
+              : undefined,
+          };
+        })}
+        extras={RE_EXTRA.map((c) => ({
+          key: c.key, label: locale === "vi" ? c.vi : c.en, title: locale === "vi" ? c.fVi : c.fEn,
+        }))}
+        extraCells={reExtraCells(facts, pb)}
+        nQuarterly={RE_EXTRA.filter((c) => c.group === "q").length}
+        groupTitle={`${selectedQuarter ?? row.as_of_period} vs ${yearAgoPeriod(selectedQuarter ?? row.as_of_period)}`}
+      />
 
       {/* 13-criterion breakdown. Unlike the scanner, which has 13 columns to fit
           and shows points alone, there is room here for the raw value and the
