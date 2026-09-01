@@ -2,17 +2,11 @@ import { type Locale, t } from "@/lib/i18n";
 import {
   type FaScore,
   type QuarterlyFacts,
-  FA_COMPONENTS,
-  FA_EXTRA,
   FA_NORMALIZED_MAX,
-  criterionRows,
-  faExtraCells,
   faNormalizedScore,
-  pointsColor,
   ratingBadge,
 } from "@/lib/fa";
 import { yearAgoPeriod } from "@/lib/fa";
-import { FaScannerRow } from "@/components/fa-scanner-row";
 import { RubricBadge } from "@/components/rubric-badge";
 import { formatPrice } from "@/lib/format";
 import { FaBreakdownTable } from "@/components/fa-breakdown-table";
@@ -93,39 +87,8 @@ export function FaSummary({
       </div>
 
       {/* 9-criterion breakdown */}
-      <FaBreakdownTable row={row} locale={locale} />
-
-      {/* THE FA SCANNER'S OWN ROW for this symbol — score, the nine criterion
-          points, then the sky-blue block. A reader arriving from the scanner
-          sees the line they just clicked rather than a rearrangement of it.
-          The detailed table below keeps what the row cannot show: each
-          criterion's RAW VALUE, which is how a score is checked by hand. */}
-      <FaScannerRow
-        locale={locale}
-        score={String(faNormalizedScore(row))}
-        scoreMax={FA_NORMALIZED_MAX}
-        criteria={FA_COMPONENTS.map((c) => ({
-          key: c.pts, label: locale === "vi" ? c.vi : c.en, title: locale === "vi" ? c.fVi : c.fEn,
-        }))}
-        criterionCells={FA_COMPONENTS.map((c, i) => {
-          const pts = row[c.pts as keyof FaScore] as number | null;
-          return {
-            key: c.pts,
-            text: pts === null || pts === undefined ? "—" : String(pts),
-            cls: pts === null || pts === undefined ? "text-fg-faint" : pointsColor(pts),
-            // The raw value as the tooltip, the way the RE scanner does it:
-            // points are the cell, but the number behind a score stays
-            // reachable without opening a spreadsheet.
-            title: criterionRows(row, locale)[i]?.value,
-          };
-        })}
-        extras={FA_EXTRA.map((c) => ({
-          key: c.key, label: locale === "vi" ? c.vi : c.en, title: locale === "vi" ? c.fVi : c.fEn,
-        }))}
-        extraCells={faExtraCells(row, facts)}
-        nQuarterly={FA_EXTRA.filter((c) => c.group === "q").length}
-        groupTitle={`${selectedQuarter ?? row.as_of_period} vs ${priorQuarter || "—"}`}
-      />
+      <FaBreakdownTable row={row} locale={locale} facts={facts}
+        groupTitle={`${selectedQuarter ?? row.as_of_period} vs ${priorQuarter || "—"}`} />
 
       {/* Valuation line */}
       <div className="mt-3 text-body-lg text-fg-muted flex flex-wrap gap-x-6 gap-y-1">

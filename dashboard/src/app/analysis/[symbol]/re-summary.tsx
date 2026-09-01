@@ -131,57 +131,10 @@ export function ReSummary({
         groupTitle={`${selectedQuarter ?? row.as_of_period} vs ${yearAgoPeriod(selectedQuarter ?? row.as_of_period)}`}
       />
 
-      {/* 13-criterion breakdown. Unlike the scanner, which has 13 columns to fit
-          and shows points alone, there is room here for the raw value and the
-          band it landed in — the three things needed to check a score by hand. */}
-      <div className="bg-panel rounded-lg border border-line overflow-x-auto">
-        <table className="w-full text-body-lg">
-          <thead className="bg-panel-2 border-y border-line-strong">
-            <tr className="border-b border-line text-left text-fg-muted">
-              <th className="px-4 py-2 label">{t(locale, "faBreakdownCriterion")}</th>
-              <th className="px-4 py-2 label text-right">{t(locale, "faBreakdownValue")}</th>
-              <th className="px-4 py-2 label text-right">{t(locale, "faReBand")}</th>
-              <th className="px-4 py-2 label text-right">{t(locale, "faBreakdownPoints")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {RE_COMPONENTS.map((c) => {
-              const b = row.breakdown?.[c.key];
-              return (
-                <tr key={c.key} className="border-b border-line-faint">
-                  <td className="px-4 py-2 text-fg" title={locale === "vi" ? c.fVi : c.fEn}>
-                    <span className="font-mono text-data text-fg-label mr-2">
-                      {c.key.toUpperCase()}
-                    </span>
-                    {locale === "vi" ? c.vi : c.en}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono">
-                    {formatReValue(c.key, b?.value ?? null, locale)}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-data text-fg-muted">
-                    {b?.band ?? "—"}
-                    {/* A precedence rule fired rather than the plain bands —
-                        say so, or a reader checking C10 against the table will
-                        not be able to reproduce the points. */}
-                    {b?.note && (
-                      <span className="block text-fg-label">{reNoteLabel(b.note, locale)}</span>
-                    )}
-                  </td>
-                  <td
-                    className={`px-4 py-2 text-right font-mono font-medium ${rePointsColor(
-                      b?.points ?? null,
-                      c.w,
-                    )}`}
-                  >
-                    {b?.points ?? "—"}
-                    <span className="text-fg-label"> / {c.w}</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {/* The vertical 13-criterion list that stood here was a DUPLICATE: the
+          row above already carries every criterion's points, and the raw value
+          and band it landed in survive as each cell's tooltip. Two renderings
+          of the same thirteen scores on one page only asks which to read. */}
 
       <p className="mt-3 text-body text-fg-label max-w-[76ch]">
         {t(locale, "faReRubricNote")}
