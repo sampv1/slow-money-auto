@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { getActiveSymbols, getBusinessAnalysis, getSymbolMeta, getSymbolProfile, getVnstockStatements } from "@/lib/cached-data";
+import { getActiveSymbols, getBusinessAnalysis, getFaQuarterlyFacts, getSymbolMeta, getSymbolProfile, getVnstockStatements } from "@/lib/cached-data";
 import { FinancialPanels } from "@/components/financial-panels";
 import { BusinessPanel } from "@/components/business-panel";
 import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
@@ -8,7 +8,7 @@ import { getLocale, t } from "@/lib/i18n";
 import { getUserRole } from "@/lib/supabase-server";
 import { formatPrice, formatPercent } from "@/lib/format";
 import { INDICATORS_BY_KEY, MCDX_BANKER_KEYS, directionColor, formatMcdxBanker, indicatorLabel } from "@/lib/ta-indicators";
-import type { FaScore } from "@/lib/fa";
+import type { FaScore, QuarterlyFacts } from "@/lib/fa";
 import type { ReScore } from "@/lib/fa-re";
 import { TechnicalAnalysis } from "@/components/technical-analysis";
 import { CollapsibleSection } from "@/components/collapsible-section";
@@ -136,6 +136,23 @@ export default async function SymbolDrillDown({
   const reRow: ReScore | null =
     isRealEstate && selectedFq ? reRows.find((r) => r.as_of_period === selectedFq) ?? null : null;
 
+  // Revenue / NPAT / NPAT-YoY for the selected quarter — the same figures the FA
+  // Scanner shows in its sky-blue block. Fetched through the SAME cached reader
+  // the scanner uses, so on a warm cache this costs nothing and the two pages
+  // can never disagree about a symbol's quarter. Only the one symbol's entry
+  // crosses into the component; the map itself is universe-wide.
+  //
+  // Non-fatal: this is context beside a score that renders fine without it, so a
+  // failure here must not take the page down the way a missing score would.
+  let faFacts: QuarterlyFacts | undefined;
+  if (!isRealEstate && selectedFq) {
+    try {
+      faFacts = (await getFaQuarterlyFacts(selectedFq)).get(symbol);
+    } catch {
+      faFacts = undefined;
+    }
+  }
+
   const latest = candles[candles.length - 1];
   const prev = candles.length > 1 ? candles[candles.length - 2] : null;
   const dayChangePct = prev && prev.close ? ((latest.close - prev.close) / prev.close) * 100 : null;
@@ -208,7 +225,7 @@ export default async function SymbolDrillDown({
       {isRealEstate ? (
         <ReSummary row={reRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
       ) : (
-        <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} />
+        <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} facts={faFacts} />
       )}
 
       {/* THE NUMBERS AND THE ARGUMENT, SIDE BY SIDE.

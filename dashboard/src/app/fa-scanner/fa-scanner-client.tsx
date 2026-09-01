@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { industryOptions } from "@/lib/symbol-meta";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -8,16 +8,16 @@ import { type Locale, t } from "@/lib/i18n";
 import {
   type FaScore,
   type QuarterlyFacts,
+  type FaExtraKey,
+  FA_EXTRA,
+  faExtraCells,
+  relativeValuationPct,
   FA_NORMALIZED_MAX,
   faNormalizedScore,
-  fmtRatio,
   pointsColor,
-  relativeValuationColor,
-  relativeValuationPct,
 } from "@/lib/fa";
 import { TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
-import { formatBillions, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { PinButton } from "@/components/pin-button";
 import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
@@ -52,42 +52,8 @@ const FA_COMPONENTS = [
     fEn: "Current P/E vs 5-year median P/E", fVi: "P/E hiện tại so với trung vị P/E 5 năm" },
 ] as const;
 
-// The sky-blue block: what the business did last quarter, plus how the stock is
-// trading now. Same data-driven shape as FA_COMPONENTS above.
-//   group "q" = quarterly results (fa_quarterly, moves once per quarter)
-//   group "d" = market data (moves daily)
-const FA_EXTRA = [
-  { key: "rev_bn", group: "q", en: "Revenue (bn)", vi: "Doanh thu (tỷ)",
-    fEn: "Net revenue for the selected quarter, VND billion",
-    fVi: "Doanh thu thuần của quý đã chọn, tỷ VND" },
-  { key: "rev_yoy", group: "q", en: "Rev YoY", vi: "DT YoY",
-    fEn: "Revenue ÷ revenue same quarter last year − 1",
-    fVi: "Doanh thu ÷ doanh thu cùng kỳ năm trước − 1" },
-  { key: "npat_bn", group: "q", en: "NPAT (bn)", vi: "LNST (tỷ)",
-    fEn: "Net profit after tax = net margin × revenue, VND billion (total NPAT, not the parent-only figure)",
-    fVi: "Lợi nhuận sau thuế = biên LN ròng × doanh thu, tỷ VND (LNST TNDN, không phải phần của chủ sở hữu)" },
-  { key: "npat_yoy", group: "q", en: "NPAT YoY", vi: "LNST YoY",
-    fEn: "NPAT ÷ NPAT same quarter last year − 1 (÷ |prior|, so a loss→profit swing reads positive)",
-    fVi: "LNST ÷ LNST cùng kỳ năm trước − 1 (chia |kỳ trước|, nên lỗ→lãi cho giá trị dương)" },
-  // Reading order is the comparison itself: what it costs NOW, what it normally
-  // costs, then the gap between them. `wrap` on the two long labels — each is
-  // far wider than the "17.05" beneath it, and a nowrap header would hold
-  // ~170px open for a four-character number. Wrapping lets the DATA size the
-  // column, the same fix the Portfolio table needed in Vietnamese.
-  { key: "pe", group: "d", en: "P/E", vi: "P/E",
-    fEn: "Price ÷ trailing-twelve-month EPS. Priced daily for the LATEST quarter only — older quarters show the P/E frozen at that quarter's last scoring.",
-    fVi: "Giá ÷ EPS 4 quý gần nhất. Chỉ cập nhật hằng ngày cho quý MỚI NHẤT — các quý cũ giữ P/E tại lần chấm cuối của quý đó." },
-  { key: "pe_5y_median", group: "d", wrap: true, en: "5-Year Median P/E", vi: "Trung vị P/E 5 năm",
-    fEn: "Median of the last 5 annual P/E figures (fa_annual_pe). The yardstick criterion 9 scores the current P/E against.",
-    fVi: "Trung vị P/E 5 năm gần nhất (fa_annual_pe). Đây là mốc mà tiêu chí 9 dùng để so với P/E hiện tại." },
-  { key: "pe_vs_median", group: "d", wrap: true, en: "P/E vs. 5-Year Median", vi: "P/E vs. trung vị 5 năm",
-    fEn: "Current P/E ÷ 5-year median P/E − 1. RED is above its own history (paying a premium), GREEN is below it — the opposite of the P&L columns, where up is good.",
-    fVi: "P/E hiện tại ÷ trung vị P/E 5 năm − 1. ĐỎ là cao hơn mức bình thường của chính nó (đắt hơn), XANH là thấp hơn — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
-] as const;
-
 type PtsKey = (typeof FA_COMPONENTS)[number]["pts"];
-type ExtraKey = (typeof FA_EXTRA)[number]["key"];
-type SortKey = "total_score" | "symbol" | "industry" | PtsKey | ExtraKey;
+type SortKey = "total_score" | "symbol" | "industry" | PtsKey | FaExtraKey;
 
 const N_QUARTERLY = FA_EXTRA.filter((c) => c.group === "q").length;
 const N_DAILY = FA_EXTRA.filter((c) => c.group === "d").length;
@@ -261,7 +227,7 @@ export function FaScannerClient({
         default:
           // "symbol" and "industry" are compared as text in the sort itself and
           // never reach here; the rest are real FaScore numeric columns.
-          return r[sortKey as Exclude<SortKey, "symbol" | "industry" | ExtraKey>];
+          return r[sortKey as Exclude<SortKey, "symbol" | "industry" | FaExtraKey>];
       }
     };
 
@@ -613,39 +579,16 @@ export function FaScannerClient({
                     );
                   })}
                   {(() => {
-                    const q = quarterlyBySymbol.get(row.symbol);
-                    // "—" for a missing figure, never 0: roughly a quarter of rows
-                    // have no fa_quarterly revenue at all (banks and securities
-                    // firms don't report it in this format — the same reason they
-                    // score UNRATED). A zero here would read as "no sales".
-                    // One computation, used for both the number and its colour.
-                    const peGap = relativeValuationPct(row.current_pe, row.pe_5y_median);
-                    const cells: { key: ExtraKey; node: ReactNode; cls: string }[] = [
-                      { key: "rev_bn", node: formatBillions(q?.revenueBn ?? null), cls: "" },
-                      { key: "rev_yoy", node: formatPnl(row.c4_rev_yoy), cls: pnlColor(row.c4_rev_yoy) },
-                      {
-                        key: "npat_bn",
-                        node: formatBillions(q?.npatBn ?? null),
-                        // Loss quarters are common; flag them the same red the
-                        // YoY columns use rather than leaving a bare minus sign.
-                        cls: (q?.npatBn ?? 0) < 0 ? "text-down" : "",
-                      },
-                      { key: "npat_yoy", node: formatPnl(q?.npatYoy ?? null), cls: pnlColor(q?.npatYoy ?? null) },
-                      { key: "pe", node: fmtRatio(row.current_pe), cls: "" },
-                      { key: "pe_5y_median", node: fmtRatio(row.pe_5y_median), cls: "" },
-                      {
-                        key: "pe_vs_median",
-                        node: formatPnl(peGap),
-                        cls: relativeValuationColor(peGap),
-                      },
-                    ];
-                    return cells.map((cell, i) => (
+                    // Formatted by faExtraCells in lib/fa.ts, shared with the
+                    // Analysis page's Fundamental Analysis panel so the same
+                    // seven figures cannot be formatted two different ways.
+                    return faExtraCells(row, quarterlyBySymbol.get(row.symbol)).map((cell, i) => (
                       <td
                         key={cell.key}
                         className={`px-2 py-3 text-right font-mono whitespace-nowrap ${BLOCK_BODY} ${cell.cls}`
                           + (i === 0 ? ` ${BLOCK_EDGE}` : cell.key === FIRST_DAILY_KEY ? ` ${BLOCK_SPLIT}` : "")}
                       >
-                        {cell.node}
+                        {cell.text}
                       </td>
                     ));
                   })()}

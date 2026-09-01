@@ -1,7 +1,9 @@
 import type { Locale } from "./i18n";
 import { t } from "./i18n";
+import { formatBillions, formatPnl, pnlColor } from "./format";
 
 // Mirrors the fa_scores table (see supabase/014_fa_excel_revision.sql).
+
 export type FaScore = {
   symbol: string;
   as_of_period: string;
@@ -263,5 +265,75 @@ export function criterionRows(row: FaScore, locale: Locale): CriterionRow[] {
     { key: "c7", label: t(locale, "faC7"), value: fmtPct(row.c7_roe), pts: row.c7_pts },
     { key: "c8", label: t(locale, "faC8"), value: fmtRatio(row.c8_debt_to_equity), pts: row.c8_pts },
     { key: "c9", label: t(locale, "faC9"), value: fmtRatio(row.c9_current_pe), pts: row.c9_pts },
+  ];
+}
+
+// The sky-blue block: what the business did last quarter, plus how the stock is
+// trading now. Same data-driven shape as FA_COMPONENTS above.
+//   group "q" = quarterly results (fa_quarterly, moves once per quarter)
+//   group "d" = market data (moves daily)
+export const FA_EXTRA = [
+  { key: "rev_bn", group: "q", en: "Revenue (bn)", vi: "Doanh thu (tỷ)",
+    fEn: "Net revenue for the selected quarter, VND billion",
+    fVi: "Doanh thu thuần của quý đã chọn, tỷ VND" },
+  { key: "rev_yoy", group: "q", en: "Rev YoY", vi: "DT YoY",
+    fEn: "Revenue ÷ revenue same quarter last year − 1",
+    fVi: "Doanh thu ÷ doanh thu cùng kỳ năm trước − 1" },
+  { key: "npat_bn", group: "q", en: "NPAT (bn)", vi: "LNST (tỷ)",
+    fEn: "Net profit after tax = net margin × revenue, VND billion (total NPAT, not the parent-only figure)",
+    fVi: "Lợi nhuận sau thuế = biên LN ròng × doanh thu, tỷ VND (LNST TNDN, không phải phần của chủ sở hữu)" },
+  { key: "npat_yoy", group: "q", en: "NPAT YoY", vi: "LNST YoY",
+    fEn: "NPAT ÷ NPAT same quarter last year − 1 (÷ |prior|, so a loss→profit swing reads positive)",
+    fVi: "LNST ÷ LNST cùng kỳ năm trước − 1 (chia |kỳ trước|, nên lỗ→lãi cho giá trị dương)" },
+  // Reading order is the comparison itself: what it costs NOW, what it normally
+  // costs, then the gap between them. `wrap` on the two long labels — each is
+  // far wider than the "17.05" beneath it, and a nowrap header would hold
+  // ~170px open for a four-character number. Wrapping lets the DATA size the
+  // column, the same fix the Portfolio table needed in Vietnamese.
+  { key: "pe", group: "d", en: "P/E", vi: "P/E",
+    fEn: "Price ÷ trailing-twelve-month EPS. Priced daily for the LATEST quarter only — older quarters show the P/E frozen at that quarter's last scoring.",
+    fVi: "Giá ÷ EPS 4 quý gần nhất. Chỉ cập nhật hằng ngày cho quý MỚI NHẤT — các quý cũ giữ P/E tại lần chấm cuối của quý đó." },
+  { key: "pe_5y_median", group: "d", wrap: true, en: "5-Year Median P/E", vi: "Trung vị P/E 5 năm",
+    fEn: "Median of the last 5 annual P/E figures (fa_annual_pe). The yardstick criterion 9 scores the current P/E against.",
+    fVi: "Trung vị P/E 5 năm gần nhất (fa_annual_pe). Đây là mốc mà tiêu chí 9 dùng để so với P/E hiện tại." },
+  { key: "pe_vs_median", group: "d", wrap: true, en: "P/E vs. 5-Year Median", vi: "P/E vs. trung vị 5 năm",
+    fEn: "Current P/E ÷ 5-year median P/E − 1. RED is above its own history (paying a premium), GREEN is below it — the opposite of the P&L columns, where up is good.",
+    fVi: "P/E hiện tại ÷ trung vị P/E 5 năm − 1. ĐỎ là cao hơn mức bình thường của chính nó (đắt hơn), XANH là thấp hơn — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
+] as const;
+
+export type FaExtraKey = (typeof FA_EXTRA)[number]["key"];
+
+/**
+ * The seven sky-blue values for ONE symbol, formatted and coloured.
+ *
+ * Shared by the FA Scanner (a column per key, a row per symbol) and the
+ * Analysis page (all seven for a single symbol), so the two cannot drift the
+ * way two copies of `formatBillions(q?.revenueBn)` would. Returns plain strings
+ * — no JSX — which is what lets this live beside the definitions it formats
+ * rather than in a component.
+ *
+ * `facts` may be absent: roughly a quarter of rows have no fa_quarterly revenue
+ * at all (banks and securities firms do not report in this format, which is the
+ * same reason they score UNRATED). Every such cell is an em dash, never 0 — a
+ * zero here would read as "no sales".
+ */
+export function faExtraCells(
+  row: FaScore,
+  facts: QuarterlyFacts | undefined,
+  revYoy: number | null = row.c4_rev_yoy,
+): { key: FaExtraKey; text: string; cls: string }[] {
+  // One computation, used for both the number and its colour.
+  const peGap = relativeValuationPct(row.current_pe, row.pe_5y_median);
+  const npat = facts?.npatBn ?? null;
+  return [
+    { key: "rev_bn", text: formatBillions(facts?.revenueBn ?? null), cls: "" },
+    { key: "rev_yoy", text: formatPnl(revYoy), cls: pnlColor(revYoy) },
+    // Loss quarters are common; flag them the same red the YoY columns use
+    // rather than leaving a bare minus sign to carry it.
+    { key: "npat_bn", text: formatBillions(npat), cls: (npat ?? 0) < 0 ? "text-down" : "" },
+    { key: "npat_yoy", text: formatPnl(facts?.npatYoy ?? null), cls: pnlColor(facts?.npatYoy ?? null) },
+    { key: "pe", text: fmtRatio(row.current_pe), cls: "" },
+    { key: "pe_5y_median", text: fmtRatio(row.pe_5y_median), cls: "" },
+    { key: "pe_vs_median", text: formatPnl(peGap), cls: relativeValuationColor(peGap) },
   ];
 }
