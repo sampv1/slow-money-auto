@@ -29,6 +29,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ta.common import paged_select  # noqa: E402
 from ta.run_status import RunStatus  # noqa: E402
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -292,17 +293,59 @@ def _rebase_price(bar: dict | None, k: float) -> dict | None:
     return {**bar, **{f: bar[f] / k for f in ("open", "high", "low", "close")}}
 
 
-def count_business_days(since_date: str) -> int:
-    """Count weekdays (Mon-Fri) between since_date and today, excluding since_date."""
-    start = date.fromisoformat(since_date)
-    end = today_vn()
-    count = 0
-    current = start + timedelta(days=1)
-    while current <= end:
-        if current.weekday() < 5:  # Mon=0 ... Fri=4
-            count += 1
-        current += timedelta(days=1)
-    return count
+def load_session_calendar(client, since: str) -> list[str] | None:
+    """Trading sessions on or after `since`, ascending. None if the read fails.
+
+    Taken from macro_series.vnindex — ONE ROW PER SESSION, which is exactly the
+    market calendar. ta_ohlcv would answer the same question but holds ~900 rows
+    per date, so reading two dozen sessions out of it costs twenty-odd paged
+    requests to recover two dozen distinct values. This is the same calendar
+    source interbank_interior_gaps already uses for the same reason: it knows
+    about public holidays, and Mon-Fri does not.
+    """
+    try:
+        rows = paged_select(
+            lambda off, lim: (
+                client.table("macro_series").select("date")
+                .eq("metric", "vnindex").gte("date", since)
+                .order("date").range(off, off + lim - 1)
+            ),
+            label="session calendar",
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"  session calendar unavailable ({type(e).__name__}) — "
+              f"falling back to Mon-Fri counting")
+        return None
+    return sorted({r["date"] for r in rows})
+
+
+def count_sessions_held(since_date: str, calendar: list[str] | None) -> int:
+    """Trading sessions since `since_date`, excluding it.
+
+    HOLIDAYS ARE NOT SESSIONS. This counted Mon-Fri with no holiday calendar, so
+    every public holiday advanced a position's age by one and Vietnam closes for
+    several days at a time — Tet runs 8-10 calendar days, and 2026-08-31..09-02
+    added three. `days_held` feeds check_expiry, which runs even when there is no
+    fresh bar to evaluate, so a position could be marked EXPIRED and stamped
+    closed_at on a day the market never opened. It also feeds the T+2.5
+    settlement test, where phantom sessions make a position look settled early.
+
+    The calendar is the dates ta_ohlcv actually holds. If it could not be read we
+    fall back to Mon-Fri: over-counting is what the old code always did, and it
+    is better than refusing to age a position at all.
+    """
+    if not calendar:
+        start = date.fromisoformat(since_date)
+        end = today_vn()
+        count = 0
+        current = start + timedelta(days=1)
+        while current <= end:
+            if current.weekday() < 5:
+                count += 1
+            current += timedelta(days=1)
+        return count
+    today_iso = today_vn().isoformat()
+    return sum(1 for d in calendar if since_date < d <= today_iso)
 
 
 def fetch_ref_closes(client, recs: list[dict]) -> dict[tuple[str, str], float]:
@@ -590,6 +633,14 @@ def main():
         print(f"  {sym}: exchange reference {dev * 100:+.1f}% vs last stored close "
               f"— corporate action suspected")
 
+    # The market's own calendar, read once and shared by every position below.
+    # Bounded by the oldest position being evaluated — nothing older can matter.
+    oldest = min((r["trading_date"] for r in recs), default=today_vn().isoformat())
+    session_calendar = load_session_calendar(client, oldest)
+    if session_calendar:
+        print(f"Session calendar: {len(session_calendar)} trading day(s) since {oldest} "
+              f"({session_calendar[0]} .. {session_calendar[-1]})")
+
     # Step 2: Evaluate each recommendation
     print(f"\n{'Symbol':<7} {'Entry':>9} {'SL':>9} {'TP1':>9} {'Current':>9} {'P&L':>8} {'Status':<12} {'Change'}")
     print("─" * 90)
@@ -605,7 +656,7 @@ def main():
         if k != 1.0:
             print(f"  {rec['symbol']} (id {rec['id']}): corporate-action factor k={k:.4f} "
                   f"applied (source: {ksrc}) — entry/SL/TP evaluated on nominal basis")
-        days_held = count_business_days(rec["trading_date"])
+        days_held = count_sessions_held(rec["trading_date"], session_calendar)
 
         # Evaluate TP/SL (respects T+2.5 settlement)
         updates = evaluate_recommendation(rec, price, days_held)

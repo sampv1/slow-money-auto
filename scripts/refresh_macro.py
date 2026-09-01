@@ -40,7 +40,7 @@ import requests
 
 from ta.run_status import RunStatus
 
-from ta.common import get_supabase_client, today_vn
+from ta.common import get_supabase_client, safe_execute, today_vn
 from macro.exchange_rate import (
     CENTRAL_NORMID,
     HISTORY_START,
@@ -145,7 +145,26 @@ FCI_REFRESH_DAYS = 45  # daily mode rewrites this trailing slice (idempotent)
 # How far behind `end` the newest FCI date may fall before the run goes red.
 # 4 days absorbs a weekend plus a public holiday; anything beyond that means the
 # VN-Index grid stopped advancing, which is a data outage rather than a calendar.
-FCI_MAX_LAG_DAYS = 4
+# How many stored VN-Index SESSIONS the FCI may trail before the run goes red.
+#
+# This replaced a 4-CALENDAR-DAY rule that could not tell a stale pipeline from a
+# closed market. The FCI grid IS the VN-Index date index, so during any market
+# closure longer than four days the newest FCI date is correct and unchanging
+# while the calendar keeps moving — and the gate failed a run that had nothing
+# wrong with it. Measured over 1,911 sessions since 2019: 22 closures exceed four
+# days, about 2.9 a year, and Tet produces THREE consecutive red runs every year
+# (2023-01-24/25/26, 2024-02-12/13/14, 2025-01-29/30/31, 2026-02-18/19/20).
+# Vietnam's National Day closure of 2026-08-31..09-02 would have added one more.
+#
+# Counting sessions asks the question that actually matters: did the FCI advance
+# over VN-Index dates WE ALREADY HOLD? A closed market produces no new sessions,
+# so zero behind is correct however long it lasts; a genuinely stuck FCI falls
+# behind sessions that exist. 1 tolerates a single session of publisher lag.
+#
+# This is an operational monitoring threshold, NOT part of the frozen FCI
+# validation protocol (W=504 / DXY-level / the consumed holdout). Changing it
+# cannot move a score.
+FCI_MAX_SESSIONS_BEHIND = 1
 
 # --- Interbank overnight: completeness, not just freshness -------------------
 #
@@ -643,6 +662,21 @@ def interior_gaps(stored: set[str], sessions: set[str]) -> list[str]:
     return sorted(d for d in sessions if d < newest and d not in stored)
 
 
+def fci_sessions_behind(client, latest_fci: str) -> int:
+    """How many stored VN-Index sessions are NEWER than the FCI's newest date.
+
+    One cheap exact count. The VN-Index rows are what compute_fci_rows builds its
+    grid from, so anything newer than the latest FCI date is a session the FCI
+    should have covered and did not.
+    """
+    res = safe_execute(
+        client.table("macro_series").select("date", count="exact")
+        .eq("metric", "vnindex").gt("date", latest_fci).limit(1),
+        label="fci sessions behind",
+    )
+    return res.count or 0
+
+
 def report_interbank_gaps(client, end: dt.date, st) -> None:
     """Gate the run on interbank COMPLETENESS, after the write."""
     gaps = interbank_interior_gaps(client, end)
@@ -951,14 +985,19 @@ def main():
     fci_dates = [r["date"] for r in fci_rows if r.get("metric") == METRIC_FCI_FULL]
     if fci_dates:
         latest = max(fci_dates)
-        lag = (end - dt.date.fromisoformat(latest)).days
-        if lag > FCI_MAX_LAG_DAYS:
+        behind = fci_sessions_behind(client, latest)
+        cal_lag = (end - dt.date.fromisoformat(latest)).days
+        if behind > FCI_MAX_SESSIONS_BEHIND:
             st.fail("FCI freshness",
-                    f"latest FCI date is {latest}, {lag} days behind {end}. The FCI grid is "
-                    f"the VN-Index date index, so this almost always means vnindex is missing "
-                    f"recent sessions.")
+                    f"latest FCI date is {latest}, behind {behind} stored VN-Index session(s). "
+                    f"The FCI grid is the VN-Index date index, so the sessions exist and the "
+                    f"FCI did not advance over them.")
         else:
-            st.ok("FCI freshness", f"latest {latest} ({lag}d behind {end})")
+            # The calendar lag is still reported, because during a closure it is
+            # the number a reader will notice — it just no longer decides.
+            st.ok("FCI freshness",
+                  f"latest {latest} — {behind} session(s) behind"
+                  + (f" ({cal_lag}d of calendar, market closed)" if cal_lag > 1 else ""))
 
     sys.exit(st.finish())
 
