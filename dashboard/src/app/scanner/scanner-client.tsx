@@ -1037,26 +1037,32 @@ export function ScannerClient({
                     {t(locale, "taChart")}
                   </button>
                 </form>
-              </div>
 
-              {chart.status !== "idle" && (
-                <div className="flex items-baseline gap-3">
+                {/* Sits with the symbol box and the Chart button, not over by
+                    "Close chart". All three are ways to GET somewhere — pick a
+                    symbol, draw it here, open the full analysis — while closing
+                    is the one action that undoes rather than navigates, so it
+                    keeps the opposite edge to itself. */}
+                {chart.status !== "idle" && (
                   <Link
                     href={`/analysis/${chart.symbol}?ind=${encodeURIComponent(indParam)}`}
                     className="text-data text-accent hover:underline"
                   >
                     {t(locale, "taOpenAnalysis")} →
                   </Link>
-                  <button
-                    type="button"
-                    // Back to the prompt, box included — "close" is about the
-                    // chart, not about the section it lives in.
-                    onClick={() => setChart({ status: "idle" })}
-                    className="text-data text-fg-muted hover:text-fg"
-                  >
-                    {t(locale, "taChartClose")}
-                  </button>
-                </div>
+                )}
+              </div>
+
+              {chart.status !== "idle" && (
+                <button
+                  type="button"
+                  // Back to the prompt, box included — "close" is about the
+                  // chart, not about the section it lives in.
+                  onClick={() => setChart({ status: "idle" })}
+                  className="text-data text-fg-muted hover:text-fg"
+                >
+                  {t(locale, "taChartClose")}
+                </button>
               )}
             </div>
 
