@@ -1774,17 +1774,32 @@ export function ChartClient({
     }
 
     // === Pane sizing =============================================
+    //
+    // THE CHART SHOULD OPEN ON THE VIEW PEOPLE ACTUALLY WANT, not on one they
+    // have to drag the separators into. The price pane is what the page is for:
+    // candles, the three MAs, the ZigZag and every S/R line are read there,
+    // while the subplots are context checked at a glance. The previous split
+    // (3 : 1.4 : 1.2 each) gave price only 44% of the height with four panes
+    // open — the candles were compressed into a band while volume alone held a
+    // fifth of the chart.
+    //
+    // Written as PERCENTAGES OF THE DEFAULT FOUR-PANE LAYOUT so the intent is
+    // legible: price 65, volume 8, each subplot 12. The library normalises
+    // stretch factors, so these are ratios, not pixels — the numbers only read
+    // as percentages when price + volume + two subplots are open, which is the
+    // default set.
+    const PANE_STRETCH = { price: 65, volume: 8, subplot: 12 };
     const allPanes = chart.panes();
-    // Price gets the most space; subplots are compact.
-    if (allPanes[0]) allPanes[0].setStretchFactor(3);
-    // 1.4, not 1. With four panes open the volume row was 1/6.4 of the height —
-    // ~120px of which a third was scale margin — which is not enough vertical
-    // range to tell a spike from an ordinary session.
-    if (allPanes[1]) allPanes[1].setStretchFactor(1.4);
-    if (features.showRSI && allPanes[panes.rsi]) allPanes[panes.rsi].setStretchFactor(1.2);
-    if (features.showMACD && allPanes[panes.macd]) allPanes[panes.macd].setStretchFactor(1.2);
-    if (features.showMcdx && allPanes[panes.mcdx]) allPanes[panes.mcdx].setStretchFactor(1.2);
-    if (features.showRs && allPanes[panes.rs]) allPanes[panes.rs].setStretchFactor(1.2);
+    if (allPanes[0]) allPanes[0].setStretchFactor(PANE_STRETCH.price);
+    // Volume is the one that suffers as subplots are added — with RSI and MACD
+    // switched on as well it falls to ~6.5% of the height. That is deliberate
+    // and it is the reader's own doing: turning on two more subplots is a
+    // statement that the subplots are what they came to look at. The separators
+    // remain draggable for anyone who disagrees.
+    if (allPanes[1]) allPanes[1].setStretchFactor(PANE_STRETCH.volume);
+    for (const idx of [panes.rsi, panes.macd, panes.mcdx, panes.rs]) {
+      if (idx !== -1 && allPanes[idx]) allPanes[idx].setStretchFactor(PANE_STRETCH.subplot);
+    }
 
     // === Markers routed to the correct pane ======================
     // Two de-noising passes keep persistent (state-based) signals — Stage
