@@ -1539,7 +1539,17 @@ export function ChartClient({
       HistogramSeries,
       {
         priceFormat: { type: "volume" },
-        lastValueVisible: false,
+        // The last session's volume on the axis, exactly as the price pane
+        // shows the last close. Without it the pane had a scale but no read of
+        // TODAY — "is this a lot?" meant eyeballing the newest bar against the
+        // ticks. The library pairs this with `title`, so the badge reads
+        // "Volume 12.3M" and stays self-describing.
+        //
+        // Safe against the Vol MA20 badge beside it: that one is drawn by
+        // VolumeMaPrimitive, which already measures against this badge and
+        // pushes itself clear when the two last values land within a badge
+        // height of each other (see _labelY above).
+        lastValueVisible: true,
         title: "Volume",
         // The pane's scale must cover the AVERAGE as well as the bars, and the
         // average is a primitive now, which the scale never consults. Widening
