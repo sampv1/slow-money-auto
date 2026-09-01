@@ -1784,11 +1784,27 @@ export function ChartClient({
     // fifth of the chart.
     //
     // Written as PERCENTAGES OF THE DEFAULT FOUR-PANE LAYOUT so the intent is
-    // legible: price 65, volume 8, each subplot 12. The library normalises
-    // stretch factors, so these are ratios, not pixels — the numbers only read
-    // as percentages when price + volume + two subplots are open, which is the
-    // default set.
-    const PANE_STRETCH = { price: 65, volume: 8, subplot: 12 };
+    // legible. The library normalises stretch factors, so these are ratios, not
+    // pixels — the numbers only read as percentages when price + volume + two
+    // subplots are open, which is the default set.
+    //
+    // MEASURED off the target layout rather than chosen.
+    //
+    // The one axis that reports its own height is VOLUME: its data range is
+    // fixed by the bars, so when the library widens the tick interval it is
+    // because the pane no longer fits the finer one. The target's step had
+    // DOUBLED from 5M to 10M, with 2 gaps where the previous layout had 5 —
+    // against a known 20.6% that puts volume at ~8%, which is what it renders.
+    //
+    // The PRICE axis does NOT report height this way, and reading it as if it
+    // did is the mistake this comment exists to prevent: the target showed 15
+    // ticks against 11 at the same 2.50 step, which looks like 1.36x the pixels
+    // but is really a wider VALUE range (77.50-42.50 vs 77.50-52.50) left
+    // behind by dragging the scale. Height spaces the same range further apart;
+    // it does not add ticks. Price and the subplots were settled by comparing
+    // renders against the target instead — the giveaway is that the subplots sit
+    // at twice the volume pane's height, which 16 : 8 reproduces exactly.
+    const PANE_STRETCH = { price: 60, volume: 8, subplot: 16 };
     const allPanes = chart.panes();
     if (allPanes[0]) allPanes[0].setStretchFactor(PANE_STRETCH.price);
     // Volume is the one that suffers as subplots are added — with RSI and MACD
