@@ -301,6 +301,13 @@ export const FA_EXTRA = [
     fVi: "P/E hiện tại ÷ trung vị P/E 5 năm − 1. ĐỎ là cao hơn mức bình thường của chính nó (đắt hơn), XANH là thấp hơn — ngược với các cột lãi/lỗ, nơi tăng là tốt." },
 ] as const;
 
+/** The sky-blue block's own colours, shared so the FA Scanner and the Analysis
+ *  page cannot end up painting the same seven figures two different shades. */
+export const FA_BLOCK_HEAD = "bg-sky-100 text-sky-900";
+export const FA_BLOCK_BODY = "bg-sky-50";
+export const FA_BLOCK_EDGE = "border-l-2 border-sky-300";  // outer edge of the block
+export const FA_BLOCK_SPLIT = "border-l border-sky-200";   // quarterly | daily divider
+
 export type FaExtraKey = (typeof FA_EXTRA)[number]["key"];
 
 /**

@@ -2,12 +2,13 @@ import { type Locale, t } from "@/lib/i18n";
 import {
   type FaScore,
   type QuarterlyFacts,
-  FA_EXTRA,
   FA_NORMALIZED_MAX,
-  faExtraCells,
   faNormalizedScore,
   ratingBadge,
 } from "@/lib/fa";
+import { yearAgoPeriod } from "@/lib/fa";
+import { FaExtraBlock } from "@/components/fa-extra-block";
+import { RubricBadge } from "@/components/rubric-badge";
 import { formatPrice } from "@/lib/format";
 import { FaBreakdownTable } from "@/components/fa-breakdown-table";
 import { FaQuarterSelect } from "./fa-quarter-select";
@@ -49,8 +50,7 @@ export function FaSummary({
 
   const badge = ratingBadge(row.rating);
   const unrated = row.rating === "UNRATED";
-  // Formatted by the same helper the FA Scanner's rows use.
-  const cells = faExtraCells(row, facts);
+  const priorQuarter = yearAgoPeriod(selectedQuarter ?? row.as_of_period);
 
   return (
     <section className="mt-6">
@@ -67,6 +67,12 @@ export function FaSummary({
             <span className={`inline-flex items-center px-2.5 py-1 text-body-lg rounded font-medium ${badge.className}`}>
               {badge.label}
             </span>
+            {/* WHICH RUBRIC scored this. The FA Scanner splits the two across
+                tabs, so the reader always knows there; here the number arrives
+                with nothing saying whether it came from the 9-criterion
+                manufacturing rubric or the 13-criterion real-estate one — and
+                the two are not comparable. */}
+            <RubricBadge group="manufacturing" locale={locale} />
           </div>
           {quarters.length > 0 && selectedQuarter ? (
             <FaQuarterSelect quarters={quarters} selected={selectedQuarter} label={t(locale, "faAsOf")} />
@@ -84,44 +90,8 @@ export function FaSummary({
       {/* 9-criterion breakdown */}
       <FaBreakdownTable row={row} locale={locale} />
 
-      {/* The FA Scanner's sky-blue block, for this one symbol.
-          What the business DID last quarter and what the market is paying for
-          it — the two things the nine criteria score but never state outright.
-          Reading a criterion as "12 points for revenue growth" without the
-          revenue itself is the gap this closes.
-
-          Laid out as labelled stats rather than appended to the breakdown
-          table: those are CRITERIA, each with a points row beneath it, and
-          these seven have no points. Sharing that table would have meant seven
-          columns with a permanently empty second row. */}
-      {/* md:, not @2xl: — this section spans the page, so there is no container
-          to query, and a @-variant with no @container ancestor silently never
-          applies. */}
-      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-        {(["q", "d"] as const).map((group) => (
-          <div key={group} className="bg-panel rounded-lg border border-line p-3">
-            <h3 className="text-label font-semibold tracking-wide uppercase text-fg-muted mb-2">
-              {t(locale, group === "q" ? "faQuarterlyGroup" : "faValuationGroup")}
-            </h3>
-            <dl className="flex flex-wrap gap-x-6 gap-y-2">
-              {FA_EXTRA.filter((c) => c.group === group).map((c) => {
-                const cell = cells.find((x) => x.key === c.key)!;
-                return (
-                  <div key={c.key} className="min-w-0">
-                    <dt
-                      className="text-data text-fg-muted leading-tight"
-                      title={locale === "vi" ? c.fVi : c.fEn}
-                    >
-                      {locale === "vi" ? c.vi : c.en}
-                    </dt>
-                    <dd className={`font-mono text-body-lg ${cell.cls}`}>{cell.text}</dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </div>
-        ))}
-      </div>
+      <FaExtraBlock row={row} facts={facts} locale={locale}
+        period={selectedQuarter ?? row.as_of_period} priorPeriod={priorQuarter} />
 
       {/* Valuation line */}
       <div className="mt-3 text-body-lg text-fg-muted flex flex-wrap gap-x-6 gap-y-1">

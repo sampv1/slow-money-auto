@@ -10,6 +10,10 @@ import {
   type QuarterlyFacts,
   type FaExtraKey,
   FA_EXTRA,
+  FA_BLOCK_HEAD,
+  FA_BLOCK_BODY,
+  FA_BLOCK_EDGE,
+  FA_BLOCK_SPLIT,
   faExtraCells,
   relativeValuationPct,
   FA_NORMALIZED_MAX,
@@ -67,10 +71,11 @@ const FIRST_DAILY_KEY = FA_EXTRA.find((c) => c.group === "d")!.key;
 // Final score, so a cool tint reads as "a different kind of data" instead of
 // "more important". The block stays tinted on row hover because a <td>
 // background paints over the <tr>'s hover — same as that amber column.
-const BLOCK_HEAD = "bg-sky-100 text-sky-900";
-const BLOCK_BODY = "bg-sky-50";
-const BLOCK_EDGE = "border-l-2 border-sky-300"; // outer edge of the whole block
-const BLOCK_SPLIT = "border-l border-sky-200"; // quarterly | daily divider
+// Shared with the Analysis page's Fundamental Analysis panel — see lib/fa.ts.
+const BLOCK_HEAD = FA_BLOCK_HEAD;
+const BLOCK_BODY = FA_BLOCK_BODY;
+const BLOCK_EDGE = FA_BLOCK_EDGE;
+const BLOCK_SPLIT = FA_BLOCK_SPLIT;
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
 // Minimum quarterly net profit after tax, in VND billion. Keeps the list to

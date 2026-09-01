@@ -356,6 +356,7 @@ export const translations = {
 
     // FA Scanner page + fundamental-analysis panel
     faScannerTitle: "FA Scanner",
+    faRubricPrefix: "Rubric",
     faSubnavManufacturing: "Manufacturing",
     faSubnavRealEstate: "Real estate",
     faSubnavHintManufacturing: "9-criterion rubric · general operating companies",
@@ -1265,6 +1266,7 @@ export const translations = {
 
     // FA Scanner page + fundamental-analysis panel
     faScannerTitle: "Lọc cơ bản",
+    faRubricPrefix: "Bộ tiêu chí",
     faSubnavManufacturing: "Sản xuất",
     faSubnavRealEstate: "Bất động sản",
     faSubnavHintManufacturing: "Bộ tiêu chí 9 mục · doanh nghiệp sản xuất kinh doanh",

@@ -9,6 +9,7 @@ import {
 } from "@/lib/fa-re";
 import { formatNumber } from "@/lib/format";
 import { FaQuarterSelect } from "./fa-quarter-select";
+import { RubricBadge } from "@/components/rubric-badge";
 
 /**
  * Fundamental-analysis panel for a PROPERTY DEVELOPER, on /analysis/[symbol].
@@ -63,7 +64,12 @@ export function ReSummary({
               {formatNumber(row.total_score, 0)}
               <span className="text-fg-label text-base"> / {RE_MAX_SCORE}</span>
             </span>
-            <span className="label">{t(locale, "faReRubricTag")}</span>
+            {/* Was a plain "real-estate rubric · 13 criteria" caption. Now the
+                same badge the manufacturing panel carries, wearing the FA
+                Scanner's own tab wording, so a reader sees ONE way of being
+                told which rubric scored a symbol rather than two. The old
+                caption survives as this badge's tooltip. */}
+            <RubricBadge group="real_estate" locale={locale} />
           </div>
           {quarters.length > 0 && selectedQuarter ? (
             <FaQuarterSelect quarters={quarters} selected={selectedQuarter} label={t(locale, "faAsOf")} />
