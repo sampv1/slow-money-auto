@@ -1,18 +1,12 @@
 import { type Locale, t } from "@/lib/i18n";
 import {
   type ReScore,
-  RE_COMPONENTS,
-  RE_EXTRA,
   RE_MAX_SCORE,
-  formatReValue,
-  rePointsColor,
-  reExtraCells,
-  reNoteLabel,
 } from "@/lib/fa-re";
 import type { QuarterlyFacts } from "@/lib/fa";
 import { yearAgoPeriod } from "@/lib/fa";
 import type { RePb } from "@/lib/cached-data";
-import { FaScannerRow } from "@/components/fa-scanner-row";
+import { ReBreakdownTable } from "@/components/re-breakdown-table";
 import { formatNumber } from "@/lib/format";
 import { FaQuarterSelect } from "./fa-quarter-select";
 import { RubricBadge } from "@/components/rubric-badge";
@@ -95,46 +89,14 @@ export function ReSummary({
         </div>
       </div>
 
-      {/* THE RE SCANNER'S OWN ROW for this symbol — score, the thirteen
-          criterion points, then its sky-blue block. Same shape as the
-          manufacturing panel's, and same reason: a reader arriving from the
-          scanner should see the line they clicked. The block differs because
-          the rubric does — P/B against a 5-year AVERAGE, since a property book
-          is the asset, where manufacturing uses P/E against a median. */}
-      <FaScannerRow
-        locale={locale}
-        score={formatNumber(row.total_score, 0)}
-        scoreMax={RE_MAX_SCORE}
-        criteria={RE_COMPONENTS.map((c) => ({
-          key: c.key, label: locale === "vi" ? c.vi : c.en, title: locale === "vi" ? c.fVi : c.fEn,
-        }))}
-        criterionCells={RE_COMPONENTS.map((c) => {
-          const b = row.breakdown?.[c.key];
-          return {
-            key: c.key,
-            text: b?.points === null || b?.points === undefined ? "—" : String(b.points),
-            cls: rePointsColor(b?.points ?? null, c.w),
-            // Raw value → band → note as the tooltip, exactly as the scanner
-            // does it: thirteen ratio columns would be unreadable, but the
-            // number behind a score must stay reachable.
-            title: b
-              ? `${formatReValue(c.key, b.value, locale)}${b.band ? ` → ${b.band}` : ""}${
-                  b.note ? ` (${reNoteLabel(b.note, locale)})` : ""}`
-              : undefined,
-          };
-        })}
-        extras={RE_EXTRA.map((c) => ({
-          key: c.key, label: locale === "vi" ? c.vi : c.en, title: locale === "vi" ? c.fVi : c.fEn,
-        }))}
-        extraCells={reExtraCells(facts, pb)}
-        nQuarterly={RE_EXTRA.filter((c) => c.group === "q").length}
-        groupTitle={`${selectedQuarter ?? row.as_of_period} vs ${yearAgoPeriod(selectedQuarter ?? row.as_of_period)}`}
-      />
-
-      {/* The vertical 13-criterion list that stood here was a DUPLICATE: the
-          row above already carries every criterion's points, and the raw value
-          and band it landed in survive as each cell's tooltip. Two renderings
-          of the same thirteen scores on one page only asks which to read. */}
+      {/* Same shape as the manufacturing panel's table: criteria across as
+          columns, a value row and a points row, then the appended block. The
+          rubric differs — thirteen criteria with per-criterion weights, and a
+          block on P/B rather than P/E — but the layout should not, or a reader
+          moving between a manufacturer and a developer meets two different
+          renderings of the same idea. */}
+      <ReBreakdownTable row={row} locale={locale} facts={facts} pb={pb}
+        groupTitle={`${selectedQuarter ?? row.as_of_period} vs ${yearAgoPeriod(selectedQuarter ?? row.as_of_period)}`} />
 
       <p className="mt-3 text-body text-fg-label max-w-[76ch]">
         {t(locale, "faReRubricNote")}
