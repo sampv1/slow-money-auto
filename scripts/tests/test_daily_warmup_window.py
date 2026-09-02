@@ -59,12 +59,20 @@ class _Result:
 
 
 class FakeQuery:
-    """Serves rows in ASCENDING date order across pages, like PostgREST."""
+    """Pages rows like PostgREST, and HONOURS order(desc=...).
+
+    Honouring the sort direction is the whole point of this double. The bounded
+    read asks the database for the NEWEST max_bars rows (`order(date, desc=True)`
+    then a range), so a fake that always replies in ascending order would hand
+    back the OLDEST 600 bars and still look like a pass — which is exactly what
+    happened the first time this was written.
+    """
 
     def __init__(self, rows):
         self.rows = rows
         self._lo = 0
         self._hi = len(rows) - 1
+        self._desc = False
 
     def select(self, *a, **k):
         return self
@@ -72,7 +80,8 @@ class FakeQuery:
     def eq(self, *a):
         return self
 
-    def order(self, *a, **k):
+    def order(self, _col, desc=False, **k):
+        self._desc = desc
         return self
 
     def range(self, lo, hi):
@@ -80,11 +89,16 @@ class FakeQuery:
         return self
 
     def execute(self):
-        return _Result(self.rows[self._lo : self._hi + 1])
+        FakeClient.requests += 1
+        ordered = list(reversed(self.rows)) if self._desc else self.rows
+        return _Result(ordered[self._lo : self._hi + 1])
 
 
 class FakeClient:
+    requests = 0
+
     def __init__(self, n):
+        FakeClient.requests = 0
         # Ascending dates; close encodes the bar index so we can identify them.
         self.rows = [
             {"date": f"2020-01-01", "open": 1.0, "high": 1.0, "low": 1.0,
@@ -118,8 +132,22 @@ def main():
           f"(close={df['close'].iloc[0]:.0f})")
     check(df.index.is_monotonic_increasing, "window is still sorted ascending")
 
+    # --- 1b. the read itself is bounded, not just the result ----------
+    # The bound has to reach the DATABASE. Slicing in pandas after paging the
+    # whole series would give the same DataFrame while still costing 4 requests
+    # and 3,280 rows a symbol every night, which is most of what this change
+    # exists to avoid.
+    check(FakeClient.requests == 1,
+          f"a {m.DAILY_WARMUP_BARS}-bar window costs ONE request, not "
+          f"{-(-N // 1000)} (got {FakeClient.requests})")
+
     # --- 2. unbounded read is unchanged --------------------------------
-    full = m.load_ohlcv(c, "FPT")
+    c2 = FakeClient(N)
+    full = m.load_ohlcv(c2, "FPT")
+    # ceil(N / PAGE_SIZE): the last page is short, so paged_select stops there.
+    check(FakeClient.requests == -(-N // 1000),
+          f"the unbounded read still pages the whole series "
+          f"({FakeClient.requests} requests for {N} bars)")
     check(len(full) == N, f"unbounded read still returns everything ({len(full)})")
     check(full["close"].iloc[0] == 0, "unbounded read starts at the oldest bar")
 

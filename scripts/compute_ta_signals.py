@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pandas as pd
 
 from ta.benchmark import get_vnindex_closes
-from ta.common import get_supabase_client, paged_select, safe_execute, today_vn
+from ta.common import PAGE_SIZE, get_supabase_client, paged_select, safe_execute, today_vn
 from ta.registry import INDICATOR_SPECS, all_keys
 from ta.sr import detect_levels, upsert_levels
 from ta.trendlines import detect_trendlines, upsert_trendlines
@@ -115,24 +115,54 @@ def load_ohlcv(client, symbol: str, max_bars: int | None = None) -> pd.DataFrame
     (symbol, date) is ta_ohlcv's primary key, so ordering by date under a
     single-symbol filter is the total order that offset paging requires.
     """
-    data = paged_select(
-        lambda off, lim: (
-            client.table("ta_ohlcv")
-            .select("date,open,high,low,close,volume")
-            .eq("symbol", symbol)
-            .order("date", desc=False)
-            .range(off, off + lim - 1)
-        ),
-        label=f"ohlcv load {symbol}",
-    )
+    if max_bars is None:
+        data = paged_select(
+            lambda off, lim: (
+                client.table("ta_ohlcv")
+                .select("date,open,high,low,close,volume")
+                .eq("symbol", symbol)
+                .order("date", desc=False)
+                .range(off, off + lim - 1)
+            ),
+            label=f"ohlcv load {symbol}",
+        )
+    else:
+        # Bounded read: ask the DATABASE for the newest max_bars rows rather
+        # than paging the whole series and slicing in pandas. Same result, but
+        # the work scales with the WINDOW instead of the symbol's history —
+        # otherwise a full-history table would still cost 4 requests and ~3,280
+        # rows per symbol every night to keep 600 of them, and the bound would
+        # cap only the compute, not the read.
+        #
+        # (symbol, date) is the primary key, so descending under a single-symbol
+        # filter is the same total order as ascending, just reversed.
+        data = []
+        offset = 0
+        while len(data) < max_bars:
+            lim = min(PAGE_SIZE, max_bars - len(data))
+            rows = safe_execute(
+                client.table("ta_ohlcv")
+                .select("date,open,high,low,close,volume")
+                .eq("symbol", symbol)
+                .order("date", desc=True)
+                .range(offset, offset + lim - 1),
+                label=f"ohlcv load {symbol}",
+            ).data or []
+            data.extend(rows)
+            if len(rows) < lim:
+                break
+            offset += lim
+        data.reverse()  # back to ascending, which everything downstream assumes
+
     if not data:
         return pd.DataFrame()
 
     df = pd.DataFrame(data)
     df["date"] = pd.to_datetime(df["date"]).dt.date
     df = df.set_index("date").sort_index()
-    # Trim AFTER sorting: paging returns ascending, but the trailing window is
-    # defined on the sorted series, not on arrival order.
+    # Belt and braces: the bounded read above already returns at most max_bars,
+    # but sort_index is what actually guarantees the window is the NEWEST bars
+    # rather than whatever order the pages arrived in.
     if max_bars is not None and len(df) > max_bars:
         df = df.iloc[-max_bars:]
     # Ensure numeric dtypes
