@@ -107,6 +107,7 @@ def log_step_failure(status: RunStatus, step: str, critical: bool = True) -> Non
 
 # Re-use the orchestrator's helpers so we don't duplicate logic
 from compute_ta_signals import (  # noqa: E402
+    DAILY_WARMUP_BARS,
     compute_signals_for_symbol,
     filter_dates,
     finish_run,
@@ -329,7 +330,7 @@ def main():
                 client = get_supabase_client()
                 print(f"  [{i}/{len(symbols)}] (refreshed Supabase client)")
 
-            ohlcv = load_ohlcv(client, symbol)
+            ohlcv = load_ohlcv(client, symbol, max_bars=DAILY_WARMUP_BARS)
             if ohlcv.empty:
                 print(f"  [{i}/{len(symbols)}] {symbol} — no OHLCV, skipping")
                 continue

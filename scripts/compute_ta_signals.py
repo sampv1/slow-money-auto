@@ -64,8 +64,43 @@ def _compute_kwargs_for(fn, *, levels, trendlines, benchmark) -> dict:
     return extra
 
 
-def load_ohlcv(client, symbol: str) -> pd.DataFrame:
-    """Load full OHLCV history for a symbol from ta_ohlcv as a date-indexed DataFrame.
+# Bars the daily pass loads per symbol. It writes ONLY the newest date's
+# signals, so everything before that is warmup — the depth the indicators need
+# to be correct today, nothing more.
+#
+# The deepest requirement is 252 bars (YEAR_WINDOW, the 52-week breakouts) plus
+# MA200_SLOPE_LOOKBACK = 21 on a 200-bar average, so ~253. 600 is ~2.2x that.
+#
+# It matters because `detect_levels` has NO window of its own — it clusters
+# whatever series it is handed — so this bound, not the table's depth, is what
+# decides how far back S/R looks. Today that decision is made by accident:
+# ta_ohlcv holds a median of 595 bars per symbol but a maximum of 907, so
+# symbols currently get materially different amounts of S/R history for no
+# reason other than when their backfill ran. A fixed window makes it uniform.
+#
+# 600 is NOT a no-op — 672 of 1,564 symbols hold more than that. Measured on 40
+# random symbols (17 of them deeper than 600): ZERO trigger flips, values
+# differing only at 2e-15 (bb_squeeze, float noise) to 7e-7 (mcdx_banker_*,
+# whose EMAs are IIR and never fully forget), and ONE symbol whose S/R set moved
+# (POT, 634 bars). That is the price, and it is paid once, now — versus 1000+,
+# which would be a true no-op today only to impose a much larger S/R change on
+# every symbol the day a full backfill lands.
+#
+# Measured at 300 bars, for contrast: S/R sets move on 87% of symbols and
+# triggered state on 21%, to save 16 minutes a night. And measured unbounded
+# against a full-history table (~3,280 bars average): ~7.6 s/symbol, i.e. a ~4 h
+# nightly pass inside a 6 h GitHub Actions ceiling, to produce exactly the same
+# ~8,600 stored rows.
+DAILY_WARMUP_BARS = 600
+
+
+def load_ohlcv(client, symbol: str, max_bars: int | None = None) -> pd.DataFrame:
+    """Load OHLCV history for a symbol from ta_ohlcv as a date-indexed DataFrame.
+
+    `max_bars` keeps only the most recent N bars — a trailing window, re-read
+    each run. Pass it on the DAILY path, where only the newest date is written.
+    Leave it None for `--since` / `--all-dates`, which compute PAST dates and
+    therefore need the bars that preceded them.
 
     PAGED, and it has to be. This read has no date bound by design — every
     indicator computes over the whole series — so it grows with the symbol's
@@ -96,6 +131,10 @@ def load_ohlcv(client, symbol: str) -> pd.DataFrame:
     df = pd.DataFrame(data)
     df["date"] = pd.to_datetime(df["date"]).dt.date
     df = df.set_index("date").sort_index()
+    # Trim AFTER sorting: paging returns ascending, but the trailing window is
+    # defined on the sorted series, not on arrival order.
+    if max_bars is not None and len(df) > max_bars:
+        df = df.iloc[-max_bars:]
     # Ensure numeric dtypes
     for col in ("open", "high", "low", "close"):
         df[col] = df[col].astype(float)
@@ -271,7 +310,16 @@ def finish_run(client, run_id: int | None, status: str, symbols_n: int, signals_
 def inspect_symbol_date(client, symbol: str, target_date: str):
     """Pretty-print all signals for a single symbol+date (debugging helper)."""
     print(f"Loading OHLCV for {symbol}...")
-    ohlcv = load_ohlcv(client, symbol)
+    # Same trailing window the daily pass uses, so inspecting the latest date
+    # reproduces exactly what was stored rather than a near-miss. A date older
+    # than the window falls back to the full series — this is a debugging tool,
+    # and answering the question matters more than matching the pipeline for a
+    # date the pipeline is no longer computing.
+    ohlcv = load_ohlcv(client, symbol, max_bars=DAILY_WARMUP_BARS)
+    if not ohlcv.empty and target_date < ohlcv.index.min().isoformat():
+        print(f"  {target_date} predates the {DAILY_WARMUP_BARS}-bar window "
+              f"(starts {ohlcv.index.min()}) — reloading full history.")
+        ohlcv = load_ohlcv(client, symbol)
     if ohlcv.empty:
         print(f"  No OHLCV for {symbol}")
         return
@@ -351,6 +399,9 @@ def main():
 
     # Resolve date scope
     latest_only = not args.all_dates and not args.since
+    # Backfills compute PAST dates and need the bars before them, so they read
+    # everything; the daily path only ever writes the newest date.
+    warmup = DAILY_WARMUP_BARS if latest_only else None
     since_date = date.fromisoformat(args.since) if args.since else None
     if latest_only:
         print("Date scope: latest available date only.")
@@ -391,7 +442,7 @@ def main():
                 client = get_supabase_client()
                 print(f"[{i}/{len(symbols)}] (refreshed Supabase client)")
 
-            ohlcv = load_ohlcv(client, symbol)
+            ohlcv = load_ohlcv(client, symbol, max_bars=warmup)
             if ohlcv.empty:
                 print(f"[{i}/{len(symbols)}] {symbol} — no OHLCV, skipping")
                 continue
