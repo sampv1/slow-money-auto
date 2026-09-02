@@ -108,7 +108,8 @@ def existing_sources(client, symbol: str) -> dict[str, str]:
 
 
 def writable_rows(derived: dict[str, dict], sources: dict[str, str],
-                  min_period: str) -> tuple[list[dict], dict[str, int]]:
+                  min_period: str, missing: list[str] | None = None
+                  ) -> tuple[list[dict], dict[str, int]]:
     """Rows this importer is allowed to write, plus a tally of what it refused.
 
     THE ONLY PLACE THE TWO GUARDS ARE APPLIED. Kept as a pure function so both
@@ -117,7 +118,15 @@ def writable_rows(derived: dict[str, dict], sources: dict[str, str],
     must account for every FiinProX row in range.
     """
     keep: list[dict] = []
-    tally = {"frozen": 0, "fiinpro": 0, "empty": 0}
+    tally = {"frozen": 0, "fiinpro": 0, "empty": 0, "format": 0}
+
+    # A filer using a different chart of accounts (banks, securities) yields
+    # rows that look writable but whose missing fields score as LOST POINTS
+    # rather than absent data. Refuse the symbol whole rather than write a
+    # partial row — absence of a line item is not a zero.
+    if missing:
+        tally["format"] = len(derived)
+        return [], tally
     for period, row in derived.items():
         if period_index(period) < period_index(min_period):
             tally["frozen"] += 1
@@ -172,14 +181,17 @@ def main() -> int:
     print(f"{len(targets)} symbol(s) behind {want}\n")
 
     written = fetched = failed = 0
-    refused = {"frozen": 0, "fiinpro": 0, "empty": 0}
+    refused = {"frozen": 0, "fiinpro": 0, "empty": 0, "format": 0}
     pending: list[dict] = []
     fail_list: list[str] = []
 
     for i, sym in enumerate(targets, 1):
         try:
-            derived = vq.rows_for_symbol(sym)
+            derived, missing = vq.rows_and_format(sym)
             fetched += 1
+            if missing:
+                print(f"  [{i}/{len(targets)}] {sym}: unsupported statement format "
+                      f"(missing {', '.join(missing[:3])}{'...' if len(missing) > 3 else ''})")
         except Exception as e:  # noqa: BLE001
             failed += 1
             fail_list.append(sym)
@@ -187,7 +199,7 @@ def main() -> int:
             continue
 
         sources = {} if args.dry_run else existing_sources(client, sym)
-        rows, tally = writable_rows(derived, sources, args.min_period)
+        rows, tally = writable_rows(derived, sources, args.min_period, missing)
         for k in refused:
             refused[k] += tally[k]
         if rows:
@@ -207,7 +219,8 @@ def main() -> int:
     print(f"\n{'would write' if args.dry_run else 'wrote'} {written} row(s) · "
           f"fetched {fetched} · failed {failed}")
     print(f"refused: {refused['frozen']} frozen (<= {args.min_period}), "
-          f"{refused['fiinpro']} FiinProX-owned, {refused['empty']} empty")
+          f"{refused['fiinpro']} FiinProX-owned, {refused['empty']} empty, "
+          f"{refused['format']} unsupported format (banks/securities)")
     if fail_list:
         print(f"\n::warning::{len(fail_list)} symbol(s) failed to fetch. Re-run with:\n"
               f"  python3 refresh_fa_auto.py --symbols {' '.join(fail_list)}")

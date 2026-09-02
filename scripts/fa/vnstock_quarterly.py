@@ -98,6 +98,43 @@ def _div(a, b):
     return (a / b) if (a is not None and b not in (None, 0)) else None
 
 
+# Every label the 9-criterion rubric needs. A statement that is missing any of
+# them is not a sparse filing — it is a DIFFERENT FORMAT, and deriving from it
+# yields nulls that the scorer reads as lost points rather than absent data.
+REQUIRED = tuple(INCOME.values()) + tuple(BALANCE.values())
+
+
+def missing_labels(income, balance) -> list[str]:
+    """Which required line items this filer does not use.
+
+    BANKS AND SECURITIES FIRMS FILE A DIFFERENT CHART OF ACCOUNTS, and the
+    result is silent rather than loud. Measured at 2026-Q2:
+
+        VCB (bank)        6 of 8 labels absent -> every field None
+        SSI (securities)  'Gross Profit' and 'Net profit/(loss) after tax'
+                          absent -> revenue and EPS derive fine, both MARGINS
+                          come out None
+        FPT (industrial)  none absent
+
+    The bank case is self-limiting: with no revenue and no EPS the importer
+    already refuses the row. The securities case is the dangerous one — a row
+    that looks complete enough to write, whose C5/C6 then score as missing. In
+    the 70-symbol verification that is what moved SSI A->B and VCI B->C.
+
+    CLAUDE.md records the same split for the vnstock chart set ("banks and
+    securities firms file different formats, so the named line items are
+    absent"), where the residual is 98% of TCB's assets. Same cause here.
+
+    Callers must treat a non-empty result as "this filer needs its own mapping",
+    never as "these values are zero".
+    """
+    have = set()
+    for df in (income, balance):
+        if df is not None and "item_en" in getattr(df, "columns", []):
+            have |= set(df["item_en"].astype(str).str.strip())
+    return [lbl for lbl in REQUIRED if lbl not in have]
+
+
 def derive_rows(symbol: str, income, balance) -> dict[str, dict[str, Any]]:
     """{period: fa_quarterly-shaped dict} derived from two statement frames.
 
@@ -211,3 +248,9 @@ def rows_for_symbol(symbol: str) -> dict[str, dict[str, Any]]:
     """Convenience: fetch + derive. Raises on a failed fetch (see fetch_frames)."""
     income, balance = fetch_frames(symbol)
     return derive_rows(symbol, income, balance)
+
+
+def rows_and_format(symbol: str) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """(rows, missing_labels) — what the importer needs to decide whether to write."""
+    income, balance = fetch_frames(symbol)
+    return derive_rows(symbol, income, balance), missing_labels(income, balance)

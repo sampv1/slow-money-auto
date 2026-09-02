@@ -177,6 +177,47 @@ Both are distressed micro-caps. That is the pattern to expect: the tail is
 concentrated in small, loss-making companies where the two providers classify
 items differently — not spread evenly across the universe.
 
+### Verified against 2026-Q2 (70-symbol sample, `verify_fa_vnstock.py`)
+
+```
+FIELD FIDELITY            n   <=1%  median rel      p90
+  eps                    61    71%      0.0000   0.1007
+  revenue                61    95%      0.0000   0.0006
+  gross_margin           61    84%      0.0000   0.0536
+  net_margin             61    79%      0.0000   0.0845
+  roe_ttm                59    12%      0.0318   0.2392   <- weakest, see below
+  st_debt                61    93%      0.0000   0.0003
+  lt_debt                61    90%      0.0000   0.0006
+  total_equity           61    87%      0.0000   0.0118
+
+SCORE EFFECT (one vnstock quarter on FiinProX history, 60 scored)
+  same A/B/C band : 58 (97%)     band changed: 2 (3%, both A->B)
+  |score delta|   : median 0.0   p90 4.0   max 28.0 (of 108)
+
+SANITY  our FiinProX-side recompute vs the STORED fa_scores rating: 60 agree, 0 disagree
+```
+
+The sanity line matters as much as the rest: it proves the harness reproduces
+live scores, so a difference above is a SOURCE difference and not scorer drift.
+
+**A guard the verification found, not the design.** The first run scored 94%
+with four band changes, and four of the six largest movers were VCI, VCB, SSI
+and CTG — banks and securities firms. They file a different chart of accounts:
+
+```
+VCB  (bank)        6 of 8 required labels absent -> every field None
+SSI  (securities)  'Gross Profit', 'Net profit/(loss) after tax' absent
+                   -> revenue and EPS derive fine, both MARGINS come out None
+FPT  (industrial)  none absent
+```
+
+The bank case was already refused (no revenue, no EPS). The securities case was
+not: a row complete enough to write, whose C5/C6 then score as *lost points*
+rather than absent data. `missing_labels` now refuses such a symbol WHOLE, which
+took the sample from 94% to 97% and the p90 delta from 12 points to 4. CLAUDE.md
+records the same format split for the vnstock chart set — same cause, and a bank
+mapping would be its own label set, not a patch to this one.
+
 ## 5. Coverage — and one number that is not what it looks like
 
 Per-quarter symbol counts:

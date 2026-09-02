@@ -116,6 +116,35 @@ def main():
     check(rows4 == [] and tally4["empty"] == 1,
           "a row with neither EPS nor revenue is refused, not written as nulls")
 
+    # --- GUARD 3: an unsupported statement format is refused WHOLE -----
+    # Banks and securities firms file a different chart of accounts. The bank
+    # case is self-limiting (no revenue, no EPS -> already refused), but a
+    # securities firm derives revenue and EPS fine and loses only the MARGINS —
+    # a row that looks complete enough to write, whose C5/C6 then score as lost
+    # points rather than absent data. Measured: that is what moved SSI A->B and
+    # VCI B->C in the 70-symbol verification.
+    rows5, tally5 = auto.writable_rows(
+        derived, {}, "2026-Q3", missing=["Gross Profit", "Net profit/(loss) after tax"])
+    check(rows5 == [], "a symbol with missing line items writes NOTHING")
+    check(tally5["format"] == len(derived),
+          f"the whole symbol is refused, not row by row (got {tally5['format']})")
+
+    # ...and a recognised format is unaffected by the same argument being empty
+    rows6, tally6 = auto.writable_rows(derived, {}, "2026-Q3", missing=[])
+    check(len(rows6) == 2 and tally6["format"] == 0,
+          "an empty missing-list changes nothing")
+
+    # the detector itself, on frames shaped like each filer type
+    inc_ok = frame({v: {"2026-Q3": 1.0} for v in vq.INCOME.values()})
+    bal_ok = frame({v: {"2026-Q3": 1.0} for v in vq.BALANCE.values()})
+    check(vq.missing_labels(inc_ok, bal_ok) == [],
+          "an industrial filer reports no missing labels")
+    inc_sec = frame({v: {"2026-Q3": 1.0} for v in vq.INCOME.values()
+                     if v not in ("Gross Profit", "Net profit/(loss) after tax")})
+    check(sorted(vq.missing_labels(inc_sec, bal_ok)) ==
+          ["Gross Profit", "Net profit/(loss) after tax"],
+          "a securities filer is detected by its two absent income lines")
+
     # --- DERIVATION: the three traps ----------------------------------
     r = derived["2026-Q3"]
     check(abs(r["gross_margin"] - 0.4) < 1e-9,

@@ -95,7 +95,7 @@ def main() -> int:
             stored[r["symbol"]] = r
 
     field_stats = {f: {"n": 0, "ok": 0, "rel": [], "missing": 0} for f in vq.FIELDS}
-    same = diff = fetch_fail = not_scorable = 0
+    same = diff = fetch_fail = not_scorable = unsupported = 0
     moves: Counter[str] = Counter()
     deltas: list[float] = []
     worst: list[tuple] = []
@@ -103,7 +103,15 @@ def main() -> int:
 
     for i, sym in enumerate(targets, 1):
         try:
-            derived = vq.rows_for_symbol(sym)
+            derived, missing = vq.rows_and_format(sym)
+            if missing:
+                # Banks / securities file a different chart of accounts. The
+                # importer refuses these whole, so verifying them would measure
+                # a case that will never be written.
+                unsupported += 1
+                print(f"  [{i}/{len(targets)}] {sym}: unsupported format "
+                      f"(missing {', '.join(missing[:2])}) — skipped, as the importer would")
+                continue
         except Exception as e:  # noqa: BLE001
             fetch_fail += 1
             print(f"  [{i}/{len(targets)}] {sym}: FETCH FAILED — {str(e)[:80]}")
@@ -191,7 +199,8 @@ def main() -> int:
     print(f"\nSANITY — our FiinProX-side recompute vs the STORED fa_scores rating")
     print(f"  agree: {vs_stored_same}   disagree: {vs_stored_diff}"
           f"   (disagreement means scorer/config drift, not a source difference)")
-    print(f"\nskipped: {fetch_fail} fetch failures, {not_scorable} not scorable at {period}")
+    print(f"\nskipped: {fetch_fail} fetch failures, {not_scorable} not scorable at {period}, "
+          f"{unsupported} unsupported format (banks/securities — the importer refuses these)")
     print("No data was written.")
     return 0
 
