@@ -7,6 +7,12 @@ financials, with a GitHub Action that pulls from vnstock during earnings season.
 Keep the Excel importer intact as an override for the cases automation gets
 wrong.
 
+**Cutover: 2026-Q2 and everything before it is frozen; vnstock writes 2026-Q3
+onward.** Q2 is the last quarter both sources cover, which makes it the
+verification fixture — see §7. One consequence needs a decision before any code
+is written: FiinProX's Q2 is missing 512 symbols, and 2026-Q3 cannot be scored
+without 2026-Q2.
+
 Everything below that says "measured" was measured against the live database on
 2026-09-02; the numbers are reproducible from the scripts named.
 
@@ -126,23 +132,38 @@ on FiinProX-sourced `fa_annual_pe` until that lands.
 
 ## 4. What the score actually does
 
-The question that matters is not field fidelity but whether the A/B/C band
-moves. Scoring 58 symbols on their latest quarter from both sources:
+The question that matters is not field fidelity but whether the A/B/C band moves.
+
+And the right experiment is not "score a symbol entirely from vnstock" — that is
+not what a **Q3 cutover** does. Scoring 2026-Q3 *reads* 2026-Q2:
+`trailing_ttm_eps` sums Q3+Q2+Q1+Q4, and C1 compares Q3-2026 against Q3-2025. So
+the real shape is **one vnstock quarter sitting on FiinProX history** — a mixed
+series. Simulated by substituting vnstock's 2026-Q2 into an otherwise-FiinProX
+series and re-scoring:
 
 ```
-same A/B/C band : 56 (97%)
-band changed    :  2 (3%)   B->C, A->B
-|score delta|   : median 0.0 pts, p90 6.0, max 40.0 (of 108)
+MIXED-SOURCE cutover simulation at 2026-Q2 (62 symbols scored)
+  same A/B/C band : 60 (97%)
+  band CHANGED    :  2 (3%)   B->C, A->B
+  |score delta|   : median 0.0  p90 4.0  max 40.0 (of 108)
+    HTT   B->C  64 -> 24  (delta 40)
+    TGG   A->B  76 -> 64  (delta 12)
 ```
 
-The median is **exactly zero** — because EPS drives *growth* criteria (C1/C2/C3),
-and a consistent share-count error cancels in the YoY ratio. The tail is real
-though: one symbol moved 40 points.
+Median **exactly zero** — EPS drives growth criteria, and a consistent
+share-count error cancels in a YoY ratio.
 
-**This is why §7 exists.** A 3% band-change rate is acceptable only if it is a
-named list of symbols someone looked at, not a statistic taken on trust.
+Both movers were inspected, and **neither is a derivation bug**:
 
----
+- **HTT** — revenue and both debt lines are byte-identical, but gross margin
+  flips sign: FiinProX `+0.4245`, vnstock `−0.3120`. Same revenue, different
+  gross profit. A genuine provider disagreement.
+- **TGG** — revenue differs by exactly `1,000,000,000` VND, and EPS has three
+  different answers: FiinProX `68.74`, derived `1.51`, as-filed `−63.0`.
+
+Both are distressed micro-caps. That is the pattern to expect: the tail is
+concentrated in small, loss-making companies where the two providers classify
+items differently — not spread evenly across the universe.
 
 ## 5. Coverage — and one number that is not what it looks like
 
@@ -203,30 +224,65 @@ the off-season job is not actually cheap.
 
 ---
 
-## 7. Rollout: shadow first, and it is not optional
+## 7. Rollout: a period boundary, with 2026-Q2 as the fixture
 
-Given "everything related to data is critical", the switch happens in three
-stages, each independently reversible.
+**2026-Q2 and everything before it is frozen. vnstock writes 2026-Q3 onward.**
 
-### Stage A — shadow (no score changes)
-Write vnstock-derived rows to a **staging table** (`fa_quarterly_shadow`, same
-columns + `source`). Nothing reads it. A comparison report lists, per symbol:
-field deltas, computed score delta, and any band change.
+This replaces a staged row-level rollout with a single, checkable rule, and it
+is stronger: the boundary is a *period*, so there is no code path in which the
+importer can touch a scored quarter at all.
 
-**Exit criterion:** the band-change list has been read symbol by symbol and each
-case is explained (genuine restatement / EPS share-count artifact / provider
-error). Not "the rate looks low."
+```
+if period <= "2026-Q2":  refuse to write, always
+```
 
-### Stage B — fill-only
-Promote to `fa_quarterly`, but write **only rows that do not exist** — no
-updates to any row from either source. This is pure coverage gain: the 2026-Q2
-gap closes, no existing number moves. Lowest-risk possible first write.
+The `source` precedence rule from §2 stays as a second, independent guard — belt
+and braces, since a bug in the period check would otherwise be silent.
 
-### Stage C — refresh
-Allow UPDATE of `source='vnstock'` rows so restatements propagate. FiinProX rows
-remain untouchable throughout.
+### 2026-Q2 is the regression fixture
 
----
+Q2 is the last quarter where both sources have data, which makes it a permanent
+test set. `scripts/tests/` gets a comparison that, for a sample of symbols,
+derives Q2 from vnstock and asserts the score against the stored FiinProX score.
+Run it before the cutover to prove the importer works; keep it afterwards so a
+provider change or a mapping regression is caught without waiting a quarter.
+
+**This is verification, never a write.** The fixture reads `fa_quarterly` and
+`fa_vnstock_statements` and compares — it has no write path.
+
+### The Q2 hole forces one decision
+
+FiinProX's 2026-Q2 import was partial:
+
+```
+symbols with 2026-Q1 : 1,594
+symbols with 2026-Q2 : 1,085
+HOLE at 2026-Q2      :   512   (have Q1, missing Q2)
+```
+
+That is not cosmetic. `is_fully_scorable(period)` requires EPS at `period`,
+`period-1`, `period-2` **and** their year-ago quarters — so scoring **2026-Q3
+requires 2026-Q2**. Measured: **515 of 1,597 symbols (32%) cannot form a TTM EPS
+at 2026-Q3** with the hole in place. `_score_symbol` returns `[]` for them, so
+they get no FA score row — and therefore no Final Score either.
+
+So "keep 2026-Q2 intact" needs to mean one of two things, and they differ by a
+third of the universe:
+
+| reading | effect at Q3 |
+|---|---|
+| **(a)** never CHANGE an existing Q2 row, but ADD the 512 that are missing | full coverage; no stored number moves |
+| **(b)** write nothing at Q2 at all | 512 symbols lose their FA and Final Score |
+
+**Recommended: (a).** It honours "intact" in the sense that matters — no value
+that exists today is altered, and no score that exists today changes — while
+avoiding a 32% coverage cliff that would look exactly like a pipeline failure.
+The alternative to (a) is re-importing a complete FiinProX Q2 spreadsheet by
+hand, which is the manual step this whole design exists to remove.
+
+If (b) is preferred anyway, the Q3 workflow must gate on it explicitly and
+report the 512 as expected-missing, or `audit_data` will flag a genuine-looking
+FA collapse.
 
 ## 8. Gates — distinguishing "nothing to do" from "broken"
 
@@ -244,6 +300,7 @@ Route through `ta/run_status.py`:
 | target non-empty, **every** fetch raised | `::error::`, exit 1 — provider or network outage |
 | any symbol wrote a row for a period it already had, with different values | `::warning::` + log — a restatement, wanted but never silent |
 | a `source='fiinpro'` row would have been overwritten | `::error::` — precedence bug, must never happen |
+| a write was attempted for a period ≤ the frozen boundary | `::error::` — the cutover guard is the whole safety story; it failing is not a warning |
 
 **A failed call and an unpublished statement are not the same thing.** Each
 statement gets 3 attempts with a widening pause; a symbol with any failed call
@@ -298,17 +355,24 @@ mappings, and a rubric whose weights are read from a spreadsheet.
 2. **`fa/vnstock_quarterly.py`** — free-vnstock reader + the §3 derivations,
    returning `fa_quarterly`-shaped rows. Pure function over fetched frames, so
    it is unit-testable without network.
-3. **Shadow runner + comparison report** (Stage A).
-4. **`refresh_fa_auto.py`** — work-list, fetch, precedence-respecting write,
-   `run_status` gates, `--dry-run`, `--symbols`, `--stage fill|refresh`.
-5. **Tests** — precedence (a `fiinpro` row is never touched), derivation
-   correctness against fixtures, the empty-target/all-failed gate split, and
-   cumulative-YTD cash-flow differencing.
+3. **2026-Q2 verification fixture** — derives Q2 from vnstock for a symbol
+   sample and asserts against the stored FiinProX score. Read-only; lives in
+   `scripts/tests/` so it keeps running after the cutover.
+4. **`refresh_fa_auto.py`** — work-list, fetch, write guarded by BOTH the period
+   boundary and `source` precedence, `run_status` gates, `--dry-run`,
+   `--symbols`, and `--min-period` (default `2026-Q3`) so the frozen boundary is
+   explicit and testable rather than implied.
+5. **Tests** — the period guard (nothing at or before the boundary is ever
+   written, even for a symbol with no row), precedence (a `fiinpro` row is never
+   touched), derivation correctness against fixtures, the empty-target vs
+   all-failed gate split, and cumulative-YTD cash-flow differencing.
 6. **`.github/workflows/fa-import-daily.yml`** — daily, after the TA pass,
    before `fa-score-daily`; POSTs `/api/revalidate?tags=fa-data`.
 7. **RE rubric** — resolve `cash` and `cfo_quarterly`, then repeat 2–6.
 
-Steps 1–3 are safe to build and run without changing a single score.
+Steps 1–3 are safe to build and run without changing a single score. Step 0 —
+deciding the Q2 hole question in §7 — gates everything after it, because it
+determines whether 512 symbols have an FA score in Q3.
 
 ---
 
