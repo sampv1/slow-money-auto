@@ -1,0 +1,139 @@
+name: FA Import Daily
+
+# Automated quarterly FA import from the FREE vnstock package — the routine
+# replacement for the manual FiinProX Excel import (FA_AUTO_IMPORT_DESIGN.md).
+# `refresh_fa.py import --fiin …` stays and stays AUTHORITATIVE: FiinProX rows
+# win precedence, so importing a spreadsheet is still how you correct anything
+# the automation gets wrong.
+
+on:
+  schedule:
+    # 08:00 UTC (15:00 ICT) — comfortably BEFORE fa-score-daily (10:10 UTC), so
+    # a filing imported in the morning is scored the same day.
+    #
+    # Deliberately NOT slotted between ta-daily (09:23) and fa-score-daily: the
+    # design doc says "after the TA pass", but that was never a DATA dependency
+    # — this job reads fa_quarterly and fa_industry and writes fa_quarterly; it
+    # touches no OHLCV. ta-daily runs about an hour, so honouring that ordering
+    # literally would leave a full-season sweep (~1,500 symbols, ~45 min) racing
+    # fa-score-daily for the same table. 08:00 gives it 2h10m of clear air.
+    - cron: "0 8 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Fetch and report, write nothing (always do this first at a cutover)"
+        type: boolean
+        default: false
+      min_period:
+        description: "Frozen boundary — nothing at or before this is written"
+        type: string
+        default: "2026-Q3"
+      limit:
+        description: "Cap the work-list (blank = no cap)"
+        type: string
+        default: ""
+
+# Serialize runs so a manual trigger never clobbers a scheduled one.
+concurrency:
+  group: fa-import-daily
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    environment: supabase
+    # A full reporting-season sweep is ~1,500 symbols at two provider calls
+    # each. Off-season it exits in seconds (see the work-list note below).
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Verify secrets are set
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then echo "::error::SUPABASE_URL secret not set"; exit 1; fi
+          if [ -z "$SUPABASE_ANON_KEY" ]; then echo "::error::SUPABASE_ANON_KEY secret not set"; exit 1; fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY not set. After migration 045 anon is READ-ONLY, so every write in this run would be silently discarded — PostgREST answers a denied write with 204 and zero rows, not an error. A run without it looks identical to a successful import."
+            exit 1
+          fi
+          echo "Secrets OK."
+
+      # THE WORK-LIST IS SELF-THROTTLING, so this needs no earnings calendar and
+      # no season logic to maintain or get wrong:
+      #
+      #   * off-season — every symbol already has the expected period, or the
+      #     expected period is still at/before the frozen boundary. The script
+      #     fetches NOTHING and exits 0 (an empty work-list is the healthy
+      #     state, not a failure — the same distinction the TA pipeline had to
+      #     learn three times);
+      #   * season opens — a full sweep, shrinking every day as filings land.
+      #
+      # --skip-real-estate: property developers are scored on their OWN
+      # 13-criterion rubric from fa_re_metrics, and Final Score is rubric-aware.
+      # A fa_quarterly row for one is a second, unrelated manufacturing score
+      # that only the FA Scanner's subtraction hides. The RE half of this
+      # automation is step 7 of the design doc and is NOT built — those symbols
+      # still need `refresh_fa_re.py import` from an Excel export.
+      - name: Import quarterly FA from vnstock
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Dispatch inputs reach the shell as ENVIRONMENT VARIABLES, never
+          # interpolated into the script body. `${{ }}` inside a run: block is
+          # substituted before the shell ever sees it, so an input containing
+          # shell metacharacters would execute as part of the command — the
+          # standard Actions script-injection hole, and this repository is
+          # public. As env vars they are just strings.
+          MIN_PERIOD: ${{ inputs.min_period || '2026-Q3' }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          ARGS=(--min-period "${MIN_PERIOD:-2026-Q3}" --skip-real-estate)
+          # An `if`, not `[ ... ] && ...`: under `set -e` a && list whose left
+          # side is false returns 1 and kills the step, so the short form would
+          # fail every run that is NOT a dry run.
+          if [ "${DRY_RUN:-}" = "true" ]; then ARGS+=(--dry-run); fi
+          # Digits only: a work-list cap is a number or it is nothing. This
+          # rejects a typo loudly instead of passing it to argparse, and leaves
+          # no path by which the value is re-parsed as anything but an integer.
+          if [ -n "${LIMIT:-}" ]; then
+            case "$LIMIT" in
+              ''|*[!0-9]*) echo "::error::limit must be digits only, got '$LIMIT'"; exit 1 ;;
+              *) ARGS+=(--limit "$LIMIT") ;;
+            esac
+          fi
+          echo "Running: refresh_fa_auto.py ${ARGS[*]}"
+          python refresh_fa_auto.py "${ARGS[@]}"
+
+      # Expire the dashboard's server-side data cache so newly imported
+      # financials show up without waiting out the 1 h TTL. Non-fatal.
+      # Skipped on a dry run, which by definition changed nothing.
+      - name: Revalidate dashboard cache
+        if: ${{ inputs.dry_run != true }}
+        continue-on-error: true
+        env:
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          if [ -z "$REVALIDATE_SECRET" ]; then
+            echo "::warning::REVALIDATE_SECRET not set — skipping cache revalidation."
+            exit 0
+          fi
+          curl -fsSL -X POST -H "x-revalidate-secret: ${REVALIDATE_SECRET}" "https://www.loctinhieu.com/api/revalidate?tags=fa-data" \
+            || echo "::warning::Dashboard revalidate call failed (cache will expire via TTL)."

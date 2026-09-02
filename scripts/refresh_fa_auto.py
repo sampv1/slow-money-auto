@@ -58,13 +58,24 @@ CHUNK = 500
 # point at which it is worth ASKING, not a deadline by which data must exist.
 REPORT_LAG_DAYS = 20
 
-# A symbol that never files must not be re-fetched every day forever.
-STRAGGLER_BACKOFF_DAYS = 7
-
 
 def period_index(p: str) -> int:
     y, q = p.split("-Q")
     return int(y) * 4 + int(q) - 1
+
+
+def nothing_writable(expected: str, min_period: str) -> bool:
+    """Is EVERY period this run could produce already frozen?
+
+    The work-list and the write guard are driven by two different constants —
+    `expected_period` (what should have been filed) and `--min-period` (what may
+    be written) — and nothing previously compared them. When the expected
+    quarter sits at or below the boundary there is no period a fetch could
+    possibly yield that the guard would accept, so fetching at all is pure
+    waste: on 2026-09-02 that was ~460 symbols, two provider calls each, every
+    weekday until late October, for zero writes.
+    """
+    return period_index(expected) < period_index(min_period)
 
 
 def expected_period(today: date | None = None) -> str:
@@ -177,6 +188,29 @@ def main() -> int:
             .eq("industry_group", "real_estate").order("symbol").range(o, o + l - 1),
             label="fa_industry real_estate")}
         print(f"excluding {len(re_symbols)} real-estate symbols (scored on their own rubric)")
+
+    # NOTHING WRITABLE MEANS NOTHING TO FETCH.
+    #
+    # The work-list is "symbols behind the expected period", and the write guard
+    # is "nothing at or before --min-period". Between them sits a window where
+    # every symbol is behind AND every derived row is frozen: today (2026-09-02)
+    # `expected_period` is 2026-Q2 while the boundary is 2026-Q3, so a run would
+    # build a list of ~460 symbols, spend two provider calls on each, and refuse
+    # all of it. Fifteen minutes of traffic for a guaranteed zero writes, every
+    # day until Q3 filings open in late October.
+    #
+    # The two constants were reasoned about separately and never against each
+    # other. One comparison closes it, and it is the same shape as the gate the
+    # daily TA pass needed: ask whether there is anything to collect BEFORE
+    # collecting, and treat "nothing" as a legitimate answer rather than a fault.
+    if nothing_writable(want, args.min_period):
+        print(f"::notice::Expected period {want} is at or before the frozen "
+              f"boundary {args.min_period} — nothing is writable yet, so nothing "
+              f"is fetched. This is the normal state between the boundary being "
+              f"set and that quarter's filings opening.")
+        st.expect("work-list", 0, minimum=0, unit="symbols",
+                  detail=f"{want} <= frozen boundary {args.min_period}")
+        return st.finish()
 
     stored = newest_stored(client)
     if args.symbols:

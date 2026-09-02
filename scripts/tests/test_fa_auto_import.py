@@ -196,6 +196,26 @@ def main():
     check(auto.expected_period(date(2026, 1, 25)) == "2025-Q4",
           f"late Jan expects the prior Q4 (got {auto.expected_period(date(2026, 1, 25))})")
 
+    # --- GUARD 4: do not fetch what cannot be written -----------------
+    # The work-list ("behind expected_period") and the write guard ("nothing at
+    # or before --min-period") come from different constants and were never
+    # compared. Between them is a window where every symbol is behind AND every
+    # derived row is frozen: on 2026-09-02 expected_period is 2026-Q2 against a
+    # 2026-Q3 boundary, so a scheduled run would list ~460 symbols, spend two
+    # provider calls on each and refuse the lot — every weekday until late
+    # October. Cheap to reintroduce, invisible when it happens (the run is
+    # green and writes 0, which is also what a healthy off-season looks like).
+    check(auto.nothing_writable("2026-Q2", "2026-Q3") is True,
+          "expected BELOW the boundary: nothing is writable, so nothing is fetched")
+    check(auto.nothing_writable("2026-Q3", "2026-Q3") is False,
+          "expected EQUAL to the boundary IS writable (min_period is inclusive)")
+    check(auto.nothing_writable("2026-Q4", "2026-Q3") is False,
+          "expected past the boundary proceeds normally")
+    check(auto.nothing_writable(auto.expected_period(date(2026, 9, 2)), "2026-Q3") is True,
+          "the real 2026-09-02 case is caught")
+    check(auto.nothing_writable(auto.expected_period(date(2026, 10, 25)), "2026-Q3") is False,
+          "and releases itself once Q3 filings open, with no code change")
+
     print(f"\n{'FAILED' if FAILURES else 'PASSED'}: {len(FAILURES)} failure(s)")
     return 1 if FAILURES else 0
 

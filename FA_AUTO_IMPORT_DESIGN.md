@@ -454,8 +454,18 @@ mappings, and a rubric whose weights are read from a spreadsheet.
    written, even for a symbol with no row), precedence (a `fiinpro` row is never
    touched), derivation correctness against fixtures, the empty-target vs
    all-failed gate split, and cumulative-YTD cash-flow differencing.
-6. **`.github/workflows/fa-import-daily.yml`** — daily, after the TA pass,
-   before `fa-score-daily`; POSTs `/api/revalidate?tags=fa-data`.
+6. **`.github/workflows/fa-import-daily.yml`** — DONE (2026-09-02). Daily
+   08:00 UTC Mon–Fri, `--skip-real-estate`, POSTs `/api/revalidate?tags=fa-data`.
+   Two corrections to what this line originally specified:
+   * *"after the TA pass"* was not a data dependency — the job reads
+     `fa_quarterly`/`fa_industry` and writes `fa_quarterly`, touching no OHLCV.
+     Honouring it literally would leave a full-season sweep (~45 min) racing
+     `fa-score-daily` at 10:10 for the same table, so it runs at 08:00 instead,
+     still comfortably before it.
+   * a run whose `expected_period` is at or below `--min-period` now fetches
+     NOTHING (`nothing_writable`). Without that, every weekday between setting
+     the boundary and the quarter's filings opening burned ~460 symbols × 2
+     provider calls for a guaranteed zero writes.
 7. **RE rubric** — resolve `cash` and `cfo_quarterly`, then repeat 2–6.
 
 Steps 1–3 are safe to build and run without changing a single score. Step 0 —
