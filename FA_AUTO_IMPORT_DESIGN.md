@@ -1,6 +1,18 @@
 # FA Auto-Import Design — quarterly financials from vnstock
 
-**Status:** proposed, not implemented. Written 2026-09-02.
+**Status:** implemented, NOT yet writing live data. Written 2026-09-02.
+
+| piece | where |
+|---|---|
+| derivation (free vnstock → `fa_quarterly` shape) | `scripts/fa/vnstock_quarterly.py` |
+| importer, both guards, `run_status` gates | `scripts/refresh_fa_auto.py` |
+| provenance column | `supabase/057_fa_quarterly_source.sql` — **not applied** |
+| guard + derivation tests | `scripts/tests/test_fa_auto_import.py` |
+| 2026-Q2 verification (read-only) | `scripts/verify_fa_vnstock.py` |
+
+Nothing has been written to `fa_quarterly`. Migration 057 is unapplied, so the
+importer cannot run against the live table yet — deliberate, until 2026-Q3 data
+exists (~2 months) and the Q2 hole question below is answered.
 
 Replace the manual FiinProX Excel import as the *routine* path for quarterly
 financials, with a GitHub Action that pulls from vnstock during earnings season.
