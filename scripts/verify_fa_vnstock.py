@@ -103,7 +103,9 @@ def main() -> int:
 
     for i, sym in enumerate(targets, 1):
         try:
-            derived, missing = vq.rows_and_format(sym)
+            derived, _st, missing = vq.rows_and_status(sym)
+            if _st != "ok":
+                missing = missing or ["(no statement data)"]
             if missing:
                 # Banks / securities file a different chart of accounts. The
                 # importer refuses these whole, so verifying them would measure

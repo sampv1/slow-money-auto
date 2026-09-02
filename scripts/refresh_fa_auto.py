@@ -124,7 +124,7 @@ def writable_rows(derived: dict[str, dict], sources: dict[str, str],
     # rows that look writable but whose missing fields score as LOST POINTS
     # rather than absent data. Refuse the symbol whole rather than write a
     # partial row — absence of a line item is not a zero.
-    if missing:
+    if missing is not None:
         tally["format"] = len(derived)
         return [], tally
     for period, row in derived.items():
@@ -182,16 +182,23 @@ def main() -> int:
 
     written = fetched = failed = 0
     refused = {"frozen": 0, "fiinpro": 0, "empty": 0, "format": 0}
+    # Counted in SYMBOLS, not rows: a symbol the provider has nothing for
+    # derives zero periods, so a row-based tally would silently report 0.
+    by_status = {"no_data": 0, "unsupported_format": 0}
     pending: list[dict] = []
     fail_list: list[str] = []
 
     for i, sym in enumerate(targets, 1):
         try:
-            derived, missing = vq.rows_and_format(sym)
+            derived, status, missing = vq.rows_and_status(sym)
             fetched += 1
-            if missing:
-                print(f"  [{i}/{len(targets)}] {sym}: unsupported statement format "
-                      f"(missing {', '.join(missing[:3])}{'...' if len(missing) > 3 else ''})")
+            if status != "ok":
+                by_status[status] += 1
+                why = ("provider returned no statements"
+                       if status == "no_data"
+                       else f"different chart of accounts (missing {', '.join(missing[:3])}"
+                            f"{'...' if len(missing) > 3 else ''})")
+                print(f"  [{i}/{len(targets)}] {sym}: {status} — {why}")
         except Exception as e:  # noqa: BLE001
             failed += 1
             fail_list.append(sym)
@@ -199,7 +206,8 @@ def main() -> int:
             continue
 
         sources = {} if args.dry_run else existing_sources(client, sym)
-        rows, tally = writable_rows(derived, sources, args.min_period, missing)
+        rows, tally = writable_rows(derived, sources, args.min_period,
+                                    missing if status != "ok" else None)
         for k in refused:
             refused[k] += tally[k]
         if rows:
@@ -218,9 +226,10 @@ def main() -> int:
 
     print(f"\n{'would write' if args.dry_run else 'wrote'} {written} row(s) · "
           f"fetched {fetched} · failed {failed}")
-    print(f"refused: {refused['frozen']} frozen (<= {args.min_period}), "
-          f"{refused['fiinpro']} FiinProX-owned, {refused['empty']} empty, "
-          f"{refused['format']} unsupported format (banks/securities)")
+    print(f"refused rows: {refused['frozen']} frozen (<= {args.min_period}), "
+          f"{refused['fiinpro']} FiinProX-owned, {refused['empty']} empty")
+    print(f"refused symbols: {by_status['no_data']} no statement data, "
+          f"{by_status['unsupported_format']} different chart of accounts (banks/securities)")
     if fail_list:
         print(f"\n::warning::{len(fail_list)} symbol(s) failed to fetch. Re-run with:\n"
               f"  python3 refresh_fa_auto.py --symbols {' '.join(fail_list)}")

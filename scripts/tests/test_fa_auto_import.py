@@ -125,14 +125,19 @@ def main():
     # VCI B->C in the 70-symbol verification.
     rows5, tally5 = auto.writable_rows(
         derived, {}, "2026-Q3", missing=["Gross Profit", "Net profit/(loss) after tax"])
+    # An EMPTY missing-list from a non-ok status must also refuse: a symbol the
+    # provider has nothing for derives no periods, so `missing` is [] and a
+    # truthiness test would wave it through. The sentinel is None, not empty.
+    rows5b, _ = auto.writable_rows(derived, {}, "2026-Q3", missing=[])
+    check(rows5b == [], "a non-ok status with an EMPTY missing-list still refuses")
     check(rows5 == [], "a symbol with missing line items writes NOTHING")
     check(tally5["format"] == len(derived),
           f"the whole symbol is refused, not row by row (got {tally5['format']})")
 
-    # ...and a recognised format is unaffected by the same argument being empty
-    rows6, tally6 = auto.writable_rows(derived, {}, "2026-Q3", missing=[])
+    # ...while an 'ok' symbol passes None and is unaffected
+    rows6, tally6 = auto.writable_rows(derived, {}, "2026-Q3", missing=None)
     check(len(rows6) == 2 and tally6["format"] == 0,
-          "an empty missing-list changes nothing")
+          "missing=None (status ok) writes normally")
 
     # the detector itself, on frames shaped like each filer type
     inc_ok = frame({v: {"2026-Q3": 1.0} for v in vq.INCOME.values()})
@@ -144,6 +149,20 @@ def main():
     check(sorted(vq.missing_labels(inc_sec, bal_ok)) ==
           ["Gross Profit", "Net profit/(loss) after tax"],
           "a securities filer is detected by its two absent income lines")
+
+    # --- no_data vs unsupported_format are NOT the same thing ----------
+    # Measured on the live work-list: A32, ACE, ACS, AG1 and AGX return an
+    # income frame of shape (0, 0). That is a coverage gap, not a chart-of-
+    # accounts mismatch, and folding them together would hide one inside
+    # the other.
+    empty_df = pd.DataFrame()
+    check(vq.statement_status(empty_df, empty_df) == ("no_data", []),
+          "two empty frames report no_data, not unsupported_format")
+    st_sec, miss_sec = vq.statement_status(inc_sec, bal_ok)
+    check(st_sec == "unsupported_format" and len(miss_sec) == 2,
+          f"a populated frame missing labels reports unsupported_format (got {st_sec})")
+    check(vq.statement_status(inc_ok, bal_ok) == ("ok", []),
+          "a complete filer reports ok")
 
     # --- DERIVATION: the three traps ----------------------------------
     r = derived["2026-Q3"]

@@ -135,6 +135,35 @@ def missing_labels(income, balance) -> list[str]:
     return [lbl for lbl in REQUIRED if lbl not in have]
 
 
+def statement_status(income, balance) -> tuple[str, list[str]]:
+    """('ok' | 'no_data' | 'unsupported_format', missing labels).
+
+    THREE OUTCOMES, NOT TWO, and conflating the first two is the mistake this
+    exists to prevent. Measured on the live work-list: A32, ACE, ACS, AG1 and
+    AGX all return an income frame of shape (0, 0) — no columns, no rows. That
+    is the provider having nothing for the symbol, which is a completely
+    different thing from VCB filing a bank's chart of accounts. Reporting both
+    as "unsupported format" would hide a coverage gap inside a mapping problem.
+
+      no_data              an EMPTY frame. The provider returned successfully
+                           and gave us nothing. Note this is NOT retried by
+                           `fetch_frames`, which only retries on an exception —
+                           so a silently-empty response and a genuine absence
+                           are still indistinguishable here, and the count must
+                           stay visible rather than being folded into a total.
+      unsupported_format   a POPULATED frame missing required labels, i.e. a
+                           filer using a different chart of accounts.
+      ok                   every required label present.
+    """
+    empty = [df is None or getattr(df, "empty", True) or
+             "item_en" not in getattr(df, "columns", [])
+             for df in (income, balance)]
+    if all(empty):
+        return "no_data", []
+    missing = missing_labels(income, balance)
+    return ("unsupported_format", missing) if missing else ("ok", [])
+
+
 def derive_rows(symbol: str, income, balance) -> dict[str, dict[str, Any]]:
     """{period: fa_quarterly-shaped dict} derived from two statement frames.
 
@@ -250,7 +279,8 @@ def rows_for_symbol(symbol: str) -> dict[str, dict[str, Any]]:
     return derive_rows(symbol, income, balance)
 
 
-def rows_and_format(symbol: str) -> tuple[dict[str, dict[str, Any]], list[str]]:
-    """(rows, missing_labels) — what the importer needs to decide whether to write."""
+def rows_and_status(symbol: str) -> tuple[dict[str, dict[str, Any]], str, list[str]]:
+    """(rows, status, missing_labels) — everything the importer needs to decide."""
     income, balance = fetch_frames(symbol)
-    return derive_rows(symbol, income, balance), missing_labels(income, balance)
+    status, missing = statement_status(income, balance)
+    return derive_rows(symbol, income, balance), status, missing
