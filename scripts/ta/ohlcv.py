@@ -41,6 +41,46 @@ def _valid_bar(o: float, h: float, l: float, c: float) -> bool:
     return h >= l
 
 
+# Phrases the provider uses to say "this symbol has no data", in the two
+# wordings seen in the wild. NEITHER is reachable through str(RetryError) —
+# see _root_message.
+NO_DATA_PHRASES = ("dữ liệu trống", "không tìm thấy dữ liệu", "empty")
+
+
+def _root_message(exc: BaseException) -> str:
+    """The innermost exception's message, through tenacity's RetryError.
+
+    `str(RetryError)` renders as `RetryError[<Future at 0x… raised ValueError>]`
+    — the ValueError's own message is nowhere in it. So a permanent-failure
+    check written against the provider's wording silently never fires, and every
+    genuinely-absent symbol burns the full retry schedule instead of returning
+    at once.
+
+    Measured 2026-09-03: 36 symbols that the provider answers with "Không tìm
+    thấy dữ liệu" were retried three times each, twice — 74 minutes of a 74
+    minute run, spent re-asking for data that does not exist. The same repr is
+    what hid the UnboundLocalError during the 2026-08-18 outage; this is the
+    second incident it has caused, so the unwrapping is now shared.
+    """
+    seen = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        nxt = None
+        attempt = getattr(cur, "last_attempt", None)
+        if attempt is not None:
+            try:
+                nxt = attempt.exception()
+            except Exception:  # noqa: BLE001
+                nxt = None
+        if nxt is None:
+            nxt = cur.__cause__ or cur.__context__
+        if nxt is None:
+            return str(cur)
+        cur = nxt
+    return str(exc)
+
+
 def warm_up_provider() -> bool:
     """Spend the free tier's uncapped FIRST call on a throwaway request.
 
@@ -99,10 +139,16 @@ def fetch_ohlcv(symbol: str, start: date, end: date) -> list[dict] | None:
             break
         except Exception as e:
             err = str(e)
+            root = _root_message(e)
 
-            # Permanent: symbol has no data in this date range.
-            if "Dữ liệu trống" in err or "empty" in err.lower():
-                print(f"  {symbol}: no data in range")
+            # PERMANENT: the provider says it has nothing for this symbol.
+            # Matched against the ROOT message, not str(e): tenacity wraps the
+            # ValueError in a RetryError whose repr carries no message at all,
+            # so this branch was unreachable and every absent symbol paid the
+            # full 85s retry schedule to be told the same thing three times.
+            low = root.lower()
+            if any(p in low for p in NO_DATA_PHRASES):
+                print(f"  {symbol}: no data at provider — {root[:90]}")
                 return None
 
             # One-shot workaround for the vnstock 4.0.x first-call bug.
@@ -114,11 +160,11 @@ def fetch_ohlcv(symbol: str, start: date, end: date) -> list[dict] | None:
             if retries_used < len(RETRY_DELAYS_SECONDS):
                 wait = RETRY_DELAYS_SECONDS[retries_used]
                 retries_used += 1
-                print(f"  {symbol}: {err[:80]} — retry in {wait:.0f}s ({retries_used}/{len(RETRY_DELAYS_SECONDS)})")
+                print(f"  {symbol}: {root[:80]} — retry in {wait:.0f}s ({retries_used}/{len(RETRY_DELAYS_SECONDS)})")
                 time.sleep(wait)
                 continue
 
-            print(f"  {symbol}: failed after {retries_used} retries — {err[:160]}")
+            print(f"  {symbol}: failed after {retries_used} retries — {root[:160]}")
             return None
 
     if df is None or df.empty:

@@ -137,7 +137,73 @@ def main():
     check(callable(ohlcv.warm_up_provider),
           "warm_up_provider exists — depth must not depend on work-list order")
 
-    # --- 3. the resume file -------------------------------------------
+    # --- 3. a permanent "no data" must not be retried -------------------
+    # tenacity wraps the provider's ValueError in a RetryError whose repr is
+    # `RetryError[<Future at 0x... raised ValueError>]` — the message is nowhere
+    # in it. So a check written against str(e) never fires, and a symbol the
+    # provider simply does not have pays the full 85s retry schedule to be told
+    # the same thing three times. Measured 2026-09-03: 36 such symbols consumed
+    # 74 minutes, twice. The same repr hid the UnboundLocalError on 2026-08-18.
+    class _FakeAttempt:
+        def __init__(self, exc): self._exc = exc
+        def exception(self): return self._exc
+
+    class _FakeRetryError(Exception):
+        def __init__(self, exc):
+            super().__init__(f"RetryError[<Future at 0x7f00 state=finished raised {type(exc).__name__}>]")
+            self.last_attempt = _FakeAttempt(exc)
+
+    VN_NO_DATA = ("Không tìm thấy dữ liệu. Vui lòng kiểm tra lại mã chứng khoán "
+                  "hoặc thời gian truy xuất.")
+    wrapped = _FakeRetryError(ValueError(VN_NO_DATA))
+    check("Không tìm thấy" not in str(wrapped),
+          "the RetryError repr genuinely hides the provider's message")
+    check(ohlcv._root_message(wrapped) == VN_NO_DATA,
+          f"_root_message unwraps it (got {ohlcv._root_message(wrapped)[:40]!r})")
+    check(any(p in ohlcv._root_message(wrapped).lower() for p in ohlcv.NO_DATA_PHRASES),
+          "and the unwrapped message matches a NO_DATA phrase")
+
+    # Both wordings seen in the wild must match; a real error must NOT.
+    for msg in ("Dữ liệu trống", VN_NO_DATA, "data is empty"):
+        check(any(p in ohlcv._root_message(_FakeRetryError(ValueError(msg))).lower()
+                  for p in ohlcv.NO_DATA_PHRASES),
+              f"permanent-failure wording recognised: {msg[:28]!r}")
+    check(not any(p in ohlcv._root_message(_FakeRetryError(ValueError("Read timed out"))).lower()
+                  for p in ohlcv.NO_DATA_PHRASES),
+          "a genuine network error is NOT treated as permanent — it must still retry")
+
+    # A plain (unwrapped) exception and a __cause__ chain both work.
+    check(ohlcv._root_message(ValueError(VN_NO_DATA)) == VN_NO_DATA,
+          "_root_message handles a bare exception")
+    outer = RuntimeError("wrapper")
+    outer.__cause__ = ValueError(VN_NO_DATA)
+    check(ohlcv._root_message(outer) == VN_NO_DATA, "_root_message follows __cause__")
+
+    # It must terminate on a self-referential chain rather than spin forever.
+    loop = RuntimeError("loop"); loop.__cause__ = loop
+    check(ohlcv._root_message(loop) == "loop", "_root_message terminates on a cycle")
+
+    # ...and fetch_ohlcv returns None immediately, without sleeping.
+    import time as _t
+
+    class _NoDataQuote:
+        calls = 0
+        def __init__(self, symbol, source=None): pass
+        def history(self, **kw):
+            _NoDataQuote.calls += 1
+            raise _FakeRetryError(ValueError(VN_NO_DATA))
+
+    sys.modules["vnstock"].Quote = _NoDataQuote
+    t0 = _t.time()
+    got = ohlcv.fetch_ohlcv("ATP", date(2000, 1, 1), date(2026, 9, 3))
+    elapsed = _t.time() - t0
+    sys.modules["vnstock"].Quote = _FakeQuote
+    check(got is None, "an absent symbol returns None")
+    check(_NoDataQuote.calls == 1,
+          f"...after ONE call, not four (got {_NoDataQuote.calls})")
+    check(elapsed < 1.0, f"...and without sleeping through the backoff ({elapsed:.2f}s)")
+
+    # --- 4. the resume file -------------------------------------------
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         state = Path(d) / "done"
