@@ -166,6 +166,31 @@ def classify(symbol: str,
                           "default" if not p else "profile.default")
 
 
+def scoring_rubric(cls: Classification, fa_industry_confirms: bool = False) -> str:
+    """Which rubric may actually WRITE a score for this symbol.
+
+    Narrower than `scored_as`, and for a reason that is about pipeline
+    consistency rather than caution: `ta/final_score.py` decides which score
+    table to blend by reading `fa_industry`. Grading a symbol on the real-estate
+    rubric while `fa_industry` still calls it manufacturing would write an
+    `fa_re_scores` row that Final Score never reads, and leave the stale
+    `fa_scores` row being blended instead — the two halves of the pipeline
+    disagreeing about the same company, with neither of them wrong on its own
+    terms.
+
+    So real estate is scored only where `fa_industry` confirms it. ICB finding
+    10 developers FiinProX never classified (BVL, DCH, DIH, DXS, PIV, STL, TDC,
+    THD, TV6, VC3) is a real finding and worth acting on — but the action is to
+    fix `fa_industry`, not to route around it.
+
+    Every other rubric is unaffected: manufacturing is the default either way,
+    and bank/securities/insurance already fall back to it.
+    """
+    if cls.rubric == REAL_ESTATE and not fa_industry_confirms:
+        return MANUFACTURING
+    return cls.scored_as
+
+
 def classify_all(symbols: list[str],
                  industry: dict[str, str | None],
                  profiles: dict[str, dict]) -> dict[str, Classification]:

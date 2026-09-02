@@ -101,7 +101,29 @@ def main():
         check(rb.classify("X", g, {}).rubric == rb.MANUFACTURING,
               f"fa_industry group '{g}' does not create a rubric")
 
-    # --- 5. every registry entry is coherent ---------------------------
+    # --- 5. real estate is scored only where fa_industry confirms it ---
+    # Not caution — pipeline consistency. ta/final_score.py picks the score
+    # TABLE by reading fa_industry, so grading an ICB-only developer on the RE
+    # rubric would write an fa_re_scores row Final Score never reads while the
+    # stale fa_scores row keeps being blended. Two halves of the pipeline
+    # disagreeing about one company, neither wrong on its own terms.
+    icb_only = rb.classify("DXS", None, {"com_type_code": "CT", "icb_l2": "8600"})
+    check(icb_only.rubric == rb.REAL_ESTATE, "ICB-only symbol is still NAMED real estate")
+    check(rb.scoring_rubric(icb_only, fa_industry_confirms=False) == rb.MANUFACTURING,
+          "...but is SCORED as manufacturing until fa_industry agrees")
+    confirmed = rb.classify("AGG", "real_estate", {"icb_l2": "8600"})
+    check(rb.scoring_rubric(confirmed, fa_industry_confirms=True) == rb.REAL_ESTATE,
+          "a fa_industry-confirmed developer is scored on the RE rubric")
+
+    # The gate must not touch any other rubric.
+    bank = rb.classify("TCB", "manufacturing", {"com_type_code": "NH"})
+    check(rb.scoring_rubric(bank, fa_industry_confirms=False) == rb.MANUFACTURING,
+          "the RE gate does not change bank routing")
+    mfg = rb.classify("FPT", "manufacturing", {"com_type_code": "CT"})
+    check(rb.scoring_rubric(mfg, fa_industry_confirms=False) == rb.MANUFACTURING,
+          "the RE gate does not change manufacturing routing")
+
+    # --- 6. every registry entry is coherent ---------------------------
     for key, spec in rb.REGISTRY.items():
         check(spec.key == key, f"{key}: registry key matches its own .key")
         if spec.implemented:

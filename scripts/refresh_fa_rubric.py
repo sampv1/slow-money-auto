@@ -111,7 +111,8 @@ def build_worklist(members, downloaded, ctx, min_period) -> tuple[list[str], dic
             tally["frozen"] += 1
             continue
         cls = rb.classify(s, ctx["industry"].get(s), ctx["profiles"].get(s))
-        have = ctx["scored"].get(cls.scored_as, {}).get(s)
+        route = rb.scoring_rubric(cls, ctx["industry"].get(s) == rb.REAL_ESTATE)
+        have = ctx["scored"].get(route, {}).get(s)
         if have and period_index(have) >= period_index(dl):
             tally["current"] += 1
             continue
@@ -224,8 +225,20 @@ def main() -> int:
     # --- group by the rubric that will actually score them ------------
     groups: dict[str, list[str]] = collections.defaultdict(list)
     for s in todo:
-        groups[classes[s].scored_as if s in classes else rb.MANUFACTURING].append(s)
+        cls = classes.get(s)
+        groups[rb.scoring_rubric(cls, ctx["industry"].get(s) == rb.REAL_ESTATE)
+               if cls else rb.MANUFACTURING].append(s)
     print("  by rubric: " + ", ".join(f"{r}={len(v)}" for r, v in sorted(groups.items())))
+
+    # ICB calls these real estate and fa_industry does not. They keep scoring as
+    # manufacturing (see rubric.scoring_rubric) — reported every run, because the
+    # fix is a fa_industry update and a silent divergence would never prompt it.
+    unconfirmed = sorted(s for s, c in classes.items()
+                         if c.rubric == rb.REAL_ESTATE and c.evidence != "fa_industry")
+    if unconfirmed:
+        print(f"\n::notice::{len(unconfirmed)} symbol(s) ICB classifies as real estate but "
+              f"fa_industry does not; scored as manufacturing until fa_industry agrees: "
+              f"{' '.join(unconfirmed)}")
 
     written = 0
     refused = {"frozen": 0, "fiinpro": 0, "empty": 0, "format": 0}
