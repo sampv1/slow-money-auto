@@ -1,4 +1,4 @@
-import { getActiveSymbols } from "@/lib/cached-data";
+import { getChartSymbols } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { TaSearch } from "./ta-search";
 
@@ -8,7 +8,7 @@ export default async function TAPage() {
   const locale = await getLocale();
   let symbols: string[] = [];
   try {
-    symbols = await getActiveSymbols();
+    symbols = await getChartSymbols();
   } catch {
     symbols = []; // search box just renders empty; matches the previous behaviour
   }

@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { RePb } from "@/lib/cached-data";
-import { getActiveSymbols, getBusinessAnalysis, getFaQuarterlyFacts, getRePbMetrics, getSymbolMeta, getSymbolProfile, getVnstockStatements } from "@/lib/cached-data";
+import { getBusinessAnalysis, getFaQuarterlyFacts, getRePbMetrics, getSymbolMeta, getSymbolProfile, getVnstockStatements, getChartSymbols } from "@/lib/cached-data";
 import { FinancialPanels } from "@/components/financial-panels";
 import { BusinessPanel } from "@/components/business-panel";
 import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
@@ -48,7 +48,7 @@ export default async function SymbolDrillDown({
   //    UNCACHED so a trade shows up immediately on the router.refresh() that
   //    TradeActions fires after a successful BUY/SELL.
   const [universe, hasOpenPosition, profile, symbolMeta, business, vnstockStatements] = await Promise.all([
-    getActiveSymbols().catch((): string[] => []),
+    getChartSymbols().catch((): string[] => []),
     (async (): Promise<boolean> => {
       if (!isAdmin) return false;
       const { data } = await supabase

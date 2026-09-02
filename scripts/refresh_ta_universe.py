@@ -44,9 +44,11 @@ Usage:
   # List the active universe:
   python3 refresh_ta_universe.py --list
 
-After a sync that ADDS symbols: backfill_ta_ohlcv.py, then refresh_rs.py →
-refresh_ta_score.py → refresh_final_score.py (RS is cross-sectional, so the
-whole ranking moves when membership changes).
+After a sync that ADDS symbols: backfill_ta_ohlcv.py --full, then refresh_rs.py
+→ refresh_ta_score.py → refresh_final_score.py (RS is cross-sectional, so the
+whole ranking moves when membership changes). `--full` because the rest of the
+universe carries the provider's whole 8-year series for its chart; a new symbol
+given only the default 90 days would draw a stub next to them.
 """
 
 import argparse
@@ -169,7 +171,9 @@ def main():
             if syms:
                 print(f"  {key}: {', '.join(syms[:25])}" + (f" ... (+{len(syms) - 25})" if len(syms) > 25 else ""))
         if not args.dry_run and stats["added"]:
-            print("Next: backfill_ta_ohlcv.py for the added symbols, then refresh_rs.py "
+            print(f"Next: backfill_ta_ohlcv.py --full --symbols "
+                  f"{' '.join(stats['symbols']['added'][:12])}"
+                  f"{' ...' if stats['added'] > 12 else ''}, then refresh_rs.py "
                   "→ refresh_ta_score.py → refresh_final_score.py.")
         return
 

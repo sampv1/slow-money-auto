@@ -144,6 +144,7 @@ export function ScannerClient({
   signals,
   closes,
   universe,
+  chartSymbols,
   industry,
   locale,
 }: {
@@ -152,6 +153,9 @@ export function ScannerClient({
   signals: TriggeredSignal[];
   closes: LatestClose[];
   universe: UniverseLiquidity[];
+  /** Every symbol we hold bars for — the chart box's typeahead. Wider than
+   *  `universe`, which is the active set the table ranks. */
+  chartSymbols: string[];
   /** symbol -> industry label, already localised server-side. Sparse. */
   industry: Record<string, string>;
   locale: Locale;
@@ -267,11 +271,11 @@ export function ScannerClient({
   const symbolSuggestions = useMemo(() => {
     const q = symbolInput.trim();
     if (!q) return [];
-    return universe
-      .map((u) => u.symbol)
-      .filter((sym) => sym.startsWith(q))
-      .slice(0, 20);
-  }, [symbolInput, universe]);
+    // Sourced from `chartSymbols`, not `universe`: a retired or dormant symbol
+    // has no RS and no row in the scanner table, but we still hold its price
+    // history — so it is exactly the case this box exists to reach.
+    return chartSymbols.filter((sym) => sym.startsWith(q)).slice(0, 20);
+  }, [symbolInput, chartSymbols]);
 
   // Shape only — the same test the API applies. Deliberately NOT membership of
   // `universe`: that is the scanner's ACTIVE set, while the chart reads

@@ -10,10 +10,69 @@ from datetime import date, datetime, time as clock_time, timedelta
 from .common import REQUEST_DELAY, VNSTOCK_SOURCE, safe_execute, today_vn
 
 
+# Earliest date any backfill asks for. The provider decides what it will
+# actually serve (see warm_up_provider); this is simply "everything you have".
+FULL_HISTORY_START = date(2000, 1, 1)
+
+
 # Per-symbol retry schedule for transient vnstock failures (timeouts, rate
 # limits, brief upstream errors). Total worst-case wait: ~85s before giving
 # up — acceptable for a midnight cron where reliability > latency.
 RETRY_DELAYS_SECONDS = (5.0, 20.0, 60.0)
+
+
+def _valid_bar(o: float, h: float, l: float, c: float) -> bool:
+    """Would these four numbers draw a real candle?
+
+    A bar with a zero or negative price is not a cheap stock, it is a hole in
+    the provider's response, and it is worse than a missing bar: a missing bar
+    leaves a gap on the chart, while a zero close draws a spike to the floor,
+    re-seats the y-axis for the whole series, and feeds a fabricated return
+    into anything that reads the row. `high < low` is the same kind of
+    impossibility from the other direction.
+
+    Both are cheap to test and neither is recoverable, so the bar is dropped
+    rather than repaired — and the drop is COUNTED, because silently returning
+    fewer bars than the provider sent is how a partial response gets mistaken
+    for a short listing history.
+    """
+    if not all(v is not None and v > 0 for v in (o, h, l, c)):
+        return False
+    return h >= l
+
+
+def warm_up_provider() -> bool:
+    """Spend the free tier's uncapped FIRST call on a throwaway request.
+
+    Measured on vnstock 4.0.4 (2026-09-02): the first `Quote.history()` call in
+    a process is served in full — FPT came back with 4,912 bars to 2006 — while
+    every call after it is truncated to the community tier's documented 8 years
+    (1,997 bars, from 2018-08-30). vnai's metering patch evidently lands after
+    the first request rather than before it. Verified deliberately: with VNM
+    first it took the 5,138-bar series and FPT, second, got 1,997.
+
+    That makes depth an accident of ORDERING, which is exactly the trap the S/R
+    warm-up window already had to fix — one symbol in the run would carry twenty
+    years of chart while its neighbours carry eight, and which one it was would
+    change every time the work-list was re-sorted. Burning the uncapped call on
+    a throwaway makes every symbol in the run get the same treatment.
+
+    Returns True if the warm-up call completed (its data is discarded either
+    way; a failure only means the next call inherits the uncapped slot, which
+    costs uniformity, not correctness).
+    """
+    from vnstock import Quote
+
+    end = today_vn()
+    for _ in range(2):  # the 4.0.x "no charting library" first-call bug
+        try:
+            Quote(symbol="FPT", source=VNSTOCK_SOURCE).history(
+                start=(end - timedelta(days=7)).isoformat(),
+                end=end.isoformat(), interval="1D")
+            return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
 
 
 def fetch_ohlcv(symbol: str, start: date, end: date) -> list[dict] | None:
@@ -67,18 +126,32 @@ def fetch_ohlcv(symbol: str, start: date, end: date) -> list[dict] | None:
         return None
 
     rows = []
+    dropped = 0
     for _, r in df.iterrows():
+        try:
+            o = float(r["open"]) * 1000
+            h = float(r["high"]) * 1000
+            l = float(r["low"]) * 1000
+            c = float(r["close"]) * 1000
+        except (TypeError, ValueError):
+            dropped += 1
+            continue
+        if not _valid_bar(o, h, l, c):
+            dropped += 1
+            continue
         rows.append(
             {
                 "symbol": symbol,
                 "date": str(r["time"])[:10],
-                "open": float(r["open"]) * 1000,
-                "high": float(r["high"]) * 1000,
-                "low": float(r["low"]) * 1000,
-                "close": float(r["close"]) * 1000,
-                "volume": int(r["volume"]),
+                "open": o,
+                "high": h,
+                "low": l,
+                "close": c,
+                "volume": int(r["volume"] or 0),
             }
         )
+    if dropped:
+        print(f"  {symbol}: dropped {dropped} malformed bar(s) of {len(df)}")
     return rows
 
 
@@ -295,28 +368,70 @@ def upsert_ohlcv(client, rows: list[dict]) -> int:
     return len(rows)
 
 
-def backfill_symbol(client, symbol: str, days: int = 90) -> int:
-    """Backfill the last `days` calendar days of OHLCV for a symbol.
+def earliest_stored_bars(client, symbols: list[str]) -> dict[str, str]:
+    """{symbol: its OLDEST stored ta_ohlcv date} for the symbols given.
+
+    The resume key for a deep backfill, and it is deliberately the oldest bar
+    rather than "does this symbol have any rows at all". Every symbol has rows —
+    the daily pass appends one a night — so a presence test would skip the
+    entire universe and resume nothing. Depth is the thing being filled, so
+    depth is the thing to compare.
+
+    (The FA importer learned the same lesson from the other side: its `--resume`
+    skips any symbol with ANY rows and therefore cannot repair a partial symbol.
+    Here a partial symbol is the normal case, so the check has to be finer.)
+
+    One request per symbol, ordered ascending with limit 1 — the index on
+    (symbol, date) makes each a single-row lookup rather than a scan.
+    """
+    out: dict[str, str] = {}
+    for sym in symbols:
+        rows = safe_execute(
+            client.table("ta_ohlcv").select("date").eq("symbol", sym)
+            .order("date").limit(1),
+            label=f"earliest bar {sym}",
+        ).data or []
+        if rows:
+            out[sym] = rows[0]["date"]
+    return out
+
+
+def backfill_symbol(client, symbol: str, days: int = 90,
+                    start: date | None = None) -> int:
+    """Backfill OHLCV for a symbol.
+
+    `start` overrides the `days` window outright — pass FULL_HISTORY_START to
+    ask for everything the provider will serve.
 
     Returns the number of rows written.
     """
     end = today_vn()
-    start = end - timedelta(days=days)
-    rows = fetch_ohlcv(symbol, start, end)
+    begin = start if start is not None else end - timedelta(days=days)
+    rows = fetch_ohlcv(symbol, begin, end)
     if not rows:
         return 0
     return upsert_ohlcv(client, rows)
 
 
-def backfill_symbols(client, symbols: list[str], days: int = 90, delay: float = REQUEST_DELAY) -> dict[str, int]:
-    """Backfill OHLCV for a list of symbols. Returns {symbol: rows_written}."""
+def backfill_symbols(client, symbols: list[str], days: int = 90,
+                     delay: float = REQUEST_DELAY,
+                     start: date | None = None,
+                     on_done=None) -> dict[str, int]:
+    """Backfill OHLCV for a list of symbols. Returns {symbol: rows_written}.
+
+    `on_done(i, symbol, rows)` is called after each symbol, so a long run can
+    report progress and persist a resume point without this function needing to
+    know how either is done.
+    """
     results: dict[str, int] = {}
     total = len(symbols)
     for i, symbol in enumerate(symbols, 1):
         print(f"[{i}/{total}] {symbol}", end=" ", flush=True)
-        n = backfill_symbol(client, symbol, days=days)
+        n = backfill_symbol(client, symbol, days=days, start=start)
         results[symbol] = n
-        print(f"→ {n} rows")
+        print(f"\u2192 {n} rows")
+        if on_done is not None:
+            on_done(i, symbol, n)
         if i < total:
             time.sleep(delay)
     return results

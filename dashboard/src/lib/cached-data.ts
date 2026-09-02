@@ -336,6 +336,39 @@ export const getActiveSymbols = unstable_cache(
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
 );
 
+/**
+ * Every symbol that HAS A CHART — which is a wider set than the one that has
+ * scores, and deliberately so.
+ *
+ * `getActiveSymbols` answers "what does the pipeline rank and scan": is_active
+ * governs RS, TA Score and the scanners. But a chart needs nothing except bars
+ * in `ta_ohlcv`, and the price pass collects for every ta_universe MEMBER, not
+ * just the active ones (`get_universe_symbols` in scripts/ta/universe.py —
+ * "collection is deliberately wider than scoring"). A retired or dormant symbol
+ * therefore still has a full price history and draws perfectly well; suggesting
+ * only the active set hid ~170 of them behind a search box that could already
+ * reach them by free text.
+ *
+ * The list is a CONVENIENCE, never a gate. Both search boxes pass free text
+ * through untouched, and the chart route answers an unknown ticker with its own
+ * 404 — so a symbol missing from here is still chartable if we hold its bars,
+ * and one present here that we have no bars for gets an honest "not found".
+ */
+export const getChartSymbols = unstable_cache(
+  async (): Promise<string[]> => {
+    const rows = await fetchAllPaged<{ symbol: string }>((from, to, withCount) =>
+      supabase
+        .from("ta_universe")
+        .select("symbol", withCount ? { count: "exact" } : undefined)
+        .order("symbol", { ascending: true })
+        .range(from, to),
+    );
+    return rows.map((r) => r.symbol);
+  },
+  ["chart-symbols"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
+);
+
 // --- Recommendations / daily logs (Active, History, Stats) ------------------
 //
 // Written by the daily evaluation pipeline AND by the app (admin BUY/SELL via

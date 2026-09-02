@@ -57,7 +57,19 @@ GAP_BUFFER = 0.03      # a move must exceed limit+buffer to count as an action
 MIN_PRICE = 2000.0     # below this, tick rounding fabricates >limit moves
 REF_TOL = 0.005        # ref vs prior-close deviation that counts as an action
 SCAN_DAYS = 430        # how far back to scan stored closes (≈ the RS window)
-REBACKFILL_DAYS = 500  # history window re-fetched per flagged symbol (> RS win)
+# History window re-fetched per flagged symbol. This must span the WHOLE stored
+# series, not merely the analytics windows, and 500 stopped doing that the day
+# ta_ohlcv went deep (backfill_ta_ohlcv.py --full: ~8 years, the provider's cap).
+#
+# A corporate action re-bases every prior bar. Re-fetching only the trailing 500
+# days therefore leaves everything older on the PRE-action basis and plants a
+# step discontinuity at the 500-day boundary — the same defect this module
+# exists to remove, just relocated from the ex-date to an arbitrary point two
+# years back, where nothing looks for it and the chart draws it as a real move.
+# 3,300 days is comfortably past the 8-year cap, so the request simply asks for
+# everything the provider will serve. It costs one call either way; only the
+# row count of an actual repair changes, and repairs are rare (verify-and-skip).
+REBACKFILL_DAYS = 3300
 
 
 def _exchange_limit(exchange: str | None) -> float:

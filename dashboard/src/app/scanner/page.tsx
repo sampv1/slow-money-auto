@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { CACHE_TTL_SECONDS, TAG_TA, fetchAllPaged, getSymbolMeta } from "@/lib/cached-data";
+import { CACHE_TTL_SECONDS, TAG_TA, fetchAllPaged, getChartSymbols, getSymbolMeta } from "@/lib/cached-data";
 import { industryMapFor } from "@/lib/symbol-meta";
 import { getLocale, t } from "@/lib/i18n";
 import { ScannerClient } from "./scanner-client";
@@ -165,6 +165,11 @@ export default async function ScannerPage({
       signals={data.signals}
       closes={data.closes}
       universe={data.universe}
+      // Typeahead for the chart's symbol box, and deliberately NOT
+      // `data.universe`: that is the ACTIVE set the scanner ranks, while the
+      // chart reads ta_ohlcv, which we collect for every member. Best-effort —
+      // an empty list costs suggestions, not the free-text box.
+      chartSymbols={await getChartSymbols().catch((): string[] => [])}
       industry={industryMapFor(data.universe.map((u) => u.symbol), await getSymbolMeta(), locale)}
       locale={locale}
     />
