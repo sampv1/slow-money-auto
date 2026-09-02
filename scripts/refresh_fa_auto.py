@@ -153,6 +153,11 @@ def main() -> int:
     ap.add_argument("--limit", type=int, help="Cap the work-list (for a first run)")
     ap.add_argument("--dry-run", action="store_true", help="Fetch and report, write nothing")
     ap.add_argument("--delay", type=float, default=0.4, help="Seconds between symbols")
+    ap.add_argument("--skip-real-estate", action="store_true",
+                    help="Exclude fa_industry.industry_group='real_estate' symbols. They are "
+                         "scored from fa_re_metrics on their own 13-criterion rubric, so a "
+                         "fa_quarterly row for one is a stale manufacturing score the FA "
+                         "scanner deliberately subtracts — one company, two unrelated scores.")
     args = ap.parse_args()
 
     client = get_supabase_client()
@@ -161,11 +166,24 @@ def main() -> int:
     print(f"FA auto-import · expected period {want} · frozen at/before "
           f"{args.min_period}{' · DRY RUN' if args.dry_run else ''}")
 
+    # The RE rubric reads fa_re_metrics, not fa_quarterly, and Final Score is
+    # rubric-aware (CLAUDE.md): a real-estate symbol takes its FA score from
+    # fa_re_scores. Writing fa_quarterly for one creates a second, unrelated
+    # score for the same company that only the scanner's subtraction hides.
+    re_symbols: set[str] = set()
+    if args.skip_real_estate:
+        re_symbols = {r["symbol"] for r in paged_select(
+            lambda o, l: client.table("fa_industry").select("symbol,industry_group")
+            .eq("industry_group", "real_estate").order("symbol").range(o, o + l - 1),
+            label="fa_industry real_estate")}
+        print(f"excluding {len(re_symbols)} real-estate symbols (scored on their own rubric)")
+
     stored = newest_stored(client)
     if args.symbols:
         targets = [s.upper() for s in args.symbols]
     else:
         targets = sorted(s for s, p in stored.items() if period_index(p) < period_index(want))
+    targets = [s for s in targets if s not in re_symbols]
     if args.limit:
         targets = targets[:args.limit]
 
