@@ -327,11 +327,46 @@ third of the universe:
 | **(a)** never CHANGE an existing Q2 row, but ADD the 512 that are missing | full coverage; no stored number moves |
 | **(b)** write nothing at Q2 at all | 512 symbols lose their FA and Final Score |
 
-**Recommended: (a).** It honours "intact" in the sense that matters — no value
-that exists today is altered, and no score that exists today changes — while
-avoiding a 32% coverage cliff that would look exactly like a pipeline failure.
-The alternative to (a) is re-importing a complete FiinProX Q2 spreadsheet by
-hand, which is the manual step this whole design exists to remove.
+### Measured 2026-09-02: the hole is almost entirely illiquid UPCOM
+
+The choice above looked like it cost a third of the universe. It does not.
+Profiling the 512 against the 1,085 that have Q2:
+
+```
+                     Q2-HOLE (512)      WITH Q2 (1,085)
+  in ta_universe            508              1,083
+  is_active            375 (74%)         1,055 (97%)
+  liquid (>=200k)       11 ( 2%)           223 (21%)
+  exchange       UPCOM 434 / HOSE 57   HOSE 402 / UPCOM 398
+                 / HNX 17              / HNX 283
+```
+
+**Eleven** of the 512 clear the 200k average volume the scanners filter on by
+default. The rest are dormant or near-dormant UPCOM lines that a default view
+never shows. And a dry run over 80 of the hole symbols found 43 (54%) have **no
+vnstock statements at all** and 8 more use a different chart of accounts — so
+filling the hole from vnstock would recover roughly 180 of 512 regardless.
+
+The eleven that matter, checked individually:
+
+```
+AAN ACM CLI DCS HSL SRA SVN TIG VKC   status ok, 2026-Q2 available  (9)
+BCR BGE                               status ok, no Q2 filed anywhere (2)
+```
+
+All eleven parse cleanly; nine have Q2 data available and two have genuinely not
+filed. So the real cost of **(b)** — never writing at Q2 — is **nine liquid
+symbols losing their Q3 score**, not 512 and not a third of the universe. The
+54% no-data rate is concentrated entirely in names too small to file on time,
+where both sources agree there is nothing.
+
+**Recommendation revised to (b), with (a) narrowed as the alternative.** (b) is
+now the smaller, simpler action: the boundary stays absolute, no code writes a
+frozen period, and nine symbols wait a quarter. If those nine matter, the
+narrow form of (a) is to import Q2 for THOSE SYMBOLS ONLY via the existing Excel
+path — nine rows, by hand, no new code and no change to the guard.
+
+**Recommended: (a).**
 
 If (b) is preferred anyway, the Q3 workflow must gate on it explicitly and
 report the 512 as expected-missing, or `audit_data` will flag a genuine-looking
