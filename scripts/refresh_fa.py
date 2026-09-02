@@ -105,15 +105,45 @@ def _load_annual_pe(client, symbols=None):
     return out
 
 
-def _load_prices(client, symbol):
+def _rows_to_prices(rows) -> list:
+    """[(date, close)] from ta_ohlcv rows, skipping anything unparseable."""
+    out = []
+    for r in rows:
+        try:
+            out.append((date.fromisoformat(r["date"]), float(r["close"])))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _load_prices(client, symbol, latest_only: bool = False):
     """Sorted [(date, close)] for a symbol from ta_ohlcv (ascending).
 
-    Paged: PostgREST silently caps an unbounded select at 1000 rows, and with this
-    ASC order the rows it drops are the NEWEST ones — which would leave the live
-    price and every recent quarter-end close stale, with no error. ta_ohlcv is
-    append-only, so a symbol crosses 1000 bars with ordinary accumulation (~574
-    today) or the moment anyone runs a deeper backfill_ta_ohlcv.py.
+    `latest_only` fetches JUST THE NEWEST BAR, because in the default scoring
+    mode that is the only price consulted. `_score_symbol` scores `[latest]`,
+    takes the `period == latest` branch, and reads `prices[-1]` — `_qend_close`
+    is reached only under `--backfill`, which walks older quarters and does need
+    the whole series.
+
+    That default is what fa-score-daily.yml runs, so the daily cron was reading
+    every bar of all 1,597 symbols to use one row each. Wasteful at today's ~604
+    bars and 5.4x worse against a full-history ta_ohlcv.
+
+    The full path stays PAGED: PostgREST silently caps an unbounded select at
+    1000 rows, and under this ASC order the rows it drops are the NEWEST — which
+    would leave the live price and every recent quarter-end close stale, with no
+    error and no exception.
     """
+    if latest_only:
+        # One row, newest first. (symbol, date) is the primary key, so this is
+        # the same total order as the ascending read, reversed.
+        res = safe_execute(
+            client.table("ta_ohlcv").select("date,close").eq("symbol", symbol)
+            .order("date", desc=True).limit(1),
+            label=f"ta_ohlcv {symbol} latest",
+        )
+        return _rows_to_prices(res.data or [])
+
     out = []
     offset, page = 0, 1000
     while True:
@@ -123,11 +153,7 @@ def _load_prices(client, symbol):
             label=f"ta_ohlcv {symbol}",
         )
         rows = res.data or []
-        for r in rows:
-            try:
-                out.append((date.fromisoformat(r["date"]), float(r["close"])))
-            except (TypeError, ValueError):
-                continue
+        out.extend(_rows_to_prices(rows))
         if len(rows) < page:
             break
         offset += page
@@ -196,7 +222,7 @@ def cmd_score(args) -> int:
             if not series:
                 skipped += 1
                 continue
-            prices = _load_prices(client, sym)
+            prices = _load_prices(client, sym, latest_only=not args.backfill)
             rows = _score_symbol(sym, series, pe_all.get(sym, []), prices, config, args.backfill)
             if not rows:
                 skipped += 1
@@ -245,7 +271,10 @@ def _print_inspect(client, symbol, series_all, pe_all, config):
         print("  (no fully-scorable quarter)")
         return
     period = elig[-1]
-    prices = _load_prices(client, symbol)
+    # Scores elig[-1] and reads prices[-1], exactly like the default scoring
+    # path — so it takes the same one-row read and reproduces what the daily
+    # run did rather than a near-miss.
+    prices = _load_prices(client, symbol, latest_only=True)
     price = prices[-1][1] if prices else None
     m = fa_metrics.compute_metrics(series, period, price, pe_all.get(symbol, []))
     res = compute_score(m, config, fully_scorable=True)
