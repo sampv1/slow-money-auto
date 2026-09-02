@@ -49,6 +49,39 @@ DEFAULT_LOOKBACK_DAYS = 400  # ~80 weeks — enough for 60-bar RS + 60-bar RS-hi
 BENCHMARK_SOURCES = (VNSTOCK_SOURCE, "KBS", "MSN")
 
 
+def _unique_dates(series: pd.Series, source: str) -> pd.Series:
+    """Collapse duplicate dates, keeping the last value for each.
+
+    KBS returns the LATEST session twice — verified 2026-09-02, where
+    2026-08-28 appeared as two rows both reading 1832.12. VCI and MSN do not.
+
+    This matters far out of proportion to a repeated row, because the only
+    thing the RS indicators do with this series is
+    `benchmark.reindex(df.index)` (ta/indicators/relative_strength.py), and
+    pandas REQUIRES a unique index to reindex from. One duplicated date raises
+    "cannot reindex on an axis with duplicate labels" for EVERY symbol, so
+    rs_vs_vnindex_strong / rs_vs_vnindex_weak / rs_new_high silently produce
+    nothing universe-wide — each exception is caught and printed per symbol in
+    compute_signals_for_symbol, so the run still exits 0.
+
+    Worse, it only fires on the FALLBACK path: VCI is clean, so this is
+    invisible until VCI is down, which is precisely when BENCHMARK_SOURCES is
+    supposed to save the run. The chain was added after a VN-Index outage cost
+    the universe its RS Line; without this it would have traded that failure
+    for a quieter one.
+
+    Normalising here rather than in the indicator keeps it at the provider
+    boundary, next to the KBS timestamp fix that has the same shape.
+    """
+    if not series.index.has_duplicates:
+        return series
+    n = int(series.index.duplicated().sum())
+    series = series[~series.index.duplicated(keep="last")]
+    print(f"  VNINDEX via {source}: dropped {n} duplicate date(s); "
+          f"{len(series)} unique sessions.")
+    return series
+
+
 def _history_from(source: str, start: date, end: date) -> pd.Series | None:
     """One provider's VN-Index closes, or None if it fails or returns nothing."""
     from vnstock import Quote
@@ -77,7 +110,7 @@ def _history_from(source: str, start: date, end: date) -> pd.Series | None:
     # provider onto the plain date the rest of the pipeline joins on.
     out.index = pd.to_datetime(df["time"]).dt.date
     out.index.name = "date"
-    return out.sort_index()
+    return _unique_dates(out.sort_index(), source)
 
 
 def fetch_vnindex_closes(start: date | None = None, end: date | None = None,
@@ -128,7 +161,11 @@ def load_vnindex_from_db(client, lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> 
     out = pd.Series([float(r["value"]) for r in rows], name="vnindex_close")
     out.index = pd.to_datetime([r["date"] for r in rows]).date
     out.index.name = "date"
-    return out.sort_index()
+    # macro_series is keyed (metric, date) so this should already be unique —
+    # applied anyway so EVERY path out of this module carries the guarantee the
+    # RS indicators depend on, rather than only the two that were caught being
+    # wrong.
+    return _unique_dates(out.sort_index(), "macro_series")
 
 
 def get_vnindex_closes(client, start: date | None = None,
