@@ -32,58 +32,29 @@
 --   stops a re-run leaving a signal the scanner still lists for a bar that no
 --   longer produces it. Pinned by scripts/tests/test_signal_write.py.
 --
--- HOW TO ACTUALLY RUN THIS
---   The Supabase SQL editor executes a script INSIDE a transaction block (the
---   same reason `vacuum` fails there), and a procedure cannot COMMIT inside
---   one — so `call prune_untriggered_signals();` below will error there with
---   "invalid transaction termination". Two working paths:
+-- HOW THE DELETION IS DONE
+--   By scripts/prune_untriggered_signals.py, not by this file. A single delete
+--   over ~6M rows exceeds the statement timeout that a bare count(*) on this
+--   table already hits, so the work has to be broken up and committed in
+--   pieces. plpgsql can do that with COMMIT inside a procedure, but the
+--   Supabase SQL editor runs a script INSIDE a transaction block -- the same
+--   reason `vacuum` fails there -- and a procedure cannot COMMIT inside one.
+--   Rather than ship a procedure that errors in the one place these migrations
+--   are applied, the loop lives in the script, where the service-role plumbing
+--   already is: one date per request, idempotent, resumable, with --dry-run.
 --
---     1. scripts/prune_untriggered_signals.py  (recommended — needs only
---        scripts/.env, is resumable, and has a --dry-run). This is the tested
---        path; it deletes one date per request through PostgREST.
---     2. psql on the direct connection string, where CALL works as written.
+--   The script deletes optimistically (one unbounded delete per date) and falls
+--   back to symbol chunks on a 57014 timeout, halving until each bite lands.
+--   Chunking by symbol keeps it on the primary key, whose columns are
+--   (date, symbol, indicator).
 --
---   The procedure is still created below so path 2 exists and so the logic is
---   recorded next to the reasoning. Creating it is harmless if never called.
+--   Run it BEFORE this migration:
+--     cd scripts && python3 prune_untriggered_signals.py --dry-run
+--     cd scripts && python3 prune_untriggered_signals.py
 --
--- WHY A PROCEDURE AND NOT ONE DELETE
---   One statement over ~6M rows exceeds the statement timeout -- a plain
---   `select count(*)` on this table already does. The loop commits per date, so
---   a timeout mid-run loses nothing: re-run `call prune_untriggered_signals();`
---   and it continues from where it stopped. Chunking by date (rather than by
---   ctid or a bare LIMIT) lets each delete use the primary key, whose leading
---   column is `date`; `triggered` itself is unindexed for false, so a
---   LIMIT-based batch would seq-scan the table once per batch.
--- ============================================================
-
-create or replace procedure prune_untriggered_signals()
-language plpgsql
-as $$
-declare
-  d      date;
-  n      bigint;
-  total  bigint := 0;
-begin
-  for d in
-    select distinct date from ta_signals order by date
-  loop
-    delete from ta_signals where date = d and triggered = false;
-    get diagnostics n = row_count;
-    total := total + n;
-    -- Each date is its own transaction, which is what makes this resumable.
-    commit;
-    if n > 0 then
-      raise notice 'pruned % untriggered rows for % (running total %)', n, d, total;
-    end if;
-  end loop;
-  raise notice 'done: % untriggered rows pruned', total;
-end;
-$$;
-
--- Run this via psql, NOT the Supabase SQL editor (see above):
---   call prune_untriggered_signals();
-
--- Refresh planner stats; the row count changes by ~82%.
+-- The row count drops ~82%, so the planner's stats are badly stale by the time
+-- the script finishes. This is what this migration is FOR -- everything above is
+-- the record of why the rows went.
 analyze ta_signals;
 
 -- ------------------------------------------------------------
