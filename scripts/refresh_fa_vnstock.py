@@ -48,6 +48,10 @@ def main() -> int:
                         "limit here is politeness, not rate.")
     p.add_argument("--resume", action="store_true",
                    help="Skip symbols already present in fa_vnstock_statements.")
+    p.add_argument("--stale", action="store_true",
+                   help="Daily mode: only symbols whose newest STORED quarter is behind the "
+                        "expected one. Unlike --resume this can refresh a symbol that already "
+                        "has rows, which is the only way a new filing ever arrives.")
     p.add_argument("--dry-run", action="store_true", help="Fetch and report, write nothing.")
     args = p.parse_args()
 
@@ -65,6 +69,31 @@ def main() -> int:
         before = len(symbols)
         symbols = [s for s in symbols if s not in done]
         print(f"--resume: {len(done)} already stored, {before - len(symbols)} skipped")
+
+    if args.stale:
+        # THE DAILY WORK-LIST, and it is deliberately not --resume.
+        #
+        # --resume skips any symbol that has ANY row, which is right for
+        # finishing an interrupted backfill and exactly wrong for a daily run:
+        # every symbol has rows, so it would skip the entire universe and no new
+        # filing would ever be collected. What makes a symbol interesting daily
+        # is DEPTH, not presence — its newest stored quarter being behind the
+        # newest quarter that should plausibly have been filed.
+        #
+        # Self-throttling, so it needs no earnings calendar: a full sweep when a
+        # season opens, shrinking every day as filings land, near-empty in
+        # between. Stragglers that never file stay on the list for the season,
+        # which costs a few hundred calls a day and is the cheaper error than
+        # backing off and missing a late filing.
+        from fa.vnstock_store import newest_period
+        from refresh_fa_auto import expected_period, period_index
+        want = expected_period()
+        newest = newest_period(client)
+        before = len(symbols)
+        symbols = [s for s in symbols
+                   if s not in newest or period_index(newest[s]) < period_index(want)]
+        print(f"--stale: expected {want}; {before - len(symbols)} already current, "
+              f"{len(symbols)} behind")
 
     if args.limit:
         symbols = symbols[:args.limit]

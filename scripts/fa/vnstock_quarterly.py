@@ -206,7 +206,22 @@ def derive_rows(symbol: str, income, balance) -> dict[str, dict[str, Any]]:
     """
     inc = {k: _series(income, lbl) for k, lbl in INCOME.items()}
     bal = {k: _series(balance, lbl) for k, lbl in BALANCE.items()}
+    return derive_from_series(symbol, inc, bal)
 
+
+def derive_from_series(symbol: str,
+                       inc: dict[str, dict[str, Any]],
+                       bal: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The derivation itself, over already-extracted {field: {period: value}}.
+
+    SPLIT OUT SO THERE IS EXACTLY ONE COPY OF THE MATH. Two callers now reach
+    it from different sources — `derive_rows` from live provider frames keyed by
+    ENGLISH LABEL, and `fa.vnstock_store` from `fa_vnstock_statements` keyed by
+    the provider's SEMANTIC IDS. Those are different lookup schemes over the
+    same numbers, and duplicating the formulas would mean the ROE definition,
+    the TTM window and the EPS derivation each had two homes to keep in step.
+    Verified equivalent on FPT/VNM/HPG/AAA/ANV at 2026-Q2: identical inputs.
+    """
     periods = sorted(
         set().union(*(d.keys() for d in inc.values()), *(d.keys() for d in bal.values())),
         key=lambda p: (int(p.split("-Q")[0]), int(p.split("-Q")[1])),
