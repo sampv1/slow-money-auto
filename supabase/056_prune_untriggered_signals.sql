@@ -32,6 +32,20 @@
 --   stops a re-run leaving a signal the scanner still lists for a bar that no
 --   longer produces it. Pinned by scripts/tests/test_signal_write.py.
 --
+-- HOW TO ACTUALLY RUN THIS
+--   The Supabase SQL editor executes a script INSIDE a transaction block (the
+--   same reason `vacuum` fails there), and a procedure cannot COMMIT inside
+--   one — so `call prune_untriggered_signals();` below will error there with
+--   "invalid transaction termination". Two working paths:
+--
+--     1. scripts/prune_untriggered_signals.py  (recommended — needs only
+--        scripts/.env, is resumable, and has a --dry-run). This is the tested
+--        path; it deletes one date per request through PostgREST.
+--     2. psql on the direct connection string, where CALL works as written.
+--
+--   The procedure is still created below so path 2 exists and so the logic is
+--   recorded next to the reasoning. Creating it is harmless if never called.
+--
 -- WHY A PROCEDURE AND NOT ONE DELETE
 --   One statement over ~6M rows exceeds the statement timeout -- a plain
 --   `select count(*)` on this table already does. The loop commits per date, so
@@ -66,7 +80,8 @@ begin
 end;
 $$;
 
-call prune_untriggered_signals();
+-- Run this via psql, NOT the Supabase SQL editor (see above):
+--   call prune_untriggered_signals();
 
 -- Refresh planner stats; the row count changes by ~82%.
 analyze ta_signals;
