@@ -92,18 +92,43 @@ def _cluster_pivots(
     def _close_current():
         if not current:
             return
-        # recency-weighted price + strength
+        # Recency-weighted price, with the decay exponent SHIFTED so the
+        # cluster's most recent pivot weighs exactly 1.0.
+        #
+        # The weights are RECENCY_DECAY ** days_ago = 0.95 ** days_ago, which
+        # reaches 4.3e-14 by 600 bars. Dividing by their raw sum used to be
+        # guarded as `max(den, 1e-9)` against a divide-by-zero — but for any
+        # cluster whose pivots are ALL older than ~404 bars the true sum falls
+        # below that floor legitimately, and the guard then divided a tiny
+        # numerator by a much larger constant. The price came out rescaled by
+        # orders of magnitude: DIG showed a support at 0.0166 on a series whose
+        # low is 2.32, PVH four levels at 4.8-122 against a range of 500-3100.
+        # Live when found on 2026-09-02: 713 impossible levels over 419 symbols,
+        # 28% of the universe, drawn on charts and feeding the level-aware
+        # indicators (near_support, rejects_at_resistance, wyckoff_spring).
+        #
+        # Shifting by the cluster's own newest pivot cancels out of the ratio —
+        # numerator and denominator scale by the same constant — so this is the
+        # SAME weighted mean the docstring always promised, just computed where
+        # the arithmetic survives it. The denominator is now >= 1.0 by
+        # construction, so no floor is needed at all.
+        newest = min(max(today_idx - idx, 0) for idx in current)
         weighted_price_num = 0.0
         weighted_price_den = 0.0
         for idx in current:
-            days_ago = today_idx - idx
-            w = RECENCY_DECAY ** max(days_ago, 0)
+            days_ago = max(today_idx - idx, 0)
+            w = RECENCY_DECAY ** (days_ago - newest)
             weighted_price_num += float(prices.iloc[idx]) * w
             weighted_price_den += w
-        cluster_price = weighted_price_num / max(weighted_price_den, 1e-9)
+        cluster_price = weighted_price_num / weighted_price_den
 
-        # strength = sum of recency weights, scaled up by raw touch count
-        strength = weighted_price_den * len(current)
+        # strength = sum of recency weights, scaled up by raw touch count.
+        # Scaled back to the ABSOLUTE recency scale so cluster ranking is
+        # unchanged by the shift above: 0.95**newest * Σ 0.95**(d - newest) is
+        # exactly the Σ 0.95**d this always used. Unlike the price, strength
+        # underflowing to 0.0 for an ancient cluster is correct — it only
+        # orders clusters, and one nothing has touched in years belongs last.
+        strength = (RECENCY_DECAY ** newest) * weighted_price_den * len(current)
 
         first_idx = min(current)
         last_idx = max(current)
