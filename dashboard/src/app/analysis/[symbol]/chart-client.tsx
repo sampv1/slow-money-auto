@@ -29,6 +29,7 @@ import { t, type Locale } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
 import { CHART_LITERAL, VN_INDEX } from "@/lib/chart-theme";
 import { ChartToolbar, RANGE_PRESETS, type SeriesType } from "@/components/chart-toolbar";
+import { isUnscaledSymbol } from "@/lib/chart-only-symbols";
 import { IndicatorPicker, type PickerItem } from "@/components/indicator-picker";
 import { DrawingRail } from "@/components/drawing-rail";
 import {
@@ -109,11 +110,21 @@ const MACD_LINE_COLOR = VN_INDEX;
 // per-series format (lightweight-charts formats with it and falls back to the
 // series formatter), so setting it there would push ÷1000 onto the volume,
 // RSI, MACD and MCDX panes too.
-const PRICE_FORMAT = {
+//
+// PER SYMBOL, because an index is not quoted the same way a stock is. VNINDEX
+// closed at 1,827.72 and is STORED as 1,827.72 (matching macro_series.vnindex
+// to the hundredth) — dividing it would put "1.83" on the axis. A futures
+// contract is the same: points, not thousands of dong. See
+// lib/chart-only-symbols.
+const priceFormatFor = (unscaled: boolean) => ({
   type: "custom" as const,
-  formatter: (price: number) => (price / 1000).toFixed(2),
-  minMove: 1,
-};
+  formatter: (price: number) =>
+    unscaled ? price.toFixed(2) : (price / 1000).toFixed(2),
+  // minMove stays 1 for stocks (whole VND). For an index, 1 point would be far
+  // too coarse a tick — the scale derives `base = Math.round(1 / minMove)` and
+  // throws on base 0, so 0.01 is the finest safe value here.
+  minMove: unscaled ? 0.01 : 1,
+});
 const MACD_SIGNAL_COLOR = "#ea580c";
 // Volume bars: the BOARD tokens at 0.7 alpha, not a pastel.
 //
@@ -1119,6 +1130,11 @@ export function ChartClient({
   // Range presets set the visible window on demand. They deliberately do NOT
   // participate in the chart's opening state: nothing calls this on mount, so an
   // untouched chart still opens on DEFAULT_VISIBLE_SESSIONS as it always has.
+  // Index and futures series are quoted in their own points, not thousands of
+  // dong. Derived here rather than inside the chart effect so the effect
+  // depends on a stable boolean instead of on the symbol string.
+  const unscaled = useMemo(() => isUnscaledSymbol(symbol), [symbol]);
+
   const applyRange = useCallback(
     (months: number | null) => {
       const chart = chartRef.current;
@@ -1239,6 +1255,8 @@ export function ChartClient({
     });
     chartRef.current = chart;
 
+    const priceFormat = priceFormatFor(unscaled);
+
     const closes = candles.map((c) => c.close);
     const highs = candles.map((c) => c.high);
     const lows = candles.map((c) => c.low);
@@ -1269,7 +1287,7 @@ export function ChartClient({
     let candleSeries: PriceSeries;
     if (seriesType === "bars") {
       const s = chart.addSeries(BarSeries, {
-        priceFormat: PRICE_FORMAT,
+        priceFormat,
         upColor: UP_COLOR,
         downColor: DOWN_COLOR,
         thinBars: false,
@@ -1278,7 +1296,7 @@ export function ChartClient({
       candleSeries = s;
     } else if (seriesType === "line") {
       const s = chart.addSeries(LineSeries, {
-        priceFormat: PRICE_FORMAT,
+        priceFormat,
         color: CHART_LITERAL.text,
         lineWidth: 2,
         crosshairMarkerVisible: true,
@@ -1287,7 +1305,7 @@ export function ChartClient({
       candleSeries = s;
     } else if (seriesType === "area") {
       const s = chart.addSeries(AreaSeries, {
-        priceFormat: PRICE_FORMAT,
+        priceFormat,
         lineColor: CHART_LITERAL.text,
         lineWidth: 2,
         topColor: "rgba(20, 18, 15, 0.20)",
@@ -1297,7 +1315,7 @@ export function ChartClient({
       candleSeries = s;
     } else {
       const s = chart.addSeries(CandlestickSeries, {
-        priceFormat: PRICE_FORMAT,
+        priceFormat,
         upColor: UP_COLOR,
         downColor: DOWN_COLOR,
         borderUpColor: UP_COLOR,
@@ -1311,7 +1329,7 @@ export function ChartClient({
 
     for (const period of features.maPeriods) {
       const line = chart.addSeries(LineSeries, {
-        priceFormat: PRICE_FORMAT,
+        priceFormat,
         color: MA_COLOR[period] ?? "#888",
         // 2px, not 1: a hairline at the old zoom disappeared into the candles.
         lineWidth: 2,
@@ -1395,7 +1413,7 @@ export function ChartClient({
       );
       if (pivots.length >= 2) {
         const zz = chart.addSeries(LineSeries, {
-          priceFormat: PRICE_FORMAT,
+          priceFormat,
           color: ZIGZAG_COLOR,
           lineWidth: 2,
           priceLineVisible: false,
@@ -1408,7 +1426,7 @@ export function ChartClient({
       const lastPivot = pivots[pivots.length - 1];
       if (lastPivot && provisional && provisional.idx > lastPivot.idx) {
         const open = chart.addSeries(LineSeries, {
-          priceFormat: PRICE_FORMAT,
+          priceFormat,
           color: ZIGZAG_COLOR,
           lineWidth: 2,
           lineStyle: LineStyle.Dashed,
@@ -1441,7 +1459,7 @@ export function ChartClient({
     for (const tl of activeTl) {
       const isUp = tl.trend_type === "uptrend";
       const tlSeries = chart.addSeries(LineSeries, {
-        priceFormat: PRICE_FORMAT,
+        priceFormat,
         color: isUp ? UP_COLOR : DOWN_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
@@ -1460,7 +1478,7 @@ export function ChartClient({
       const rh = rollingMax(highs, 20);
       const shifted = candles.map((_, i) => (i > 0 ? rh[i - 1] : null));
       const line = chart.addSeries(LineSeries, {
-        priceFormat: PRICE_FORMAT,
+        priceFormat,
         color: UP_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Dotted,
@@ -1475,7 +1493,7 @@ export function ChartClient({
       const rl = rollingMin(lows, 20);
       const shifted = candles.map((_, i) => (i > 0 ? rl[i - 1] : null));
       const line = chart.addSeries(LineSeries, {
-        priceFormat: PRICE_FORMAT,
+        priceFormat,
         color: DOWN_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Dotted,
@@ -1492,7 +1510,7 @@ export function ChartClient({
       const rh = rollingMax(highs, 252);
       const shifted = candles.map((_, i) => (i > 0 ? rh[i - 1] : null));
       const line = chart.addSeries(LineSeries, {
-        priceFormat: PRICE_FORMAT,
+        priceFormat,
         color: UP_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
@@ -1507,7 +1525,7 @@ export function ChartClient({
       const rl = rollingMin(lows, 252);
       const shifted = candles.map((_, i) => (i > 0 ? rl[i - 1] : null));
       const line = chart.addSeries(LineSeries, {
-        priceFormat: PRICE_FORMAT,
+        priceFormat,
         color: DOWN_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
@@ -1923,7 +1941,7 @@ export function ChartClient({
       drawPrimRef.current = null;
       priceSeriesRef.current = null;
     };
-  }, [view, viewRsHist, features, panes, activeSignals, activeSr, activeTl, displayOn, seriesType, timeframe, zzParams]);
+  }, [view, viewRsHist, features, panes, activeSignals, activeSr, activeTl, displayOn, seriesType, timeframe, zzParams, unscaled]);
 
   // `hint` carries anything the label cannot. The ZigZag's dashed-leg caveat used
   // to be a legend row; it belongs on the control it describes rather than in a

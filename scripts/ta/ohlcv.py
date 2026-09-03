@@ -7,6 +7,7 @@ matching the convention used elsewhere in this repo (see update_prices.py).
 import time
 from datetime import date, datetime, time as clock_time, timedelta
 
+from .chart_only import price_scale
 from .common import REQUEST_DELAY, VNSTOCK_SOURCE, safe_execute, today_vn
 
 
@@ -173,12 +174,16 @@ def fetch_ohlcv(symbol: str, start: date, end: date) -> list[dict] | None:
 
     rows = []
     dropped = 0
+    # Stocks come back in thousands of VND; an index or futures contract is
+    # already in points. See ta/chart_only.price_scale — looked up per SYMBOL so
+    # no caller can forget it and store an index at 1,000x.
+    scale = price_scale(symbol)
     for _, r in df.iterrows():
         try:
-            o = float(r["open"]) * 1000
-            h = float(r["high"]) * 1000
-            l = float(r["low"]) * 1000
-            c = float(r["close"]) * 1000
+            o = float(r["open"]) * scale
+            h = float(r["high"]) * scale
+            l = float(r["low"]) * scale
+            c = float(r["close"]) * scale
         except (TypeError, ValueError):
             dropped += 1
             continue

@@ -296,6 +296,29 @@ def main():
         except Exception as e:  # noqa: BLE001
             log_step_failure(st, "Step 1b adjustment repair", critical=False)
 
+    # Step 1c: index and VN30-futures charts. These seven symbols are drawn on
+    # the Analysis and TA Scanner pages and scored by nothing — see
+    # ta/chart_only.py. They need their own step because `price_board` does NOT
+    # serve them: asking it for VNINDEX / VN30 / VN30F1M alongside FPT returns
+    # rows for all four of which only FPT carries a usable price, so Step 1's
+    # bulk snapshot passes over them entirely and they would never update.
+    #
+    # BEST-EFFORT, deliberately. A stale index chart is visible and annoying;
+    # it corrupts nothing, because no score, signal or ranking reads these rows.
+    # Placed after Step 1b so a failure here cannot delay the repair, and before
+    # Step 2 only so the log reads in collection order.
+    if not args.dry_run:
+        try:
+            print("\n--- Step 1c: index / VN30-futures chart history ---")
+            from refresh_chart_only import refresh as refresh_chart_only
+            res = refresh_chart_only(client)
+            got = [k for k, v in res.items() if v > 0]
+            st.expect("Step 1c chart-only symbols", len(got), minimum=1, unit="symbols",
+                      detail=f"{len(res) - len(got)} of {len(res)} returned nothing")
+            client = get_supabase_client()  # fresh HTTP/2 conn after the fetches
+        except Exception as e:  # noqa: BLE001
+            log_step_failure(st, "Step 1c chart-only symbols", critical=False)
+
     # Step 2: compute signals (latest date only) and log to ta_runs
     print(f"\n--- Step 2: compute signals (latest date) ---")
     run_id = None

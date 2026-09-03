@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { supabase } from "./supabase";
+import { CHART_ONLY_SYMBOLS } from "./chart-only-symbols";
 import type { FaScore, FaQuarterlyRaw } from "./fa";
 import type { ReScore } from "./fa-re";
 import { buildQuarterlyFacts, faNpat, yearAgoPeriod } from "./fa";
@@ -363,9 +364,13 @@ export const getChartSymbols = unstable_cache(
         .order("symbol", { ascending: true })
         .range(from, to),
     );
-    return rows.map((r) => r.symbol);
+    // Indices and VN30 futures are chartable but are not stocks, so they are
+    // not in ta_universe (see lib/chart-only-symbols). They are unioned in
+    // HERE rather than seeded into that table, which would put them in front
+    // of every scoring pass that reads it.
+    return [...CHART_ONLY_SYMBOLS, ...rows.map((r) => r.symbol)];
   },
-  ["chart-symbols"],
+  ["chart-symbols-v2"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_TA] },
 );
 
