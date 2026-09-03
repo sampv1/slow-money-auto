@@ -602,7 +602,7 @@ export const translations = {
     taChart: "Chart",
     taPriceChart: "Daily candlestick chart, overlays and markers reflect the indicators you selected on the scanner.",
     taRecentSignals: "Recent signals (30 days)",
-    taNoRecentSignals: "No signals fired in the last 30 days.",
+    taNoRecentSignals: "No signals available.",
     taSymbolNotFound: "Symbol not found or no price history yet.",
     taChartLoading: "Loading chart...",
 
@@ -1497,7 +1497,7 @@ export const translations = {
     taChart: "Biểu đồ",
     taPriceChart: "Biểu đồ nến hàng ngày — overlay và đánh dấu phản ánh các chỉ báo đã chọn ở bộ lọc.",
     taRecentSignals: "Tín hiệu gần đây (30 ngày)",
-    taNoRecentSignals: "Không có tín hiệu nào trong 30 ngày qua.",
+    taNoRecentSignals: "Không có tín hiệu nào.",
     taSymbolNotFound: "Không tìm thấy mã hoặc chưa có dữ liệu giá.",
     taChartLoading: "Đang tải biểu đồ...",
 
