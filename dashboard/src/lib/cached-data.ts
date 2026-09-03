@@ -1032,10 +1032,10 @@ export const getSymbolProfile = unstable_cache(
 // Business Analysis — the desk's hand-written reports for one symbol
 // (migrations 053, 058).
 //
-// MANY reports per symbol, newest first. The Analysis page opens the first and
-// collapses the rest under their headers, so the order this returns IS the
-// order on screen — `created_at desc`, which is publication order and does not
-// move when an old report is edited (see migration 058).
+// MANY reports per symbol, newest first. The Analysis page indexes them in
+// this order and opens the first, so the order this returns IS the order on
+// screen — `created_at desc`, which is publication order and does not move
+// when an old report is edited (see migration 058).
 //
 // Cached per symbol, like getSymbolProfile: the Analysis page reads one
 // symbol's reports and the table is small, so paging the whole thing to cache
@@ -1068,7 +1068,7 @@ export const getBusinessAnalyses = (symbol: string) =>
         // list that reorders between two renders of the same data reads as a
         // bug in the page.
         .order("id", { ascending: false });
-      if (error || !data) return legacyBusinessAnalysis(symbol);
+      if (error || !data) return [];
       return data
         .map((r) => ({
           id: String(r.id),
@@ -1082,34 +1082,6 @@ export const getBusinessAnalyses = (symbol: string) =>
     ["business-analysis-v2", symbol],
     { revalidate: CACHE_TTL_SECONDS, tags: [TAG_BUSINESS] },
   )();
-
-/**
- * The pre-058 shape, read so a deploy that lands before the migration keeps
- * showing the 57 reports that already exist instead of blanking them.
- *
- * DELETE THIS once 058 is applied — it is a bridge across one deploy, not a
- * supported second schema. Until then it is what makes the two orderings
- * (deploy first, or migrate first) both correct.
- *
- * It reconstructs the header the same way the migration does: every stored
- * row opens with an `# H1`, which is precisely why 058 can lift it into a
- * column at all.
- */
-async function legacyBusinessAnalysis(symbol: string): Promise<BusinessReport[]> {
-  const { data, error } = await supabase
-    .from("business_analysis")
-    .select("content,updated_at")
-    .eq("symbol", symbol)
-    .maybeSingle();
-  if (error || !data) return [];
-  const raw = (data.content ?? "").trim();
-  if (!raw) return [];
-  const m = raw.match(/^#[^\n]*(?:\n|$)/);
-  const title = m ? m[0].replace(/^#+\s*/, "").trim() : symbol;
-  const content = m ? raw.slice(m[0].length).trim() : raw;
-  if (!content) return [];
-  return [{ id: symbol, title, content, created_at: data.updated_at, updated_at: data.updated_at }];
-}
 
 /**
  * One symbol's financial statements from vnstock_data (migration 055).
