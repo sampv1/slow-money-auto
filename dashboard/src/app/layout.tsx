@@ -139,13 +139,17 @@ export default async function RootLayout({
                   {/* The motto (caps mono label) over a plain-sentence, italic
                       serif line — the same two-register pairing as a masthead
                       standfirst, so the second line reads as gloss rather than
-                      a second slogan competing with the first. The gloss line
-                      needs more width than the tablet range (640-767px) has
-                      left over from the logo and auth controls, so it waits
-                      for `md` — the motto alone already filled that gap. */}
-                  <div className="hidden sm:flex sm:flex-col min-w-0 pt-0.5 leading-tight">
+                      a second slogan competing with the first.
+                      BOTH lines wait for `lg` (1024px), not `sm` (640px):
+                      measured at every Tailwind stop, the Vietnamese motto
+                      alone — already longer than the English one — still
+                      clips with an ellipsis at 768-900px (md), and only
+                      clears the tablet band at 1024. Below `lg` the whole
+                      block stays hidden rather than show a truncated motto
+                      the tablet has no room for. */}
+                  <div className="hidden lg:flex lg:flex-col min-w-0 pt-0.5 leading-tight">
                     <span className="label truncate">{t(locale, "tagline")}</span>
-                    <span className="hidden md:block font-serif italic text-data text-fg-muted truncate">
+                    <span className="font-serif italic text-data text-fg-muted truncate">
                       {t(locale, "taglineSubtitle")}
                     </span>
                   </div>
