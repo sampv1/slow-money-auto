@@ -865,7 +865,7 @@ export const translations = {
     fciContribLegend: "Red = tightening · Green = loosening",
 
     // Masthead / footer
-    tagline: "Vietnam macro board & market screener",
+    tagline: "Stock screening – Visual analysis – Active investing",
     footerDisclaimer: "Lọc tín hiệu · Analysis tool, not investment advice",
     footerSources: "Sources: SBV · HOSE · ADB/AsianBondsOnline · CafeF · GSO",
 
@@ -1753,7 +1753,7 @@ export const translations = {
     fciContribLegend: "Đỏ = siết chặt · Xanh = nới lỏng",
 
     // Masthead / footer
-    tagline: "Bảng vĩ mô & bộ lọc thị trường Việt Nam",
+    tagline: "Tầm soát cổ phiếu – Phân tích trực quan – Đầu tư chủ động",
     footerDisclaimer: "Lọc tín hiệu · Công cụ phân tích, không phải khuyến nghị đầu tư",
     footerSources: "Nguồn: NHNN · HOSE · ADB/AsianBondsOnline · CafeF · GSO",
 
