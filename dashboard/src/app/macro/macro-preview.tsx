@@ -123,11 +123,14 @@ export function MacroPreviewCard({
   preview,
   onOpen,
   openLabel,
+  active = false,
 }: {
   label: string;
   preview: MacroPreview;
   onOpen: () => void;
   openLabel: string;
+  /** This card's chart is the one currently open in the panel below. */
+  active?: boolean;
 }) {
   return (
     <button
@@ -135,7 +138,18 @@ export function MacroPreviewCard({
       onClick={onOpen}
       title={openLabel}
       aria-label={`${label} — ${openLabel}`}
-      className="group text-left bg-panel rounded-lg border border-line p-3 flex flex-col min-w-0 cursor-pointer transition-colors hover:border-fg-faint hover:bg-panel-2"
+      // `aria-current` rather than aria-pressed: the card is not a toggle, it
+      // selects which of eleven charts the panel shows — the same relationship
+      // a nav item has to the page it opened.
+      aria-current={active ? "true" : undefined}
+      className={`group text-left bg-panel rounded-lg border p-3 flex flex-col min-w-0 cursor-pointer transition-colors hover:bg-panel-2 ${
+        active
+          // The panel is elsewhere on the page, so the card has to say which
+          // chart is showing — otherwise clicking a second card silently swaps
+          // content the reader may not have scrolled back to.
+          ? "border-accent bg-panel-2 ring-1 ring-accent"
+          : "border-line hover:border-fg-faint"
+      }`}
     >
       <div className="flex items-start gap-2 min-w-0">
         <h3 className="text-label font-semibold tracking-wide uppercase leading-tight text-fg min-w-0 flex-1">
