@@ -127,16 +127,19 @@ export default async function RootLayout({
           <header>
             <div className="px-4 sm:px-6 lg:px-8">
               <div className="flex items-center justify-between gap-4 pt-4 pb-3">
-                {/* A STACKED nameplate: the wordmark owns its own line, with
-                    the slogan block below it as a standfirst. Beside the
-                    wordmark — which is where this used to sit — the Vietnamese
-                    slogan measured 439px against the wordmark's 206px, so the
-                    line describing the product out-measured the line naming it
-                    2.13:1 and the name read as the smaller of the two. Stacked,
-                    rank is positional and no longer has to be won on width. */}
-                <div className="flex flex-col gap-0.5 min-w-0">
+                {/* The nameplate: wordmark, then the slogan block beside it.
+                    CENTRED on the wordmark, not top-aligned. Top-aligning the
+                    two boxes looked like it would align the text and does the
+                    opposite — a serif's ascender leading puts its caps well
+                    below its box top, so the 11px motto's caps landed ABOVE
+                    the caps of the name, and the shorter block left a void
+                    under itself. Centring gives the pair one optical axis. */}
+                <div className="flex items-center gap-3 lg:gap-4 min-w-0">
                   {/* The wordmark crowds the auth controls on a 375px screen,
-                      so it steps down twice below `lg`. */}
+                      so it steps down twice below `lg`. It carries the rank
+                      the slogan used to take on width: at 38px the name
+                      measured 206px against the Vietnamese slogan's 439px and
+                      read as the smaller of the two. */}
                   <Link
                     href="/"
                     className="font-serif text-title sm:text-display lg:text-masthead font-semibold tracking-tight whitespace-nowrap"
@@ -147,14 +150,13 @@ export default async function RootLayout({
                       serif line — the same two-register pairing as a masthead
                       standfirst, so the second line reads as gloss rather than
                       a second slogan competing with the first.
-                      Both wait for `md` (768px). Stacking bought back three
-                      breakpoints — beside the wordmark this block needed `lg`,
-                      because it was competing for the width the wordmark had
-                      already taken — but the measurement still binds on
-                      Vietnamese, which is the longer of the two: it clips at
-                      exactly 640 (`sm`) and clears from 700 up, so `md` is the
-                      first standard stop that is safe in BOTH languages. */}
-                  <div className="hidden md:flex md:flex-col min-w-0 leading-tight">
+                      Both wait for `lg` (1024px). Sharing the line with the
+                      wordmark means competing with it for width, and the
+                      binding case is Vietnamese, the longer of the two: it
+                      clips at every stop below 1024 and is clean from there
+                      up. Below `lg` the block stays hidden rather than show a
+                      truncated slogan the viewport has no room for. */}
+                  <div className="hidden lg:flex lg:flex-col min-w-0 leading-tight">
                     <span className="label truncate">{t(locale, "tagline")}</span>
                     <span className="font-serif italic text-data text-fg-muted truncate">
                       {t(locale, "taglineSubtitle")}
