@@ -1029,34 +1029,87 @@ export const getSymbolProfile = unstable_cache(
 );
 
 // ---------------------------------------------------------------------------
-// Business Analysis — the admin's markdown note for one symbol (migration 053).
+// Business Analysis — the desk's hand-written reports for one symbol
+// (migrations 053, 058).
 //
-// Cached per symbol, like getSymbolProfile: the Analysis page reads exactly one
-// row and the table is small, so paging the whole thing to cache it once would
-// trade a cheap keyed lookup for a big entry that expires on every edit.
+// MANY reports per symbol, newest first. The Analysis page opens the first and
+// collapses the rest under their headers, so the order this returns IS the
+// order on screen — `created_at desc`, which is publication order and does not
+// move when an old report is edited (see migration 058).
 //
-// Returns null both when there is no note and when the read FAILS — this is
-// commentary beside the numbers, and a symbol with no note looks the same as
-// one whose table does not exist yet (a deploy ahead of the migration). Neither
-// is worth taking the page down for.
+// Cached per symbol, like getSymbolProfile: the Analysis page reads one
+// symbol's reports and the table is small, so paging the whole thing to cache
+// it once would trade a cheap keyed lookup for a big entry that expires on
+// every edit.
+//
+// Returns [] both when there are no reports and when the read FAILS — this is
+// commentary beside the numbers, and a symbol nobody has written about looks
+// the same as one whose table does not exist yet. Neither is worth taking the
+// page down for.
 // ---------------------------------------------------------------------------
-export type BusinessAnalysis = { content: string; updated_at: string };
+export type BusinessReport = {
+  id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+};
 
-export const getBusinessAnalysis = (symbol: string) =>
+export const getBusinessAnalyses = (symbol: string) =>
   unstable_cache(
-    async (): Promise<BusinessAnalysis | null> => {
+    async (): Promise<BusinessReport[]> => {
       const { data, error } = await supabase
         .from("business_analysis")
-        .select("content,updated_at")
+        .select("id,title,content,created_at,updated_at")
         .eq("symbol", symbol)
-        .maybeSingle();
-      if (error || !data) return null;
-      const content = (data.content ?? "").trim();
-      return content ? { content, updated_at: data.updated_at } : null;
+        .order("created_at", { ascending: false })
+        // Deterministic tie-break. Two reports saved in the same clock tick
+        // would otherwise come back in whatever order the planner chose, and a
+        // list that reorders between two renders of the same data reads as a
+        // bug in the page.
+        .order("id", { ascending: false });
+      if (error || !data) return legacyBusinessAnalysis(symbol);
+      return data
+        .map((r) => ({
+          id: String(r.id),
+          title: (r.title ?? "").trim(),
+          content: (r.content ?? "").trim(),
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+        }))
+        .filter((r) => r.content !== "" && r.title !== "");
     },
-    ["business-analysis", symbol],
+    ["business-analysis-v2", symbol],
     { revalidate: CACHE_TTL_SECONDS, tags: [TAG_BUSINESS] },
   )();
+
+/**
+ * The pre-058 shape, read so a deploy that lands before the migration keeps
+ * showing the 57 reports that already exist instead of blanking them.
+ *
+ * DELETE THIS once 058 is applied — it is a bridge across one deploy, not a
+ * supported second schema. Until then it is what makes the two orderings
+ * (deploy first, or migrate first) both correct.
+ *
+ * It reconstructs the header the same way the migration does: every stored
+ * row opens with an `# H1`, which is precisely why 058 can lift it into a
+ * column at all.
+ */
+async function legacyBusinessAnalysis(symbol: string): Promise<BusinessReport[]> {
+  const { data, error } = await supabase
+    .from("business_analysis")
+    .select("content,updated_at")
+    .eq("symbol", symbol)
+    .maybeSingle();
+  if (error || !data) return [];
+  const raw = (data.content ?? "").trim();
+  if (!raw) return [];
+  const m = raw.match(/^#[^\n]*(?:\n|$)/);
+  const title = m ? m[0].replace(/^#+\s*/, "").trim() : symbol;
+  const content = m ? raw.slice(m[0].length).trim() : raw;
+  if (!content) return [];
+  return [{ id: symbol, title, content, created_at: data.updated_at, updated_at: data.updated_at }];
+}
 
 /**
  * One symbol's financial statements from vnstock_data (migration 055).

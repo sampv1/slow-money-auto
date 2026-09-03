@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { RePb } from "@/lib/cached-data";
-import { getBusinessAnalysis, getFaQuarterlyFacts, getRePbMetrics, getSymbolMeta, getSymbolProfile, getVnstockStatements, getChartSymbols } from "@/lib/cached-data";
+import { getBusinessAnalyses, getFaQuarterlyFacts, getRePbMetrics, getSymbolMeta, getSymbolProfile, getVnstockStatements, getChartSymbols } from "@/lib/cached-data";
 import { FinancialPanels } from "@/components/financial-panels";
 import { BusinessPanel } from "@/components/business-panel";
 import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
@@ -47,7 +47,7 @@ export default async function SymbolDrillDown({
   //    picks BUY vs SELL in the header (same rule as Signal Pro). Deliberately
   //    UNCACHED so a trade shows up immediately on the router.refresh() that
   //    TradeActions fires after a successful BUY/SELL.
-  const [universe, hasOpenPosition, profile, symbolMeta, business, vnstockStatements] = await Promise.all([
+  const [universe, hasOpenPosition, profile, symbolMeta, businessReports, vnstockStatements] = await Promise.all([
     getChartSymbols().catch((): string[] => []),
     (async (): Promise<boolean> => {
       if (!isAdmin) return false;
@@ -63,9 +63,10 @@ export default async function SymbolDrillDown({
     // migration 050 costs the header its logo and subtitle, not the page.
     getSymbolProfile(symbol),
     getSymbolMeta(),
-    // The admin's hand-written note, if there is one. Already null-on-failure,
-    // so a deploy that lands before migration 053 simply shows no block.
-    getBusinessAnalysis(symbol),
+    // The desk's written reports, newest first (migrations 053, 058). Already
+    // empty-on-failure, so a deploy landing before the migration shows no block
+    // rather than an error.
+    getBusinessAnalyses(symbol),
     // Financial statements (migration 055). Returns [] if the migration has not
     // been applied, so this ships ahead of the table existing.
     getVnstockStatements(symbol),
@@ -129,7 +130,7 @@ export default async function SymbolDrillDown({
   // falling back to a manufacturing number the FA Scanner already stopped
   // showing for it.
   const isRealEstate = industry === "real_estate";
-  const twoColumn = vnstockStatements.length > 0 && !!business;
+  const twoColumn = vnstockStatements.length > 0 && businessReports.length > 0;
   const faQuarters = (isRealEstate ? reRows : faRows).map((r) => r.as_of_period);
   const selectedFq = fq && faQuarters.includes(fq) ? fq : faQuarters[0];
   const faRow: FaScore | null =
@@ -256,11 +257,11 @@ export default async function SymbolDrillDown({
           three chart cards still fit across the left column at 1280.
 
           Either half may be absent: a symbol the importer has not reached has
-          no statements, and most symbols have no written note. Whichever
+          no statements, and most symbols have no written report. Whichever
           survives takes the full width rather than leaving a hole — hence the
           grid is only applied when BOTH are present. */}
       {/* Both halves present decides the layout AND how the panel is sized. */}
-      {(vnstockStatements.length > 0 || business) && (
+      {(vnstockStatements.length > 0 || businessReports.length > 0) && (
         <div
           className={`mt-8 grid gap-6 items-stretch ${
             twoColumn
@@ -285,12 +286,15 @@ export default async function SymbolDrillDown({
             </section>
           )}
 
-          {business && (
+          {businessReports.length > 0 && (
             <section className="min-w-0 flex flex-col">
+              {/* The date names the NEWEST report — the one the panel opens —
+                  because that is what the heading is standing over. Each
+                  archived report carries its own date on its own row. */}
               <h2 className="text-title font-semibold border-b border-line pb-1 mb-3 flex items-baseline justify-between gap-3">
                 <span>{t(locale, "baSection")}</span>
                 <span className="text-data font-normal text-fg-label font-mono">
-                  {business.updated_at.slice(0, 10)}
+                  {businessReports[0].created_at.slice(0, 10)}
                 </span>
               </h2>
               {/* SIDE BY SIDE, THE PANEL IS TAKEN OUT OF FLOW.
@@ -306,7 +310,7 @@ export default async function SymbolDrillDown({
                   collapse to nothing. */}
               <div className={twoColumn ? "flex-1 min-h-0 lg:relative" : ""}>
                 <div className={twoColumn ? "lg:absolute lg:inset-0" : ""}>
-                  <BusinessPanel content={business.content} />
+                  <BusinessPanel reports={businessReports} locale={locale} />
                 </div>
               </div>
               {/* The charts column carries a provenance line under its grid, so
