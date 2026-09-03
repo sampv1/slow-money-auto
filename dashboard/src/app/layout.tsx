@@ -127,7 +127,7 @@ export default async function RootLayout({
           <header>
             <div className="px-4 sm:px-6 lg:px-8">
               <div className="flex items-center justify-between gap-4 pt-4 pb-3">
-                <div className="flex items-baseline gap-3 min-w-0">
+                <div className="flex items-start gap-3 min-w-0">
                   {/* The 38px editorial wordmark crowds the auth controls on a
                       375px screen, so it steps down there. */}
                   <Link
@@ -136,9 +136,19 @@ export default async function RootLayout({
                   >
                     Lọc tín hiệu
                   </Link>
-                  <span className="label hidden sm:inline truncate">
-                    {t(locale, "tagline")}
-                  </span>
+                  {/* The motto (caps mono label) over a plain-sentence, italic
+                      serif line — the same two-register pairing as a masthead
+                      standfirst, so the second line reads as gloss rather than
+                      a second slogan competing with the first. The gloss line
+                      needs more width than the tablet range (640-767px) has
+                      left over from the logo and auth controls, so it waits
+                      for `md` — the motto alone already filled that gap. */}
+                  <div className="hidden sm:flex sm:flex-col min-w-0 pt-0.5 leading-tight">
+                    <span className="label truncate">{t(locale, "tagline")}</span>
+                    <span className="hidden md:block font-serif italic text-data text-fg-muted truncate">
+                      {t(locale, "taglineSubtitle")}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <AuthButton email={user?.email ?? null} locale={locale} />

@@ -866,6 +866,7 @@ export const translations = {
 
     // Masthead / footer
     tagline: "Stock screening – Visual analysis – Active investing",
+    taglineSubtitle: "A data and tooling platform for individual investors.",
     footerDisclaimer: "Lọc tín hiệu · Analysis tool, not investment advice",
     footerSources: "Sources: SBV · HOSE · ADB/AsianBondsOnline · CafeF · GSO",
 
@@ -1754,6 +1755,7 @@ export const translations = {
 
     // Masthead / footer
     tagline: "Tầm soát cổ phiếu – Phân tích trực quan – Đầu tư chủ động",
+    taglineSubtitle: "Nền tảng dữ liệu và công cụ hỗ trợ nhà đầu tư cá nhân.",
     footerDisclaimer: "Lọc tín hiệu · Công cụ phân tích, không phải khuyến nghị đầu tư",
     footerSources: "Nguồn: NHNN · HOSE · ADB/AsianBondsOnline · CafeF · GSO",
 
