@@ -127,12 +127,19 @@ export default async function RootLayout({
           <header>
             <div className="px-4 sm:px-6 lg:px-8">
               <div className="flex items-center justify-between gap-4 pt-4 pb-3">
-                <div className="flex items-start gap-3 min-w-0">
-                  {/* The 38px editorial wordmark crowds the auth controls on a
-                      375px screen, so it steps down there. */}
+                {/* A STACKED nameplate: the wordmark owns its own line, with
+                    the slogan block below it as a standfirst. Beside the
+                    wordmark — which is where this used to sit — the Vietnamese
+                    slogan measured 439px against the wordmark's 206px, so the
+                    line describing the product out-measured the line naming it
+                    2.13:1 and the name read as the smaller of the two. Stacked,
+                    rank is positional and no longer has to be won on width. */}
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  {/* The wordmark crowds the auth controls on a 375px screen,
+                      so it steps down twice below `lg`. */}
                   <Link
                     href="/"
-                    className="font-serif text-title sm:text-display font-semibold tracking-tight whitespace-nowrap"
+                    className="font-serif text-title sm:text-display lg:text-masthead font-semibold tracking-tight whitespace-nowrap"
                   >
                     Lọc tín hiệu
                   </Link>
@@ -140,14 +147,14 @@ export default async function RootLayout({
                       serif line — the same two-register pairing as a masthead
                       standfirst, so the second line reads as gloss rather than
                       a second slogan competing with the first.
-                      BOTH lines wait for `lg` (1024px), not `sm` (640px):
-                      measured at every Tailwind stop, the Vietnamese motto
-                      alone — already longer than the English one — still
-                      clips with an ellipsis at 768-900px (md), and only
-                      clears the tablet band at 1024. Below `lg` the whole
-                      block stays hidden rather than show a truncated motto
-                      the tablet has no room for. */}
-                  <div className="hidden lg:flex lg:flex-col min-w-0 pt-0.5 leading-tight">
+                      Both wait for `md` (768px). Stacking bought back three
+                      breakpoints — beside the wordmark this block needed `lg`,
+                      because it was competing for the width the wordmark had
+                      already taken — but the measurement still binds on
+                      Vietnamese, which is the longer of the two: it clips at
+                      exactly 640 (`sm`) and clears from 700 up, so `md` is the
+                      first standard stop that is safe in BOTH languages. */}
+                  <div className="hidden md:flex md:flex-col min-w-0 leading-tight">
                     <span className="label truncate">{t(locale, "tagline")}</span>
                     <span className="font-serif italic text-data text-fg-muted truncate">
                       {t(locale, "taglineSubtitle")}

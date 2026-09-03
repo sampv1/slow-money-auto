@@ -148,6 +148,14 @@
   --text-title--line-height: 1.2;
   --text-display: 2.375rem; /* 38px — page titles (serif) */
   --text-display--line-height: 1.05;
+  /* 46px — the masthead wordmark, and nothing else. It outranks `display`
+     on purpose: the wordmark shares its line with a two-line slogan block
+     that measures 439px in Vietnamese against the wordmark's 206px at
+     `display`, so at 38px the thing describing the product out-measured the
+     thing naming it 2.13:1. A page title is the largest thing on ITS page;
+     the masthead sits above every page and has to outrank all of them. */
+  --text-masthead: 2.875rem;
+  --text-masthead--line-height: 1.05;
   --text-hero: 5rem; /* 80px — the one figure that owns a screen */
   --text-hero--line-height: 0.85;
 
