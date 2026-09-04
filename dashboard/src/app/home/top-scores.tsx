@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { HomeTopScore } from "@/lib/cached-data";
 import { type Locale, t } from "@/lib/i18n";
 import { scoreGradeClass, formatNumber } from "@/lib/format";
-import { TABLE, TABLE_SCROLL, TD, TD_NUM, TD_SYMBOL, TH, TH_NUM, THEAD, TR } from "@/lib/table";
+import { TABLE, TABLE_SCROLL, TD, TD_NUM, TD_SYMBOL, TH, TH_NUM_WRAP, THEAD, TR } from "@/lib/table";
 
 /**
  * The homepage hook: the highest Final Scores among liquid names.
@@ -86,11 +86,23 @@ export function TopScores({
                 <tr>
                   <th className={`${TH} pl-5`}>{t(locale, "symbol")}</th>
                   <th className={TH}>{t(locale, "homeColGrade")}</th>
-                  <th className={TH_NUM}>{t(locale, "homeColFinal")}</th>
-                  <th className={TH_NUM}>{t(locale, "homeColTa")}</th>
-                  <th className={TH_NUM}>{t(locale, "homeColFa")}</th>
-                  <th className={TH_NUM}>RS 3M</th>
-                  <th className={`${TH} pr-5`}>{t(locale, "homeColTrend")}</th>
+                  {/* THE THREE SCORE HEADERS WRAP. Their labels are far wider
+                      than the two-digit numbers beneath them — "TỔNG HỢP",
+                      "KỸ THUẬT" and "CƠ BẢN" against "92" — and with
+                      `whitespace-nowrap` the LABEL sizes the column. Adding the
+                      Analysis column pushed the Vietnamese table 44px past its
+                      container at 1024 for exactly that reason; wrapping hands
+                      the width back to the data. English is unaffected either
+                      way, which is the whole point of measuring in the longer
+                      language. "RS 3M" is already shorter than its data. */}
+                  <th className={TH_NUM_WRAP}>{t(locale, "homeColFinal")}</th>
+                  <th className={TH_NUM_WRAP}>{t(locale, "homeColTa")}</th>
+                  <th className={TH_NUM_WRAP}>{t(locale, "homeColFa")}</th>
+                  <th className={TH_NUM_WRAP}>RS 3M</th>
+                  <th className={TH}>{t(locale, "homeColTrend")}</th>
+                  {/* Same last-column treatment as the TA Scanner, so the two
+                      tables are read the same way. */}
+                  <th className={`${TH} pr-5 text-right`}>{t(locale, "taOpenAnalysis")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -108,14 +120,32 @@ export function TopScores({
                     <td className={`${TD_NUM} text-fg-muted`}>{num(r.ta_score)}</td>
                     <td className={`${TD_NUM} text-fg-muted`}>{num(r.fa_normalized)}</td>
                     <td className={`${TD_NUM} text-fg-muted`}>{num(r.rs_3m)}</td>
-                    <td className={`${TD} pr-5`}>{trendLabel(r.trend_status, locale)}</td>
+                    <td className={TD}>{trendLabel(r.trend_status, locale)}</td>
+                    {/* REDUNDANT WITH THE TICKER, AND WORTH IT. The symbol cell
+                        has always linked here, but a bare ticker in a column
+                        headed "Symbol" does not announce that it goes anywhere
+                        — a reader has to hover it to find out. The TA Scanner
+                        solved that with a named link in the last column and
+                        this is the same table read the same way, so it gets the
+                        same control rather than a second convention. */}
+                    <td className={`${TD} pr-5 text-right whitespace-nowrap`}>
+                      <Link
+                        href={`/analysis/${r.symbol}`}
+                        title={t(locale, "taOpenAnalysisTitle")}
+                        className="text-accent hover:underline"
+                      >
+                        {t(locale, "taOpenAnalysis")} →
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          {/* Cards — below sm */}
+          {/* Cards — below sm. NO "Analysis →" here: the whole card is
+              already a Link to that page, and an anchor inside an anchor is
+              invalid HTML that browsers silently unnest. */}
           <ul className="sm:hidden flex-1 divide-y divide-line-faint">
             {rows.map((r) => (
               <li key={r.symbol} className="px-4 py-3">
