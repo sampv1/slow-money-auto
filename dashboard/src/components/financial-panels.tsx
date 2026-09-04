@@ -182,10 +182,13 @@ export function FinancialPanels({
               instance. `layer`, `spanY` and `hidden` inside FinancialChart are
               all useState(initial) — set once, on mount — so without this the
               promoted chart inherits whatever the previous one was showing.
-              Measured: promoting Valuation while Revenue was up left it on the
-              annual layer, silently defeating its `defaultLayer: "ttm"`, which
-              exists precisely so the live P/E is the number you land on. The
-              legend's hidden series leaked across the swap the same way. */}
+              Measured when the grid still opened on annual: promoting Valuation
+              while Revenue was up left it on the annual layer, silently
+              defeating its `defaultLayer: "ttm"`, which exists precisely so the
+              live P/E is the number you land on. Every chart now opens on
+              quarters, which Valuation does not even offer — so the same leak
+              would strand it on a layer it has no data for. The legend's hidden
+              series leaked across the swap the same way. */}
           <FinancialChart
             key={featured.id}
             spec={featured}

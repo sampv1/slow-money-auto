@@ -53,16 +53,28 @@ import type { VnstockStatementRow } from "@/lib/cached-data";
 import { t, type Locale } from "@/lib/i18n";
 
 /**
- * Opens on the widest layer the chart offers, ten years deep.
+ * OPENS ON QUARTERS, FIVE YEARS DEEP — every chart, the same way.
  *
- * A card in this grid is ~248px at a 1440 viewport, which twenty quarterly bars
- * do not fit — they collapse to 12px each and the axis drops most of its
- * labels. Ten years of annual bars is the same span of history in a third of
- * the marks. Charts with no annual layer (the balance-sheet three) open on
- * quarters by necessity, where the same width argues for a shorter span.
+ * It used to open on the WIDEST layer each chart offered (annual, ten years),
+ * on the argument that a ~248px card cannot fit twenty quarterly bars: they
+ * come out ~12px each and the axis drops most of its labels. That reasoning is
+ * about the card, and it lost sight of what the page is for. Three of the nine
+ * charts have no annual layer at all, so the section opened with six charts on
+ * one basis and three on another, and reading margin against revenue meant
+ * noticing the mismatch and fixing it by hand on each. A default that is the
+ * same everywhere is worth more than a default that is individually optimal.
+ *
+ * Quarters are also the resolution the rest of this page works in — the FA
+ * rubric scores a quarter, the Final Score is written per quarter, and the
+ * provenance line under the grid names a quarter. Annual bars hide the thing
+ * a reader comes to these charts for, which is what changed recently.
+ *
+ * Five years, not ten, because twenty quarterly bars is the most this width
+ * carries — the earlier measurement stands, it just argues for the span rather
+ * than for the layer. A chart with no quarterly layer (Valuation, which is
+ * TTM/annual by construction) keeps its own `defaultLayer`.
  */
-const DEFAULT_SPAN_YEARS = 10;
-const QUARTER_ONLY_SPAN_YEARS = 5;
+const DEFAULT_SPAN_YEARS = 5;
 
 function toBn(v: number): number {
   return v / 1e9;
@@ -185,21 +197,20 @@ export function FinancialChart({
   /** Filling the section on its own, rather than one of nine in the grid. */
   zoomed?: boolean;
 }) {
-  // The widest layer the chart offers is the one it opens on: annual where it
-  // exists, then TTM (smoother than raw quarters), then quarters.
+  // Quarters where the chart has them, then TTM (smoother than raw quarters),
+  // then annual — the reverse of the old preference, see the note on
+  // DEFAULT_SPAN_YEARS. `defaultLayer` still wins: it is how Valuation lands on
+  // TTM, where the live P/E is.
   const initialLayer: Layer =
     spec.defaultLayer && spec.layers.includes(spec.defaultLayer)
       ? spec.defaultLayer
-      : spec.layers.includes("year")
-        ? "year"
+      : spec.layers.includes("quarter")
+        ? "quarter"
         : spec.layers.includes("ttm")
           ? "ttm"
-          : "quarter";
+          : "year";
   const [layer, setLayer] = useState<Layer>(initialLayer);
-  const [spanY, setSpanY] = useState<number>(
-    spec.defaultSpanYears ??
-      (initialLayer === "year" ? DEFAULT_SPAN_YEARS : QUARTER_ONLY_SPAN_YEARS),
-  );
+  const [spanY, setSpanY] = useState<number>(spec.defaultSpanYears ?? DEFAULT_SPAN_YEARS);
   const [cross, setCross] = useState<Cross>(null);
   /**
    * Series the reader has switched off from the legend.

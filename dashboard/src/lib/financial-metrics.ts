@@ -397,9 +397,11 @@ export type ChartSpec = {
    */
   headline?: string;
   /**
-   * Periods the card opens on, in years. Grouped bars need a shorter default:
-   * three series over ten annual periods is thirty bars in a 248px card, and
-   * they collapse to hairlines.
+   * Periods the card opens on, in years — an override for the section-wide
+   * five (see DEFAULT_SPAN_YEARS in financial-chart.tsx). Nothing sets it
+   * today: two charts did, both to 5, which is now what every chart does.
+   * Kept because "this one needs a different window" is a real thing to want,
+   * and the alternative is a magic number inside one spec's series.
    */
   defaultSpanYears?: number;
   series: SeriesSpec[];
@@ -490,7 +492,6 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
     unit: "vnd",
     layers: ["quarter", "ttm", "year"],
     headline: "npat",
-    defaultSpanYears: 5,
     // GROUPED, NOT STACKED. Gross profit contains profit after tax contains the
     // parent's share — stacking three nested figures would draw a bar roughly
     // twice the height of anything the company reported.
@@ -662,7 +663,6 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
     // NO TTM LAYER — removed from the specification at revision 1.
     layers: ["quarter", "year"],
     headline: "cfo",
-    defaultSpanYears: 5,
     series: [
       {
         key: "cfo",
