@@ -288,14 +288,13 @@ export default async function SymbolDrillDown({
 
           {businessReports.length > 0 && (
             <section className="min-w-0 flex flex-col">
-              {/* The date names the NEWEST report — the one the panel opens —
-                  because that is what the heading is standing over. Each
-                  archived report carries its own date on its own row. */}
-              <h2 className="text-title font-semibold border-b border-line pb-1 mb-3 flex items-baseline justify-between gap-3">
-                <span>{t(locale, "baSection")}</span>
-                <span className="text-data font-normal text-fg-label font-mono">
-                  {businessReports[0].created_at.slice(0, 10)}
-                </span>
+              {/* NO DATE HERE. It used to carry the newest report's date, from
+                  when a symbol had exactly one — a heading standing over one
+                  thing can date it. The panel now lists every report with its
+                  own date, so a single date up here names one row of several
+                  and reads as if it dated the whole section. */}
+              <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
+                {t(locale, "baSection")}
               </h2>
               {/* SIDE BY SIDE, THE PANEL IS TAKEN OUT OF FLOW.
                   A stretched grid row is as tall as its TALLEST item, and this
