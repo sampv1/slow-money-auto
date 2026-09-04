@@ -881,9 +881,12 @@ export function ScannerClient({
                   <tr className="border-b border-line text-left text-fg-muted">
                     <th className="row-h px-2 label">{t(locale, "symbol")}</th>
                     <th className="row-h px-2 label">{t(locale, "industry")}</th>
+                    {/* The hover carried the TA weights verbatim — the same
+                        string Signal Pro's footer printed, so hiding it there
+                        and leaving it here would have hidden nothing. */}
                     <th
                       className="px-4 py-3 font-medium text-right"
-                      title={t(locale, "spFormulaTa")}
+                      title={t(locale, "spTaScoreHint")}
                     >
                       {t(locale, "spTaScore")}
                     </th>

@@ -945,7 +945,7 @@ export function SignalProClient({
         <TrendLegend locale={locale} isAdmin={isAdmin} />
       </div>
 
-      {/* Legend + formula footer */}
+      {/* Legend + scoring footer */}
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="bg-panel rounded-lg border border-line p-4">
           <div className="text-data font-medium text-fg-muted mb-2">{t(locale, "spGradeLegend")}</div>
@@ -958,12 +958,19 @@ export function SignalProClient({
             ))}
           </div>
         </div>
+        {/* THE WEIGHTS ARE NOT PRINTED HERE. This box used to carry both
+            formulas in full; it now says who scored the table and how, and
+            nothing about the arithmetic.
+
+            The box STAYS rather than being deleted. It is one half of a
+            two-column footer whose other half is the grade bands, so removing
+            it would leave the legend lopsided — and, more to the point, a
+            column of numbers with no statement of where they came from is
+            worse than either extreme. A reader is owed the provenance even
+            when they are not owed the recipe. */}
         <div className="bg-panel rounded-lg border border-line p-4">
           <div className="text-data font-medium text-fg-muted mb-2">{t(locale, "spFormula")}</div>
-          <ul className="text-data text-fg-muted space-y-1 list-disc list-inside font-mono">
-            <li>{t(locale, "spFormulaTa")}</li>
-            <li>{t(locale, "spFormulaFinal")}</li>
-          </ul>
+          <p className="text-data text-fg-muted">{t(locale, "spScoringProprietary")}</p>
         </div>
       </div>
 
