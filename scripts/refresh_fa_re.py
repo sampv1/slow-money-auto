@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Real-estate (BĐS) FA pipeline — import raw inputs, then score them.
 
-    python3 refresh_fa_re.py import --file "../data/File BDS quy 2-2026 ngày 13-08.xlsx"
+    python3 refresh_fa_re.py import --file "../data/fa/source-exports/File BDS quy 2-2026 ngày 13-08.xlsx"
     python3 refresh_fa_re.py score
     python3 refresh_fa_re.py score --period 2026-Q2 --symbols HDC,DXG
 
@@ -32,7 +32,7 @@ from ta.common import get_supabase_client, safe_execute  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_WORKBOOK = os.path.join(HERE, "..", "data", "File BDS quy 2-2026 ngày 13-08.xlsx")
-DEFAULT_RUBRIC = os.path.join(HERE, "..", "data", "tieu_chi_cham_diem_bds.xlsx")
+DEFAULT_RUBRIC = os.path.join(HERE, "..", "data", "fa", "rubrics", "real-estate", "tieu_chi_cham_diem_bds.xlsx")
 CHUNK = 500
 
 

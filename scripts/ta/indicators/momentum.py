@@ -9,7 +9,7 @@ RSI_OVERSOLD = 30
 RSI_OVERBOUGHT = 70
 
 # --- MCDX (Multi Color Dragon Extended) — Banker "hand" ---
-# Standard Mango2Juice formula (see data/MCDX.md). The Banker line tracks
+# Standard Mango2Juice formula (see data/ta/indicators/MCDX.md). The Banker line tracks
 # institutional / smart-money accumulation: banker = sensitivity × (RSI(period) − base),
 # capped to the 0..BASE display scale. We express it as a percentage of that scale
 # (0..100) so the "exceeds 25/50/75%" thresholds map to accumulation phases.

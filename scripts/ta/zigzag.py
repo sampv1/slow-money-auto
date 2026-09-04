@@ -2,7 +2,7 @@
 
 A ZigZag reduces a price series to an alternating sequence of peaks and troughs,
 keeping only the reversals big enough to matter. Two parameters, both taken from
-the trend spec (data/He_thong_cham_diem_Xu_huong_TA_Pro_Bo_sung.xlsx):
+the trend spec (data/ta/trend-score/He_thong_cham_diem_Xu_huong_TA_Pro_Bo_sung.xlsx):
 
     deviation  the countermove, as a fraction, that confirms the running extreme
                really was a pivot (0.05 = 5%)

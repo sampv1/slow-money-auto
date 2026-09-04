@@ -3,7 +3,7 @@
 The manufacturing rubric fits a property developer badly: revenue is
 recognition-lumpy, "inventory" is land bank, and customer advances (Người mua
 trả tiền trước) — the real forward-revenue signal — are invisible to it. This
-module implements the separate rubric in `data/tieu_chi_cham_diem_bds.xlsx`.
+module implements the separate rubric in `data/fa/rubrics/real-estate/tieu_chi_cham_diem_bds.xlsx`.
 
 TWO HALVES, deliberately split:
   parse_workbook()  FiinProX export -> raw metrics per symbol (no scoring)
@@ -117,7 +117,7 @@ def parse_bands(text: str) -> list[tuple[float | None, float | None, float, str]
 
 
 def load_rubric(criteria_xlsx: str) -> dict[int, Criterion]:
-    """Read weights + bands out of `data/tieu_chi_cham_diem_bds.xlsx`."""
+    """Read weights + bands out of `data/fa/rubrics/real-estate/tieu_chi_cham_diem_bds.xlsx`."""
     import pandas as pd
 
     df = pd.read_excel(criteria_xlsx, header=0)

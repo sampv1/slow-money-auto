@@ -1,7 +1,7 @@
 """Trend Score — structural trend scoring on the daily and weekly charts.
 
 Replaces the BQS price-base module. Spec:
-`data/He_thong_cham_diem_Xu_huong_TA_Pro_Bo_sung.xlsx` (sheets Tổng quan / Trend ngày /
+`data/ta/trend-score/He_thong_cham_diem_Xu_huong_TA_Pro_Bo_sung.xlsx` (sheets Tổng quan / Trend ngày /
 Trend tuần / Logic IT).
 
     TrendScore = DailyTrendScore·60% + WeeklyTrendScore·40%

@@ -321,7 +321,7 @@ class VolumeMaPrimitive implements ISeriesPrimitive<Time> {
 // the eye away from the bars it exists to explain.
 const VOLUME_MA_COLOR = MA_COLOR[20];
 
-// MCDX (Multi Color Dragon Extended) histogram colours — see data/MCDX.md.
+// MCDX (Multi Color Dragon Extended) histogram colours — see data/ta/indicators/MCDX.md.
 // These are convention colours fixed by the indicator (like status colours),
 // so they carry meaning rather than being a free categorical choice.
 const MCDX_RETAILER_COLOR = "#22c55e";    // green — retail investors
@@ -396,7 +396,7 @@ function rsi(closes: number[], period = 14): (number | null)[] {
   return out;
 }
 
-// MCDX (data/MCDX.md — the Mango2Juice standard). Two RSI "hands" rescaled to a
+// MCDX (data/ta/indicators/MCDX.md — the Mango2Juice standard). Two RSI "hands" rescaled to a
 // 0..BASE display range; the retailer band is the remainder that fills to BASE.
 // Uses the same Wilder rsi() above (the spec's smoothing), so values match
 // TradingView. banker → red (market maker), hotmoney → gold (speculative),
@@ -1714,7 +1714,7 @@ export function ChartClient({
     }
 
     // === Pane 4 (optional): MCDX histogram =======================
-    // Three overlaid histogram columns per bar (data/MCDX.md): retailer (green,
+    // Three overlaid histogram columns per bar (data/ta/indicators/MCDX.md): retailer (green,
     // the BASE-hotmoney background) is drawn first, hot money (gold) over it,
     // and the banker column (red when ≥25% = accumulation, pink when weaker)
     // last so it sits on top — reproducing the standard MCDX stack.

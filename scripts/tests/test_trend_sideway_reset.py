@@ -6,7 +6,7 @@ pytest, matching the convention in test_bqs_v8.py.
 
 The rule
 --------
-Spec: `data/He_thong_cham_diem_Xu_huong_TA_Pro_Bo_sung.xlsx`, sheets "Trend
+Spec: `data/ta/trend-score/He_thong_cham_diem_Xu_huong_TA_Pro_Bo_sung.xlsx`, sheets "Trend
 ngày" and "Logic IT". A stock that chops across its MA200 prints several ZigZag
 lows below it, and the base rule ("K is the LOWEST trough of the decline")
 anchors K on whichever is cheapest — often months stale. Measured on the live

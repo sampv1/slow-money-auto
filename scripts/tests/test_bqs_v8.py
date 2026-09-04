@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """BQS V8 scoring validation against the 5 rows of the spec's `Test_Cases` sheet
-(data/BQS_V8_BoSung_V7_DacTa_IT_HoanThien.xlsx).
+(data/ta/price-base-bqs/BQS_V8_BoSung_V7_DacTa_IT_HoanThien.xlsx).
 
 The Test_Cases sheet gives the aggregate metrics (duration, depth, TightRange,
 VolDryRatio, Range_1/2/3, spring, breakout) and an expected outcome. This test

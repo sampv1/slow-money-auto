@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-fetch_cpi.py — Get Vietnam headline CPI (MoM) and write it to data/cpi_manual.csv.
+fetch_cpi.py — Get Vietnam headline CPI (MoM) and write it to data/macro/cpi_manual.csv.
 
 WHY: Vietstock's CPI dataset froze at 2025-08 and every free structured feed lags
 (IMF 2025-03) or omits Vietnam; GSO (current, authoritative) geo-gates cloud IPs
 behind a VPN portal. The one CURRENT source that IS cloud-reachable is Vietnamese
 financial news, which republishes GSO's monthly figure verbatim. This script reads
 CafeF's CPI articles, extracts the HEADLINE month-on-month change, and writes it as
-the MoM index (prev month = 100) into data/cpi_manual.csv — the overlay that
+the MoM index (prev month = 100) into data/macro/cpi_manual.csv — the overlay that
 refresh_macro.py upserts on top of the Vietstock history.
 
   Headline MoM sentence (GSO wording, quoted by CafeF):
@@ -28,7 +28,7 @@ Usage:
 Notes:
   * News prose varies month to month, so ALWAYS eyeball a --dry-run before trusting a
     value. Months the script can't resolve confidently are reported — fill those by
-    hand in data/cpi_manual.csv.
+    hand in data/macro/cpi_manual.csv.
   * CafeF is cloud-reachable, so this can also run on the macro-daily cron if desired.
 """
 
@@ -45,7 +45,7 @@ from urllib.parse import quote
 
 import requests
 
-MANUAL_CPI_CSV = Path(__file__).resolve().parent.parent / "data" / "cpi_manual.csv"
+MANUAL_CPI_CSV = Path(__file__).resolve().parent.parent / "data" / "macro" / "cpi_manual.csv"
 BACKFILL_START = (2025, 9)  # --backfill resolves from here to now
 
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -211,7 +211,7 @@ def _months(f: tuple[int, int], t: tuple[int, int]):
 
 
 def update_manual_csv(path: Path, resolved: dict[str, float], dry_run: bool) -> None:
-    """Merge resolved {YYYY-MM: mom_index} into data/cpi_manual.csv, preserving the
+    """Merge resolved {YYYY-MM: mom_index} into data/macro/cpi_manual.csv, preserving the
     explanatory comment header (everything up to and including 'month,mom_index') and
     writing sorted real rows. Existing hand-entered rows are kept unless overwritten."""
     header_lines: list[str] = []
@@ -266,7 +266,7 @@ def _vn_today() -> dt.date:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Fetch Vietnam headline CPI (MoM) from CafeF into data/cpi_manual.csv")
+    ap = argparse.ArgumentParser(description="Fetch Vietnam headline CPI (MoM) from CafeF into data/macro/cpi_manual.csv")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--backfill", action="store_true", help=f"resolve every month {BACKFILL_START[0]}-{BACKFILL_START[1]:02d} -> now")
     g.add_argument("--from", dest="from_month", metavar="YYYY-MM", help="resolve every month from YYYY-MM -> now")
@@ -274,7 +274,7 @@ def main() -> None:
     ap.add_argument("--lookback", type=int, default=3, help="daily mode: how many recent months to (re)resolve (default 3)")
     ap.add_argument("--dry-run", action="store_true", help="show findings (+ source sentence/URL), don't write")
     ap.add_argument("--upsert", action="store_true", help="also upsert to macro_series (needs scripts/.env)")
-    ap.add_argument("--csv", default=str(MANUAL_CPI_CSV), help="target CSV (default: data/cpi_manual.csv)")
+    ap.add_argument("--csv", default=str(MANUAL_CPI_CSV), help="target CSV (default: data/macro/cpi_manual.csv)")
     args = ap.parse_args()
 
     today = _vn_today()
@@ -315,14 +315,14 @@ def main() -> None:
     if not resolved:
         print("\nNothing resolved. (News phrasing may have changed, or the months aren't published yet.)")
         if missing:
-            print("Fill these by hand in data/cpi_manual.csv:", ", ".join(missing))
+            print("Fill these by hand in data/macro/cpi_manual.csv:", ", ".join(missing))
         sys.exit(1)
 
     update_manual_csv(Path(args.csv), resolved, args.dry_run)
     if args.upsert and not args.dry_run:
         upsert_macro_series(resolved)
     if missing:
-        print(f"\nUnresolved ({len(missing)}) — verify + fill by hand in data/cpi_manual.csv: {', '.join(missing)}")
+        print(f"\nUnresolved ({len(missing)}) — verify + fill by hand in data/macro/cpi_manual.csv: {', '.join(missing)}")
     print("\nTip: review the values above; then the macro-daily cron (or refresh_macro.py) pushes the CSV to the DB.")
 
 

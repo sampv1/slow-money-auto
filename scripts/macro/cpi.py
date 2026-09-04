@@ -20,7 +20,7 @@ CURRENCY CAVEAT: Vietstock's CPI feed FROZE at 2025-08 (every CPI norm stops the
 while its other series stay current), and every free cloud-reachable source lags
 more (IMF 2025-03) or omits Vietnam. The only current source is GSO, which geo-gates
 foreign/cloud IPs behind a GlobalProtect VPN portal. So newer months come from a
-hand-maintained overlay — `data/cpi_manual.csv`, read by `load_cpi_manual` and
+hand-maintained overlay — `data/macro/cpi_manual.csv`, read by `load_cpi_manual` and
 upserted (source='gso-manual') on top of the Vietstock history by refresh_macro.py.
 Vietstock is still fetched (cheap; resumes automatically if it ever un-freezes).
 

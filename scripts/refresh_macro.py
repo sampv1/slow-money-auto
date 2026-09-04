@@ -9,7 +9,7 @@ Metrics, stored raw (nothing derived):
   vnindex         — VN-Index close (context panel), via vnstock.
   cpi_mom_index   — headline CPI MoM index (prev month=100), Vietstock NormID 395
                     (monthly), overlaid with hand-entered months from
-                    data/cpi_manual.csv (Vietstock froze at 2025-08). See macro/cpi.py.
+                    data/macro/cpi_manual.csv (Vietstock froze at 2025-08). See macro/cpi.py.
   interbank_overnight — SBV overnight interbank average rate (%/năm), daily.
                     Daily latest = SBV portal "lãi suất" page (1-2 days ahead);
                     history/gap-fill = Vietstock NormID 293. See macro/interbank_rate.py.
@@ -107,8 +107,8 @@ from macro.bank_rates import (
 )
 
 # Manual CPI overlay (Vietstock CPI froze at 2025-08; GSO is VPN-gated to cloud IPs,
-# so newer months are hand-entered here — see data/cpi_manual.csv).
-MANUAL_CPI_CSV = Path(__file__).resolve().parent.parent / "data" / "cpi_manual.csv"
+# so newer months are hand-entered here — see data/macro/cpi_manual.csv).
+MANUAL_CPI_CSV = Path(__file__).resolve().parent.parent / "data" / "macro" / "cpi_manual.csv"
 
 # System-wide average lending-rate range (SBV monthly report). Collected by
 # fetch_bank_lending.py into this CSV; refresh_macro overlays it each run (like CPI).
@@ -482,7 +482,7 @@ def collect_bank_rates(end: dt.date) -> list[dict]:
 
 
 def load_bank_lending(path: Path) -> list[tuple[dt.date, float, float]]:
-    """Read data/bank_lending_manual.csv -> [(month_first_day, min, max), ...] sorted.
+    """Read data/macro/bank_lending_manual.csv -> [(month_first_day, min, max), ...] sorted.
 
     Skips the comment/header lines; tolerates malformed rows. Empty if the file is
     absent (the overlay is then simply skipped)."""
@@ -698,7 +698,7 @@ def report_interbank_gaps(client, end: dt.date, st) -> None:
 
 
 def overlay_manual_cpi(vietstock_rows: list[dict]) -> list[dict]:
-    """Overlay hand-entered CPI months (data/cpi_manual.csv) on the Vietstock rows.
+    """Overlay hand-entered CPI months (data/macro/cpi_manual.csv) on the Vietstock rows.
 
     Manual entries win for any overlapping month — that's how CPI stays current past
     Vietstock's 2025-08 freeze. Returns one row per month, ascending. All manual

@@ -3,7 +3,7 @@
 A price base is a sideways consolidation after a prior move. We detect the
 stock's CURRENT base (ending at the latest bar), classify it (Bottoming /
 Continuation), and score its quality 0-100 per the BQS V8 rubric
-(data/BQS_V8_BoSung_V7_DacTa_IT_HoanThien.xlsx).
+(data/ta/price-base-bqs/BQS_V8_BoSung_V7_DacTa_IT_HoanThien.xlsx).
 
 BQS V8 measures BASE QUALITY only. It has six scored components that sum to a
 raw 0-100 (no normalization) — the score IS the raw total:

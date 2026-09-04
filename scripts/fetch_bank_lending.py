@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 fetch_bank_lending.py — Vietnam system-wide AVERAGE LENDING RATE range (%/year)
-into data/bank_lending_manual.csv (+ optionally macro_series).
+into data/macro/bank_lending_manual.csv (+ optionally macro_series).
 
 WHAT: SBV publishes a monthly report "Diễn biến lãi suất của tổ chức tín dụng đối
 với khách hàng tháng M/YYYY" (~3 weeks after month-end) that states the system-wide
@@ -20,7 +20,7 @@ SOURCES (tried in order per month):
      headers (Referer). Parsed with pypdf. (The HTML article route 403s; the PDF
      does not.)
   2. CafeF news — republishes older months' report verbatim (fallback / backfill).
-Unresolved months are reported; hand-fill them in data/bank_lending_manual.csv.
+Unresolved months are reported; hand-fill them in data/macro/bank_lending_manual.csv.
 
 Usage:
   python3 fetch_bank_lending.py                 # recent months (SBV listing) -> CSV
@@ -50,7 +50,7 @@ from urllib.parse import quote, unquote
 
 import requests
 
-MANUAL_CSV = Path(__file__).resolve().parent.parent / "data" / "bank_lending_manual.csv"
+MANUAL_CSV = Path(__file__).resolve().parent.parent / "data" / "macro" / "bank_lending_manual.csv"
 METRIC_MIN = "bank_lending_avg_min"
 METRIC_MAX = "bank_lending_avg_max"
 
@@ -297,14 +297,14 @@ def _vn_today() -> dt.date:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Fetch VN average lending-rate range (SBV monthly) into data/bank_lending_manual.csv")
+    ap = argparse.ArgumentParser(description="Fetch VN average lending-rate range (SBV monthly) into data/macro/bank_lending_manual.csv")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--from", dest="from_month", metavar="YYYY-MM", help="resolve every month from YYYY-MM -> now")
     g.add_argument("--month", metavar="YYYY-MM", help="resolve a single month")
     ap.add_argument("--lookback", type=int, default=4, help="default mode: recent months to (re)resolve (default 4)")
     ap.add_argument("--dry-run", action="store_true", help="show findings (+ evidence/URL), don't write")
     ap.add_argument("--upsert", action="store_true", help="also upsert to macro_series (needs scripts/.env)")
-    ap.add_argument("--csv", default=str(MANUAL_CSV), help="target CSV (default: data/bank_lending_manual.csv)")
+    ap.add_argument("--csv", default=str(MANUAL_CSV), help="target CSV (default: data/macro/bank_lending_manual.csv)")
     args = ap.parse_args()
 
     today = _vn_today()
@@ -358,14 +358,14 @@ def main() -> None:
     if not resolved:
         print("\nNothing resolved. (Reports may not be published yet, or wording changed.)")
         if missing:
-            print("Fill by hand in data/bank_lending_manual.csv:", ", ".join(missing))
+            print("Fill by hand in data/macro/bank_lending_manual.csv:", ", ".join(missing))
         sys.exit(1)
 
     update_manual_csv(Path(args.csv), resolved, args.dry_run)
     if args.upsert and not args.dry_run:
         upsert_macro_series(resolved)
     if missing:
-        print(f"\nUnresolved ({len(missing)}) — hand-fill in data/bank_lending_manual.csv: {', '.join(missing)}")
+        print(f"\nUnresolved ({len(missing)}) — hand-fill in data/macro/bank_lending_manual.csv: {', '.join(missing)}")
     print("\nTip: review the values above; refresh_macro.py re-asserts the CSV to the DB each run.")
 
 

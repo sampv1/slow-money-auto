@@ -60,7 +60,7 @@ jobs:
           echo "Secrets OK."
 
       # fx_central_rate (SBV portal, today) + fx_vcb_sell (VCB API, recent days) +
-      # cpi_mom_index (Vietstock 395 through 2025-08 + data/cpi_manual.csv overlay).
+      # cpi_mom_index (Vietstock 395 through 2025-08 + data/macro/cpi_manual.csv overlay).
       # Manual runs can pass backfill=true to load full history in one shot.
       - name: Refresh macro (USD/VND + CPI)
         working-directory: scripts
@@ -79,7 +79,7 @@ jobs:
       # and GSO geo-gates cloud IPs, so this is how newer months stay current.
       # --upsert writes cpi_mom_index straight to macro_series (source='gso-cafef').
       # Non-fatal: a CafeF hiccup / a not-yet-published month must never fail the
-      # FX pipeline, and unresolved months fall back to data/cpi_manual.csv.
+      # FX pipeline, and unresolved months fall back to data/macro/cpi_manual.csv.
       - name: Fetch CPI (CafeF)
         continue-on-error: true
         working-directory: scripts
@@ -96,7 +96,7 @@ jobs:
 
       # Bank lending rate (system-wide average range) from SBV's monthly report.
       # SBV lists the last ~4 months; older months come from CafeF republications
-      # (fallback) or data/bank_lending_manual.csv. --upsert writes bank_lending_avg_*
+      # (fallback) or data/macro/bank_lending_manual.csv. --upsert writes bank_lending_avg_*
       # to macro_series. Non-fatal: SBV's WAF / a not-yet-published month must never
       # fail the pipeline, and the CSV overlay (re-asserted by refresh_macro) persists.
       - name: Fetch bank lending rate (SBV)
@@ -118,7 +118,7 @@ jobs:
       # --upsert writes margin_debt_total to macro_series; the ~2-quarter lookback
       # picks up each new quarter ~3 weeks after quarter-end. Non-fatal: a not-yet-
       # published quarter must never fail the pipeline, and older quarters persist
-      # in data/margin_debt_manual.csv (re-asserted by refresh_macro).
+      # in data/macro/margin_debt_manual.csv (re-asserted by refresh_macro).
       - name: Fetch margin debt (quarterly)
         continue-on-error: true
         working-directory: scripts

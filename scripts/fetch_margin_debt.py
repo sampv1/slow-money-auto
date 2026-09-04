@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 fetch_margin_debt.py — Vietnam TOTAL MARKET MARGIN DEBT (quarterly) into
-data/margin_debt_manual.csv (+ optionally macro_series).
+data/macro/margin_debt_manual.csv (+ optionally macro_series).
 
 WHAT: "Dư nợ cho vay margin toàn thị trường" — the aggregate margin lending balance
 across all securities companies (CTCK). It is a QUARTERLY figure: each broker
@@ -44,7 +44,7 @@ from urllib.parse import quote
 
 import requests
 
-MANUAL_CSV = Path(__file__).resolve().parent.parent / "data" / "margin_debt_manual.csv"
+MANUAL_CSV = Path(__file__).resolve().parent.parent / "data" / "macro" / "margin_debt_manual.csv"
 METRIC = "margin_debt_total"
 
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -214,14 +214,14 @@ def upsert_macro_series(resolved: dict[str, float]) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Fetch VN total-market margin debt (quarterly) into data/margin_debt_manual.csv")
+    ap = argparse.ArgumentParser(description="Fetch VN total-market margin debt (quarterly) into data/macro/margin_debt_manual.csv")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--from", dest="from_q", metavar="YYYY-Qn", help="resolve every quarter from YYYY-Qn -> latest")
     g.add_argument("--quarter", metavar="YYYY-Qn", help="resolve a single quarter")
     ap.add_argument("--lookback", type=int, default=2, help="default mode: recent quarters to (re)resolve (default 2)")
     ap.add_argument("--dry-run", action="store_true", help="show findings (+ evidence/URL), don't write")
     ap.add_argument("--upsert", action="store_true", help="also upsert to macro_series (needs scripts/.env)")
-    ap.add_argument("--csv", default=str(MANUAL_CSV), help="target CSV (default: data/margin_debt_manual.csv)")
+    ap.add_argument("--csv", default=str(MANUAL_CSV), help="target CSV (default: data/macro/margin_debt_manual.csv)")
     args = ap.parse_args()
 
     def parse_q(s: str) -> tuple[int, int]:
@@ -263,14 +263,14 @@ def main() -> None:
     if not resolved:
         print("\nNothing resolved. (Report may not be published yet, or wording changed.)")
         if missing:
-            print("Hand-fill in data/margin_debt_manual.csv:", ", ".join(missing))
+            print("Hand-fill in data/macro/margin_debt_manual.csv:", ", ".join(missing))
         sys.exit(1)
 
     update_manual_csv(Path(args.csv), resolved, args.dry_run)
     if args.upsert and not args.dry_run:
         upsert_macro_series(resolved)
     if missing:
-        print(f"\nUnresolved ({len(missing)}) — hand-fill in data/margin_debt_manual.csv: {', '.join(missing)}")
+        print(f"\nUnresolved ({len(missing)}) — hand-fill in data/macro/margin_debt_manual.csv: {', '.join(missing)}")
     print("\nTip: review the values above; refresh_macro.py re-asserts the CSV to the DB each run.")
 
 

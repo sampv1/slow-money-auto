@@ -97,7 +97,7 @@ User-Agent: Mozilla/5.0        # plain UA suffices; no auth/cookies
   (\d{1,2},\d)\s*-\s*(\d{1,2},\d)\s*%/năm` — exclude USD (`bằng USD`/`USD`) and
   priority-sector (`lĩnh vực ưu tiên`) sentences. Plausibility bounds: min∈[3,15],
   max∈[min,20], max−min ≤ 6.
-- **Output:** `data/bank_lending_manual.csv` overlay (`month,min,max` + comment header),
+- **Output:** `data/macro/bank_lending_manual.csv` overlay (`month,min,max` + comment header),
   merged/upserted exactly like `cpi_manual.csv` — so unresolved months are hand-fillable
   (the SBV listing tells you when a month is out; the numbers are also in the monthly
   press coverage). `--upsert` writes metrics:

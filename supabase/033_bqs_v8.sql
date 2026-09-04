@@ -1,7 +1,7 @@
 -- ============================================================
 -- Migration: BQS V8 — Base Quality Score rewrite.
 --
--- Source spec: data/BQS_V8_BoSung_V7_DacTa_IT_HoanThien.xlsx.
+-- Source spec: data/ta/price-base-bqs/BQS_V8_BoSung_V7_DacTa_IT_HoanThien.xlsx.
 --
 -- What changes vs V7:
 --   * Score is now a raw 0-100 (NO normalization). Six components sum to 100:
