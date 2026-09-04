@@ -671,7 +671,15 @@ export function FinancialChart({
 
           A hidden entry keeps its COLOUR SWATCH hollow rather than dropping it:
           the swatch is how the reader knows which series they are turning back
-          on, so it has to stay legible while off. */}
+          on, so it has to stay legible while off.
+
+          OFF IS A FADE, NOT A STRIKE-THROUGH. The label used to be struck out
+          as well, which reads as "deleted" — and these entries are neither
+          deleted nor unavailable, they are the series you will most likely want
+          back in a moment. A rule drawn through 11px mono also cuts the
+          x-heights of the very glyphs you need to read to find the one to
+          switch on again. The hollow swatch and the lighter ink already say
+          "off" twice over. */}
       {live.length > 1 && (
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1.5 text-label text-fg-label">
           {live.map((s) => {
@@ -699,9 +707,7 @@ export function FinancialChart({
                       : { background: s.color }
                   }
                 />
-                <span className={`truncate ${off ? "line-through decoration-1" : ""}`}>
-                  {nameOf(s)}
-                </span>
+                <span className="truncate">{nameOf(s)}</span>
               </button>
             );
           })}
