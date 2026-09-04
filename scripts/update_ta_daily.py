@@ -109,7 +109,6 @@ def log_step_failure(status: RunStatus, step: str, critical: bool = True) -> Non
 from compute_ta_signals import (  # noqa: E402
     DAILY_WARMUP_BARS,
     compute_signals_for_symbol,
-    filter_dates,
     finish_run,
     load_ohlcv,
     start_run,
@@ -372,8 +371,10 @@ def main():
                         label=f"avg_vol {symbol}",
                     )
 
-            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines, benchmark=benchmark)
-            rows = filter_dates(rows, since=None, latest_only=True, ohlcv=ohlcv)
+            # latest_only is applied INSIDE, so the ~600 rows per indicator that
+            # this pass discards are never built. See compute_signals_for_symbol.
+            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines,
+                                              benchmark=benchmark, latest_only=True)
             if rows:
                 d = max(r["date"] for r in rows)
                 max_written_date = d if max_written_date is None else max(max_written_date, d)

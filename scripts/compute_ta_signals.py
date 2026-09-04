@@ -172,7 +172,8 @@ def load_ohlcv(client, symbol: str, max_bars: int | None = None) -> pd.DataFrame
     return df
 
 
-def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame, *, levels=None, trendlines=None, benchmark=None) -> list[dict]:
+def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame, *, levels=None, trendlines=None,
+                               benchmark=None, latest_only: bool = False) -> list[dict]:
     """Run every indicator on this symbol's OHLCV and return signal rows.
 
     `levels` is the symbol's active S/R levels (from ta.sr.detect_levels).
@@ -182,9 +183,31 @@ def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame, *, levels=None,
 
     Returns rows shaped for ta_signals: {date, symbol, indicator, triggered, value, metadata}.
     Dates where an indicator returns NaN value (insufficient history) are skipped.
+
+    `latest_only` RESTRICTS THE ROW MATERIALIZATION, NOT THE COMPUTE. Every
+    indicator still runs over the whole window — they need the history, and a
+    shorter one changes what they answer. What it skips is turning ~600 result
+    rows per indicator into Python dicts that `filter_dates(latest_only=True)`
+    then throws away.
+
+    That waste was 87% of the daily pass's compute cost (measured 2026-09-04, at
+    600 warmup bars): the indicator math is 215 ms/symbol, building the
+    discarded rows was 1,384 ms. `iterrows()` costs ~34 us/row, and the daily
+    path was walking 68 indicators x ~600 dates = ~40,800 rows per symbol to
+    keep the ~47 that belong to the newest bar — roughly 58 MILLION dicts built
+    and dropped per night across 1,431 symbols. Step 2 ran a steady 2.96 s/symbol
+    for 70 of the job's 78 minutes.
+
+    `filter_dates` still exists and is still the only thing that applies
+    `--since`, so the backfill paths are untouched: they compute PAST dates and
+    genuinely need every row.
     """
     if ohlcv.empty:
         return []
+
+    # Resolved once, outside the indicator loop. `filter_dates` compares the
+    # ISO string; here it is the index LABEL, which is the same bar.
+    latest = ohlcv.index.max() if latest_only else None
 
     rows: list[dict] = []
     for spec in INDICATOR_SPECS:
@@ -194,6 +217,13 @@ def compute_signals_for_symbol(symbol: str, ohlcv: pd.DataFrame, *, levels=None,
         except Exception as e:
             print(f"    {symbol} / {spec.key} failed: {e}")
             continue
+
+        if latest_only:
+            # An indicator may legitimately return a shorter index than the
+            # OHLCV window, in which case it has nothing to say about this bar.
+            if latest not in result.index:
+                continue
+            result = result.loc[[latest]]
 
         for date_idx, r in result.iterrows():
             triggered = bool(r.get("triggered", False))
@@ -491,7 +521,10 @@ def main():
                         label=f"avg_vol {symbol}",
                     )
 
-            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines, benchmark=benchmark)
+            rows = compute_signals_for_symbol(symbol, ohlcv, levels=levels, trendlines=lines,
+                                              benchmark=benchmark, latest_only=latest_only)
+            # Still called: `filter_dates` is what applies --since, and it is a
+            # no-op once latest_only has already restricted the rows.
             rows = filter_dates(rows, since_date, latest_only, ohlcv)
             n_triggered = sum(1 for r in rows if r["triggered"])
             if rows:
