@@ -3,24 +3,28 @@ import { type Locale, t } from "@/lib/i18n";
 /**
  * "How the score works" — entirely static, no data fetch.
  *
- * This is the wedge against the local competitors: Simplize and Fialda both keep
- * their scoring opaque, so publishing the exact weights is the differentiator.
- * The numbers here MUST track the pipeline — final_score.py (0.59 TA / 0.41 FA)
- * and ta_score.py (RS3M 20 / RS composite 25 / RS line 20 / TREND 35). If those
- * weights change, this copy is wrong until it changes too — and it silently was:
- * the chip still read "Base 35%" for a while after the price base was retired,
- * because these strings are hardcoded here while the prose beside them comes
- * from i18n, so only half of it moved.
+ * THE WEIGHTS ARE NO LONGER PRINTED. This block used to publish all three
+ * formulas, deliberately: the wedge against Simplize and Fialda was that they
+ * keep their scoring opaque and we did not. That is reversed — the blend is now
+ * the desk's own, stated as such here and on Signal Pro's footer.
+ *
+ * What it still does is name the INPUTS, which is most of what the section was
+ * worth. A reader deciding whether to trust one number needs to know it is
+ * built from relative strength, trend structure and nine quarterly criteria,
+ * computed the same way for the whole market every night; they do not need the
+ * coefficients to judge that. "We will not tell you what we look at" is a black
+ * box. "We will not tell you how we weight it" is a method.
+ *
+ * The hardcoded `formula` chips are gone with them, which also removes a
+ * standing hazard: they were hardcoded HERE while the prose beside them came
+ * from i18n, so only half the copy moved when the pipeline changed — a chip
+ * read "Base 35%" for a while after the price base was retired. Nothing in this
+ * file now restates a number the pipeline owns.
  */
-function Row({ label, body, formula }: { label: string; body: string; formula: string }) {
+function Row({ label, body }: { label: string; body: string }) {
   return (
     <div className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h3 className="text-body font-semibold text-fg">{label}</h3>
-        <code className="text-data font-mono text-fg-muted bg-panel-2 px-1.5 py-0.5 rounded-sm">
-          {formula}
-        </code>
-      </div>
+      <h3 className="text-body font-semibold text-fg">{label}</h3>
       <p className="text-body-lg text-fg-muted max-w-[78ch]">{body}</p>
     </div>
   );
@@ -36,17 +40,14 @@ export function ScoreExplainer({ locale }: { locale: Locale }) {
         <Row
           label={t(locale, "homeHowFinalLabel")}
           body={t(locale, "homeHowFinalBody")}
-          formula="0.59 · TA + 0.41 · FA"
         />
         <Row
           label={t(locale, "homeHowTaLabel")}
           body={t(locale, "homeHowTaBody")}
-          formula="RS3M 20% + RS 20% + RS line 20% + Trend 40%"
         />
         <Row
           label={t(locale, "homeHowFaLabel")}
           body={t(locale, "homeHowFaBody")}
-          formula="9 × (0 / 4 / 8 / 12 pts)"
         />
       </div>
 

@@ -901,12 +901,12 @@ export const translations = {
     homeNoScores: "No scored symbols yet — the nightly pipeline has not produced a ranking.",
     homeHowTitle: "How the score works",
     homeHowIntro:
-      "Every symbol gets one number, and the whole formula is public. Nothing is hidden behind a black box.",
+      "Every symbol gets one number, computed the same way for the whole market every night. The inputs are listed below; how they are weighted is the desk's own formula.",
     homeHowFinalLabel: "Final Score",
-    homeHowFinalBody: "59% technical + 41% fundamental, on a 0–100 scale.",
+    homeHowFinalBody: "Technical and fundamental analysis blended into one 0–100 number.",
     homeHowTaLabel: "TA Score",
     homeHowTaBody:
-      "Relative strength over 3 months (20%) and a 3/6/9/12-month composite (20%), the RS line versus the index (20%), and trend structure on the daily and weekly charts (40%).",
+      "Relative strength over 3 months and a 3/6/9/12-month composite, the RS line versus the index, and trend structure on the daily and weekly charts.",
     homeHowFaLabel: "FA Score",
     homeHowFaBody:
       "Nine quarterly criteria — earnings and revenue growth, margins, ROE, debt and valuation — banded into A, B or C.",
@@ -1804,12 +1804,12 @@ export const translations = {
     homeNoScores: "Chưa có cổ phiếu nào được chấm điểm — pipeline hằng đêm chưa tạo ra bảng xếp hạng.",
     homeHowTitle: "Cách tính điểm",
     homeHowIntro:
-      "Mỗi cổ phiếu có một điểm số duy nhất, và toàn bộ công thức đều được công khai. Không có hộp đen nào cả.",
+      "Mỗi cổ phiếu có một điểm số duy nhất, được tính theo cùng một cách cho toàn thị trường mỗi đêm. Các thành phần được liệt kê bên dưới; tỷ trọng giữa chúng là công thức riêng của đội ngũ.",
     homeHowFinalLabel: "Điểm tổng hợp",
-    homeHowFinalBody: "59% kỹ thuật + 41% cơ bản, trên thang 0–100.",
+    homeHowFinalBody: "Kết hợp phân tích kỹ thuật và phân tích cơ bản thành một điểm số 0–100.",
     homeHowTaLabel: "Điểm kỹ thuật",
     homeHowTaBody:
-      "Sức mạnh giá tương đối 3 tháng (20%) và tổng hợp 3/6/9/12 tháng (20%), đường RS so với chỉ số (20%), và cấu trúc xu hướng trên chart ngày và tuần (40%).",
+      "Sức mạnh giá tương đối 3 tháng và tổng hợp 3/6/9/12 tháng, đường RS so với chỉ số, và cấu trúc xu hướng trên chart ngày và tuần.",
     homeHowFaLabel: "Điểm cơ bản",
     homeHowFaBody:
       "Chín tiêu chí theo quý — tăng trưởng lợi nhuận và doanh thu, biên lợi nhuận, ROE, nợ vay và định giá — phân hạng A, B hoặc C.",
