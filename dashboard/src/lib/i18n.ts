@@ -909,9 +909,7 @@ export const translations = {
       "Relative strength over 3 months and a 3/6/9/12-month composite, the RS line versus the index, and trend structure on the daily and weekly charts.",
     homeHowFaLabel: "FA Score",
     homeHowFaBody:
-      "Nine quarterly criteria — earnings and revenue growth, margins, ROE, debt and valuation — banded into A, B or C.",
-    homeHowNote:
-      "Banks and securities firms score UNRATED: the margin criteria do not apply to their financial statements.",
+      "Nine quarterly criteria — earnings and revenue growth, margins, ROE, debt and valuation.",
     homeToolsTitle: "Where to start",
     homeToolSignalPro: "Every symbol ranked by Final Score, with filters and sparklines.",
     homeToolScanner: "Screen on technical signals — 57 indicators, any trading date.",
@@ -1812,9 +1810,7 @@ export const translations = {
       "Sức mạnh giá tương đối 3 tháng và tổng hợp 3/6/9/12 tháng, đường RS so với chỉ số, và cấu trúc xu hướng trên chart ngày và tuần.",
     homeHowFaLabel: "Điểm cơ bản",
     homeHowFaBody:
-      "Chín tiêu chí theo quý — tăng trưởng lợi nhuận và doanh thu, biên lợi nhuận, ROE, nợ vay và định giá — phân hạng A, B hoặc C.",
-    homeHowNote:
-      "Ngân hàng và công ty chứng khoán được xếp UNRATED: các tiêu chí biên lợi nhuận không áp dụng cho báo cáo tài chính của họ.",
+      "Chín tiêu chí theo quý — tăng trưởng lợi nhuận và doanh thu, biên lợi nhuận, ROE, nợ vay và định giá.",
     homeToolsTitle: "Bắt đầu từ đâu",
     homeToolSignalPro: "Toàn bộ cổ phiếu xếp hạng theo Điểm tổng hợp, kèm bộ lọc và biểu đồ thu nhỏ.",
     homeToolScanner: "Lọc theo tín hiệu kỹ thuật — 57 chỉ báo, theo bất kỳ phiên nào.",

@@ -32,10 +32,18 @@ function Row({ label, body }: { label: string; body: string }) {
 
 export function ScoreExplainer({ locale }: { locale: Locale }) {
   return (
-    <section className="rounded-lg border border-line bg-panel px-4 py-4 sm:px-5 sm:py-5">
+    <section className="rounded-lg border border-line bg-panel px-4 py-4 sm:px-5 sm:py-5 h-full flex flex-col">
       <h2 className="text-title font-semibold text-fg tracking-tight">{t(locale, "homeHowTitle")}</h2>
       <p className="mt-1 text-body-lg text-fg-muted max-w-[78ch]">{t(locale, "homeHowIntro")}</p>
 
+      {/* TOP-ALIGNED, with the slack at the foot of the card. The card fills
+          the grid row so its bottom edge lines up with the leaderboard's, and
+          at 1920 that is ~107px of height the three definitions do not need.
+          Spreading them over it was tried and looked worse: `divide-y` draws
+          each rule on the row BELOW it, so pushing the rows apart detaches
+          every rule from the text it belongs to and leaves it floating.
+          The tool cards further down this same page already answer uneven
+          content this way — equal heights, text at the top. */}
       <div className="mt-3 divide-y divide-line-faint">
         <Row
           label={t(locale, "homeHowFinalLabel")}
@@ -50,8 +58,6 @@ export function ScoreExplainer({ locale }: { locale: Locale }) {
           body={t(locale, "homeHowFaBody")}
         />
       </div>
-
-      <p className="mt-4 text-body text-fg-label max-w-[78ch]">{t(locale, "homeHowNote")}</p>
     </section>
   );
 }

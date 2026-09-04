@@ -67,10 +67,24 @@ export default async function HomePage() {
           The page also loses ~350px of height.
 
           5fr/4fr rather than a even split because the leaderboard is the hero and
-          the explainer is supporting text. items-start keeps each panel at its
-          natural height — stretching the shorter one would open a blank strip
-          under the leaderboard's "see all" link. Below lg it stacks back into
-          the original single-column order.
+          the explainer is supporting text. Below lg it stacks back into the
+          original single-column order.
+
+          THE TWO PANELS END ON THE SAME LINE. They used to be `items-start`, at
+          their own natural heights, on the argument that stretching the shorter
+          one would open a blank strip under the leaderboard's "see all" link —
+          which was true of stretching alone, and is not true once each panel
+          knows what to do with the extra height. Measured before the change:
+          the leaderboard ran 107px past the explainer at 1920 and 61px at 1440
+          (Vietnamese), so two bordered cards side by side ended on visibly
+          different lines. Which one is taller also FLIPS with width — the
+          explainer is the taller of the two at 1024 — so neither could simply
+          be padded to match the other.
+
+          Each panel now fills the row: the leaderboard pins its "see all" bar
+          to the bottom and lets the table area take the slack, and the
+          explainer spreads its three definitions over the height instead of
+          leaving a dead strip beneath them.
 
           At 2xl the leaderboard stops taking its share and takes a CAP instead.
           Its content needs ~495px; a proportional share of a 1,850px page gives
@@ -80,7 +94,7 @@ export default async function HomePage() {
           panel that cannot use the width fixes the same thing locally. The
           excess goes to the explainer, whose own prose is capped for measure,
           so it absorbs the width as margin rather than as 150-character lines. */}
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[5fr_4fr] 2xl:grid-cols-[minmax(0,44rem)_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[5fr_4fr] 2xl:grid-cols-[minmax(0,44rem)_1fr]">
         <TopScores rows={topScores} universeSize={universeSize} locale={locale} />
         <ScoreExplainer locale={locale} />
       </div>

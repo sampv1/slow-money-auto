@@ -67,7 +67,9 @@ export function TopScores({
   );
 
   return (
-    <section className="rounded-lg border border-line bg-panel overflow-hidden">
+    // `h-full flex flex-col` so the card fills the grid row and the "see all"
+    // bar sits on its floor rather than wherever the table happens to end.
+    <section className="rounded-lg border border-line bg-panel overflow-hidden h-full flex flex-col">
       <div className="px-4 py-4 sm:px-5 border-b border-line">
         <h2 className="text-title font-semibold text-fg tracking-tight">{t(locale, "homeTopScoresTitle")}</h2>
         <p className="mt-1 text-body-lg text-fg-muted">{t(locale, "homeTopScoresSub")}</p>
@@ -78,7 +80,7 @@ export function TopScores({
       ) : (
         <>
           {/* Table — sm and up */}
-          <div className={`hidden sm:block ${TABLE_SCROLL}`}>
+          <div className={`hidden sm:block flex-1 min-h-0 ${TABLE_SCROLL}`}>
             <table className={TABLE}>
               <thead className={THEAD}>
                 <tr>
@@ -114,7 +116,7 @@ export function TopScores({
           </div>
 
           {/* Cards — below sm */}
-          <ul className="sm:hidden divide-y divide-line-faint">
+          <ul className="sm:hidden flex-1 divide-y divide-line-faint">
             {rows.map((r) => (
               <li key={r.symbol} className="px-4 py-3">
                 <Link href={`/analysis/${r.symbol}`} className="flex items-center gap-3">
@@ -134,7 +136,7 @@ export function TopScores({
         </>
       )}
 
-      <div className="px-4 py-3 sm:px-5 border-t border-line bg-panel-2">{seeAll}</div>
+      <div className="mt-auto px-4 py-3 sm:px-5 border-t border-line bg-panel-2">{seeAll}</div>
     </section>
   );
 }
