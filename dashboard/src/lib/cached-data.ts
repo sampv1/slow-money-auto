@@ -1,3 +1,4 @@
+import type { SecScore } from "@/lib/fa-securities";
 import { unstable_cache } from "next/cache";
 import { supabase } from "./supabase";
 import { CHART_ONLY_SYMBOLS } from "./chart-only-symbols";
@@ -713,6 +714,103 @@ export const getRealEstateSymbols = unstable_cache(
     }
   },
   ["fa-industry-real-estate"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/**
+ * Symbols scored on the SECURITIES rubric, subtracted by the manufacturing tab.
+ *
+ * Same contract as `getRealEstateSymbols`: each symbol appears on exactly one
+ * FA Scanner tab. A broker still carries a stale manufacturing row in
+ * `fa_scores` — it was scored UNRATED there, since the manufacturing rubric
+ * bands margins a broker does not report — and showing it beside a real CTCK
+ * score would give one company two unrelated numbers on two tabs.
+ *
+ * Empty before migration 060 is applied, which leaves brokers on the
+ * manufacturing tab: the pre-existing behaviour, not a broken one.
+ */
+export const getSecuritiesSymbols = unstable_cache(
+  async (): Promise<string[]> => {
+    try {
+      const rows = await fetchAllPaged<{ symbol: string }>((from, to, withCount) =>
+        supabase
+          .from("fa_industry")
+          .select("symbol", withCount ? { count: "exact" } : undefined)
+          .eq("industry_group", "securities")
+          .order("symbol", { ascending: true })
+          .range(from, to),
+      );
+      return rows.map((r) => r.symbol);
+    } catch (e) {
+      console.warn(
+        "[fa-sec] fa_industry unavailable — the manufacturing scanner will keep " +
+          "showing brokers (apply supabase/060):",
+        e instanceof Error ? e.message : e,
+      );
+      return [];
+    }
+  },
+  ["fa-industry-securities"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/**
+ * Sessions present in fa_securities_scores, newest first.
+ *
+ * DATES, not quarters — this rubric is scored per trading day because Cycle and
+ * Valuation are half of it and move daily. Only OFFICIAL rows are offered:
+ * a PRELIMINARY row was scored against a stale FCI and must never be
+ * selectable as if it were that session's reading.
+ */
+export const getSecDates = unstable_cache(
+  async (): Promise<string[]> => {
+    try {
+      const rows = await fetchAllPaged<{ as_of_date: string }>((from, to, withCount) =>
+        supabase
+          .from("fa_securities_scores")
+          .select("as_of_date", withCount ? { count: "exact" } : undefined)
+          .eq("score_status", "OFFICIAL")
+          .order("as_of_date", { ascending: false })
+          .order("symbol", { ascending: true }) // tie-break → deterministic paging
+          .range(from, to),
+      );
+      return Array.from(new Set(rows.map((r) => r.as_of_date)));
+    } catch {
+      return [];
+    }
+  },
+  ["fa-sec-dates"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/**
+ * Securities score rows for one session.
+ *
+ * ~42 rows carrying two small jsonb blobs each — nowhere near Vercel's 2 MB
+ * cache-entry limit, so no column trimming is needed. `field_metadata` is kept
+ * because the funding-source column reads from it: which statement a broker's
+ * cost of funding came from is a per-symbol fact the reader is entitled to see,
+ * not an implementation detail.
+ */
+export const getSecRows = unstable_cache(
+  async (date: string): Promise<SecScore[]> => {
+    try {
+      return await fetchAllPaged<SecScore>(
+        (from, to, withCount) =>
+          supabase
+            .from("fa_securities_scores")
+            .select("*", withCount ? { count: "exact" } : undefined)
+            .eq("as_of_date", date)
+            .eq("score_status", "OFFICIAL")
+            .order("normalized_fa_score", { ascending: false, nullsFirst: false })
+            .order("symbol", { ascending: true })
+            .range(from, to) as unknown as PromiseLike<PagedResult<SecScore>>,
+      );
+    } catch {
+      return [];
+    }
+  },
+  ["fa-sec-rows"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
 );
 

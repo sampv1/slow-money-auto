@@ -5,15 +5,15 @@ import { usePathname } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 
 /**
- * The two FA rubrics, as tabs under the page title.
+ * The FA rubrics, as tabs under the page title.
  *
- * A sub-nav rather than two more entries in the masthead: the masthead is
- * already ten items wide and wraps on a laptop, and these two are one tool
- * viewed two ways, not two tools.
+ * A sub-nav rather than more entries in the masthead: the masthead is already
+ * ten items wide and wraps on a laptop, and these are one tool viewed several
+ * ways, not several tools.
  *
  * The label is just the industry; which rubric it uses is a tooltip. A tab
  * strip is scanned, not read — a second line of explanatory text under each
- * one turns a two-item switch into a paragraph.
+ * one turns a short switch into a paragraph.
  *
  * The active tab is an INKED underline, not a filled chip: the filled treatment
  * is what the masthead uses for the current section, and repeating it here
@@ -29,6 +29,11 @@ const TABS = [
     href: "/fa-scanner/real-estate",
     label: "faSubnavRealEstate",
     hint: "faSubnavHintRealEstate",
+  },
+  {
+    href: "/fa-scanner/securities",
+    label: "faSubnavSecurities",
+    hint: "faSubnavHintSecurities",
   },
 ] as const;
 

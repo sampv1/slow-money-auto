@@ -80,10 +80,16 @@ METRIC_BREADTH_CHG_5D = "breadth_change_5d"
 METRIC_BREADTH_CHG_10D = "breadth_change_10d"
 
 # Sessions of history to load. 20 valid observations per symbol is the binding
-# requirement, but a symbol trading twice a week needs ~70 sessions to reach 20 —
-# and the 10-session change window sits on top. 180 calendar days is ~124
-# sessions, which cleared every symbol in the active universe when measured.
-LOAD_DAYS = 180
+# requirement, and a thinly traded symbol needs far more calendar days than
+# sessions to reach it.
+#
+# THE DAILY AND BACKFILL PATHS MUST LOAD THE SAME WINDOW. They did not at first
+# — 180 days daily against 400 in the backfill — and the same session came out
+# with two different denominators (1,107 against 1,132 for 2026-09-04), because
+# a shorter window leaves thin symbols short of 20 observations. Breadth would
+# then depend on WHICH JOB last wrote it, and C17's bands are calibrated against
+# the denominator. One constant, used by both.
+LOAD_DAYS = 400
 
 
 def _band_for(exchange: str | None) -> float:
@@ -116,8 +122,9 @@ def load_prices(client, symbols: list[str], start: dt.date) -> pd.DataFrame:
     return df
 
 
-def compute(df: pd.DataFrame, universe: list[str], exchanges: dict[str, str]) -> dict:
-    """Compute every series for the newest session in `df`.
+def compute(df: pd.DataFrame, universe: list[str], exchanges: dict[str, str],
+            target: "pd.Timestamp | None" = None) -> dict:
+    """Compute every series for `target` (default: the newest session in `df`).
 
     Returns {"as_of": date, "trading_value", "adtv_5", "adtv_20", "momentum",
              "breadth", "breadth_change_5d", "breadth_change_10d", "audit": {...}}
@@ -160,8 +167,11 @@ def compute(df: pd.DataFrame, universe: list[str], exchanges: dict[str, str]) ->
     # change series are measured against. Breadth costs a pass over the whole
     # universe per date, so evaluating all 123 loaded sessions would spend ~40x
     # the work to produce three numbers.
+    t_index = len(sessions) - 1 if target is None else session_no.get(target)
+    if t_index is None:
+        return {}
     wanted = [sessions[i] for i in
-              dict.fromkeys(i for i in (len(sessions) - 1, len(sessions) - 6, len(sessions) - 11) if i >= 0)]
+              dict.fromkeys(i for i in (t_index, t_index - 5, t_index - 10) if i >= 0)]
     for target in wanted:
         t_no = session_no[target]
         counts = dict(universe_count=len(universe), symbols_with_close_today=0,
@@ -207,10 +217,10 @@ def compute(df: pd.DataFrame, universe: list[str], exchanges: dict[str, str]) ->
         breadth[target] = (num / den) if den else None
         audit_by_date[target] = counts
 
-    t = sessions[-1]
+    t = sessions[t_index]
 
     def _chg(lag: int):
-        i = len(sessions) - 1 - lag
+        i = t_index - lag
         if i < 0:
             return None
         prior = breadth.get(sessions[i])
@@ -224,6 +234,8 @@ def compute(df: pd.DataFrame, universe: list[str], exchanges: dict[str, str]) ->
     mom = None
     if _f(adtv20.loc[t]) and adtv20.loc[t] > 0:
         mom = float(adtv5.loc[t] / adtv20.loc[t] - 1)
+    # `sessions_loaded` reports the frame, not the window, so a backfill row can
+    # be told apart from a short live run when auditing later.
 
     return {
         "as_of": t.date(),
@@ -359,3 +371,65 @@ def refresh(client, status=None) -> dict:
                       unit="symbols", detail=f"eligible of {len(universe)} tracked, "
                                              f"breadth {(result['breadth'] or 0) * 100:.1f}%")
     return result
+
+
+def backfill(client, days: int = LOAD_DAYS, min_sessions: int = 30, status=None) -> int:
+    """Recompute and store every session available in one loaded price frame.
+
+    C17 reads breadth CHANGES over 5 and 10 sessions, and the securities score is
+    written per day for a forward-return backtest — neither works from a single
+    stored point, so history has to exist before the rubric means anything.
+
+    Loading once and walking the frame is the whole point: the read is ~127k
+    rows and 35 s, while the per-session compute is ~2 s, so a year of history
+    costs one load rather than 250 of them.
+    """
+    from ta.universe import get_active_symbols
+
+    universe = sorted(get_active_symbols(client))
+    exchanges = {
+        r["symbol"]: r.get("exchange")
+        for r in paged_select(
+            lambda off, lim: client.table("symbol_profile").select("symbol,exchange").range(off, off + lim - 1),
+            label="backfill exchanges",
+        )
+    }
+    start = dt.date.today() - dt.timedelta(days=days)
+    df = load_prices(client, universe, start)
+    if df.empty:
+        if status:
+            status.warn("Market series backfill", f"no OHLCV since {start}")
+        return 0
+
+    sessions = sorted(df["date"].unique())
+    # The first MA_OBS sessions cannot carry a 20-observation mean for anyone,
+    # and the next 10 have no comparable to change against. Writing them would
+    # store a breadth measured over a denominator that is still filling up.
+    usable = sessions[MA_OBS + 10:]
+    print(f"Backfilling {len(usable)} sessions of {len(sessions)} loaded "
+          f"({str(usable[0])[:10]} .. {str(usable[-1])[:10]}) over {len(universe)} symbols")
+
+    rows: list[dict] = []
+    skipped = 0
+    for i, target in enumerate(usable, 1):
+        result = compute(df, universe, exchanges, target=target)
+        if not result or not reconciles(result["audit"]):
+            skipped += 1
+            continue
+        rows.extend(build_rows(result))
+        if i % 25 == 0 or i == len(usable):
+            print(f"  [{i}/{len(usable)}] {str(target)[:10]} "
+                  f"breadth {(result['breadth'] or 0) * 100:5.1f}% "
+                  f"({result['audit']['numerator']}/{result['audit']['denominator']})")
+
+    for j in range(0, len(rows), 500):
+        safe_execute(
+            client.table("macro_series").upsert(rows[j:j + 500], on_conflict="metric,date"),
+            label=f"macro_series backfill [{j // 500}]",
+        )
+    print(f"Wrote {len(rows):,} rows for {len(usable) - skipped} sessions "
+          f"({skipped} skipped on reconciliation).")
+    if status:
+        status.require("Market series backfill", len(usable) - skipped,
+                       minimum=max(1, min_sessions), unit="sessions")
+    return len(rows)

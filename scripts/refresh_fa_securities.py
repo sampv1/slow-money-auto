@@ -63,7 +63,10 @@ def market_context(client, as_of: str) -> dict:
         .in_("metric", wanted).eq("date", as_of),
         label="market context",
     ).data or []
-    by = {r["metric"]: r for r in rows}
+    return _market_from({r["metric"]: r for r in rows})
+
+
+def _market_from(by: dict) -> dict:
     breadth = by.get(METRIC_BREADTH)
     meta = (breadth or {}).get("meta") or {}
     return {
@@ -98,7 +101,10 @@ def fci_context(client, as_of: str) -> dict:
     if not series or series[-1][0] != as_of:
         return {"as_of": series[-1][0] if series else None, "value": None}
 
-    vals = [v for _, v in series]
+    return _fci_state([v for _, v in series], as_of)
+
+
+def _fci_state(vals: list[float], as_of: str) -> dict:
     d5 = vals[-1] - vals[-6] if len(vals) > 5 else None
     d10 = vals[-1] - vals[-11] if len(vals) > 10 else None
 
@@ -370,6 +376,10 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
         "as_of_date": as_of,
         "model_version": sec.MODEL_VERSION,
         "quality_period": quarter,
+        # Recorded on BOTH paths, not just the backfill: it is what proves a
+        # score did not read a filing published after its own date, and a live
+        # row without it cannot be replayed alongside a backfilled one.
+        "quality_effective_date": effective_date_of(quarter),
         "earned_score": totals["earned_score"],
         "available_max": totals["available_max"],
         "coverage": totals["coverage"],
@@ -395,6 +405,146 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
     return row
 
 
+# Circular 96/2020/TT-BTC: a quarterly filing is due 20 days after period end.
+# That date, not the period end, is when the numbers become knowable — scoring
+# 2026-07-10 against 2026-Q2 would be reading a filing that did not exist yet,
+# and a backtest built on that measures nothing but hindsight.
+FILING_LAG_DAYS = 20
+
+
+def effective_quarter(as_of: str) -> str:
+    """The newest quarter whose filing deadline has passed by `as_of`."""
+    d = dt.date.fromisoformat(as_of)
+    y = d.year
+    ends = [(dt.date(y - 1, 12, 31), f"{y-1}-Q4"), (dt.date(y, 3, 31), f"{y}-Q1"),
+            (dt.date(y, 6, 30), f"{y}-Q2"), (dt.date(y, 9, 30), f"{y}-Q3"),
+            (dt.date(y, 12, 31), f"{y}-Q4")]
+    usable = [q for end, q in ends if end + dt.timedelta(days=FILING_LAG_DAYS) <= d]
+    return usable[-1] if usable else f"{y-1}-Q3"
+
+
+def effective_date_of(quarter: str) -> str:
+    y, q = int(quarter[:4]), int(quarter[-1])
+    end = {1: dt.date(y, 3, 31), 2: dt.date(y, 6, 30),
+           3: dt.date(y, 9, 30), 4: dt.date(y, 12, 31)}[q]
+    return (end + dt.timedelta(days=FILING_LAG_DAYS)).isoformat()
+
+
+def price_history(client, symbols: list[str], since: str) -> dict:
+    """{symbol: [(date, close)]} ascending, for marking each session to its price."""
+    out = {}
+    for sym in symbols:
+        rows = paged_select(
+            lambda o, l, s=sym: client.table("ta_ohlcv").select("date,close")
+            .eq("symbol", s).gte("date", since).order("date").range(o, o + l - 1),
+            label=f"prices {sym}")
+        out[sym] = [(r["date"], float(r["close"])) for r in rows if r.get("close")]
+    return out
+
+
+def price_asof(series: list[tuple[str, float]], as_of: str) -> float | None:
+    """Last close on or before `as_of`. Never a later one — that is the whole point."""
+    prev = None
+    for d, c in series:
+        if d > as_of:
+            break
+        prev = c
+    return prev
+
+
+def load_fci_series(client) -> list[tuple[str, float]]:
+    rows = paged_select(
+        lambda o, l: client.table("macro_series").select("date,value")
+        .eq("metric", FCI_METRIC).order("date").range(o, o + l - 1),
+        label="fci history")
+    return [(r["date"], float(r["value"])) for r in rows if r.get("value") is not None]
+
+
+def fci_context_from(series: list[tuple[str, float]], as_of: str) -> dict:
+    """Same computation as `fci_context`, from a series loaded once.
+
+    The live path can afford a query; a backfill cannot — pulling 5,600 FCI rows
+    per session would be over a thousand paged requests for one run.
+    """
+    cut = [(d, v) for d, v in series if d <= as_of]
+    if not cut or cut[-1][0] != as_of:
+        return {"as_of": cut[-1][0] if cut else None, "value": None}
+    return _fci_state([v for _, v in cut], as_of)
+
+
+def run_backfill(client, args, st) -> int:
+    """Score every session that already has market series, point-in-time.
+
+    Cores are computed ONCE PER QUARTER rather than once per day: the Quality
+    block only changes when a filing lands, so recomputing it for each of ~250
+    sessions would repeat identical work ~60 times per quarter.
+    """
+    dates = [r["date"] for r in paged_select(
+        lambda o, l: client.table("macro_series").select("date")
+        .eq("metric", METRIC_BREADTH).gte("date", args.since or "2000-01-01")
+        .order("date").range(o, o + l - 1), label="sessions")]
+    if not dates:
+        st.fail("Backfill", "no market series stored — run the market-series backfill first")
+        return 0
+
+    symbols = args.symbols or broker_universe(client)
+    coe = risk_free_rate(client) + EQUITY_RISK_PREMIUM
+    prices = price_history(client, symbols, dates[0])
+    fci_series = load_fci_series(client)
+    market_rows = paged_select(
+        lambda o, l: client.table("macro_series")
+        .select("metric,date,value,meta")
+        .in_("metric", [METRIC_ADTV_MOMENTUM, METRIC_BREADTH,
+                        METRIC_BREADTH_CHG_5D, METRIC_BREADTH_CHG_10D])
+        .gte("date", dates[0]).order("date").range(o, o + l - 1),
+        label="market series history")
+    market_by_date: dict[str, dict] = {}
+    for r in market_rows:
+        market_by_date.setdefault(r["date"], {})[r["metric"]] = r
+    print(f"Backfilling {len(dates)} sessions ({dates[0]} .. {dates[-1]}) "
+          f"over {len(symbols)} brokers; cost of equity {coe:.1%}")
+
+    by_quarter: dict[str, list[str]] = {}
+    for d in dates:
+        by_quarter.setdefault(effective_quarter(d), []).append(d)
+
+    # Written per quarter rather than once at the end: a full backfill is
+    # thousands of rows over several minutes, and accumulating them all means a
+    # failure in the last quarter throws away the first three.
+    total = 0
+    for quarter, qdates in sorted(by_quarter.items()):
+        all_rows: list[dict] = []
+        print(f"  {quarter} (effective {effective_date_of(quarter)}): "
+              f"{len(qdates)} sessions {qdates[0]} .. {qdates[-1]}")
+        cores = collect(client, symbols, quarter, {}, coe)   # prices added per date
+        if not cores:
+            continue
+        for as_of in qdates:
+            market = _market_from(market_by_date.get(as_of, {}))
+            fci = fci_context_from(fci_series, as_of)
+            status = "OFFICIAL" if fci.get("as_of") == as_of else "PRELIMINARY_FCI_T_MINUS_1"
+            for sym, d in cores.items():
+                d["ctx"].update(valuation_inputs(d["statements"], d["core"], quarter,
+                                                 price_asof(prices.get(sym, []), as_of), coe))
+            add_percentiles(cores)
+            scored = score_all(cores, market, fci)
+            for sym, sc in scored.items():
+                row = build_row(sym, sc, as_of, quarter, market, fci, status)
+                all_rows.append(row)
+
+        for j in range(0, len(all_rows), 200):
+            safe_execute(
+                client.table("fa_securities_scores")
+                .upsert(all_rows[j:j + 200], on_conflict="symbol,as_of_date,model_version"),
+                label=f"backfill upsert {quarter} [{j // 200}]")
+        total += len(all_rows)
+        print(f"    wrote {len(all_rows):,} rows ({total:,} so far)")
+
+    print(f"Wrote {total:,} rows across {len(dates)} sessions.")
+    st.require("Backfilled sessions", len(dates), minimum=1, unit="sessions")
+    return total
+
+
 def main():
     ap = argparse.ArgumentParser(description="Daily securities (CTCK) FA score")
     ap.add_argument("--as-of", help="trading date to score (default: latest market series)")
@@ -402,10 +552,18 @@ def main():
     ap.add_argument("--allow-preliminary", action="store_true",
                     help="score with a stale FCI, marked PRELIMINARY and never ranked")
     ap.add_argument("--symbols", nargs="*", help="limit to these tickers")
+    ap.add_argument("--backfill", action="store_true",
+                    help="score every session that has market series, point-in-time")
+    ap.add_argument("--since", help="earliest session for --backfill")
     args = ap.parse_args()
 
     client = get_supabase_client()
     st = RunStatus("FA securities score")
+
+    if args.backfill:
+        run_backfill(client, args, st)
+        write_job_summary(st)
+        sys.exit(1 if st.failures else 0)
 
     as_of = args.as_of
     if not as_of:
