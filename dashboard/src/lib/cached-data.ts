@@ -1,4 +1,4 @@
-import type { SecScore } from "@/lib/fa-securities";
+import { SEC_ACTIVE_MODEL, type SecScore } from "@/lib/fa-securities";
 import { unstable_cache } from "next/cache";
 import { supabase } from "./supabase";
 import { CHART_ONLY_SYMBOLS } from "./chart-only-symbols";
@@ -765,16 +765,30 @@ export const getSecuritiesSymbols = unstable_cache(
 export const getSecDates = unstable_cache(
   async (): Promise<string[]> => {
     try {
-      const rows = await fetchAllPaged<{ as_of_date: string }>((from, to, withCount) =>
-        supabase
-          .from("fa_securities_scores")
-          .select("as_of_date", withCount ? { count: "exact" } : undefined)
-          .eq("score_status", "OFFICIAL")
-          .order("as_of_date", { ascending: false })
-          .order("symbol", { ascending: true }) // tie-break → deterministic paging
-          .range(from, to),
-      );
-      return Array.from(new Set(rows.map((r) => r.as_of_date)));
+      // ASKED OF ONE SYMBOL, not of the whole table. PostgREST has no DISTINCT,
+      // so the obvious shape — page every row and dedupe the dates — reads the
+      // entire history: ~42 rows per session per model version, which was
+      // nothing at one session and a full scan at 10,080 rows. Every session
+      // scores the whole broker universe together, so one liquid broker's date
+      // list IS the session list.
+      //
+      // A probe that has not been scored (a new listing, or one whose filings
+      // are missing) would return nothing rather than a wrong answer, so the
+      // fallbacks are tried in order of how reliably each is scored.
+      for (const probe of ["SSI", "VND", "HCM"]) {
+        const rows = await fetchAllPaged<{ as_of_date: string }>((from, to, withCount) =>
+          supabase
+            .from("fa_securities_scores")
+            .select("as_of_date", withCount ? { count: "exact" } : undefined)
+            .eq("symbol", probe)
+            .eq("model_version", SEC_ACTIVE_MODEL)
+            .eq("score_status", "OFFICIAL")
+            .order("as_of_date", { ascending: false })
+            .range(from, to),
+        );
+        if (rows.length > 0) return Array.from(new Set(rows.map((r) => r.as_of_date)));
+      }
+      return [];
     } catch {
       return [];
     }
@@ -801,6 +815,7 @@ export const getSecRows = unstable_cache(
             .from("fa_securities_scores")
             .select("*", withCount ? { count: "exact" } : undefined)
             .eq("as_of_date", date)
+            .eq("model_version", SEC_ACTIVE_MODEL)
             .eq("score_status", "OFFICIAL")
             .order("normalized_fa_score", { ascending: false, nullsFirst: false })
             .order("symbol", { ascending: true })

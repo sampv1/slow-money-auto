@@ -39,7 +39,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-MODEL_VERSION = "CTCK_V8"
+# V9. A NEW STRING, not an edit of V8: C20 changes from a scored criterion to an
+# excluded one, which moves every broker's denominator, so V8 rows must stay
+# readable as what they were. Governance rule G6 — lock by issuing a version,
+# never by rewriting history.
+MODEL_VERSION = "CTCK_V9_DRAFT"
 
 # Points per criterion (sheet 1). Sums to 100 — asserted at import.
 CRITERION_POINTS = {
@@ -93,6 +97,13 @@ TREASURY_INCOME = [
 # spec's Mapping_Uncertain case, which is the norm here rather than an edge.
 FUSED_DIVIDEND_INTEREST = "IS_C_DIVIDENDS_AND_INTEREST_INCOME_FROM_FVTPL_FINANCIAL_ASSETS"
 MANAGEMENT_OPEX = "IS_GENERAL_AND_ADMINISTRATIVE_EXPENSES"
+# C13 asset quality. Provisions against financial assets and doubtful debts are
+# what a broker books when its receivables or bond holdings sour, so the charge
+# scaled by the assets it protects is the observable proxy the rubric asks for.
+# The overdue-receivable detail it also names lives only in the notes, which the
+# provider does not carry — so this is the provision half, and the criterion is
+# labelled for what it measures.
+PROVISION_EXPENSE = "IS_PROVISION_EXPENSES_FOR_FINANCIAL_ASSETS_AND_DOUBTFUL_DEBTS"
 PROFIT_BEFORE_TAX = "IS_PROFIT_BEFORE_TAX"
 TAX_LINES = ["IS_CURRENT_CORPORATE_INCOME_TAX_EXPENSES", "IS_DEFERRED_INCOME_TAX_EXPENSES"]
 NPAT_PARENT = "IS_PROFIT_AFTER_TAX_FOR_SHAREHOLDERS_OF_PARENT_COMPANY"
@@ -406,6 +417,10 @@ C8_CIR = [(.20, 3), (.50, 2), (.80, 1), (1.0, 0)]
 C10_LEVERAGE = [(.20, 3), (.50, 2), (.80, 1), (1.0, 0)]
 C11_FUNDING = [(.20, 3), (.50, 2), (.80, 1), (1.0, 0)]
 C19_CORE_PE = [(.20, 8), (.40, 6), (.60, 4), (.80, 2), (1.0, 0)]
+# Both are 2-point criteria, so three bands rather than five — a finer scale
+# than the evidence supports would be false precision.
+C13_ASSET_QUALITY = [(.33, 2), (.67, 1), (1.0, 0)]
+C14_STABILITY = [(.33, 2), (.67, 1), (1.0, 0)]
 C20_PB = [(.75, 12), (.90, 9), (1.10, 6), (1.25, 3)]
 
 # Criteria with no data source at all today. Both are N/A for every broker, and
@@ -519,16 +534,46 @@ def score_quality(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
     if out["c12"].points is None:
         na("c12", "no sector distribution")
 
-    # C13 asset quality and C14 durability need provision detail and a long core
-    # history respectively; both are left N/A until those series are built,
-    # rather than scored 0 from absent data.
-    na("c13", "provision / overdue-receivable detail not yet mapped")
-    if blocked or ctx.get("core_history_n", 0) < 8:
-        na("c14", "needs 8+ quarters of core history")
+    # C13 asset quality — provision charge against the assets it covers, ranked.
+    out["c13"] = Criterion(_pctile_bands(ctx.get("p_asset_risk"), C13_ASSET_QUALITY),
+                           ctx.get("asset_risk"))
+    if out["c13"].points is None:
+        na("c13", "no provision or earning-asset figure")
+
+    # C14 durability — how steady the core return has been, not how high.
+    # Needs a real history: eight quarters is the floor, below which the
+    # dispersion of three or four readings is noise rather than a character.
+    if blocked or ctx.get("core_history_n", 0) < C14_MIN_QUARTERS:
+        na("c14", f"needs {C14_MIN_QUARTERS}+ quarters of core history")
     else:
-        out["c14"] = Criterion(_pctile_bands(ctx.get("p_stability"), C10_LEVERAGE),
+        out["c14"] = Criterion(_pctile_bands(ctx.get("p_stability"), C14_STABILITY),
                                ctx.get("stability"))
+        if out["c14"].points is None:
+            na("c14", "no sector distribution")
     return out
+
+
+C14_MIN_QUARTERS = 8
+
+
+def core_roe_volatility(core_roes: list[float]) -> float | None:
+    """Dispersion of core ROE, penalised for loss quarters.
+
+    Coefficient of variation on the absolute mean, so a broker whose core return
+    swings between +12% and -2% is not flattered by the two cancelling out. The
+    loss frequency is added rather than averaged in: a quarter of core LOSSES is
+    a different fact from a quarter of merely low returns, and the rubric asks
+    for downside resilience, not just variance.
+    """
+    vals = [v for v in core_roes if v is not None]
+    if len(vals) < C14_MIN_QUARTERS:
+        return None
+    mean = sum(vals) / len(vals)
+    if mean == 0:
+        return None
+    var = sum((v - mean) ** 2 for v in vals) / len(vals)
+    cv = (var ** 0.5) / abs(mean)
+    return cv + sum(1 for v in vals if v < 0) / len(vals)
 
 
 def score_valuation(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
@@ -544,17 +589,113 @@ def score_valuation(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
     if out["c19"].points is None:
         out["c19"] = Criterion(None, None, "N_A", "no core P/E history")
 
-    ratio = ctx.get("pb_ratio")     # current P/B over justified P/B
-    if ratio is None:
-        out["c20"] = Criterion(None, None, "N_A", "no justified P/B")
-    else:
-        pts = 0
-        for hi, p_ in C20_PB:
-            if ratio <= hi:
-                pts = p_
-                break
-        out["c20"] = Criterion(pts, ratio)
+    # C20 IS DISABLED IN PRODUCTION (V9). It is N/A, and its 12 points leave the
+    # denominator — it is NOT scored 0.
+    #
+    # The V8 formula scored 0 for ALL 30 brokers with a usable reading. That is
+    # not a criterion finding every broker expensive; it is a criterion that
+    # cannot discriminate, and 12 points of guaranteed zero dragged every
+    # normalized score down by roughly 15 points. Two faults, both in the
+    # formula rather than its thresholds: justified P/B assumed zero growth for
+    # a cyclical sector, and it compared a CORE-ONLY ROE against a whole-firm
+    # cost of equity while the market prices the prop desk too. Retuning the
+    # bands on top of that would have hidden the mismatch instead of fixing it.
+    #
+    # N/A and 0 are different claims. 0 says "measured, and it is the worst
+    # case"; N/A says "no valid measurement exists". This is the second.
+    out["c20"] = Criterion(None, ctx.get("pb_ratio"), "PROVISIONAL_INVALID",
+                           "formula withdrawn — scored 0 for the entire universe; "
+                           "replacements run in shadow (see c20_shadow)")
     return out
+
+
+# --- C20 shadow: raw values only, never a score ----------------------------
+# Two candidate replacements are computed and stored so a backtest has
+# something to work on, and NEITHER can reach a score: the lock gate requires
+# discrimination, monotonicity, out-of-sample and regime checks first. Storing
+# raw is what makes it possible to choose a method on evidence rather than on
+# which one produced a nicer distribution.
+
+G_SENSITIVITY = (0.0, 0.02, 0.035, 0.05)
+
+
+def justified_pb(roe: float | None, coe: float | None, g: float) -> float | None:
+    """Gordon justified P/B = (ROE - g) / (CoE - g).
+
+    Fails CLOSED on both degenerate cases rather than returning a number:
+    `CoE <= g` makes the denominator zero or negative (a company growing at or
+    above its cost of equity is worth infinity, which is a modelling artefact,
+    not a valuation), and `ROE <= g` cannot be financed out of its own returns.
+    """
+    if roe is None or coe is None:
+        return None
+    if coe <= g or roe <= g:
+        return None
+    return (roe - g) / (coe - g)
+
+
+def c20_shadow_a(current_pb: float | None, normalized_total_roe: float | None,
+                 coe: float | None) -> dict:
+    """Absolute justified P/B across a range of growth assumptions.
+
+    Uses NORMALIZED TOTAL ROE — core plus a normalized non-core contribution —
+    because the numerator being priced is the whole firm. That is the scope
+    mismatch the V8 formula had, and it is the reason it read every broker as
+    expensive rather than only some of them.
+
+    `g` is deliberately a RANGE, not a choice. Picking the growth rate that
+    makes the distribution look best is fitting the assumption to the answer.
+    """
+    out = {"current_pb": current_pb, "normalized_total_roe": normalized_total_roe,
+           "cost_of_equity": coe, "by_g": {}}
+    for g in G_SENSITIVITY:
+        jpb = justified_pb(normalized_total_roe, coe, g)
+        out["by_g"][f"{g:.3f}"] = {
+            "justified_pb": jpb,
+            "pb_ratio": (current_pb / jpb) if (jpb and current_pb) else None,
+            "valid": jpb is not None,
+        }
+    return out
+
+
+def normalize_noncore(series: list[float], winsor: float = 0.10) -> dict:
+    """Normalized non-core earnings, BOTH candidate methods plus the downside.
+
+    Median and winsorized mean are stored side by side because neither is
+    chosen yet, and the downside statistics are mandatory: a method that
+    discards loss quarters would make a prop-heavy broker look like a steady one,
+    which is precisely the risk C12 exists to catch.
+    """
+    vals = sorted(v for v in series if v is not None)
+    n = len(vals)
+    if n == 0:
+        return {"n": 0, "median": None, "winsor_mean": None, "p10": None,
+                "min": None, "loss_frequency": None}
+    mid = n // 2
+    median = vals[mid] if n % 2 else (vals[mid - 1] + vals[mid]) / 2
+    k = int(n * winsor)
+    clipped = vals[k:n - k] if n - 2 * k > 0 else vals
+    lo, hi = clipped[0], clipped[-1]
+    winsor_mean = sum(min(max(v, lo), hi) for v in vals) / n
+    p10 = vals[max(0, int(n * 0.10) - 1)]
+    return {"n": n, "median": median, "winsor_mean": winsor_mean, "p10": p10,
+            "min": vals[0], "loss_frequency": sum(1 for v in vals if v < 0) / n}
+
+
+def c20_shadow_b(current_pb: float | None, pb_history: list[float]) -> dict:
+    """Relative P/B against the company's OWN history.
+
+    Only the own-history half of C20-B. The peer-residual model
+    (`ln(P/B) = a + b·ROE + cluster fixed effects`) is NOT built: it carries its
+    own minimum-sample, coefficient-stability and no-look-ahead requirements,
+    and a regression shipped without them would be the same mistake as the
+    formula it replaces — a number that looks like a measurement.
+    """
+    hist = [v for v in pb_history if v is not None and v > 0]
+    if current_pb is None or len(hist) < 8:
+        return {"pb_hist_percentile": None, "n": len(hist)}
+    return {"pb_hist_percentile": sum(1 for v in hist if v < current_pb) / len(hist),
+            "n": len(hist), "median_pb": sorted(hist)[len(hist) // 2]}
 
 
 # ---------------------------------------------------------------------------
@@ -583,29 +724,50 @@ def c15_level(fci: float | None) -> float | None:
     return 0.0
 
 
-def c15_speed(delta5: float | None, percentile: float | None, history_obs: int | None):
-    """FCI improvement speed /4, as a point-in-time percentile of its own history.
+# Percentile bands, best first. The percentile alone decides the BASE; the sign
+# of the change then caps it.
+C15_SPEED_BANDS = [(.10, 4), (.25, 3), (.50, 2), (.75, 1)]
 
-    Returns (points, confidence). Below 250 observations this is N/A rather than
-    0: a percentile computed from too little history is not a weak reading, it
-    is not a reading.
+
+def c15_speed(delta5: float | None, percentile: float | None, history_obs: int | None):
+    """FCI improvement speed /4 — percentile base, then a direction cap (V9).
+
+    Returns (points, confidence).
+
+    WHY THIS WAS REBUILT. V8 scored the percentile only when the change was
+    already negative, and gave 1 for "negative but worse than median". Measured
+    over 190 live sessions that band NEVER FIRED: ΔFCI's median sits at -0.007,
+    so the window was roughly (-0.007, 0). The score went 0 -> 2 with nothing
+    between, and a five-level criterion was really a four-level one.
+
+    V9 separates the two questions the criterion was conflating. The percentile
+    answers "how does this rate of change compare with history", which is
+    meaningful in both directions. The SIGN then answers "is it improving at
+    all", and caps the score at 1 when it is not — so a worsening FCI can never
+    collect 2-4 points for worsening less than usual, which is what dropping the
+    sign entirely would have allowed. Band 1 is now reachable from three
+    different states, which is what makes it a real band.
+
+    Below 250 observations this is N/A, never 0: a percentile from too little
+    history is not a weak reading, it is not a reading.
     """
     if history_obs is None or history_obs < FCI_MIN_HISTORY:
         return None, "LOW"
     conf = "HIGH" if history_obs >= FCI_FULL_HISTORY else "MEDIUM"
     if delta5 is None or percentile is None:
         return None, conf
-    if delta5 > 0:
-        return 0, conf          # conditions worsening is never rewarded
+
+    base = 0
+    for hi, pts in C15_SPEED_BANDS:
+        if percentile <= hi:
+            base = pts
+            break
+
+    if delta5 < 0:
+        return base, conf       # improving — the percentile stands
     if delta5 == 0:
-        return 1, conf
-    if percentile <= .10:
-        return 4, conf
-    if percentile <= .25:
-        return 3, conf
-    if percentile <= .50:
-        return 2, conf
-    return 1, conf
+        return 1, conf          # unchanged is neither rewarded nor punished
+    return min(base, 1), conf   # worsening — capped, however good the percentile
 
 
 def c15_reversal(event_valid: bool, prior_positive: int | None, negative_streak: int,

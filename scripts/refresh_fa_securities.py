@@ -194,8 +194,37 @@ def latest_prices(client, symbols: list[str], as_of: str) -> dict[str, float]:
     return out
 
 
+def core_history(statements: dict, quarter: str) -> list[dict]:
+    """Core_NPAT, core ROE and non-core, for each of the trailing TTM windows.
+
+    One pass, shared by everything that needs the past: C14's dispersion, the
+    C20 shadows' non-core normalization, and the core P/E percentile.
+    """
+    out = []
+    for back in range(0, CORE_PE_HISTORY_QUARTERS + 1):
+        qs, oq, cq = sec.ttm_window(quarter)
+        qs = _shift_quarters(qs, back)
+        oq, cq = _shift_quarters([oq, cq], back)
+        bal_q = statements.get("balance", {}).get(cq)
+        if not bal_q:
+            continue
+        past = sec.compute_core(statements, qs, oq, cq)
+        cn, rep = past.val("core_npat_ttm"), past.val("reported_npat_ttm")
+        eq = past.val("avg_equity")
+        out.append({
+            "quarter": cq,
+            "core_npat": cn,
+            "reported_npat": rep,
+            "noncore": (rep - cn) if (cn is not None and rep is not None) else None,
+            "core_roe": (cn / eq) if (cn is not None and eq) else None,
+            "equity": bal_q.get(sec.BS_EQUITY),
+            "shares": bal_q.get(sec.BS_SHARES),
+        })
+    return out
+
+
 def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
-                     coe: float) -> dict:
+                     coe: float, history: list[dict] | None = None) -> dict:
     """Core P/E against its own history, and P/B against a ROE-justified P/B.
 
     Both deliberately use CORE earnings rather than reported: a broker whose
@@ -203,13 +232,13 @@ def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
     recurring business has not changed.
     """
     if price is None:
-        return {"core_pe": None, "p_core_pe": None, "pb_ratio": None}
+        return {"core_pe": None, "p_core_pe": None, "pb_ratio": None, "c20_shadow": None}
     _, _, close_q = sec.ttm_window(quarter)
     bal = statements.get("balance", {}).get(close_q, {})
     shares = bal.get(sec.BS_SHARES) or 0
     equity = bal.get(sec.BS_EQUITY) or 0
     if not shares:
-        return {"core_pe": None, "p_core_pe": None, "pb_ratio": None}
+        return {"core_pe": None, "p_core_pe": None, "pb_ratio": None, "c20_shadow": None}
     market_cap = price * shares
 
     core_npat = core.val("core_npat_ttm")
@@ -228,21 +257,12 @@ def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
     # charts avoid by reading provider ratios for history). There is no provider
     # ratio for a CORE P/E, so neither option is clean. This one at least has a
     # known, single-signed bias. C19 is PROVISIONAL until the backtest.
-    history = []
-    for back in range(1, CORE_PE_HISTORY_QUARTERS + 1):
-        qs, oq, cq = sec.ttm_window(quarter, back=0)
-        qs = _shift_quarters(qs, back)
-        oq, cq = _shift_quarters([oq, cq], back)
-        if cq not in statements.get("balance", {}):
-            continue
-        past = sec.compute_core(statements, qs, oq, cq)
-        pn = past.val("core_npat_ttm")
-        psh = statements["balance"][cq].get(sec.BS_SHARES) or shares
-        if pn and pn > 0 and psh:
-            history.append(market_cap / pn)      # same price, past earnings
+    hist = history or []
+    pe_hist = [market_cap / h["core_npat"] for h in hist[1:]
+               if h["core_npat"] and h["core_npat"] > 0]
     p_core_pe = None
-    if core_pe is not None and len(history) >= 6:
-        p_core_pe = sum(1 for h in history if h < core_pe) / len(history)
+    if core_pe is not None and len(pe_hist) >= 6:
+        p_core_pe = sum(1 for h in pe_hist if h < core_pe) / len(pe_hist)
 
     # CALIBRATION WARNING, measured on the live sector 2026-09-04: with g = 0,
     # justified P/B = Core_ROE / CoE gives 0.24-0.90 against actual P/B of
@@ -254,14 +274,38 @@ def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
     # prices the prop desk too. Left as specified rather than quietly retuned —
     # the rubric marks C20 PROVISIONAL and says its formula must be backtested
     # before production lock.
+    current_pb = (market_cap / equity) if equity else None
+    # The V8 ratio is still computed and stored, but ONLY as a diagnostic —
+    # C20 no longer scores it. Keeping it makes the V8 and V9 rows comparable
+    # when the backtest asks what changed.
     pb_ratio = None
-    if equity and shares and core_npat:
-        current_pb = market_cap / equity
-        core_roe = core_npat / equity
-        justified = (core_roe / coe) if coe > 0 else None
-        if justified and justified > 0:
-            pb_ratio = current_pb / justified
-    return {"core_pe": core_pe, "p_core_pe": p_core_pe, "pb_ratio": pb_ratio}
+    if current_pb and core_npat and equity and coe > 0:
+        justified_core_only = (core_npat / equity) / coe
+        if justified_core_only > 0:
+            pb_ratio = current_pb / justified_core_only
+
+    # --- C20 shadows. Raw values, never a score.
+    noncore = [h["noncore"] for h in hist if h["noncore"] is not None]
+    # Held at today's price, same limitation as the core P/E history: a
+    # back-adjusted historical price against an as-reported share count is the
+    # documented -37%/+26% trap.
+    pb_hist = [(price * h["shares"]) / h["equity"] for h in hist
+               if h.get("equity") and h.get("shares")]
+
+    noncore_norm = sec.normalize_noncore(noncore)
+    normalized_total_roe = None
+    if equity and core_npat is not None and noncore_norm["median"] is not None:
+        normalized_total_roe = (core_npat + noncore_norm["median"]) / equity
+
+    shadow = {
+        "a_absolute": sec.c20_shadow_a(current_pb, normalized_total_roe, coe),
+        "b_relative": sec.c20_shadow_b(current_pb, pb_hist),
+        "noncore_normalized": noncore_norm,
+        "v8_core_only_pb_ratio": pb_ratio,
+        "note": "shadow only — C20 is not scored in this model version",
+    }
+    return {"core_pe": core_pe, "p_core_pe": p_core_pe, "pb_ratio": pb_ratio,
+            "c20_shadow": shadow}
 
 
 def _shift_quarters(quarters: list[str], back: int) -> list[str]:
@@ -300,6 +344,13 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float) 
                                 ["BS_FVTPL_FINANCIAL_ASSETS",
                                  "BS_AVAILABLE_FOR_SALE_FINANCIAL_ASSETS_AFS"])
 
+        # Core history, computed ONCE per symbol and reused by C14, the C20
+        # shadows and the core P/E percentile. It is 12 full Core_NPAT
+        # recomputations, so doing it three times over would triple the cost of
+        # the whole pass for identical numbers.
+        history = core_history(st, quarter)
+        core_roes = [h["core_roe"] for h in history if h["core_roe"] is not None]
+
         margin_income = sec.ttm(st, "income", sec.MARGIN_INCOME, qs)
         cof = (efc / avg_ea) if (efc and avg_ea) else None
         ctx = {
@@ -316,9 +367,14 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float) 
             "leverage": (debt / equity) if (equity and debt is not None) else None,
             "prop_risk": (trading_book / equity) if equity else None,
             "margin_growth": _margin_growth(bal, quarter),
-            "stability": None,
+            # C13: what the broker charged against its own earning assets.
+            "asset_risk": (abs(sec.ttm(st, "income", sec.PROVISION_EXPENSE, qs)) / avg_ea)
+                          if avg_ea else None,
+            # C14: dispersion of core ROE, penalised for core-loss quarters.
+            "stability": sec.core_roe_volatility(core_roes),
+            "core_history_n": len(core_roes),
         }
-        ctx.update(valuation_inputs(st, core, quarter, prices.get(sym), coe))
+        ctx.update(valuation_inputs(st, core, quarter, prices.get(sym), coe, history))
         out[sym] = {"core": core, "ctx": ctx, "statements": st}
     return out
 
@@ -344,8 +400,8 @@ def add_percentiles(collected: dict) -> None:
     funds is bad. Each is ranked so that percentile 0 always means best-in-class,
     which is what the band tables assume.
     """
-    metrics = {"spread": False, "cir": True, "cof": True,
-               "leverage": True, "prop_risk": True, "stability": True}
+    metrics = {"spread": False, "cir": True, "cof": True, "leverage": True,
+               "prop_risk": True, "stability": True, "asset_risk": True}
     for name, ascending in metrics.items():
         ranks = rank_pct({s: d["ctx"].get(name) for s, d in collected.items()},
                          ascending=ascending)
@@ -363,7 +419,8 @@ def score_all(collected: dict, market: dict, fci: dict) -> dict:
         criteria.update(cycle)
         criteria.update(sec.score_valuation(d["core"], d["ctx"]))
         totals = sec.assemble(criteria)
-        out[sym] = {"criteria": criteria, "totals": totals, "core": d["core"]}
+        out[sym] = {"criteria": criteria, "totals": totals, "core": d["core"],
+                    "shadow": d["ctx"].get("c20_shadow")}
     return out
 
 
@@ -392,7 +449,13 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
         "fci_as_of_date": fci.get("as_of"),
         "breadth_convention": market.get("breadth_convention") or BREADTH_CONVENTION,
         "breadth_denominator": market.get("breadth_denominator"),
-        "field_metadata": {k: c.as_meta() for k, c in core.fields.items()},
+        "field_metadata": {
+            **{k: c.as_meta() for k, c in core.fields.items()},
+            # Shadow candidates ride in the audit blob rather than in columns:
+            # they are evidence for a future lock decision, not something any
+            # query should be able to sort or rank on today.
+            **({"c20_shadow": shadow} if (shadow := scored.get("shadow")) else {}),
+        },
         "dependency_flags": totals["dependency_flags"],
         "data_cutoff_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     }

@@ -42,12 +42,20 @@ def check(cond, msg):
         print(f"  ok:   {msg}")
 
 
-# (id, kind, kwargs, expected) — transcribed from V8 sheet 28.
+# (id, kind, kwargs, expected) — V9 sheet 34 for C15 speed, V8 sheet 28 for the rest.
 CASES = [
-    ("TC15-S1", "speed", dict(delta5=-0.3, percentile=0.05, history_obs=500), 4),
-    ("TC15-S2", "speed", dict(delta5=-0.05, percentile=0.40, history_obs=500), 2),
-    ("TC15-S3", "speed", dict(delta5=0.03, percentile=0.30, history_obs=500), 0),
-    ("TC15-S4", "speed", dict(delta5=-0.3, percentile=0.05, history_obs=200), None),
+    # C15 SPEED V2: percentile sets the base, the SIGN caps it.
+    ("TC15-01", "speed", dict(delta5=-0.3, percentile=0.05, history_obs=500), 4),
+    ("TC15-02", "speed", dict(delta5=-0.05, percentile=0.40, history_obs=500), 2),
+    ("TC15-03", "speed", dict(delta5=0, percentile=0.40, history_obs=500), 1),
+    # Worsening with a good percentile is capped at 1 — never 2-4.
+    ("TC15-04", "speed", dict(delta5=0.03, percentile=0.30, history_obs=500), 1),
+    ("TC15-05", "speed", dict(delta5=0.03, percentile=0.80, history_obs=500), 0),
+    ("TC15-06", "speed", dict(delta5=-0.3, percentile=0.05, history_obs=190), None),
+    # Gordon justified P/B — shadow only, and it must fail CLOSED.
+    ("TC20-02", "gordon", dict(roe=0.12, coe=0.12, g=0.02), 1.0),
+    ("TC20-03", "gordon", dict(roe=0.12, coe=0.10, g=0.10), None),
+    ("TC20-04", "gordon", dict(roe=0.03, coe=0.12, g=0.05), None),
     ("TC15-R1", "rev", dict(event_valid=True, prior_positive=3, negative_streak=1,
                             delta10=0.01, days_since=0), 1),
     ("TC15-R2", "rev", dict(event_valid=True, prior_positive=4, negative_streak=2,
@@ -74,6 +82,8 @@ CASES = [
 def run_case(kind, kw):
     if kind == "speed":
         return sec.c15_speed(**kw)[0]
+    if kind == "gordon":
+        return sec.justified_pb(**kw)
     if kind == "rev":
         return sec.c15_reversal(**kw)
     if kind == "c16":
@@ -86,6 +96,11 @@ def full_criteria(points_fraction=0.6):
             for k in sec.CRITERION_POINTS}
 
 
+class _UnblockedCore:
+    """A core result that is fine, so C20's N/A is the criterion's own doing."""
+    blocked = False
+
+
 def na(criteria, keys, reason="no data"):
     for k in keys:
         criteria[k] = Criterion(None, None, "N_A", reason)
@@ -93,21 +108,24 @@ def na(criteria, keys, reason="no data"):
 
 
 def main():
-    print("=== V8 sheet-28 acceptance cases ===\n")
+    print("=== acceptance cases: V9 sheet 34 (C15/C20) + V8 sheet 28 ===\n")
     for tc, kind, kw, expected in CASES:
         got = run_case(kind, kw)
         check(got == expected, f"{tc}: expected {expected}, got {got}")
 
     print("\n=== normalization and the publication gate ===\n")
 
-    # The four criteria with no data source today: market share x2, ATTC, and
-    # C18 until its mapping is backtested. This is the healthy-broker case.
-    healthy = na(full_criteria(), ["c4", "c5", "c9", "c18"])
+    # What is unavailable today: market share x2 and ATTC (no source), C18
+    # (mapping unlocked) and C20 (formula withdrawn in V9). This is the
+    # healthy-broker case, and it lands EXACTLY on the gate.
+    healthy = na(full_criteria(), ["c4", "c5", "c9", "c18", "c20"])
     r = sec.assemble(healthy)
-    check(r["available_max"] == 82,
-          f"C4+C5 (7) + C9 (4) + C18 (7) leave 82 of 100 reachable (got {r['available_max']})")
+    check(r["available_max"] == 70,
+          f"C4+C5 (7) + C9 (4) + C18 (7) + C20 (12) leave exactly 70 of 100 "
+          f"reachable (got {r['available_max']})")
     check(r["fa_status"] == "PUBLISHABLE",
-          f"82% coverage clears the 70% gate (got {r['fa_status']})")
+          f"70% coverage clears the 70% gate — but with ZERO margin, so one more "
+          f"missing input drops a broker out (got {r['fa_status']})")
     check(abs(r["normalized_fa_score"] - 60.0) < 0.01,
           f"scoring 60% of what was available normalizes to 60, not to 49.2/100 "
           f"(got {r['normalized_fa_score']})")
@@ -116,7 +134,7 @@ def main():
     blocked = na(dict(healthy), sec.FUNDING_DEPENDENT, "no eligible funding cost")
     rb = sec.assemble(blocked)
     check(rb["available_max"] == 34,
-          f"the funding chain removes a further 48 points (got {rb['available_max']})")
+          f"the funding chain removes a further 36 reachable points (got {rb['available_max']})")
     check(rb["fa_status"] == "INVALID_CRITICAL",
           f"and the symbol is not publishable (got {rb['fa_status']})")
     check(not rb["core_usable"] and not rb["valuation_usable"],
@@ -132,7 +150,7 @@ def main():
           f"(coverage {rv['coverage']:.0%}, status {rv['fa_status']})")
 
     # The band between provisional and publishable.
-    thin = na(full_criteria(), ["c4", "c5", "c9", "c18", "c15", "c16", "c17"])
+    thin = na(full_criteria(), ["c4", "c5", "c9", "c18", "c20", "c15", "c16"])
     rt = sec.assemble(thin)
     check(rt["fa_status"] == "PROVISIONAL" and 0.50 <= rt["coverage"] < 0.70,
           f"a symbol between 50% and 70% is PROVISIONAL (coverage {rt['coverage']:.0%}, "
@@ -140,12 +158,32 @@ def main():
 
     # An N/A must never be scored as a zero — the distinction the whole rubric rests on.
     zeroed = dict(healthy)
-    for k in ("c4", "c5", "c9", "c18"):
+    for k in ("c4", "c5", "c9", "c18", "c20"):
         zeroed[k] = Criterion(0)
     rz = sec.assemble(zeroed)
     check(rz["available_max"] == 100 and rz["normalized_fa_score"] < r["normalized_fa_score"],
           f"scoring those four as 0 instead of N/A drops the score from "
           f"{r['normalized_fa_score']} to {rz['normalized_fa_score']} — which is the bug")
+
+    # --- the two V9 fixes, stated as properties rather than single cases
+    band1 = [sec.c15_speed(d, p_, 500)[0]
+             for d, p_ in ((0.0, 0.40), (0.03, 0.30), (-0.005, 0.60))]
+    check(band1 == [1, 1, 1],
+          f"C15 speed band 1 is reachable from three different states — it never "
+          f"fired once in 190 live sessions under V8 (got {band1})")
+    worsening = [sec.c15_speed(0.05, p_, 500)[0] for p_ in (0.01, 0.20, 0.45, 0.90)]
+    check(max(worsening) <= 1,
+          f"a WORSENING FCI can never score above 1 however good its percentile "
+          f"(got {worsening})")
+
+    withdrawn = sec.score_valuation(_UnblockedCore(), {"pb_ratio": 2.9})
+    check(withdrawn["c20"].points is None and withdrawn["c20"].status == "PROVISIONAL_INVALID",
+          "C20 is N/A, not 0 — it scored 0 for the entire universe, which is a "
+          "criterion that cannot discriminate rather than one finding everyone expensive")
+    r20 = sec.assemble({**full_criteria(), "c20": withdrawn["c20"]})
+    check(r20["available_max"] == 88,
+          f"and its 12 points leave the denominator rather than dragging the score "
+          f"down (got {r20['available_max']})")
 
     # Every N/A is explained, so a thin score can be audited rather than guessed at.
     check(set(rb["dependency_flags"]) >= set(sec.FUNDING_DEPENDENT),

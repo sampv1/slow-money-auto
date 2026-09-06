@@ -72,8 +72,33 @@ export const SEC_CRITERIA = [
   { key: "c6_score", max: 4, label: "secC6", hint: "secC6Hint" },
   { key: "c11_score", max: 3, label: "secC11", hint: "secC11Hint" },
   { key: "c19_score", max: 8, label: "secC19", hint: "secC19Hint" },
-  { key: "c20_score", max: 12, label: "secC20", hint: "secC20Hint" },
 ] as const;
+
+/**
+ * C20 (P/B against a ROE-justified P/B) is WITHDRAWN, not merely unscored.
+ *
+ * Under the previous model version it scored 0 for all 30 brokers with a usable
+ * reading — which is not a criterion finding every broker expensive, it is a
+ * criterion that cannot tell them apart, and 12 points of guaranteed zero
+ * dragged every normalized score down by about 15. It is now N/A and its points
+ * leave the denominator.
+ *
+ * No column: a column of em dashes on every row for every session is noise, and
+ * a reader would reasonably take it for missing data on THIS broker rather than
+ * a formula that was pulled. The note under the table says so once instead.
+ */
+export const SEC_WITHDRAWN_CRITERIA = ["c20_score"] as const;
+
+/**
+ * The model version the scanner renders.
+ *
+ * Rubric changes are shipped as a NEW version rather than an edit, so
+ * `fa_securities_scores` holds every version side by side for the same session
+ * — that is what makes a backtest replayable. A reader must see exactly one of
+ * them, so every query pins this; without it the table shows each broker once
+ * per version that has ever been scored.
+ */
+export const SEC_ACTIVE_MODEL = "CTCK_V9_DRAFT";
 
 export const SEC_MAX_SCORE = 100;
 export const SEC_PUBLISH_COVERAGE = 0.7;
