@@ -24,8 +24,15 @@ export type SecScore = {
   available_max: number;
   coverage: number | null;
   quality_score: number | null;
+  quality_available_max: number | null;
   cycle_score: number | null;
+  cycle_available_max: number | null;
   valuation_score: number | null;
+  valuation_available_max: number | null;
+  data_group: "A" | "B" | "C" | "RISK_GATE" | null;
+  provisional_score: number | null;
+  final_fa_score: number | null;
+  criteria: Record<string, SecCriterionCell> | null;
   fa_status: SecStatus;
   score_status: string;
   fci_as_of_date: string | null;
@@ -52,53 +59,104 @@ export type SecStatus =
 
 export type SecCriterionKey = `c${number}_score`;
 
-/** The three blocks, with their maxima — shown as `earned / max`. */
+/**
+ * The three blocks. `staticMax` is the rubric's design weight and is what the
+ * GROUP HEADING says; the denominator each cell divides by is the row's own
+ * `*_available_max`, which is a different number whenever a criterion is N/A.
+ *
+ * Getting that wrong is what made the table read "cycle 8/30" when 7 of those
+ * 30 points could not be scored, and "valuation 0/20" when its available max
+ * was zero — the second asserting a measured zero where nothing was measured.
+ */
 export const SEC_BLOCKS = [
-  { key: "quality_score", max: 50, label: "secBlockQuality", hint: "secBlockQualityHint" },
-  { key: "cycle_score", max: 30, label: "secBlockCycle", hint: "secBlockCycleHint" },
-  { key: "valuation_score", max: 20, label: "secBlockValuation", hint: "secBlockValuationHint" },
+  { key: "quality_score", availKey: "quality_available_max", staticMax: 50,
+    label: "secBlockQuality", hint: "secBlockQualityHint" },
+  { key: "cycle_score", availKey: "cycle_available_max", staticMax: 30,
+    label: "secBlockCycle", hint: "secBlockCycleHint" },
+  { key: "valuation_score", availKey: "valuation_available_max", staticMax: 20,
+    label: "secBlockValuation", hint: "secBlockValuationHint" },
 ] as const;
 
 /**
- * The criteria worth a column. Not all twenty — a 20-column grid of small
- * integers is a data dump, not a scanner. These are the ones that carry the
- * rubric's own argument: core profitability, how much of reported profit is
- * actually core, what the margin book earns net of funding, and what the market
- * is paying for it.
+ * All twenty criteria, in rubric order, grouped as the spec's mockup lays them
+ * out. Every one gets a column — a scanner that hides the criteria a symbol
+ * failed to score cannot be used to ask WHY a symbol is not comparable, which
+ * is most of what this table is for.
  */
 export const SEC_CRITERIA = [
-  { key: "c1_score", max: 6, label: "secC1", hint: "secC1Hint" },
-  { key: "c3_score", max: 5, label: "secC3", hint: "secC3Hint" },
-  { key: "c6_score", max: 4, label: "secC6", hint: "secC6Hint" },
-  { key: "c11_score", max: 3, label: "secC11", hint: "secC11Hint" },
-  { key: "c19_score", max: 8, label: "secC19", hint: "secC19Hint" },
+  { key: "c1", block: "quality", max: 6, label: "secC1", hint: "secC1Hint" },
+  { key: "c2", block: "quality", max: 5, label: "secC2", hint: "secC2Hint" },
+  { key: "c3", block: "quality", max: 5, label: "secC3", hint: "secC3Hint" },
+  { key: "c4", block: "quality", max: 4, label: "secC4", hint: "secC4Hint" },
+  { key: "c5", block: "quality", max: 3, label: "secC5", hint: "secC5Hint" },
+  { key: "c6", block: "quality", max: 4, label: "secC6", hint: "secC6Hint" },
+  { key: "c7", block: "quality", max: 3, label: "secC7", hint: "secC7Hint" },
+  { key: "c8", block: "quality", max: 3, label: "secC8", hint: "secC8Hint" },
+  { key: "c9", block: "quality", max: 4, label: "secC9", hint: "secC9Hint" },
+  { key: "c10", block: "quality", max: 3, label: "secC10", hint: "secC10Hint" },
+  { key: "c11", block: "quality", max: 3, label: "secC11", hint: "secC11Hint" },
+  { key: "c12", block: "quality", max: 3, label: "secC12", hint: "secC12Hint" },
+  { key: "c13", block: "quality", max: 2, label: "secC13", hint: "secC13Hint" },
+  { key: "c14", block: "quality", max: 2, label: "secC14", hint: "secC14Hint" },
+  { key: "c15", block: "cycle", max: 10, label: "secC15", hint: "secC15Hint" },
+  { key: "c16", block: "cycle", max: 8, label: "secC16", hint: "secC16Hint" },
+  { key: "c17", block: "cycle", max: 5, label: "secC17", hint: "secC17Hint" },
+  { key: "c18", block: "cycle", max: 7, label: "secC18", hint: "secC18Hint" },
+  { key: "c19", block: "valuation", max: 8, label: "secC19", hint: "secC19Hint" },
+  { key: "c20", block: "valuation", max: 12, label: "secC20", hint: "secC20Hint" },
+] as const;
+
+export const SEC_BLOCK_SPANS = [
+  { block: "quality", label: "secBlockQuality", staticMax: 50,
+    n: SEC_CRITERIA.filter((c) => c.block === "quality").length },
+  { block: "cycle", label: "secBlockCycle", staticMax: 30,
+    n: SEC_CRITERIA.filter((c) => c.block === "cycle").length },
+  { block: "valuation", label: "secBlockValuation", staticMax: 20,
+    n: SEC_CRITERIA.filter((c) => c.block === "valuation").length },
 ] as const;
 
 /**
- * C20 (P/B against a ROE-justified P/B) is WITHDRAWN, not merely unscored.
+ * How one criterion cell renders. Four states, and the distinction between the
+ * middle two is the whole point of the rubric's normalization:
  *
- * Under the previous model version it scored 0 for all 30 brokers with a usable
- * reading — which is not a criterion finding every broker expensive, it is a
- * criterion that cannot tell them apart, and 12 points of guaranteed zero
- * dragged every normalized score down by about 15. It is now N/A and its points
- * leave the denominator.
- *
- * No column: a column of em dashes on every row for every session is noise, and
- * a reader would reasonably take it for missing data on THIS broker rather than
- * a formula that was pulled. The note under the table says so once instead.
+ *   VALID  "3/5"   measured
+ *   ZERO   "0/5"   measured, and it is the worst result — red, because it IS a
+ *                  judgement about the broker
+ *   N_A    "N/A"   not measured; grey, and it left the denominator, so it is
+ *                  NOT a judgement about anything
+ *   SHADOW "N/A"   a criterion withdrawn from production (C20); grey too, but
+ *                  the tooltip says the formula was pulled rather than that
+ *                  this broker lacked data
  */
-export const SEC_WITHDRAWN_CRITERIA = ["c20_score"] as const;
+export type SecCriterionCell = {
+  earned: number | null;
+  available_max: number;
+  static_max: number;
+  status: "VALID" | "N_A" | "SHADOW";
+  reason_code: string | null;
+  value: number | null;
+};
+
+export function criterionDisplay(cell: SecCriterionCell | undefined, max: number) {
+  if (!cell || cell.earned === null) {
+    return { text: "N/A", className: "text-fg-muted", title: cell?.reason_code ?? undefined };
+  }
+  const zero = cell.earned === 0;
+  return {
+    text: `${cell.earned}/${max}`,
+    className: zero ? "text-rose-700" : "text-fg",
+    title: undefined,
+  };
+}
 
 /**
  * The model version the scanner renders.
  *
- * Rubric changes are shipped as a NEW version rather than an edit, so
- * `fa_securities_scores` holds every version side by side for the same session
- * — that is what makes a backtest replayable. A reader must see exactly one of
- * them, so every query pins this; without it the table shows each broker once
- * per version that has ever been scored.
+ * Rubric changes ship as a NEW version, so the table holds every version side
+ * by side for the same session — that is what makes a backtest replayable. A
+ * reader must see exactly one, so every query pins this.
  */
-export const SEC_ACTIVE_MODEL = "CTCK_V9_DRAFT";
+export const SEC_ACTIVE_MODEL = "CTCK_V10";
 
 export const SEC_MAX_SCORE = 100;
 export const SEC_PUBLISH_COVERAGE = 0.7;

@@ -224,7 +224,7 @@ def core_history(statements: dict, quarter: str) -> list[dict]:
 
 
 def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
-                     coe: float, history: list[dict] | None = None) -> dict:
+                     coe: float, history: list[dict]) -> dict:
     """Core P/E against its own history, and P/B against a ROE-justified P/B.
 
     Both deliberately use CORE earnings rather than reported: a broker whose
@@ -375,7 +375,9 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float) 
             "core_history_n": len(core_roes),
         }
         ctx.update(valuation_inputs(st, core, quarter, prices.get(sym), coe, history))
-        out[sym] = {"core": core, "ctx": ctx, "statements": st}
+        ctx["has_market_cap"] = prices.get(sym) is not None and bool(
+            bal.get(close_q, {}).get(sec.BS_SHARES))
+        out[sym] = {"core": core, "ctx": ctx, "statements": st, "history": history}
     return out
 
 
@@ -442,8 +444,15 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
         "coverage": totals["coverage"],
         "normalized_fa_score": totals["normalized_fa_score"],
         "quality_score": totals["quality_score"],
+        "quality_available_max": totals["quality_available_max"],
         "cycle_score": totals["cycle_score"],
+        "cycle_available_max": totals["cycle_available_max"],
         "valuation_score": totals["valuation_score"],
+        "valuation_available_max": totals["valuation_available_max"],
+        "data_group": totals["data_group"],
+        "provisional_score": totals["provisional_score"],
+        "final_fa_score": totals["final_fa_score"],
+        "criteria": totals["criteria"],
         "fa_status": totals["fa_status"],
         "score_status": score_status,
         "fci_as_of_date": fci.get("as_of"),
@@ -587,8 +596,14 @@ def run_backfill(client, args, st) -> int:
             fci = fci_context_from(fci_series, as_of)
             status = "OFFICIAL" if fci.get("as_of") == as_of else "PRELIMINARY_FCI_T_MINUS_1"
             for sym, d in cores.items():
-                d["ctx"].update(valuation_inputs(d["statements"], d["core"], quarter,
-                                                 price_asof(prices.get(sym, []), as_of), coe))
+                # `history` is REQUIRED here, not optional. Omitting it made the
+                # parameter fall back to None, which emptied the core-P/E series
+                # and took C19 to N/A for the entire universe — while the daily
+                # path, which passes it, scored the same brokers 8/8. The
+                # backfill ran last, so it overwrote the good rows.
+                d["ctx"].update(valuation_inputs(
+                    d["statements"], d["core"], quarter,
+                    price_asof(prices.get(sym, []), as_of), coe, d["history"]))
             add_percentiles(cores)
             scored = score_all(cores, market, fci)
             for sym, sc in scored.items():
@@ -706,7 +721,19 @@ def main():
         except Exception as e:  # noqa: BLE001
             # Migrations are applied by hand in the SQL editor, so "table not
             # found" is a deployment step outstanding, not a bug. Say which one.
-            if "PGRST205" in str(e) or "schema cache" in str(e):
+            msg = str(e)
+            # Migrations are applied by hand, so a missing table OR a missing
+            # column is an outstanding deployment step, not a bug. Name the file.
+            # Column first: PostgREST reports a missing COLUMN as "Could not find
+            # the 'x' column ... in the schema cache", which also matches the
+            # table test — checked in the wrong order it blames the wrong file.
+            if "column" in msg and "schema cache" in msg or "PGRST204" in msg:
+                st.fail("Write scores",
+                        f"a column this version writes is missing — apply "
+                        f"supabase/061_fa_securities_v10.sql in the Supabase SQL editor "
+                        f"first. The scores above were computed correctly and were not "
+                        f"written. ({msg[:120]})")
+            elif "PGRST205" in msg or "schema cache" in msg:
                 st.fail("Write scores",
                         "fa_securities_scores does not exist — apply "
                         "supabase/059_fa_securities.sql in the Supabase SQL editor first. "

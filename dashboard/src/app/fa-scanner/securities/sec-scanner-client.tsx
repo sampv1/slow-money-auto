@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
@@ -8,7 +8,9 @@ import {
   type SecScore,
   type SecStatus,
   SEC_BLOCKS,
+  SEC_BLOCK_SPANS,
   SEC_CRITERIA,
+  criterionDisplay,
   coverageColor,
   fundingSourceLabel,
   fundingSourceStyle,
@@ -42,6 +44,9 @@ const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
 const BLOCK_HEAD = "bg-sky-100 text-sky-900";
 const BLOCK_BODY = "bg-sky-50";
 const BLOCK_EDGE = "border-l-2 border-sky-300";
+// Divider between the three rubric blocks, so twenty adjacent integers still
+// read as quality | cycle | valuation rather than one undifferentiated band.
+const BLOCK_SPLIT = "border-l border-sky-300";
 
 type SortKey = "symbol" | "normalized_fa_score" | "coverage" | string;
 
@@ -66,7 +71,7 @@ export function SecScannerClient({
   // thing this rubric produces — that some brokers cannot be scored at all —
   // so it is a choice the reader makes, not one the page makes for them.
   const [publishableOnly, setPublishableOnly] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("normalized_fa_score");
+  const [sortKey, setSortKey] = useState<SortKey>("provisional_score");
   const [sortAsc, setSortAsc] = useState(false);
   const { pinned, toggle } = usePinnedSymbols();
 
@@ -181,9 +186,14 @@ export function SecScannerClient({
                   {t(locale, "symbol")}{arrow("symbol")}
                 </button>
               </th>
-              <th className={TH_NUM_WRAP} rowSpan={2} title={t(locale, "secScoreTip")}>
-                <button onClick={() => sortBy("normalized_fa_score")} className="hover:underline">
-                  {t(locale, "secScore")}{arrow("normalized_fa_score")}
+              <th className={TH} rowSpan={2} title={t(locale, "secDataGroupTip")}>
+                <button onClick={() => sortBy("data_group")} className="hover:underline">
+                  {t(locale, "secDataGroup")}{arrow("data_group")}
+                </button>
+              </th>
+              <th className={TH_NUM_WRAP} rowSpan={2} title={t(locale, "secFinalScoreTip")}>
+                <button onClick={() => sortBy("provisional_score")} className="hover:underline">
+                  {t(locale, "secFinalScore")}{arrow("provisional_score")}
                 </button>
               </th>
               <th className={TH_NUM_WRAP} rowSpan={2} title={t(locale, "secCoverageTip")}>
@@ -191,42 +201,64 @@ export function SecScannerClient({
                   {t(locale, "secCoverage")}{arrow("coverage")}
                 </button>
               </th>
-              <th className={TH} rowSpan={2} title={t(locale, "secStatusTip")}>
-                {t(locale, "secStatus")}
-              </th>
-              <th
-                colSpan={SEC_BLOCKS.length}
-                className={`label row-h px-2 text-center ${BLOCK_HEAD} ${BLOCK_EDGE}`}
-              >
-                {t(locale, "secBlockGroup")}
-              </th>
-              <th colSpan={SEC_CRITERIA.length} className={`label row-h px-2 text-center ${BLOCK_HEAD}`}>
-                {t(locale, "secCriteriaGroup")}
-              </th>
+              {SEC_BLOCK_SPANS.map((b, i) => (
+                <th
+                  key={b.block}
+                  colSpan={b.n + 1}
+                  title={t(locale, `${b.label}Hint` as Parameters<typeof t>[1])}
+                  className={`label row-h px-2 text-center ${BLOCK_HEAD} ${i === 0 ? BLOCK_EDGE : BLOCK_SPLIT}`}
+                >
+                  {t(locale, b.label)} · {b.staticMax}
+                </th>
+              ))}
               <th className={TH} rowSpan={2} title={t(locale, "secFundingTip")}>
                 {t(locale, "secFunding")}
               </th>
-              <th className={TH_NUM} rowSpan={2} />
             </tr>
             <tr>
-              {SEC_BLOCKS.map((b, i) => (
-                <th
-                  key={b.key}
-                  className={`${TH_NUM_WRAP} ${BLOCK_HEAD} ${i === 0 ? BLOCK_EDGE : ""}`}
-                  title={t(locale, b.hint)}
-                >
-                  <button onClick={() => sortBy(b.key)} className="hover:underline">
-                    {t(locale, b.label)}{arrow(b.key)}
-                  </button>
-                </th>
-              ))}
-              {SEC_CRITERIA.map((c) => (
-                <th key={c.key} className={`${TH_NUM_WRAP} ${BLOCK_HEAD}`} title={t(locale, c.hint)}>
-                  <button onClick={() => sortBy(c.key)} className="hover:underline">
-                    {t(locale, c.label)}{arrow(c.key)}
-                  </button>
-                </th>
-              ))}
+              {/* Each block sub-header divides by the row's ACTUAL available
+                  max, not the design weight in the group heading above it. */}
+              {SEC_CRITERIA.map((c, i) => {
+                const first = SEC_CRITERIA.findIndex((x) => x.block === c.block) === i;
+                const blk = SEC_BLOCKS.find((x) => x.key.startsWith(c.block));
+                return (
+                  <Fragment key={c.key}>
+                  {/* Block subtotal, leading its criteria. earned/AVAILABLE —
+                      the number the reader can actually check against the
+                      cells to its right, unlike the design weight overhead. */}
+                  {first && blk ? (
+                    <th
+                      className={`${TH_NUM_WRAP} ${BLOCK_HEAD} ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE} font-bold`}
+                      title={t(locale, blk.hint)}
+                    >
+                      {/* "Total", not the block name — the group header
+                          immediately above already says which block this is,
+                          and repeating "Valuation" set a 9-character floor on
+                          a column showing "8/8". */}
+                      <button onClick={() => sortBy(blk.key)} className="hover:underline">
+                        {t(locale, "secBlockSubtotal")}{arrow(blk.key)}
+                      </button>
+                    </th>
+                  ) : null}
+                  <th
+                    key={c.key}
+                    className={`${TH_NUM} ${BLOCK_HEAD} ${first && i > 0 ? BLOCK_SPLIT : ""}`}
+                    // The CODE is the header and the name is the tooltip.
+                    // Twenty spelled-out labels overflow by 586px at 1280 in
+                    // ENGLISH — the wider locale here, because "durability",
+                    // "Liquidity" and "Leverage" are single unbreakable words
+                    // that set a min-content floor, while Vietnamese wraps for
+                    // free. C1..C20 is also the vocabulary the rubric and every
+                    // spec conversation already use.
+                    title={`${t(locale, c.label)} — ${t(locale, c.hint)}`}
+                  >
+                    <button onClick={() => sortBy(`${c.key}_score`)} className="hover:underline">
+                      {c.key.toUpperCase()}{arrow(`${c.key}_score`)}
+                    </button>
+                  </th>
+                  </Fragment>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -237,66 +269,77 @@ export function SecScannerClient({
                   <td className={TD_SYMBOL}>
                     <span className="flex items-center gap-1">
                       <PinButton symbol={r.symbol} pinned={pinned.has(r.symbol)} onToggle={toggle} locale={locale} />
-                      <Link href={`/analysis/${r.symbol}`} className="text-accent hover:underline">
+                      {/* The only Analysis link. A trailing "Analysis →" column
+                          is a second route to the same page and costs ~100px —
+                          affordable at 8 columns, not at 24. */}
+                      <Link
+                        href={`/analysis/${r.symbol}`}
+                        title={t(locale, "taOpenAnalysisTitle")}
+                        className="text-accent hover:underline"
+                      >
                         {r.symbol}
                       </Link>
                     </span>
                   </td>
+                  <td className="px-2 row-h whitespace-nowrap" title={secStatusLabel(locale, r.fa_status)}>
+                    <span
+                      className={`inline-block border px-1.5 text-body font-semibold leading-tight ${secStatusStyle(r.fa_status)}`}
+                    >
+                      {r.data_group ?? "—"}
+                    </span>
+                  </td>
+                  {/* A group A row shows its final score. B shows the same
+                      arithmetic marked with an asterisk, because it is NOT
+                      comparable with A and must never be read as if it were.
+                      C shows nothing: there was not enough to score. */}
                   <td className={`${TD_NUM} font-semibold`}>
-                    {r.normalized_fa_score === null ? "—" : r.normalized_fa_score.toFixed(1)}
+                    {r.final_fa_score !== null && r.final_fa_score !== undefined ? (
+                      r.final_fa_score.toFixed(1)
+                    ) : r.provisional_score !== null && r.provisional_score !== undefined
+                      && r.data_group === "B" ? (
+                      <span className="text-fg-muted" title={t(locale, "secProvisional")}>
+                        {r.provisional_score.toFixed(1)}*
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   {/* Coverage sits beside the score, never behind a tooltip:
                       the same number means different things at 45% and 82%. */}
                   <td className={`${TD_NUM} ${coverageColor(r.coverage)}`}>
                     {r.coverage === null ? "—" : `${Math.round(r.coverage * 100)}%`}
                   </td>
-                  <td className="px-2 row-h whitespace-nowrap">
-                    <span
-                      className={`inline-block border px-1.5 text-body leading-tight ${secStatusStyle(r.fa_status)}`}
-                    >
-                      {secStatusLabel(locale, r.fa_status)}
-                    </span>
-                  </td>
-                  {SEC_BLOCKS.map((b, i) => (
-                    <td
-                      key={b.key}
-                      className={`${TD_NUM} ${BLOCK_BODY} ${i === 0 ? BLOCK_EDGE : ""}`}
-                    >
-                      {r[b.key] === null || r[b.key] === undefined
-                        ? "—"
-                        : `${Number(r[b.key]).toFixed(0)}/${b.max}`}
-                    </td>
-                  ))}
-                  {SEC_CRITERIA.map((c) => {
-                    const v = (r as unknown as Record<string, number | null>)[c.key];
+                  {SEC_CRITERIA.map((c, i) => {
+                    const cell = r.criteria?.[c.key];
+                    const first = SEC_CRITERIA.findIndex((x) => x.block === c.block) === i;
+                    const blk = SEC_BLOCKS.find((x) => x.key.startsWith(c.block));
+                    const d = criterionDisplay(cell, c.max);
+                    const earned = blk ? (r as unknown as Record<string, number | null>)[blk.key] : null;
+                    const avail = blk ? (r as unknown as Record<string, number | null>)[blk.availKey] : null;
                     return (
-                      <td key={c.key} className={`${TD_NUM} ${BLOCK_BODY}`}>
-                        {/* An em dash, not 0: this criterion could not be
-                            scored, and a 0 would read as a judgement. */}
-                        {v === null || v === undefined ? (
-                          <span
-                            className="text-fg-muted"
-                            title={r.dependency_flags?.[c.key.replace("_score", "")]?.reason ?? undefined}
+                      <Fragment key={c.key}>
+                        {first && blk ? (
+                          <td
+                            className={`${TD_NUM} ${BLOCK_BODY} font-semibold ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE}`}
                           >
-                            —
-                          </span>
-                        ) : (
-                          `${v}/${c.max}`
-                        )}
-                      </td>
+                            {/* N/A when the whole block is unavailable — a
+                                block that scored 0 of 0 was not measured. */}
+                            {avail ? `${Number(earned).toFixed(0)}/${avail}` : (
+                              <span className="text-fg-muted">N/A</span>
+                            )}
+                          </td>
+                        ) : null}
+                        <td
+                          className={`${TD_NUM} ${BLOCK_BODY} ${d.className}`}
+                          title={d.title}
+                        >
+                          {d.text}
+                        </td>
+                      </Fragment>
                     );
                   })}
                   <td className={`px-2 row-h text-body whitespace-nowrap ${fundingSourceStyle(funding)}`}>
                     {fundingSourceLabel(locale, funding)}
-                  </td>
-                  <td className={`${TD_NUM} pr-4`}>
-                    <Link
-                      href={`/analysis/${r.symbol}`}
-                      title={t(locale, "taOpenAnalysisTitle")}
-                      className="text-accent hover:underline whitespace-nowrap"
-                    >
-                      {t(locale, "taOpenAnalysis")} →
-                    </Link>
                   </td>
                 </tr>
               );

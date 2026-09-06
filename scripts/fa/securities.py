@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 # excluded one, which moves every broker's denominator, so V8 rows must stay
 # readable as what they were. Governance rule G6 — lock by issuing a version,
 # never by rewriting history.
-MODEL_VERSION = "CTCK_V9_DRAFT"
+MODEL_VERSION = "CTCK_V10"
 
 # Points per criterion (sheet 1). Sums to 100 — asserted at import.
 CRITERION_POINTS = {
@@ -438,12 +438,60 @@ UNSOURCED_CRITERIA = {
 }
 
 
+# Machine-readable reasons, so a UI can group and a query can filter. The free
+# text stays for humans; the code is what tooling reads.
+REASON_CODES = [
+    ("no eligible funding cost", "FUNDING_MISSING"),
+    ("downstream of an unusable", "FUNDING_MISSING"),
+    ("market share not published", "NO_SOURCE_MARKET_SHARE"),
+    ("ATTC", "NO_SOURCE_ATTC"),
+    ("mapping not LOCKED", "C18_UNLOCKED"),
+    ("formula withdrawn", "C20_WITHDRAWN_V9"),
+    ("no core P/E history", "C19_INSUFFICIENT_HISTORY"),
+    ("no positive core", "C19_NO_POSITIVE_CORE"),
+    ("no market cap", "C19_NO_MARKET_CAP"),
+    ("no sector distribution", "NO_PEER_DISTRIBUTION"),
+    ("needs 8+ quarters", "SHORT_CORE_HISTORY"),
+    ("no provision or earning-asset", "NO_PROVISION_DATA"),
+    ("reported NPAT <= 0", "SPECIAL_CASE_NEG_NPAT"),
+    ("no average equity", "NO_EQUITY"),
+    ("no positive prior-year core", "NO_PRIOR_CORE"),
+]
+
+
+def reason_code(reason: str | None) -> str | None:
+    if not reason:
+        return None
+    for needle, code in REASON_CODES:
+        if needle.lower() in reason.lower():
+            return code
+    return "OTHER"
+
+
 @dataclass
 class Criterion:
     points: float | None = None
     value: float | None = None
-    status: str = "OK"          # OK|N_A|SPECIAL_CASE
+    status: str = "OK"          # OK|N_A|SPECIAL_CASE|PROVISIONAL_INVALID
     reason: str = ""
+
+    def contract(self, key: str) -> dict:
+        """The per-criterion shape the API and the table both read.
+
+        `available_max` is 0 when the criterion is N/A — that is what takes it
+        out of the denominator, and what lets the UI print a real fraction
+        instead of the rubric's static maximum.
+        """
+        scored = self.points is not None
+        return {
+            "earned": self.points,
+            "available_max": CRITERION_POINTS[key] if scored else 0,
+            "static_max": CRITERION_POINTS[key],
+            "status": "VALID" if scored else (
+                "SHADOW" if self.status == "PROVISIONAL_INVALID" else "N_A"),
+            "reason_code": reason_code(self.reason),
+            "value": self.value,
+        }
 
 
 def score_quality(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
@@ -584,9 +632,19 @@ def score_valuation(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
             out[k] = Criterion(None, None, "N_A", why)
         return out
 
+    # Three separate failures, reported separately (V10 sheet 37): a broker with
+    # negative core earnings, one with no market cap, and one with too short a
+    # history are three different problems, and collapsing them into one message
+    # is what made the regression look like missing data rather than a bug.
     p = ctx.get("p_core_pe")
-    out["c19"] = Criterion(_pctile_bands(p, C19_CORE_PE), ctx.get("core_pe"))
-    if out["c19"].points is None:
+    pts = _pctile_bands(p, C19_CORE_PE)
+    if pts is not None:
+        out["c19"] = Criterion(pts, ctx.get("core_pe"))
+    elif not ctx.get("has_market_cap", True):
+        out["c19"] = Criterion(None, None, "N_A", "no market cap")
+    elif ctx.get("core_pe") is None:
+        out["c19"] = Criterion(None, None, "N_A", "no positive core earnings")
+    else:
         out["c19"] = Criterion(None, None, "N_A", "no core P/E history")
 
     # C20 IS DISABLED IN PRODUCTION (V9). It is N/A, and its 12 points leave the
@@ -909,6 +967,16 @@ def assemble(criteria: dict[str, Criterion]) -> dict:
                  else "cycle" if key in CYCLE_CRITERIA else "valuation")
         per_block[block] += c.points
 
+    # Per-block earned AND available. The available figure is what the UI must
+    # divide by: cycle reads 8/23 because C18's 7 points are N/A, not 8/30.
+    blocks = {}
+    for name, keys in (("quality", QUALITY_CRITERIA), ("cycle", CYCLE_CRITERIA),
+                       ("valuation", VALUATION_CRITERIA)):
+        scored_keys = [k for k in keys
+                       if criteria.get(k) and criteria[k].points is not None]
+        blocks[f"{name}_score"] = round(sum(criteria[k].points for k in scored_keys), 2)
+        blocks[f"{name}_available_max"] = sum(CRITERION_POINTS[k] for k in scored_keys)
+
     coverage = available / sum(CRITERION_POINTS.values()) if available else 0.0
     normalized = (earned / available * 100) if available else None
 
@@ -917,23 +985,40 @@ def assemble(criteria: dict[str, Criterion]) -> dict:
     valuation_usable = any(criteria.get(k) and criteria[k].points is not None
                            for k in VALUATION_CRITERIA)
 
-    if not core_usable or not valuation_usable:
-        status = "INVALID_CRITICAL"
-    elif coverage < PROVISIONAL_THRESHOLD:
-        status = "INSUFFICIENT_COVERAGE"
-    elif coverage < PUBLISH_THRESHOLD:
-        status = "PROVISIONAL"
+    # A/B/C, and the order of the tests is the definition (V10 sheet 38).
+    #
+    # THIS IS A STATEMENT ABOUT THE MEASUREMENT, NOT ABOUT THE BROKER. A symbol
+    # in C is not a bad company; it is one we cannot yet score honestly.
+    #
+    # C is reserved for "we could not measure it at all" — under 50% coverage,
+    # or no usable core earnings. A symbol with good coverage but no valuation
+    # is B, not C: the earnings half was measured, and burying it in the worst
+    # bucket would treat a partial measurement as a failed one.
+    if coverage < PROVISIONAL_THRESHOLD or not core_usable:
+        group = "C"
+    elif coverage >= PUBLISH_THRESHOLD and valuation_usable:
+        group = "A"
     else:
-        status = "PUBLISHABLE"
+        group = "B"
+
+    status = {"A": "PUBLISHABLE", "B": "PROVISIONAL", "C": "INSUFFICIENT_COVERAGE"}[group]
 
     return {
         "earned_score": round(earned, 2),
         "available_max": round(available, 2),
         "coverage": round(coverage, 4),
+        "data_group": group,
+        # SPLIT DELIBERATELY. `provisional_score` always carries the arithmetic,
+        # so a B row can be inspected and a backtest has something to work on.
+        # `final_fa_score` exists ONLY for group A, because it is what the Pro
+        # composite consumes — and a score built on half a rubric must not be
+        # able to reach it just because the column had a number in it.
+        "provisional_score": round(normalized, 2) if normalized is not None else None,
+        "final_fa_score": (round(normalized, 2)
+                           if (group == "A" and normalized is not None) else None),
         "normalized_fa_score": round(normalized, 2) if normalized is not None else None,
-        "quality_score": round(per_block["quality"], 2),
-        "cycle_score": round(per_block["cycle"], 2),
-        "valuation_score": round(per_block["valuation"], 2),
+        **blocks,
+        "criteria": {k: c.contract(k) for k, c in criteria.items() if k in CRITERION_POINTS},
         "fa_status": status,
         "core_usable": core_usable,
         "valuation_usable": valuation_usable,

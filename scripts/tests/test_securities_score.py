@@ -16,9 +16,13 @@ TWO THINGS ARE PINNED HERE.
    real cases both break: HCM, whose funding cost is only in the cash-flow
    statement, and FTS, which reports none anywhere and must not be ranked.
 
-Coverage is necessary but NOT sufficient (V5 TC-V5-09): a symbol at 80% with no
-valuation at all is INVALID_CRITICAL, because half the rubric's job is telling
-you what you are paying for the earnings.
+3. THE A/B/C GATE (V10). Coverage is necessary but not sufficient, and where a
+   partial symbol lands changed deliberately: a symbol at 80% coverage with no
+   usable valuation is B, not C. Its earnings half WAS measured, and filing that
+   beside "we could not measure this at all" loses the difference. C means
+   under 50% coverage or no usable core. Neither B nor C ever carries a
+   `final_fa_score` — that column is what the Pro composite reads, so absence,
+   not a low number, is what keeps a partial score out of a ranking.
 
 Runnable directly or under pytest. No DB, no network.
 """
@@ -115,6 +119,51 @@ def main():
 
     print("\n=== normalization and the publication gate ===\n")
 
+    # --- V10: A/B/C, and the split that keeps a partial score out of the composite
+    a = sec.assemble(na(full_criteria(), ["c4", "c5", "c9", "c18", "c20"]))
+    check(a["data_group"] == "A" and a["final_fa_score"] == a["provisional_score"],
+          f"70% coverage with usable core and valuation is group A, and its final "
+          f"score exists (got {a['data_group']}, final {a['final_fa_score']})")
+
+    b = sec.assemble(na(full_criteria(), ["c19", "c20"]))
+    check(b["data_group"] == "B" and b["final_fa_score"] is None
+          and b["provisional_score"] is not None,
+          f"good coverage with NO usable valuation is B — not C — and carries a "
+          f"provisional score but no final one (got {b['data_group']}, "
+          f"final {b['final_fa_score']}, provisional {b['provisional_score']})")
+
+    c_ = sec.assemble(na(full_criteria(), ["c1", "c2", "c3", "c4", "c5", "c9", "c18", "c20"]))
+    check(c_["data_group"] == "C" and c_["final_fa_score"] is None,
+          f"no usable core earnings is C, with no final score whatever the "
+          f"coverage (got {c_['data_group']}, coverage {c_['coverage']:.0%})")
+
+    # The block denominators the UI must divide by — the reason it printed 8/30.
+    blocks = sec.assemble(na(full_criteria(), ["c4", "c5", "c9", "c18", "c20"]))
+    check(blocks["cycle_available_max"] == 23 and blocks["valuation_available_max"] == 8,
+          f"cycle's available max is 23 (C18 N/A), not the rubric's 30, and "
+          f"valuation's is 8 (C20 N/A), not 20 (got {blocks['cycle_available_max']} "
+          f"and {blocks['valuation_available_max']})")
+    check(blocks["criteria"]["c18"]["available_max"] == 0
+          and blocks["criteria"]["c18"]["static_max"] == 7,
+          "an N/A criterion contributes 0 to the denominator while still "
+          "reporting the rubric weight it would have carried")
+    # Taken from the real scorer, not the test helper: the distinction lives in
+    # score_valuation, which is the code a reader's tooltip actually reflects.
+    real_c20 = sec.score_valuation(_UnblockedCore(), {"pb_ratio": 2.9})["c20"]
+    mixed = sec.assemble({**na(full_criteria(), ["c4"],
+                                "broker market share not published by the provider"),
+                          "c20": real_c20})
+    check(mixed["criteria"]["c20"]["status"] == "SHADOW"
+          and mixed["criteria"]["c4"]["status"] == "N_A",
+          f"a withdrawn formula is SHADOW; a symbol simply missing data is N_A — "
+          f"the tooltip must not tell a reader the broker lacked data when the "
+          f"criterion was pulled for everyone (got {mixed['criteria']['c20']['status']} "
+          f"and {mixed['criteria']['c4']['status']})")
+    check(mixed["criteria"]["c20"]["reason_code"] == "C20_WITHDRAWN_V9"
+          and mixed["criteria"]["c4"]["reason_code"] == "NO_SOURCE_MARKET_SHARE",
+          "and each carries a machine-readable reason code, so a UI can group "
+          "them without parsing prose")
+
     # What is unavailable today: market share x2 and ATTC (no source), C18
     # (mapping unlocked) and C20 (formula withdrawn in V9). This is the
     # healthy-broker case, and it lands EXACTLY on the gate.
@@ -135,8 +184,8 @@ def main():
     rb = sec.assemble(blocked)
     check(rb["available_max"] == 34,
           f"the funding chain removes a further 36 reachable points (got {rb['available_max']})")
-    check(rb["fa_status"] == "INVALID_CRITICAL",
-          f"and the symbol is not publishable (got {rb['fa_status']})")
+    check(rb["data_group"] == "C" and rb["final_fa_score"] is None,
+          f"and the symbol is group C with no final score (got {rb['data_group']})")
     check(not rb["core_usable"] and not rb["valuation_usable"],
           "because both core earnings and valuation are gone")
     check(rb["normalized_fa_score"] is not None,
@@ -145,9 +194,15 @@ def main():
     # Coverage alone is not enough (TC-V5-09).
     no_val = na(full_criteria(), ["c19", "c20"], "no valuation")
     rv = sec.assemble(no_val)
-    check(rv["coverage"] >= 0.70 and rv["fa_status"] == "INVALID_CRITICAL",
-          f"80% coverage with no valuation is INVALID_CRITICAL, not PUBLISHABLE "
-          f"(coverage {rv['coverage']:.0%}, status {rv['fa_status']})")
+    # V10 sheet 38 SOFTENED this. Under V5 it was INVALID_CRITICAL, the worst
+    # bucket. The earnings half WAS measured, and filing that beside "we could
+    # not measure this at all" loses the difference — so it is now B. It still
+    # never reaches a final score, which is what the gate is actually for.
+    check(rv["coverage"] >= 0.70 and rv["data_group"] == "B"
+          and rv["final_fa_score"] is None,
+          f"80% coverage with no valuation is group B — scored for reference, "
+          f"never final (coverage {rv['coverage']:.0%}, group {rv['data_group']}, "
+          f"final {rv['final_fa_score']})")
 
     # The band between provisional and publishable.
     thin = na(full_criteria(), ["c4", "c5", "c9", "c18", "c20", "c15", "c16"])
