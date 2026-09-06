@@ -488,6 +488,24 @@ def main():
             except Exception as e:
                 log_step_failure(st, "Step 7 company profiles", critical=False)
 
+        # Step 8: market-wide series (trading value, ADTV momentum, breadth).
+        # Computed HERE rather than in macro-daily because they derive from
+        # ta_ohlcv, which Step 1 has just written — the V6 DAG wants them ready
+        # before the securities scorer runs, and macro-daily is 4h later (13:30
+        # UTC) than this job (09:23). FCI, the third Cycle input, stays with
+        # macro-daily; the securities scorer waits for it.
+        #
+        # BEST-EFFORT: these feed 13 of the securities rubric's 100 points
+        # through the normal N/A path, and nothing else reads them.
+        market_stats = {}
+        if not args.dry_run:
+            try:
+                print("\n--- Step 8: market-wide series (ADTV + breadth) ---")
+                from ta.market_series import refresh as refresh_market_series
+                market_stats = refresh_market_series(client, status=st)
+            except Exception as e:  # noqa: BLE001
+                log_step_failure(st, "Step 8 market series", critical=False)
+
         # GitHub Actions Job Summary — visible on the run page without opening logs.
         summary_lines = [
             "## TA Daily Update Summary",
@@ -499,6 +517,12 @@ def main():
         ]
         summary_lines.append(f"- **Adjustments repaired**: {adj_repaired}")
         summary_lines.append(f"- **Signals written**: {total_signals:,} triggered ({total_evaluated:,} evaluated)")
+        if market_stats:
+            _a = market_stats.get("audit", {})
+            summary_lines.append(
+                f"- **Market series**: breadth {(market_stats.get('breadth') or 0) * 100:.1f}% "
+                f"({_a.get('numerator')}/{_a.get('denominator')}), ADTV momentum "
+                f"{(market_stats.get('momentum') or 0) * 100:+.1f}%")
         summary_lines.append(f"- **RS scored**: {rs_stats['scored']} liquid (rs_date {rs_stats['rs_date']})")
         summary_lines.append(
             f"- **Trend scored**: {trend_stats['scored']} "

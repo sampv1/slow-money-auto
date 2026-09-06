@@ -1,0 +1,86 @@
+name: FA Securities Daily
+
+# The CTCK rubric's Cycle block is 30 of its 100 points and C15 alone is 10, so
+# the score is only meaningful once the FCI for the SAME session exists.
+#
+# WHY THIS IS ITS OWN WORKFLOW. macro-daily writes the FCI at 13:30 UTC, more
+# than three hours AFTER fa-score-daily (10:10). Scoring brokers there would
+# read yesterday's FCI every single day and stamp it as today — and because a
+# row would exist, no gate that merely checks for presence would notice.
+# `refresh_fa_securities.py` compares the FCI's date to the target session and
+# refuses to write anything official when they differ.
+on:
+  # PREFERRED TRIGGER: run when the FCI actually lands, not at a guessed time.
+  # A fixed hour would drift out of correctness the moment macro-daily's cron or
+  # its upstream sources move.
+  workflow_run:
+    workflows: ["Macro Daily"]
+    types: [completed]
+  # Backstop, ~30 min after macro-daily's usual finish, in case the
+  # workflow_run event is dropped (GitHub loses one occasionally under load).
+  schedule:
+    - cron: "5 14 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: fa-securities-daily
+  cancel-in-progress: false
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    environment: supabase
+    timeout-minutes: 45
+    # On the workflow_run path, only proceed if Macro Daily actually succeeded —
+    # a failed macro run means no FCI, and the scorer would refuse anyway, but
+    # failing here keeps the reason legible on the run page.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Verify secrets are set
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "::error::SUPABASE_URL secret is not set."
+            exit 1
+          fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::warning::SUPABASE_SERVICE_ROLE_KEY not set. Anon is READ-ONLY after migration 045, so writes are silently discarded (PostgREST answers a denied write with 204/0 rows, not an error)."
+          fi
+          echo "Secrets OK."
+
+      - name: Score securities firms
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: python -u refresh_fa_securities.py
+
+      - name: Revalidate dashboard cache
+        continue-on-error: true
+        env:
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          if [ -z "$REVALIDATE_SECRET" ]; then
+            echo "::warning::REVALIDATE_SECRET not set — skipping cache revalidation."
+            exit 0
+          fi
+          curl -fsSL -X POST -H "x-revalidate-secret: ${REVALIDATE_SECRET}" "https://www.loctinhieu.com/api/revalidate?tags=fa-data" \
+            || echo "::warning::Dashboard revalidate call failed (cache will expire via TTL)."
