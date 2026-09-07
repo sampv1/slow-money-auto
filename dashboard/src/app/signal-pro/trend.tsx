@@ -195,6 +195,53 @@ export function trendActionClass(action: string | null): string {
   return (action && ACTION[action]?.cls) || "text-fg-muted";
 }
 
+/**
+ * Sort ranks for the two categorical columns — HIGHER means closer to a buy.
+ *
+ * These columns cannot sort alphabetically. Their values are ordinal, not
+ * nominal: "Sẵn sàng mua" is not merely a different state from "Tạo đáy", it is
+ * a later one. An A-Z sort would also order DIFFERENTLY IN EACH LOCALE, because
+ * it would rank the translated labels — Basing/Continuing/Ready/Wait against
+ * Chờ mua/Sẵn sàng mua/Tạo đáy/Tiếp diễn — so the same click would produce two
+ * different tables. Ranking the stored key instead makes the order a property
+ * of the data.
+ *
+ * The ranks follow the colour ramp the cells already wear (green > amber >
+ * blue > muted), so a sorted column reads as a gradient rather than a shuffle.
+ * They are deliberately NOT the legend's order, which groups states to explain
+ * them; nor the declaration order above, which is incidental.
+ *
+ * `tiep_dien` above `tao_day` is a tie-break inside a tier, not a claim that an
+ * uptrend is a better buy than a base — both map to the same "Theo dõi" action.
+ * An established uptrend is simply further along the structure than a base.
+ *
+ * A key with no rank (including null, which is ~79% of the universe) returns
+ * null and sorts LAST in both directions, matching every other nullable column
+ * on this page.
+ */
+const STATUS_RANK: Record<string, number> = {
+  san_sang_mua: 4,
+  cho_mua: 3,
+  tiep_dien: 2,
+  tao_day: 1,
+};
+
+const ACTION_RANK: Record<string, number> = {
+  san_sang_mua: 3,
+  cho_mua: 2,
+  theo_doi: 1,
+};
+
+export function trendStatusRank(status: string | null): number | null {
+  // Ternary, not `status && …`: an empty-string status is falsy, so `&&` would
+  // return "" and the caller would compare a string against numbers.
+  return status ? STATUS_RANK[status] ?? null : null;
+}
+
+export function trendActionRank(action: string | null): number | null {
+  return action ? ACTION_RANK[action] ?? null : null;
+}
+
 /** Trạng thái pill. Renders a dash when there is no readable structure. */
 export function TrendStatusPill({ status, locale }: { status: string | null; locale: Locale }) {
   const s = status ? STATUS[status] : null;

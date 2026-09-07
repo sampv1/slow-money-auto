@@ -15,7 +15,7 @@ import { RsSparkline, DetailedRsChart, RsLineScore } from "./rs-line";
 import {
   TrendBreakdown, TrendSparkline, TrendDetailChart, TrendDirection, TrendStatusPill,
   TrendLegend, HelpDot, type TrendChart, type TrendDetail,
-  trendActionLabel, trendActionClass,
+  trendActionLabel, trendActionClass, trendStatusRank, trendActionRank,
 } from "./trend";
 import { CatalystDetail, type CatalystRow } from "./catalyst";
 import { PinButton } from "@/components/pin-button";
@@ -26,7 +26,8 @@ import { SPARKLINE_BATCH, type SymbolCharts } from "@/lib/sparkline";
 
 type RatingFilter = "all" | "A" | "AB" | "ABC";
 type SortKey = "final_score" | "total_score" | "ta_score" | "rs_3m" | "rs_composite"
-  | "trend_score" | "trend_daily" | "trend_weekly" | "symbol" | "quarter" | "industry";
+  | "trend_score" | "trend_daily" | "trend_weekly" | "symbol" | "quarter" | "industry"
+  | "trend_status" | "trend_action";
 
 const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
 // Minimum quarterly net profit after tax, in VND billion. Same default as the FA
@@ -444,6 +445,29 @@ export function SignalProClient({
         // Ties broken by symbol, or the many rows sharing an industry would
         // reshuffle between renders the way the quarter column guards against.
         return cmp !== 0 ? (sortAsc ? cmp : -cmp) : a.symbol.localeCompare(b.symbol);
+      } else if (sortKey === "trend_status" || sortKey === "trend_action") {
+        // Ordinal categories, ranked by how close to a buy they are rather than
+        // by their label — see trendStatusRank in trend.tsx for why an A-Z sort
+        // would order differently in each locale.
+        //
+        // A tie-break is not optional here. There are four statuses and three
+        // actions across hundreds of rows, so almost every comparison is a tie;
+        // without it React re-renders would reshuffle the block, exactly the
+        // problem the industry and quarter columns already guard against.
+        const rank = (sym: string) => {
+          const tr = trendBySymbol.get(sym);
+          return sortKey === "trend_status"
+            ? trendStatusRank(tr?.status ?? null)
+            : trendActionRank(tr?.action ?? null);
+        };
+        const ar = rank(a.symbol);
+        const br = rank(b.symbol);
+        if (ar === null && br === null) return a.symbol.localeCompare(b.symbol);
+        if (ar === null) return 1;
+        if (br === null) return -1;
+        return ar !== br
+          ? (sortAsc ? ar - br : br - ar)
+          : a.symbol.localeCompare(b.symbol);
       } else if (sortKey === "quarter") {
         // 'YYYY-Qn' sorts correctly as a plain string; symbol breaks ties so
         // the (many) rows sharing a quarter keep a stable order.
@@ -759,11 +783,16 @@ export function SignalProClient({
                 <th className="px-2 py-1 label">
                   {t(locale, "spTrendChart")}<HelpDot title={t(locale, "spTrendChartTitle")} />
                 </th>
-                <th className="px-2 py-1 label">
-                  {t(locale, "spTrendStatus")}<HelpDot title={t(locale, "spTrendStatusTitle")} />
+                {/* Sorted by actionability, not alphabetically — the ranks live
+                    beside the label maps in trend.tsx. Descending by default, so
+                    the first click surfaces the symbols closest to a buy. */}
+                <th className="px-2 py-1 label cursor-pointer select-none"
+                  onClick={() => toggleSort("trend_status")}>
+                  {t(locale, "spTrendStatus")}<HelpDot title={t(locale, "spTrendStatusTitle")} />{sortIndicator("trend_status")}
                 </th>
-                <th className="px-2 py-1 label">
-                  {t(locale, "spTrendAction")}<HelpDot title={t(locale, "spTrendActionTitle")} />
+                <th className="px-2 py-1 label cursor-pointer select-none"
+                  onClick={() => toggleSort("trend_action")}>
+                  {t(locale, "spTrendAction")}<HelpDot title={t(locale, "spTrendActionTitle")} />{sortIndicator("trend_action")}
                 </th>
               </tr>
             </thead>
