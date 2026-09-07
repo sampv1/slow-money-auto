@@ -155,8 +155,14 @@ export function criterionDisplay(cell: SecCriterionCell | undefined, max: number
  * Rubric changes ship as a NEW version, so the table holds every version side
  * by side for the same session — that is what makes a backtest replayable. A
  * reader must see exactly one, so every query pins this.
+ *
+ * MOVING THIS IS PART OF SHIPPING A VERSION, not an afterthought. The scorer
+ * writes only the current version, so a pin left behind stops being "the
+ * previous rubric" and becomes a frozen snapshot that quietly ages while the
+ * page still says it updates daily. V8, V9 and V10 rows are all preserved and
+ * still queryable by version.
  */
-export const SEC_ACTIVE_MODEL = "CTCK_V10";
+export const SEC_ACTIVE_MODEL = "CTCK_V11v2";
 
 export const SEC_MAX_SCORE = 100;
 export const SEC_PUBLISH_COVERAGE = 0.7;

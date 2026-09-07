@@ -119,6 +119,53 @@ def _real_estate_fa(client) -> dict[str, float]:
         return {}
 
 
+def _securities_blocked(client) -> set[str]:
+    """Securities symbols, which take NO Final score from any rubric today.
+
+    Brokers are scored on their own 20-criterion CTCK rubric
+    (fa/securities.py -> fa_securities_scores), not on fa_scores. But
+    fa_scores still holds a manufacturing row for each of them — the
+    manufacturing rubric happily computes EPS/revenue/ROE/D-E/PE for a broker
+    and produces a plausible-looking number from criteria that do not describe
+    a broker's income statement at all. Migration 060 moved them off the
+    manufacturing SCANNER TAB; it did not move them out of this blend, so the
+    stale row kept flowing into the Pro composite. Measured 2026-09-07 before
+    this fix: 40 of 41 securities symbols carried a Final score, ABW at 82 and
+    ABW's FA half at 79.63 normalized.
+
+    Exactly the defect the real-estate branch above exists to prevent, so it
+    gets the same treatment: ABSENCE rather than a wrong number.
+
+    The CTCK score does not replace it yet either. Per V11v2 (sheet 52) the
+    sector stays `SECTOR_MODEL_PENDING` until its release gate passes, so this
+    returns a blocked SET rather than a score map — every member is skipped and
+    the caller's reset path nulls final_score/final_grade.
+
+    Degrades to an empty set if fa_industry predates the securities group, so
+    the daily workflow keeps running against the old schema.
+    """
+    try:
+        blocked: set[str] = set()
+        offset, page = 0, 1000
+        while True:
+            rows = safe_execute(
+                client.table("fa_industry").select("symbol,industry_group")
+                .eq("industry_group", "securities").order("symbol")
+                .range(offset, offset + page - 1),
+                label="final securities industry",
+            ).data
+            blocked.update(r["symbol"] for r in rows)
+            if len(rows) < page:
+                break
+            offset += page
+        return blocked
+    except Exception as e:  # noqa: BLE001 — schema may predate migration 060
+        print(f"::warning::securities industry list unavailable "
+              f"({type(e).__name__}: {e}); brokers may keep a manufacturing "
+              "Final score this run")
+        return set()
+
+
 def _ta_score_map(client) -> dict[str, int]:
     """{symbol: ta_score} from the latest ta_universe snapshot."""
     out: dict[str, int] = {}
@@ -157,6 +204,9 @@ def compute_final_score(client, dry_run: bool = False) -> dict:
     # Real-estate symbols take their FA half from the real-estate rubric. Keys
     # present with a None value are real-estate symbols with no usable RE score.
     re_fa = _real_estate_fa(client)
+    # Securities take no Final score from any rubric until their sector gate
+    # passes (V11v2). Read BEFORE the loop so one list read serves every symbol.
+    sec_blocked = _securities_blocked(client)
 
     # Bucket by (period, score, grade): each distinct combination is one bulk
     # UPDATE instead of a write per symbol. Periods are few (one per reporting
@@ -164,9 +214,16 @@ def compute_final_score(client, dry_run: bool = False) -> dict:
     buckets: dict[tuple[str, int, str], list[str]] = {}
     periods: dict[str, int] = {}
     re_used = 0
+    sec_skipped = 0
     for sym, (period, fa_val) in latest.items():
         ta_val = ta.get(sym)
         if ta_val is None:
+            continue
+        if sym in sec_blocked:
+            # Checked BEFORE real estate and before the blend: a broker must not
+            # reach the manufacturing branch at all. Skipping leaves the symbol
+            # out of `buckets`, so the reset path below nulls its final_score.
+            sec_skipped += 1
             continue
         if sym in re_fa:
             # Real estate: the RE rubric replaces the manufacturing FA half. A
@@ -182,7 +239,9 @@ def compute_final_score(client, dry_run: bool = False) -> dict:
 
     scored = sum(len(v) for v in buckets.values())
     stats = {"rows": len(latest), "scored": scored, "periods": periods,
-             "real_estate": re_used, "real_estate_members": len(re_fa)}
+             "real_estate": re_used, "real_estate_members": len(re_fa),
+             "securities_blocked": sec_skipped,
+             "securities_members": len(sec_blocked)}
     if dry_run:
         return stats
 

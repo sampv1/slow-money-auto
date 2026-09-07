@@ -37,13 +37,15 @@ then rescued honestly: `CF_INTEREST_EXPENSE` carries 1,893.6 tỷ, and across th
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass, field
 
 # V9. A NEW STRING, not an edit of V8: C20 changes from a scored criterion to an
 # excluded one, which moves every broker's denominator, so V8 rows must stay
 # readable as what they were. Governance rule G6 — lock by issuing a version,
 # never by rewriting history.
-MODEL_VERSION = "CTCK_V10"
+MODEL_VERSION = "CTCK_V11v2"
 
 # Points per criterion (sheet 1). Sums to 100 — asserted at import.
 CRITERION_POINTS = {
@@ -431,11 +433,217 @@ C20_PB = [(.75, 12), (.90, 9), (1.10, 6), (1.25, 3)]
 #         ratio ids a broker carries: nothing matching capital adequacy.
 # Together with C18 (N/A until its mapping is backtested) they cap coverage at
 # 82%, which is why the publish gate sits at 70 and not higher.
+# V11v2 sheet 45: C4 is OFFICIAL-or-nothing. The V11 draft allowed a
+# "minimum active broker" proxy worth 1/4, and BA withdrew it after we showed
+# what it does arithmetically — every active broker scores the same 1/4, which
+# adds 1 to every numerator and 4 to every denominator and so drags the whole
+# sector toward 25% while separating nobody. A criterion that cannot rank is
+# not a weak measurement, it is no measurement.
 UNSOURCED_CRITERIA = {
     "c4": "broker market share not published by the provider",
-    "c5": "broker market share not published by the provider",
     "c9": "ATTC capital-adequacy ratio is a UBCK filing, absent from the provider",
 }
+
+# C5 PROXY (sheet 45): brokerage gross-profit growth against the market's own
+# trading-value growth. The question C5 asks is whether the broker is winning
+# or losing share, and the honest reading without a share filing is whether its
+# brokerage line grew FASTER than the market it operates in — a broker whose GP
+# rose 18% in a market that rose 10% took share from somebody.
+#
+# Bands are on the SPREAD in percentage points, and it is provisional: the
+# proxy answers a neighbouring question, not the same one.
+C5_PROXY_BANDS = [(0.10, 3), (0.0, 2), (-0.10, 1)]
+C5_PROXY_CODES = {3: "C5_PROXY_STRONG", 2: "C5_PROXY_STABLE",
+                  1: "C5_PROXY_SOFT", 0: "C5_PROXY_WEAK"}
+
+# C5 OFFICIAL (sheet 45): the change in market share itself, in PERCENTAGE
+# POINTS, between two comparable quarters — same exchange scope, same legal
+# entity. Nothing feeds this until BA's quarterly upload lands; it is written
+# now so the upload is the only thing missing when it does, and so the proxy
+# above can never outrank a real filing.
+C5_OFFICIAL_BANDS = [(0.5, 3), (0.0, 2), (-0.5, 1)]
+C5_OFFICIAL_CODES = {3: "C5_OFFICIAL_STRONG", 2: "C5_OFFICIAL_STABLE",
+                     1: "C5_OFFICIAL_SOFT", 0: "C5_OFFICIAL_WEAK"}
+
+
+def score_c5_proxy(gp_yoy: float | None, adtv_yoy: float | None) -> Criterion:
+    """C5 from the brokerage-GP / market-ADTV growth spread.
+
+    Missing EITHER input is N/A, never 0 (sheet 45: "Missing một input => N/A").
+    A broker whose market context we cannot measure has not lost share.
+    """
+    if gp_yoy is None or adtv_yoy is None:
+        return Criterion(None, None, "N_A",
+                         "no market share filing and no usable growth proxy")
+    spread = gp_yoy - adtv_yoy
+    pts = _bands_desc(spread, C5_PROXY_BANDS)
+    return Criterion(pts, spread, "OK",
+                     f"brokerage GP growth {spread:+.1%} vs market ADTV",
+                     tier=TIER_PROVISIONAL, method="PROXY", confidence="MEDIUM",
+                     code=C5_PROXY_CODES[int(pts)])
+
+
+# ---------------------------------------------------------------------------
+# C20 (V11v2 sheet 48) — P/B against normalized WHOLE-FIRM ROE, cross-section.
+#
+# V9 withdrew C20 because the V8 formula (justified P/B = Core_ROE / CoE at
+# g = 0) scored 0 for all 30 brokers that could be read at all: it compared a
+# CORE-only ROE against a whole-firm cost of equity while the market prices the
+# prop desk too, and it assumed zero growth for a cyclical sector. V9 then
+# deliberately did NOT build the peer-residual replacement, because a regression
+# without minimum-sample, stability and no-look-ahead rules repeats the mistake
+# it replaces. V11v2 sheet 48 supplies all three, so it is built here.
+#
+# Both sides now describe the same entity: whole-firm P/B against whole-firm
+# normalized ROE. The model is refit for EVERY as_of_date — brokers reprice
+# daily, and a coefficient carried over from another session would rank today's
+# prices against yesterday's relationship.
+C20_V11_BANDS = [(80, 12), (60, 9), (40, 6), (20, 3)]
+C20_V11_CODES = {12: "C20_CHEAP_TOP20", 9: "C20_CHEAP_60_80", 6: "C20_MID",
+                 3: "C20_EXPENSIVE_20_40", 0: "C20_EXPENSIVE_BOTTOM20"}
+C20_MIN_SAMPLE = 20
+C20_WINSOR = 0.05
+C20_MIN_BUCKET = 5
+
+
+def _winsorize(values: list[float], frac: float) -> list[float]:
+    """Clip the top and bottom `frac` of the distribution to its own quantiles.
+
+    Symmetric by construction: the same COUNT is clipped at each end, so the
+    trim cannot shift the mean on its own. A sample too small to spare a point
+    at each end is returned untouched rather than collapsed.
+    """
+    if not values:
+        return []
+    s = sorted(values)
+    lo_i = int(len(s) * frac)
+    hi_i = len(s) - 1 - lo_i
+    if hi_i <= lo_i:
+        return list(values)
+    lo, hi = s[lo_i], s[hi_i]
+    return [min(max(v, lo), hi) for v in values]
+
+
+def _avg_rank_percentile(values: dict[str, float], ascending: bool) -> dict[str, float]:
+    """0-100 percentile with AVERAGE rank for ties (sheet 48 tie rule)."""
+    if not values:
+        return {}
+    items = sorted(values.items(), key=lambda kv: kv[1], reverse=not ascending)
+    n = len(items)
+    out: dict[str, float] = {}
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and items[j + 1][1] == items[i][1]:
+            j += 1
+        rank = (i + j) / 2.0
+        pct = 100.0 * rank / (n - 1) if n > 1 else 50.0
+        for k in range(i, j + 1):
+            out[items[k][0]] = pct
+        i = j + 1
+    return out
+
+
+def c20_cross_section(observations: dict[str, tuple[float, float]],
+                      min_sample: int = C20_MIN_SAMPLE) -> dict:
+    """Fit ln(P/B) ~ normalized total ROE across the peer group; score residuals.
+
+    `observations` is {symbol: (current_pb, normalized_total_roe)}; a symbol
+    reaches it only with P/B > 0 and at least 6 of 8 valid ROE quarters, both
+    enforced by the caller.
+
+    Returns {"model": {...}, "scores": {symbol: Criterion}}. Below `min_sample`
+    NOTHING is scored — that is sheet 48's rule and it is the difference
+    between "this broker is expensive" and "we could not price the sector".
+
+    THE FIT IS WINSORIZED BUT THE RESIDUAL IS NOT. Trimming the tails stops one
+    outlier from tilting the line, which is what winsorizing is for; measuring
+    a symbol's residual against a trimmed version of its OWN price would then
+    hide exactly the extreme cheapness or dearness the criterion exists to find.
+    """
+    valid = {s: (pb, roe) for s, (pb, roe) in observations.items()
+             if pb is not None and roe is not None and pb > 0}
+    n = len(valid)
+    if n < min_sample:
+        return {"model": {"n": n, "status": "INSUFFICIENT_SAMPLE"}, "scores": {}}
+
+    syms = sorted(valid)
+    y = [math.log(valid[s][0]) for s in syms]
+    x = [valid[s][1] for s in syms]
+    xw, yw = _winsorize(x, C20_WINSOR), _winsorize(y, C20_WINSOR)
+
+    mx = sum(xw) / n
+    my = sum(yw) / n
+    sxx = sum((v - mx) ** 2 for v in xw)
+    if sxx <= 0:
+        # Degenerate, not merely weak: every broker has the same ROE, so the
+        # line has no slope to estimate. A LOW R-squared is NOT this case — a
+        # weak relation is a real finding and still ranks. Falls through to the
+        # ROE-bucket fallback below.
+        return _c20_bucket_fallback(valid, syms)
+    b = sum((xv - mx) * (yv - my) for xv, yv in zip(xw, yw)) / sxx
+    a = my - b * mx
+    syy = sum((v - my) ** 2 for v in yw)
+    ss_res = sum((yv - (a + b * xv)) ** 2 for xv, yv in zip(xw, yw))
+    r2 = (1 - ss_res / syy) if syy > 0 else None
+
+    residual = {s: y[i] - (a + b * x[i]) for i, s in enumerate(syms)}
+    # Cheapest = most NEGATIVE residual = trading below what its ROE justifies,
+    # so cheapness percentile ranks residuals DESCENDING.
+    cheapness = _avg_rank_percentile(residual, ascending=False)
+
+    scores = {}
+    for s in syms:
+        pct = cheapness[s]
+        pts = _bands_desc(pct, C20_V11_BANDS)
+        scores[s] = Criterion(
+            pts, round(pct, 2), "OK",
+            f"cheapness percentile {pct:.0f} against peer P/B-ROE fit",
+            tier=TIER_PROVISIONAL, method="PB_ROE_CROSS_SECTION",
+            confidence="MEDIUM", code=C20_V11_CODES[int(pts)])
+    return {"model": {"a": a, "b": b, "r2": r2, "n": n,
+                      "status": "CROSS_SECTION",
+                      "residual": {s: round(residual[s], 6) for s in syms},
+                      "cheapness": {s: round(cheapness[s], 2) for s in syms}},
+            "scores": scores}
+
+
+def _c20_bucket_fallback(valid: dict, syms: list[str]) -> dict:
+    """Sheet 48 fallback: compare P/B to the median P/B of its own ROE bucket.
+
+    Used only when the regression is DEGENERATE. Buckets are quartiles of ROE;
+    a bucket under C20_MIN_BUCKET members scores nobody.
+    """
+    roes = sorted(valid[s][1] for s in syms)
+    q = [roes[int(len(roes) * f)] for f in (0.25, 0.50, 0.75)]
+
+    def bucket(roe: float) -> int:
+        return sum(1 for t in q if roe >= t)
+
+    groups: dict[int, list[str]] = {}
+    for s in syms:
+        groups.setdefault(bucket(valid[s][1]), []).append(s)
+
+    scores = {}
+    for members in groups.values():
+        if len(members) < C20_MIN_BUCKET:
+            continue
+        pbs = sorted(valid[s][0] for s in members)
+        med = pbs[len(pbs) // 2]
+        if med <= 0:
+            continue
+        rel = {s: valid[s][0] / med - 1 for s in members}
+        cheapness = _avg_rank_percentile(rel, ascending=False)
+        for s in members:
+            pts = _bands_desc(cheapness[s], C20_V11_BANDS)
+            scores[s] = Criterion(
+                pts, round(cheapness[s], 2), "OK",
+                f"cheapness percentile {cheapness[s]:.0f} within its ROE bucket",
+                tier=TIER_PROVISIONAL, method="PB_ROE_BUCKET_MEDIAN",
+                confidence="LOW", code=C20_V11_CODES[int(pts)])
+    return {"model": {"n": len(syms), "status": "BUCKET_FALLBACK",
+                      "buckets": {k: len(v) for k, v in groups.items()}},
+            "scores": scores}
 
 
 # Machine-readable reasons, so a UI can group and a query can filter. The free
@@ -468,12 +676,43 @@ def reason_code(reason: str | None) -> str | None:
     return "OTHER"
 
 
+# V11v2 (sheet 44): the OFFICIAL score is built from LOCKED criteria only, and
+# a PROVISIONAL one leaves BOTH the numerator and the denominator — it is not a
+# low score, it is a measurement whose method has not passed its gate yet.
+#
+# The tier is a property of the METHOD, not of the criterion: C5 scored from a
+# verified market-share filing is locked, the same C5 derived from the
+# brokerage-GP/ADTV spread is provisional. So it travels on the Criterion, set
+# by whichever scorer produced it, rather than living in a static list here.
+# Ties out against the sheet-53 fixture: with C4/C5/C9 unavailable the locked
+# quality block is C1,C2,C3,C6,C7,C8,C10..C14 = 39, which is QA_B exactly.
+TIER_LOCKED = "LOCKED"
+TIER_PROVISIONAL = "PROVISIONAL"
+
+# The two criteria that stay provisional REGARDLESS of method, because what
+# gates them is a model validation (G2) rather than a data source. Everything
+# else takes its tier from how it was measured — C9 is provisional in practice
+# only because the official CAR filing is absent from the provider, so it is
+# NOT listed here: the sheet-53 fixture's QA_A carries an official CAR and
+# expects those 4 points inside the locked maximum of 50.
+ALWAYS_PROVISIONAL = frozenset({"c18", "c20"})
+
+
 @dataclass
 class Criterion:
     points: float | None = None
     value: float | None = None
     status: str = "OK"          # OK|N_A|SPECIAL_CASE|PROVISIONAL_INVALID
     reason: str = ""
+    tier: str = TIER_LOCKED     # LOCKED | PROVISIONAL
+    method: str | None = None   # OFFICIAL | PROXY | DERIVED | SYSTEM
+    confidence: str | None = None   # HIGH | MEDIUM | LOW | NONE
+    # An EXPLICIT reason code, where the scorer already knows which band it hit.
+    # `reason_code()` infers one by matching substrings of free text, which is
+    # right for the older criteria whose reasons are prose but wrong for a band
+    # table that has a code per row — inference would return OTHER for all of
+    # them.
+    code: str | None = None
 
     def contract(self, key: str) -> dict:
         """The per-criterion shape the API and the table both read.
@@ -483,15 +722,22 @@ class Criterion:
         instead of the rubric's static maximum.
         """
         scored = self.points is not None
+        tier = TIER_PROVISIONAL if key in ALWAYS_PROVISIONAL else self.tier
         return {
             "earned": self.points,
             "available_max": CRITERION_POINTS[key] if scored else 0,
             "static_max": CRITERION_POINTS[key],
             "status": "VALID" if scored else (
                 "SHADOW" if self.status == "PROVISIONAL_INVALID" else "N_A"),
-            "reason_code": reason_code(self.reason),
+            "tier": tier if scored else None,
+            "method": self.method,
+            "confidence": self.confidence or ("NONE" if not scored else None),
+            "reason_code": self.code or reason_code(self.reason),
             "value": self.value,
         }
+
+    def effective_tier(self, key: str) -> str:
+        return TIER_PROVISIONAL if key in ALWAYS_PROVISIONAL else self.tier
 
 
 def score_quality(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
@@ -539,6 +785,20 @@ def score_quality(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
 
     for key, reason in UNSOURCED_CRITERIA.items():
         na(key, reason)
+
+    # C5 share growth. OFFICIAL (a verified market-share filing, two comparable
+    # quarters) outranks the proxy absolutely; the proxy only runs when there is
+    # no filing, and is provisional when it does. Neither available => N/A.
+    if ctx.get("share_delta_pp") is not None:
+        d = ctx["share_delta_pp"]
+        pts = _bands_desc(d, C5_OFFICIAL_BANDS)
+        out["c5"] = Criterion(pts, d, "OK",
+                              f"market share {d:+.2f} điểm % year on year",
+                              method="OFFICIAL", confidence="HIGH",
+                              code=C5_OFFICIAL_CODES[int(pts)])
+    else:
+        out["c5"] = score_c5_proxy(ctx.get("brokerage_gp_yoy"),
+                                   ctx.get("market_adtv_yoy"))
 
     # C6 net interest spread on the margin book, ranked across the sector
     if blocked:
@@ -647,23 +907,31 @@ def score_valuation(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
     else:
         out["c19"] = Criterion(None, None, "N_A", "no core P/E history")
 
-    # C20 IS DISABLED IN PRODUCTION (V9). It is N/A, and its 12 points leave the
-    # denominator — it is NOT scored 0.
+    # C20 is now scored by the CROSS-SECTIONAL model (V11v2 sheet 48), computed
+    # once for the whole peer group and injected here by the caller — a per
+    # symbol formula cannot rank a symbol against its peers.
     #
-    # The V8 formula scored 0 for ALL 30 brokers with a usable reading. That is
-    # not a criterion finding every broker expensive; it is a criterion that
-    # cannot discriminate, and 12 points of guaranteed zero dragged every
-    # normalized score down by roughly 15 points. Two faults, both in the
-    # formula rather than its thresholds: justified P/B assumed zero growth for
-    # a cyclical sector, and it compared a CORE-ONLY ROE against a whole-firm
-    # cost of equity while the market prices the prop desk too. Retuning the
-    # bands on top of that would have hidden the mismatch instead of fixing it.
+    # It stays PROVISIONAL until C20-G2 passes, so its 12 points reach
+    # `provisional_score` and never `final_fa_score`. That is a statement about
+    # the METHOD's maturity, not about any broker.
     #
-    # N/A and 0 are different claims. 0 says "measured, and it is the worst
-    # case"; N/A says "no valid measurement exists". This is the second.
-    out["c20"] = Criterion(None, ctx.get("pb_ratio"), "PROVISIONAL_INVALID",
-                           "formula withdrawn — scored 0 for the entire universe; "
-                           "replacements run in shadow (see c20_shadow)")
+    # The history matters for reading the code: V8's justified P/B (Core_ROE /
+    # CoE at g = 0) scored 0 for ALL 30 readable brokers — not a criterion
+    # finding everyone expensive, a criterion that could not discriminate — so
+    # V9 withdrew it rather than retune bands over a scope mismatch (core-only
+    # ROE against a whole-firm cost of equity). V11v2 fixes the scope: whole
+    # firm on both sides, ranked against peers instead of an absolute threshold.
+    #
+    # Absent an injected score the criterion is N/A with its 12 points OUT of
+    # the denominator — never 0. 0 says "measured, worst case"; N/A says "no
+    # valid measurement exists", and below the 20-symbol minimum it is the
+    # second.
+    injected = ctx.get("c20_criterion")
+    out["c20"] = injected if injected is not None else Criterion(
+        None, ctx.get("current_pb"), "N_A",
+        "no sector distribution — fewer than 20 comparable brokers, "
+        "or no usable P/B and normalized ROE",
+        code="C20_INSUFFICIENT")
     return out
 
 
@@ -956,6 +1224,8 @@ def assemble(criteria: dict[str, Criterion]) -> dict:
     """
     earned = 0.0
     available = 0.0
+    final_earned = 0.0
+    final_available = 0.0
     per_block = {"quality": 0.0, "cycle": 0.0, "valuation": 0.0}
     for key, pts in CRITERION_POINTS.items():
         c = criteria.get(key)
@@ -963,6 +1233,13 @@ def assemble(criteria: dict[str, Criterion]) -> dict:
             continue
         earned += c.points
         available += pts
+        # V11v2: the official score sees LOCKED criteria only. A provisional one
+        # is dropped from the numerator AND the denominator together — dropping
+        # it from the numerator alone would score it as a measured zero, which
+        # is the exact confusion normalization exists to prevent.
+        if c.effective_tier(key) == TIER_LOCKED:
+            final_earned += c.points
+            final_available += pts
         block = ("quality" if key in QUALITY_CRITERIA
                  else "cycle" if key in CYCLE_CRITERIA else "valuation")
         per_block[block] += c.points
@@ -977,8 +1254,15 @@ def assemble(criteria: dict[str, Criterion]) -> dict:
         blocks[f"{name}_score"] = round(sum(criteria[k].points for k in scored_keys), 2)
         blocks[f"{name}_available_max"] = sum(CRITERION_POINTS[k] for k in scored_keys)
 
-    coverage = available / sum(CRITERION_POINTS.values()) if available else 0.0
+    design_max = sum(CRITERION_POINTS.values())
+    coverage = available / design_max if available else 0.0
     normalized = (earned / available * 100) if available else None
+    # Both coverages divide by the DESIGN maximum (100), never by each other:
+    # final_coverage answers "how much of the rubric backs the official score",
+    # so its denominator has to be the whole rubric.
+    final_coverage = final_available / design_max if final_available else 0.0
+    final_normalized = ((final_earned / final_available * 100)
+                        if final_available else None)
 
     core_usable = any(criteria.get(k) and criteria[k].points is not None
                       for k in ("c1", "c2", "c3"))
@@ -1003,19 +1287,50 @@ def assemble(criteria: dict[str, Criterion]) -> dict:
 
     status = {"A": "PUBLISHABLE", "B": "PROVISIONAL", "C": "INSUFFICIENT_COVERAGE"}[group]
 
+    # The official score needs BOTH tests, and they ask different questions.
+    # The GROUP asks whether enough of the broker was measured at all, and it
+    # still carries V10's rule that a score with no usable valuation is not a
+    # publishable score — half the rubric's job is telling you what you are
+    # paying, and V11v2 keeps that gate unchanged (changelog: "Gate A/B/C |
+    # Có | V10 | Không đổi"). FINAL_COVERAGE asks a different question that
+    # only V11v2 raises: whether enough of what we measured sits on a method
+    # that has passed its own gate.
+    #
+    # Requiring group A rather than merely "not C" is the conservative reading
+    # where the two could disagree. Sheet 44 gates final_fa_score on coverage
+    # alone and TC-GATE-01 names only group C, but a B symbol is by definition
+    # one whose valuation could not be measured, and letting it publish an
+    # official score would quietly undo the V10 rule V11v2 says it is keeping.
+    publishable = (group == "A"
+                   and final_coverage >= PUBLISH_THRESHOLD
+                   and final_normalized is not None)
+
     return {
         "earned_score": round(earned, 2),
         "available_max": round(available, 2),
         "coverage": round(coverage, 4),
         "data_group": group,
+        # --- V11v2 official tier (locked criteria only) ---
+        "final_earned": round(final_earned, 2),
+        "final_available_max": round(final_available, 2),
+        "final_coverage": round(final_coverage, 4),
+        # --- V11v2 provisional tier (locked + provisional), always populated ---
+        "provisional_earned": round(earned, 2),
+        "provisional_available_max": round(available, 2),
+        "provisional_coverage": round(coverage, 4),
+        "provisional_fa_score": round(normalized, 2) if normalized is not None else None,
+        "model_status": "READY" if publishable else "SECTOR_MODEL_PENDING",
         # SPLIT DELIBERATELY. `provisional_score` always carries the arithmetic,
         # so a B row can be inspected and a backtest has something to work on.
         # `final_fa_score` exists ONLY for group A, because it is what the Pro
         # composite consumes — and a score built on half a rubric must not be
         # able to reach it just because the column had a number in it.
         "provisional_score": round(normalized, 2) if normalized is not None else None,
-        "final_fa_score": (round(normalized, 2)
-                           if (group == "A" and normalized is not None) else None),
+        # V11v2 REDEFINES THIS COLUMN: it is now the LOCKED-only score, not the
+        # group-A full score. Under V10 a broker's C9/C18/C20 could not reach it
+        # because they were N/A anyway; now that they are scored-but-provisional,
+        # only the tier split keeps them out.
+        "final_fa_score": (round(final_normalized, 2) if publishable else None),
         "normalized_fa_score": round(normalized, 2) if normalized is not None else None,
         **blocks,
         "criteria": {k: c.contract(k) for k, c in criteria.items() if k in CRITERION_POINTS},

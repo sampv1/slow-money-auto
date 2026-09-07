@@ -149,20 +149,40 @@ def main():
           "reporting the rubric weight it would have carried")
     # Taken from the real scorer, not the test helper: the distinction lives in
     # score_valuation, which is the code a reader's tooltip actually reflects.
+    # V11v2 restored C20 as a scored cross-sectional criterion, so the SHADOW
+    # state it carried under V9/V10 is gone. What must still be distinguishable
+    # is a criterion the SECTOR could not price (too few comparable brokers)
+    # from one THIS broker lacks a source for — both are N/A, and their reason
+    # codes are what keeps a tooltip honest about which happened.
     real_c20 = sec.score_valuation(_UnblockedCore(), {"pb_ratio": 2.9})["c20"]
     mixed = sec.assemble({**na(full_criteria(), ["c4"],
                                 "broker market share not published by the provider"),
                           "c20": real_c20})
-    check(mixed["criteria"]["c20"]["status"] == "SHADOW"
+    check(mixed["criteria"]["c20"]["status"] == "N_A"
           and mixed["criteria"]["c4"]["status"] == "N_A",
-          f"a withdrawn formula is SHADOW; a symbol simply missing data is N_A — "
-          f"the tooltip must not tell a reader the broker lacked data when the "
-          f"criterion was pulled for everyone (got {mixed['criteria']['c20']['status']} "
+          f"an unpriceable cross-section and an unsourced criterion are both N_A "
+          f"(got {mixed['criteria']['c20']['status']} "
           f"and {mixed['criteria']['c4']['status']})")
-    check(mixed["criteria"]["c20"]["reason_code"] == "C20_WITHDRAWN_V9"
+    check(mixed["criteria"]["c20"]["reason_code"] == "C20_INSUFFICIENT"
           and mixed["criteria"]["c4"]["reason_code"] == "NO_SOURCE_MARKET_SHARE",
           "and each carries a machine-readable reason code, so a UI can group "
           "them without parsing prose")
+
+    # V11v2 TIER SPLIT: a provisional criterion leaves BOTH sides of the
+    # official score. Scored-but-provisional is not the same as absent, so it
+    # must still appear in the provisional totals.
+    # C18 is N/A here so C20 is the ONLY provisional criterion and the split can
+    # be read off the totals directly.
+    prov = sec.assemble({**na(full_criteria(), ["c18"], "mapping not LOCKED"),
+                         "c20": sec.Criterion(9.0, 70.0, "OK", "cheap",
+                                              tier=sec.TIER_PROVISIONAL)})
+    check(prov["final_available_max"] == 81 and prov["provisional_available_max"] == 93,
+          f"a PROVISIONAL criterion is out of the official denominator but in the "
+          f"provisional one (got final {prov['final_available_max']}, "
+          f"provisional {prov['provisional_available_max']})")
+    check(prov["final_earned"] == prov["provisional_earned"] - 9,
+          "and out of the official numerator by exactly its own points — never "
+          "counted as a measured zero")
 
     # What is unavailable today: market share x2 and ATTC (no source), C18
     # (mapping unlocked) and C20 (formula withdrawn in V9). This is the
@@ -231,11 +251,14 @@ def main():
           f"a WORSENING FCI can never score above 1 however good its percentile "
           f"(got {worsening})")
 
-    withdrawn = sec.score_valuation(_UnblockedCore(), {"pb_ratio": 2.9})
-    check(withdrawn["c20"].points is None and withdrawn["c20"].status == "PROVISIONAL_INVALID",
-          "C20 is N/A, not 0 — it scored 0 for the entire universe, which is a "
-          "criterion that cannot discriminate rather than one finding everyone expensive")
-    r20 = sec.assemble({**full_criteria(), "c20": withdrawn["c20"]})
+    # Below the 20-broker minimum the sector cannot be priced at all, and C20 is
+    # N/A rather than 0: 0 claims "measured, worst case", which would mark every
+    # broker as expensive on the strength of having too few peers to compare.
+    unpriced = sec.score_valuation(_UnblockedCore(), {"pb_ratio": 2.9})
+    check(unpriced["c20"].points is None and unpriced["c20"].status == "N_A",
+          "C20 with no usable cross-section is N/A, not 0 — too few comparable "
+          "brokers is an absent measurement, not a bad one")
+    r20 = sec.assemble({**full_criteria(), "c20": unpriced["c20"]})
     check(r20["available_max"] == 88,
           f"and its 12 points leave the denominator rather than dragging the score "
           f"down (got {r20['available_max']})")

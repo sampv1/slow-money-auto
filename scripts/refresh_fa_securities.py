@@ -37,6 +37,8 @@ from ta.market_series import (METRIC_ADTV_MOMENTUM, METRIC_BREADTH,
 from ta.run_status import RunStatus, write_job_summary
 
 SECURITIES_ICB_L4 = "8777"          # 'Môi giới chứng khoán'
+from ta.market_history import METRIC_ADTV_Q_YOY
+
 FCI_METRIC = "macro_fci_full"
 FCI_LOOKBACK = 500
 
@@ -82,6 +84,52 @@ def _market_from(by: dict) -> dict:
 
 def _num(row):
     return float(row["value"]) if row and row.get("value") is not None else None
+
+
+def market_adtv_yoy(client, as_of: str) -> float | None:
+    """YoY growth of quarterly market ADTV, as known ON `as_of`.
+
+    C5's proxy compares a broker's brokerage growth against the market's own,
+    so it needs the most recent quarterly ADTV growth that had ALREADY been
+    observable on the scoring date — hence `lte(as_of)` and a descending read,
+    never "the latest row in the table". Scoring a past session against a
+    quarter that had not finished is look-ahead, which AT18 forbids.
+
+    Written by refresh_market_history.py; None until that backfill has run,
+    which makes C5 N/A rather than 0.
+    """
+    rows = safe_execute(
+        client.table("macro_series").select("value,date")
+        .eq("metric", METRIC_ADTV_Q_YOY).lte("date", as_of)
+        .order("date", desc=True).limit(1),
+        label="market adtv yoy",
+    ).data or []
+    return _num(rows[0]) if rows else None
+
+
+def load_adtv_yoy_series(client) -> list[tuple[str, float]]:
+    """The whole quarterly ADTV-YoY series, ascending, for the backfill.
+
+    The backfill scores hundreds of sessions; asking the DB per session would
+    be hundreds of round trips for a series of ~25 points.
+    """
+    rows = safe_execute(
+        client.table("macro_series").select("date,value")
+        .eq("metric", METRIC_ADTV_Q_YOY).order("date"),
+        label="adtv yoy series",
+    ).data or []
+    return [(r["date"], float(r["value"])) for r in rows
+            if r.get("value") is not None]
+
+
+def adtv_yoy_asof(series: list[tuple[str, float]], as_of: str) -> float | None:
+    """Newest quarterly ADTV YoY observable on `as_of` — never a later one."""
+    val = None
+    for d, v in series:
+        if d > as_of:
+            break
+        val = v
+    return val
 
 
 def fci_context(client, as_of: str) -> dict:
@@ -217,6 +265,11 @@ def core_history(statements: dict, quarter: str) -> list[dict]:
             "reported_npat": rep,
             "noncore": (rep - cn) if (cn is not None and rep is not None) else None,
             "core_roe": (cn / eq) if (cn is not None and eq) else None,
+            # C20 prices the WHOLE firm, so its ROE must be the whole firm's:
+            # reported NPAT over average equity, not the core-only figure. That
+            # scope mismatch is what made the V8 formula read every broker as
+            # expensive (see fa/securities.score_valuation).
+            "total_roe": (rep / eq) if (rep is not None and eq) else None,
             "equity": bal_q.get(sec.BS_EQUITY),
             "shares": bal_q.get(sec.BS_SHARES),
         })
@@ -232,13 +285,15 @@ def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
     recurring business has not changed.
     """
     if price is None:
-        return {"core_pe": None, "p_core_pe": None, "pb_ratio": None, "c20_shadow": None}
+        return {"core_pe": None, "p_core_pe": None, "pb_ratio": None,
+                "current_pb": None, "c20_shadow": None}
     _, _, close_q = sec.ttm_window(quarter)
     bal = statements.get("balance", {}).get(close_q, {})
     shares = bal.get(sec.BS_SHARES) or 0
     equity = bal.get(sec.BS_EQUITY) or 0
     if not shares:
-        return {"core_pe": None, "p_core_pe": None, "pb_ratio": None, "c20_shadow": None}
+        return {"core_pe": None, "p_core_pe": None, "pb_ratio": None,
+                "current_pb": None, "c20_shadow": None}
     market_cap = price * shares
 
     core_npat = core.val("core_npat_ttm")
@@ -304,8 +359,15 @@ def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
         "v8_core_only_pb_ratio": pb_ratio,
         "note": "shadow only — C20 is not scored in this model version",
     }
+    # `current_pb` is the ACTUAL price-to-book. `pb_ratio` is the V8 diagnostic
+    # (actual / core-only justified P/B) and is NOT a P/B — they differ by two
+    # orders of magnitude for some brokers. V11v2's cross-section needs the
+    # former; feeding it the latter fits the model on the wrong variable and
+    # inverts the slope, which is what happened on the first run here (ORS read
+    # 110.32 against a true P/B of 1.10, and the four such names all sat at low
+    # ROE, dragging b to -6.8).
     return {"core_pe": core_pe, "p_core_pe": p_core_pe, "pb_ratio": pb_ratio,
-            "c20_shadow": shadow}
+            "current_pb": current_pb, "c20_shadow": shadow}
 
 
 def _shift_quarters(quarters: list[str], back: int) -> list[str]:
@@ -320,7 +382,8 @@ def _shift_quarters(quarters: list[str], back: int) -> list[str]:
     return out
 
 
-def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float) -> dict:
+def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
+            adtv_yoy: float | None = None) -> dict:
     """Pass 1 — canonical core plus the raw metrics the cross-sectional
     criteria will rank. No scoring happens here, because four criteria cannot be
     scored until every peer has been measured."""
@@ -373,12 +436,56 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float) 
             # C14: dispersion of core ROE, penalised for core-loss quarters.
             "stability": sec.core_roe_volatility(core_roes),
             "core_history_n": len(core_roes),
+            # C20 (V11v2 sheet 48): median TTM whole-firm ROE over the last 8
+            # quarters, requiring at least 6 valid. The MEDIAN, not the mean,
+            # because a single blowout prop quarter should not reset a broker's
+            # normal earning power — which is the whole point of normalizing.
+            "normalized_total_roe": _normalized_total_roe(history),
+            # C5 proxy numerator: brokerage gross profit, this TTM against last.
+            "brokerage_gp_yoy": _yoy(
+                core.val("brokerage_ib_gross_profit"),
+                prior.val("brokerage_ib_gross_profit")),
+            # Identical for every broker on a session — the market half of the
+            # C5 spread — but carried per symbol so the criterion stays a pure
+            # function of its own ctx.
+            "market_adtv_yoy": adtv_yoy,
         }
         ctx.update(valuation_inputs(st, core, quarter, prices.get(sym), coe, history))
         ctx["has_market_cap"] = prices.get(sym) is not None and bool(
             bal.get(close_q, {}).get(sec.BS_SHARES))
         out[sym] = {"core": core, "ctx": ctx, "statements": st, "history": history}
     return out
+
+
+NORMALIZED_ROE_WINDOW = 8
+NORMALIZED_ROE_MIN_OBS = 6
+
+
+def _yoy(now: float | None, prior: float | None) -> float | None:
+    """Growth of `now` over `prior`, or None when the base cannot carry one.
+
+    A non-positive base is refused rather than signed: growth from a loss is
+    not a percentage anyone can rank.
+    """
+    if now is None or prior is None or prior <= 0:
+        return None
+    return now / prior - 1
+
+
+def _normalized_total_roe(history: list[dict]) -> float | None:
+    """Median whole-firm TTM ROE over the trailing 8 quarters (>= 6 valid).
+
+    `history[0]` is the current TTM window and each later entry steps one
+    quarter back, so the window is a simple prefix — no date arithmetic, and no
+    risk of reaching past the as-of quarter into data that did not exist yet.
+    """
+    vals = [h["total_roe"] for h in history[:NORMALIZED_ROE_WINDOW]
+            if h.get("total_roe") is not None]
+    if len(vals) < NORMALIZED_ROE_MIN_OBS:
+        return None
+    vals.sort()
+    mid = len(vals) // 2
+    return vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2
 
 
 def _margin_growth(balance: dict, quarter: str) -> float | None:
@@ -409,6 +516,24 @@ def add_percentiles(collected: dict) -> None:
                          ascending=ascending)
         for s, d in collected.items():
             d["ctx"][f"p_{name}"] = ranks.get(s)
+
+
+def add_c20_cross_section(collected: dict) -> dict:
+    """Pass 2a-bis — fit the peer P/B ~ ROE model ONCE and inject each score.
+
+    Cross-sectional by nature: a symbol's C20 is its position among the peers
+    priced on the same session, so this cannot live in the per-symbol scorer.
+    Symbols missing either input simply do not enter the sample and receive no
+    criterion, which `score_valuation` renders as N/A with max 0.
+    """
+    obs = {
+        sym: (d["ctx"].get("current_pb"), d["ctx"].get("normalized_total_roe"))
+        for sym, d in collected.items()
+    }
+    result = sec.c20_cross_section(obs)
+    for sym, crit in result["scores"].items():
+        collected[sym]["ctx"]["c20_criterion"] = crit
+    return result["model"]
 
 
 def score_all(collected: dict, market: dict, fci: dict) -> dict:
@@ -452,6 +577,17 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
         "data_group": totals["data_group"],
         "provisional_score": totals["provisional_score"],
         "final_fa_score": totals["final_fa_score"],
+        # V11v2 tier split (migration 062). The official columns carry ONLY the
+        # locked criteria; the provisional ones carry locked + provisional, so
+        # a reader can see both what we can publish and what we can measure.
+        "final_earned": totals["final_earned"],
+        "final_available_max": totals["final_available_max"],
+        "final_coverage": totals["final_coverage"],
+        "provisional_earned": totals["provisional_earned"],
+        "provisional_available_max": totals["provisional_available_max"],
+        "provisional_coverage": totals["provisional_coverage"],
+        "provisional_fa_score": totals["provisional_fa_score"],
+        "model_status": totals["model_status"],
         "criteria": totals["criteria"],
         "fa_status": totals["fa_status"],
         "score_status": score_status,
@@ -589,6 +725,7 @@ def run_backfill(client, args, st) -> int:
         print(f"  {quarter} (effective {effective_date_of(quarter)}): "
               f"{len(qdates)} sessions {qdates[0]} .. {qdates[-1]}")
         cores = collect(client, symbols, quarter, {}, coe)   # prices added per date
+        adtv_series = load_adtv_yoy_series(client)
         if not cores:
             continue
         for as_of in qdates:
@@ -604,7 +741,15 @@ def run_backfill(client, args, st) -> int:
                 d["ctx"].update(valuation_inputs(
                     d["statements"], d["core"], quarter,
                     price_asof(prices.get(sym, []), as_of), coe, d["history"]))
+                # Same reason `history` is required above: the C5 proxy and the
+                # C20 cross-section are BOTH date-dependent, so a per-date
+                # backfill must refresh them per date. Carrying one session's
+                # value across the loop is the exact shape of the C19
+                # regression V10 had to fix.
+                d["ctx"]["market_adtv_yoy"] = adtv_yoy_asof(adtv_series, as_of)
+                d["ctx"].pop("c20_criterion", None)
             add_percentiles(cores)
+            c20_model = add_c20_cross_section(cores)
             scored = score_all(cores, market, fci)
             for sym, sc in scored.items():
                 row = build_row(sym, sc, as_of, quarter, market, fci, status)
@@ -685,10 +830,16 @@ def main():
     coe = risk_free_rate(client) + EQUITY_RISK_PREMIUM
     print(f"Cost of equity {coe:.1%} (10y govbond + {EQUITY_RISK_PREMIUM:.0%} premium); "
           f"prices for {len(prices)}/{len(symbols)} brokers")
-    collected = collect(client, symbols, quarter, prices, coe)
+    collected = collect(client, symbols, quarter, prices, coe,
+                        adtv_yoy=market_adtv_yoy(client, as_of))
     st.require("Collected brokers", len(collected), minimum=1, unit="symbols",
                detail=f"of {len(symbols)} in the ICB {SECURITIES_ICB_L4} universe")
     add_percentiles(collected)
+    c20_model = add_c20_cross_section(collected)
+    print(f"C20 cross-section: {c20_model.get('status')} "
+          f"n={c20_model.get('n')}"
+          + (f" b={c20_model['b']:.3f} R2={c20_model['r2']:.3f}"
+             if c20_model.get('b') is not None else ""))
     scored = score_all(collected, market, fci)
 
     rows = [build_row(s, d, as_of, quarter, market, fci, score_status)

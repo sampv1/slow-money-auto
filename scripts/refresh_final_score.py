@@ -39,6 +39,11 @@ def main():
     breakdown = ", ".join(f"{p}: {n}" for p, n in sorted(periods.items(), reverse=True))
     print(f"{verb}: {stats['scored']}/{stats['rows']} symbols on their latest FA quarter"
           + (f" ({breakdown})" if breakdown else ""))
+    # Brokers are deliberately absent, not missing. Say so every run, or the
+    # next reader has to rediscover why the sector has no Final score.
+    if stats.get("securities_members"):
+        print(f"  securities: {stats['securities_blocked']} blocked "
+              f"(SECTOR_MODEL_PENDING) of {stats['securities_members']} members")
     sys.exit(_gate(stats, args.dry_run))
 
 
