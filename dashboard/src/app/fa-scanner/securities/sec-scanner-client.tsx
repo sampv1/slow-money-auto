@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import {
   type SecScore,
-  type SecStatus,
   SEC_BLOCKS,
   SEC_BLOCK_SPANS,
   SEC_CRITERIA,
@@ -128,11 +127,14 @@ export function SecScannerClient({
   }
 
   const arrow = (key: SortKey) => (sortKey !== key ? "" : sortAsc ? " ▲" : " ▼");
-  const counts = useMemo(() => {
-    const c: Partial<Record<SecStatus, number>> = {};
-    for (const r of rows) c[r.fa_status] = (c[r.fa_status] ?? 0) + 1;
-    return c;
-  }, [rows]);
+  // Counted over the FULL row set, never the filtered one: these describe the
+  // sector, and a liquidity filter changing "how many brokers have enough data"
+  // would be nonsense.
+  const enoughData = useMemo(
+    () => rows.filter((r) => r.data_group === "A").length, [rows]);
+  const published = useMemo(
+    () => rows.filter((r) => r.publish_gate === "PASS").length, [rows]);
+
 
   return (
     <div>
@@ -188,9 +190,18 @@ export function SecScannerClient({
         </select>
         {isPending && <span className="text-body text-fg-label">{t(locale, "loading")}</span>}
 
-        <span className="ml-auto text-body text-fg-label">
-          {formatNumber(filtered.length)} / {formatNumber(rows.length)} {t(locale, "secSymbols")}
-          {counts.PUBLISHABLE !== undefined && ` · ${counts.PUBLISHABLE} ${t(locale, "secStatusPublishable").toLowerCase()}`}
+        {/* FOUR NUMBERS THAT MEANT DIFFERENT THINGS, PRINTED AS TWO.
+            This read "32 / 42 mã · 37 đủ điều kiện", which invites the reader
+            to believe 37 of the 32 on screen are eligible. Worse, "đủ điều
+            kiện" was the fa_status count — 37 — while only 23 pass the publish
+            gate and carry an official score. Each number is now named for what
+            it counts, and the one that actually governs publication is
+            present. */}
+        <span className="ml-auto text-body text-fg-label" title={t(locale, "secCountTip")}>
+          {formatNumber(rows.length)} {t(locale, "secCountTracked")}
+          {" · "}{formatNumber(enoughData)} {t(locale, "secCountEnoughData")}
+          {" · "}{formatNumber(published)} {t(locale, "secCountPublished")}
+          {" · "}{formatNumber(filtered.length)} {t(locale, "secCountLiquid")}
         </span>
       </div>
 

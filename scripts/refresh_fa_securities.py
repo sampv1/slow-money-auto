@@ -108,6 +108,37 @@ def market_adtv_yoy(client, as_of: str) -> float | None:
     return _num(rows[0]) if rows else None
 
 
+def market_share_rows(client) -> list[dict]:
+    """BA's verified broker market-share uploads, newest publication last."""
+    try:
+        return paged_select(
+            lambda o, l: client.table("fa_broker_market_share")
+            .select("symbol,period,exchange_scope,market_share_pct,source,source_date")
+            .order("source_date").order("symbol").range(o, o + l - 1),
+            label="broker market share")
+    except Exception as e:  # noqa: BLE001 — table arrives with migration 065
+        print(f"::warning::market share unavailable ({type(e).__name__}: {e}); "
+              "C4 stays N/A")
+        return []
+
+
+def market_share_asof(rows: list[dict], as_of: str) -> dict[str, dict]:
+    """{symbol: row} — the newest figure PUBLISHED on or before `as_of`.
+
+    The date test is on `source_date`, the publication date, not on the period
+    it covers. A Q2 share is not knowable the day the quarter ends; scoring a
+    past session with a figure released weeks later is look-ahead, and the
+    backfill replays 242 of them. Rows arrive ordered by source_date, so the
+    last match wins.
+    """
+    out: dict[str, dict] = {}
+    for r in rows:
+        if not r.get("source_date") or str(r["source_date"]) > as_of:
+            continue
+        out[r["symbol"]] = r
+    return out
+
+
 def c18_drivers(client) -> tuple[dict, dict]:
     """The two market drivers C18 regresses against, keyed by quarter label.
 
@@ -523,7 +554,7 @@ def _shift_quarters(quarters: list[str], back: int) -> list[str]:
 
 
 def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
-            adtv_yoy: float | None = None) -> dict:
+            adtv_yoy: float | None = None, shares: dict | None = None) -> dict:
     """Pass 1 — canonical core plus the raw metrics the cross-sectional
     criteria will rank. No scoring happens here, because four criteria cannot be
     scored until every peer has been measured."""
@@ -557,6 +588,7 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
         c14_view, c14_lineage = history_window(history, "c14")
         core_roes = [h["core_roe"] for h in c14_view if h["core_roe"] is not None]
 
+        _mg = _margin_growth_parts(bal, quarter)
         margin_income = sec.ttm(st, "income", sec.MARGIN_INCOME, qs)
         cof = (efc / avg_ea) if (efc and avg_ea) else None
         ctx = {
@@ -572,7 +604,19 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
             "cof": cof,
             "leverage": (debt / equity) if (equity and debt is not None) else None,
             "prop_risk": (trading_book / equity) if equity else None,
-            "margin_growth": _margin_growth(bal, quarter),
+            "margin_growth": _mg["blend"],
+            # Shown to the reader as percentages; C7's score is the sub-line.
+            "margin_loan_growth_yoy_pct": _mg["yoy"],
+            "margin_loan_growth_qoq_pct": _mg["qoq"],
+            # C4: only a row already published by the scoring session reaches
+            # here — see market_share_asof.
+            "c4_criterion": (
+                sec.score_c4(float(sh["market_share_pct"]), sh.get("exchange_scope"))
+                if (sh := (shares or {}).get(sym)) else None),
+            "market_share_pct": (float(sh["market_share_pct"]) if sh else None),
+            "market_share_scope": (sh.get("exchange_scope") if sh else None),
+            "market_share_source": (sh.get("source") if sh else None),
+            "market_share_period": (sh.get("period") if sh else None),
             # C13: what the broker charged against its own earning assets.
             "asset_risk": (abs(sec.ttm(st, "income", sec.PROVISION_EXPENSE, qs)) / avg_ea)
                           if avg_ea else None,
@@ -636,8 +680,16 @@ def _normalized_total_roe(history: list[dict]) -> float | None:
     return vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2
 
 
-def _margin_growth(balance: dict, quarter: str) -> float | None:
-    """C7: 70% year-on-year + 30% quarter-on-quarter growth of the margin book."""
+def _margin_growth_parts(balance: dict, quarter: str) -> dict:
+    """The margin book's YoY and QoQ growth, and the 70/30 blend C7 scores.
+
+    THE BLEND IS NOT A GROWTH RATE ANYONE READS. C7 scores it, but the summary
+    tab has to show a reader what the margin book actually did — "+18.0% YoY /
+    +7.0% QoQ" is the fact; "3/3" is our opinion of it. Shipping the score
+    under a column headed "margin book growth" is what BA caught, so the two
+    components are computed and returned separately rather than being folded
+    away where only the scorer can see them.
+    """
     _, _, close_q = sec.ttm_window(quarter)
     _, _, yoy_q = sec.ttm_window(quarter, back=1)
     y, q = int(quarter[:4]), int(quarter[-1])
@@ -645,9 +697,17 @@ def _margin_growth(balance: dict, quarter: str) -> float | None:
     now = sec._sum(balance.get(close_q, {}), sec.BS_MARGIN)
     ly = sec._sum(balance.get(yoy_q, {}), sec.BS_MARGIN)
     lq = sec._sum(balance.get(prev_q, {}), sec.BS_MARGIN)
-    if not now or not ly or not lq:
-        return None
-    return 0.7 * (now / ly - 1) + 0.3 * (now / lq - 1)
+    yoy = (now / ly - 1) if (now and ly) else None
+    qoq = (now / lq - 1) if (now and lq) else None
+    # The blend keeps C7's exact prior definition — both components required,
+    # so a broker missing one quarter is N/A rather than scored on half.
+    blend = (0.7 * yoy + 0.3 * qoq) if (yoy is not None and qoq is not None) else None
+    return {"yoy": yoy, "qoq": qoq, "blend": blend}
+
+
+def _margin_growth(balance: dict, quarter: str) -> float | None:
+    """C7's blended input. Unchanged in value — see _margin_growth_parts."""
+    return _margin_growth_parts(balance, quarter)["blend"]
 
 
 def add_percentiles(collected: dict) -> None:
@@ -752,6 +812,7 @@ def score_all(collected: dict, market: dict, fci: dict) -> dict:
         criteria.update(sec.score_valuation(d["core"], d["ctx"]))
         totals = sec.assemble(criteria)
         out[sym] = {"criteria": criteria, "totals": totals, "core": d["core"],
+                    "ctx": d["ctx"],
                     "shadow": d["ctx"].get("c20_shadow"),
                     "c14_lineage": d["ctx"].get("c14_lineage"),
                     "c19_lineage": d["ctx"].get("c19_lineage"),
@@ -805,6 +866,13 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
         "quality_locked_available": totals["quality_locked_available"],
         # AT22: the backend owns this sum; the UI renders it and never re-adds.
         "quality_groups": totals["quality_groups"],
+        # The margin book's actual growth. C7's score is a sub-line under it in
+        # the UI, never a stand-in for it.
+        "margin_loan_growth_yoy_pct": (scored.get("ctx") or {}).get("margin_loan_growth_yoy_pct"),
+        "margin_loan_growth_qoq_pct": (scored.get("ctx") or {}).get("margin_loan_growth_qoq_pct"),
+        # Qualitative copy is Research-owned and never derived from C1-C20.
+        # PENDING until someone writes one; the UI says "Chưa cập nhật".
+        "narrative_status": "PENDING",
         "sector_cycle_available": totals["sector_cycle_available"],
         "valuation_locked_available": totals["valuation_locked_available"],
         "criteria": totals["criteria"],
@@ -963,6 +1031,7 @@ def run_backfill(client, args, st) -> int:
         cores = collect(client, symbols, quarter, {}, coe)   # prices added per date
         adtv_series = load_adtv_yoy_series(client)
         market_yoy, index_return = c18_drivers(client)
+        shares_all = market_share_rows(client)
         if not cores:
             continue
         for as_of in qdates:
@@ -984,6 +1053,18 @@ def run_backfill(client, args, st) -> int:
                 # value across the loop is the exact shape of the C19
                 # regression V10 had to fix.
                 d["ctx"]["market_adtv_yoy"] = adtv_yoy_asof(adtv_series, as_of)
+                # RE-RESOLVED PER DATE. A market-share figure becomes usable on
+                # its publication date, so a backfilled session earlier than
+                # that must not see it — the same look-ahead rule the ADTV
+                # series above obeys.
+                sh = market_share_asof(shares_all, as_of).get(sym)
+                d["ctx"]["c4_criterion"] = (
+                    sec.score_c4(float(sh["market_share_pct"]), sh.get("exchange_scope"))
+                    if sh else None)
+                d["ctx"]["market_share_pct"] = float(sh["market_share_pct"]) if sh else None
+                d["ctx"]["market_share_scope"] = sh.get("exchange_scope") if sh else None
+                d["ctx"]["market_share_source"] = sh.get("source") if sh else None
+                d["ctx"]["market_share_period"] = sh.get("period") if sh else None
                 d["ctx"].pop("c20_criterion", None)
                 d["ctx"].pop("c9_criterion", None)
                 d["ctx"].pop("c18_criterion", None)
@@ -1071,8 +1152,13 @@ def main():
     coe = risk_free_rate(client) + EQUITY_RISK_PREMIUM
     print(f"Cost of equity {coe:.1%} (10y govbond + {EQUITY_RISK_PREMIUM:.0%} premium); "
           f"prices for {len(prices)}/{len(symbols)} brokers")
+    shares_all = market_share_rows(client)
+    shares = market_share_asof(shares_all, as_of)
+    if shares_all:
+        print(f"Broker market share: {len(shares)}/{len(symbols)} usable at {as_of} "
+              f"(of {len(shares_all)} uploaded rows)")
     collected = collect(client, symbols, quarter, prices, coe,
-                        adtv_yoy=market_adtv_yoy(client, as_of))
+                        adtv_yoy=market_adtv_yoy(client, as_of), shares=shares)
     st.require("Collected brokers", len(collected), minimum=1, unit="symbols",
                detail=f"of {len(symbols)} in the ICB {SECURITIES_ICB_L4} universe")
     add_percentiles(collected)

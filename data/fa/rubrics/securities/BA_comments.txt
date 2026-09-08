@@ -1,0 +1,146 @@
+PHẢN HỒI GIAO DIỆN CTCK V11v4
+
+Giao diện hiện tại CHƯA ĐƯỢC NGHIỆM THU. Đề nghị hotfix theo các nội dung dưới đây, không thay đổi toàn bộ công thức chấm điểm C1–C20.
+
+I. CÁC LỖI P0 PHẢI SỬA
+
+1. Ba cột chất lượng trên Tab Tóm tắt đang hiển thị sai
+
+Hiện tại IT đang đọc ba tiêu chí đơn:
+
+* Chất lượng tài sản = C13.
+* CIR cốt lõi = C8.
+* An toàn vốn = C9.
+
+Đây không phải thiết kế đã chốt.
+
+Mapping đúng phải là:
+
+* Chất lượng tài sản = C3 + C12 + C13. Max thiết kế 10.
+* Hiệu quả hoạt động = C1 + C2 + C4 + C5 + C6 + C7 + C8. Max thiết kế 28.
+* An toàn vốn = C9 + C10 + C11 + C14. Max thiết kế 12.
+
+Yêu cầu:
+
+* Đổi tên “CIR cốt lõi” thành “Hiệu quả hoạt động”.
+* Backend tính tổng từng nhóm và trả về group object.
+* Frontend chỉ hiển thị kết quả backend, không tự lấy C13/C8/C9 thay thế.
+* Mẫu số hiển thị phải là tổng FINAL available thực tế của từng mã.
+* Phần PROVISIONAL phải tách riêng và có dấu `*`, không cộng vào kết quả FINAL.
+
+Ví dụ cách hiển thị:
+
+* Chất lượng tài sản: `4/10 – Trung bình`.
+* Hiệu quả hoạt động: `17/21 – Khá`.
+* An toàn vốn: `7/8 – Tốt`; dòng phụ `C9 tạm tính: 2/4*`.
+
+2. Cột “Tăng trưởng dư nợ MG” đang hiển thị sai loại dữ liệu
+
+Hiện tại cột này hiển thị `3/3`, đây là điểm C7 chứ không phải tốc độ tăng trưởng.
+
+Hiển thị đúng:
+
+* Dòng chính: `+18,0% YoY / +7,0% QoQ`.
+* Dòng phụ: `Điểm C7: 3/3`.
+
+API cần trả riêng:
+
+* `margin_loan_growth_yoy_pct`
+* `margin_loan_growth_qoq_pct`
+* `c7_earned`
+* `c7_available`
+
+Không được dùng điểm `3/3` thay cho số tăng trưởng phần trăm.
+
+3. C4 không được N/A đối với các CTCK có số liệu thị phần HOSE
+
+HOSE đã công bố thị phần môi giới quý II/2026. Phải import dữ liệu này và dùng kỳ gần nhất có ngày công bố không vượt quá ngày chấm điểm.
+
+Các mã tối thiểu phải có dữ liệu C4:
+
+* SSI: 11,17%.
+* TCX/TCBS: 9,36%.
+* VCI/Vietcap: 7,00%.
+* HCM/HSC: 6,80%.
+* MBS: 4,79%.
+* VND: 3,96%.
+* VPX/VPBankS: 3,57%.
+
+Yêu cầu:
+
+* Nguồn chính trong database ghi là HOSE.
+* Bài báo chỉ dùng để tham chiếu/đối chiếu.
+* Chấm C4 theo đúng rubric hiện hành.
+* Nếu rubric cần YoY, phải lấy thêm thị phần quý II/2025; không được lấy thay đổi QoQ thay cho YoY.
+* Mã ngoài Top 10, không có số riêng, tiếp tục để `N/A`.
+* Không được chia đều phần thị phần còn lại và không tự cho `1/4`.
+
+Tab Tóm tắt và Tab Chi tiết phải cập nhật C4 đồng thời từ cùng một nguồn dữ liệu.
+
+II. BA CỘT NỘI DUNG ĐỊNH TÍNH ĐANG BỎ TRỐNG
+
+Ba cột sau hiện lặp lại “chưa có dữ liệu”:
+
+* Mô hình chính.
+* Động lực nổi bật.
+* Rủi ro chính.
+
+Đây là dữ liệu định tính, không được frontend tự suy luận từ điểm C1–C20.
+
+Đề nghị bổ sung các field:
+
+* `business_model_summary`
+* `key_driver_summary`
+* `key_risk_summary`
+* `narrative_as_of_date`
+* `narrative_source`
+* `narrative_status`
+
+Nguồn lấy từ báo cáo phân tích hoặc dữ liệu BA đã duyệt.
+
+Khi chưa được cập nhật:
+
+* Hiển thị `Chưa cập nhật` hoặc `—`.
+* Không lặp cụm “chưa có dữ liệu” trên cả ba cột.
+* Không tự sinh nội dung thiếu căn cứ.
+
+III. SỬA BỘ ĐẾM PHÍA TRÊN
+
+Hiện giao diện ghi:
+
+`32/42 mã · 38 đủ điều kiện`
+
+Cách ghi này gây hiểu rằng có 38 mã đủ điều kiện trong khi chỉ có 32 mã đang hiển thị.
+
+Phải tách rõ từng khái niệm, ví dụ:
+
+`42 mã theo dõi · 38 mã đủ dữ liệu · 32 mã đạt điều kiện thanh khoản`
+
+Nếu 38 và 32 mang ý nghĩa khác, API và tooltip phải ghi rõ định nghĩa từng số.
+
+IV. NGUYÊN TẮC GIAO DIỆN TAB TÓM TẮT
+
+Tab Tóm tắt dành cho nhà đầu tư phổ thông nên ưu tiên:
+
+* Số liệu kinh doanh gốc.
+* Diễn giải ngắn, dễ hiểu.
+* Kết luận Khá/Tốt/Trung bình.
+* Điểm tiêu chí chỉ đặt ở dòng phụ.
+
+Không nên biến Tab Tóm tắt thành một phiên bản rút gọn của bảng C1–C20.
+
+Tab “Tóm tắt dễ hiểu” tiếp tục mở mặc định. Tab “Chi tiết 20 tiêu chí” dành cho người muốn kiểm tra điểm và nguồn dữ liệu.
+
+V. ĐIỀU KIỆN NGHIỆM THU HOTFIX
+
+IT gửi lại:
+
+1. Ảnh Tab Tóm tắt sau khi sửa.
+2. JSON API của ít nhất VIX, VCI, SSI, HCM và một mã ngoài Top 10.
+3. Đối chiếu ba nhóm chất lượng giữa API và C1–C14.
+4. Đối chiếu thị phần HOSE và điểm C4.
+5. Kiểm tra tăng trưởng dư nợ margin hiển thị bằng %, điểm C7 nằm ở dòng phụ.
+6. Xác nhận hai tab trả cùng điểm FINAL, coverage và trạng thái.
+7. Xác nhận frontend không tự cộng hoặc tự tính lại điểm.
+
+Đây là hotfix giao diện và data mapping của V11v4, chưa cần mở V12.

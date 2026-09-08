@@ -439,9 +439,38 @@ C20_PB = [(.75, 12), (.90, 9), (1.10, 6), (1.25, 3)]
 # adds 1 to every numerator and 4 to every denominator and so drags the whole
 # sector toward 25% while separating nobody. A criterion that cannot rank is
 # not a weak measurement, it is no measurement.
-UNSOURCED_CRITERIA = {
-    "c4": "broker market share not published by the provider",
-}
+# Nothing is unsourced by default any more: C4 scores when BA's verified
+# market-share row exists AND was published on or before the scoring session,
+# and is N/A otherwise. The dict is kept (empty) because `score_quality` walks
+# it, and a future criterion may need the same treatment.
+UNSOURCED_CRITERIA: dict[str, str] = {}
+
+# C4 bands (V11v4 sheet 45), on the OFFICIAL share only. There is no proxy: the
+# V11 draft's "1/4 for any active broker" was withdrawn because it adds 1 to
+# every numerator and 4 to every denominator, dragging every symbol toward 25%
+# while separating nobody.
+C4_BANDS = [(10.0, 4), (5.0, 3), (2.0, 2), (0.0001, 1)]
+C4_CODES = {4: "C4_GE_10", 3: "C4_5_10", 2: "C4_2_5", 1: "C4_LT_2", 0: "C4_ZERO"}
+
+
+def score_c4(share_pct: float | None, scope: str | None = None) -> Criterion:
+    """C4 from a verified exchange market share, in percent.
+
+    LOCKED, not provisional: this is the exchange's own published figure, which
+    is exactly the source the rubric asks for. The caller is responsible for
+    passing only a row whose PUBLICATION date precedes the scoring session —
+    see market_share_asof.
+    """
+    if share_pct is None:
+        return Criterion(None, None, "N_A",
+                         "no verified market-share filing for this period",
+                         code="C4_NO_VERIFIED_SOURCE")
+    pts = _bands_desc(share_pct, C4_BANDS) if share_pct > 0 else 0
+    return Criterion(pts, share_pct, "OK",
+                     f"{share_pct:.2f}% brokerage market share"
+                     + (f" ({scope})" if scope else ""),
+                     method="OFFICIAL", confidence="HIGH",
+                     code=C4_CODES[int(pts)])
 
 # --- C9 (V11v3 sheet 46) — capital safety ----------------------------------
 # The OFFICIAL measure is the ATTC ratio (tỷ lệ an toàn tài chính), a separate
@@ -849,6 +878,10 @@ def score_quality(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
 
     for key, reason in UNSOURCED_CRITERIA.items():
         na(key, reason)
+
+    # C4 broker market share — injected by the caller from BA's quarterly
+    # upload, already filtered to rows published on or before this session.
+    out["c4"] = ctx.get("c4_criterion") or score_c4(None)
 
     # C9 capital safety — injected by the caller from the peer cross-section,
     # since a percentile cannot be computed from one symbol's own numbers.

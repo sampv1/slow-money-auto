@@ -56,6 +56,13 @@ export type SecScore = {
   valuation_locked_available: number | null;
   c18_provisional_score: number | null;
   quality_groups: Record<string, SecQualityGroup> | null;
+  margin_loan_growth_yoy_pct: number | null;
+  margin_loan_growth_qoq_pct: number | null;
+  market_share_pct: number | null;
+  business_model_summary: string | null;
+  key_driver_summary: string | null;
+  key_risk_summary: string | null;
+  narrative_status: string | null;
   history_lineage: Record<string, Record<string, string | number | null>> | null;
   c18_method: string | null;
   c18_confidence: string | null;
@@ -216,6 +223,32 @@ export type SecQualityGroup = {
   provisional_earned: number;
   provisional_available_max: number;
 };
+
+/**
+ * The plain-language verdict beside a group score (V11v4 BA review §I).
+ *
+ * BA gave three worked examples and no band table: 4/10 "Trung bình",
+ * 17/21 "Khá", 7/8 "Tốt". Those pin the thresholds to 0.40 / 0.65 / 0.85 —
+ * 17/21 is 0.81 and must stay BELOW "Tốt", which is the constraint that fixes
+ * the top band. Stated here because the bands are inferred from examples, not
+ * specified, and are the first thing to correct if BA says otherwise.
+ *
+ * A group with nothing measurable gets no verdict at all: "Yếu" on an unmeasured
+ * group would be the N/A-as-zero mistake the whole rubric is built to avoid.
+ */
+export function groupVerdict(
+  earned: number | null | undefined,
+  max: number | null | undefined,
+  locale: Locale,
+): string | null {
+  if (earned === null || earned === undefined || !max) return null;
+  const r = earned / max;
+  const key = r >= 0.85 ? "secVerdictGood"
+    : r >= 0.65 ? "secVerdictFair"
+    : r >= 0.40 ? "secVerdictMid"
+    : "secVerdictWeak";
+  return t(locale, key);
+}
 
 export const SEC_SUMMARY_QUALITY = [
   { key: "asset_quality", label: "secGroupAsset" },

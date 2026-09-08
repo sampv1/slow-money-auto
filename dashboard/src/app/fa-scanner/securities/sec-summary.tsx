@@ -9,6 +9,7 @@ import {
   secStatusLabel,
   secStatusStyle,
   secDisplayScore,
+  groupVerdict,
 } from "@/lib/fa-securities";
 import { TABLE, TABLE_FREEZE, THEAD_STICKY, TH, TH_WRAP, TH_NUM_WRAP, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
 import { PinButton } from "@/components/pin-button";
@@ -59,15 +60,20 @@ function Cell({
   );
 }
 
+// Above ten-fold, a percentage stops informing and starts looking like a bug.
+// These are real: a broker whose margin book was near zero a year ago prints
+// +5,247.8% (WSS) or +1,315.4% (VUA) on live data. "x53.5" says the same thing
+// in four characters and reads as a magnitude rather than a typo. The cutoff is
+// on the RATIO, so it is symmetric and never fires on an ordinary quarter.
+const GROWTH_AS_MULTIPLE = 10;
+
 function Growth({ value }: { value: number | null | undefined }) {
   if (value === null || value === undefined) return <span className="text-fg-muted">N/A</span>;
   const up = value >= 0;
-  return (
-    <span className={up ? "text-up" : "text-down"}>
-      {up ? "+" : ""}
-      {(value * 100).toFixed(1)}%
-    </span>
-  );
+  const text = value >= GROWTH_AS_MULTIPLE
+    ? `\u00d7${(1 + value).toFixed(1)}`
+    : `${up ? "+" : ""}${(value * 100).toFixed(1)}%`;
+  return <span className={up ? "text-up" : "text-down"}>{text}</span>;
 }
 
 export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Locale }) {
@@ -161,16 +167,20 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                       · {r.data_group ?? "—"}
                     </span>
                   </td>
-                  {/* Research-owned copy, not yet sourced — named as missing
-                      rather than left blank. See the module note. */}
+                  {/* Research-owned copy. NEVER derived from C1-C20 — a
+                      business model inferred from scores would be the system
+                      inventing an opinion and presenting it as analysis. Only
+                      the first column carries the words; repeating them down
+                      three columns read as a broken page rather than as
+                      content nobody has written yet. */}
                   <td className="px-2 row-h text-body text-fg-muted italic">
-                    {t(locale, "secSumNotSourced")}
+                    {r.business_model_summary ?? t(locale, "secNarrativePending")}
                   </td>
-                  <td className="px-2 row-h text-body text-fg-muted italic">
-                    {t(locale, "secSumNotSourced")}
+                  <td className="px-2 row-h text-body text-fg-muted">
+                    {r.key_driver_summary ?? <span className="text-fg-faint">—</span>}
                   </td>
-                  <td className="px-2 row-h text-body text-fg-muted italic">
-                    {t(locale, "secSumNotSourced")}
+                  <td className="px-2 row-h text-body text-fg-muted">
+                    {r.key_risk_summary ?? <span className="text-fg-faint">—</span>}
                   </td>
                   {/* C4 has no source at all. The label is the wording the spec
                       fixes — never an inferred "under 2%", which would be a
@@ -181,17 +191,40 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                       itself off a placeholder. */}
                   <td className="px-2 row-h text-body leading-tight">
                     {cr.c4?.status === "VALID" ? (
-                      <Cell earned={cr.c4.earned} max={cr.c4.available_max} />
+                      <>
+                        <div>{r.market_share_pct?.toFixed(2)}%</div>
+                        <div className="text-fg-label">
+                          C4: <Cell earned={cr.c4.earned} max={cr.c4.available_max} />
+                        </div>
+                      </>
                     ) : (
                       <span className="text-fg-muted">{t(locale, "secSumShareUnknown")}</span>
                     )}
                   </td>
-                  <td className={TD_NUM}>
-                    <Cell
-                      earned={cr.c7?.earned}
-                      max={cr.c7?.available_max}
-                      provisional={cr.c7?.tier === "PROVISIONAL"}
-                    />
+                  {/* The margin book's ACTUAL growth, with C7's score demoted
+                      to a sub-line. This column previously showed "3/3" — the
+                      score — under a header reading "margin book growth", which
+                      is our opinion standing in for the fact. */}
+                  <td className={`${TD_NUM} leading-tight`}>
+                    {/* LABELLED and stacked. Side by side, "+50.4% / +11.6%"
+                        does not say which number is which — and it held the
+                        column at 138px, the widest on the tab. */}
+                    <div>
+                      <Growth value={r.margin_loan_growth_yoy_pct} />
+                      <span className="text-fg-label"> YoY</span>
+                    </div>
+                    <div>
+                      <Growth value={r.margin_loan_growth_qoq_pct} />
+                      <span className="text-fg-label"> QoQ</span>
+                    </div>
+                    <div className="text-fg-label" title={t(locale, "secC7SubLine")}>
+                      C7{" "}
+                      <Cell
+                        earned={cr.c7?.earned}
+                        max={cr.c7?.available_max}
+                        provisional={cr.c7?.tier === "PROVISIONAL"}
+                      />
+                    </div>
                   </td>
                   <td className={TD_NUM}>
                     <Growth value={cr.c2?.value} />
@@ -205,15 +238,28 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                       the `*` says the two differ. */}
                   {SEC_SUMMARY_QUALITY.map((g) => {
                     const grp = r.quality_groups?.[g.key];
+                    const verdict = groupVerdict(
+                      grp?.final_earned, grp?.final_available_max, locale);
+                    // The provisional part gets its OWN line rather than a `*`
+                    // on the official total: capital safety's 8/8 is official
+                    // and C9's proxy is not, and one starred number cannot say
+                    // which half is which.
+                    const c9 = g.key === "capital_safety" ? cr.c9 : undefined;
                     return (
-                      <td key={g.key} className={TD_NUM}>
-                        <Cell
-                          earned={grp?.final_earned}
-                          max={grp?.final_available_max}
-                          provisional={
-                            !!grp && grp.provisional_available_max > grp.final_available_max
-                          }
-                        />
+                      <td key={g.key} className={`${TD_NUM} leading-tight`}>
+                        <div>
+                          <Cell earned={grp?.final_earned} max={grp?.final_available_max} />
+                        </div>
+                        {/* Stacked, not appended. "4/10 · Trung bình" on one
+                            line makes the column as wide as the sum of both;
+                            stacked it is as wide as the longer one, which is
+                            ~45px per column across three columns. */}
+                        {verdict ? <div className="text-fg-label">{verdict}</div> : null}
+                        {c9 && c9.status === "VALID" ? (
+                          <div className="text-fg-label" title={t(locale, "secC9SubLine")}>
+                            C9 {c9.earned}/{c9.available_max}*
+                          </div>
+                        ) : null}
                       </td>
                     );
                   })}
