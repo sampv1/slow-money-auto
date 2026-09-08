@@ -286,7 +286,7 @@ if not ok:
 print(f"   {'PASS' if ok else 'FAIL'}  C14 and C19 stay at the V10 depth ({W['c14']}) while C18 "
       f"runs deeper ({W['c18']}) — AT24-B")
 
-hist = [{"quarter": f"2026-Q{4 - (i % 4)}", "core_roe": 0.1} for i in range(21)]
+hist = [{"quarter": f"2026-Q{4 - (i % 4)}", "back": i, "core_roe": 0.1} for i in range(21)]
 v14, l14 = rfs.history_window(hist, "c14")
 v18, l18 = rfs.history_window(hist, "c18")
 ok = len(v14) == W["c14"] + 1 and len(v18) == W["c18"] + 1 and len(v18) > len(v14)
@@ -298,13 +298,36 @@ print(f"   {'PASS' if ok else 'FAIL'}  each criterion receives its OWN slice "
 # The whole point of AT24: making C18's window deeper must not change what C14
 # sees. Growing the source list is exactly what silently moved C14 on 20 of 42
 # brokers in round 3.
-deeper = hist + [{"quarter": "2019-Q1", "core_roe": 0.1} for _ in range(10)]
+deeper = hist + [{"quarter": "2019-Q1", "back": 21 + i, "core_roe": 0.1} for i in range(10)]
 v14b, l14b = rfs.history_window(deeper, "c14")
 ok = l14b["source_hash"] == l14["source_hash"] and v14b == v14
 if not ok:
     fails += 1
 print(f"   {'PASS' if ok else 'FAIL'}  AT24-C: extending the source history leaves C14's window "
       f"and content hash unchanged")
+
+# THE WINDOW IS QUARTER DEPTH, NOT ENTRY COUNT — and a gap is what tells them
+# apart. core_history skips any quarter with no balance sheet, so the list has
+# holes; slicing by position fills them from further back, and fills them
+# DEEPER the deeper the builder ran. Measured across the full history, that
+# made C14 differ on 292 symbol-sessions and moved 290 final scores while the
+# latest session showed nothing, because recent quarters have no gaps.
+gappy = [{"quarter": f"Q{i}", "back": i, "core_roe": 0.1}
+         for i in range(25) if i not in (3, 5, 7)]
+v14g, _ = rfs.history_window(gappy, "c14")
+ok = all(h["back"] <= W["c14"] for h in v14g) and len(v14g) == 10
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  with three quarters missing, C14's window still stops at "
+      f"back={W['c14']} and returns {len(v14g)} entries — it does NOT reach further back to "
+      f"make up the count")
+deepest = [h for h in gappy]  # same source, but a deeper consumer also reads it
+v18g, _ = rfs.history_window(deepest, "c18")
+ok = [h["quarter"] for h in rfs.history_window(deepest, "c14")[0]] == [h["quarter"] for h in v14g]
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  and C18 reading the same gappy list ({len(v18g)} entries) "
+      f"leaves C14's view identical")
 
 ok = set(l18) >= {"required_window", "observed_window", "source_start",
                   "source_end", "source_hash"}

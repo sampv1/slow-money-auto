@@ -295,7 +295,16 @@ def history_window(history: list[dict], criterion: str) -> tuple[list[dict], dic
     neighbour's depth by omission is exactly the bug this replaces.
     """
     depth = CRITERION_WINDOWS[criterion]
-    view = (history or [])[:depth + 1]
+    # BY QUARTER DEPTH, NOT BY ENTRY COUNT, and the difference is not academic.
+    # `core_history` skips any quarter with no balance sheet, so the list has
+    # holes: taking the first `depth + 1` ENTRIES pulls in older quarters to
+    # fill the gaps, and pulls in more of them the deeper the builder ran.
+    # Measured across the full 10,122-session history, slicing by position made
+    # C14 differ from V11v2 on 292 symbol-sessions and moved 290 final scores —
+    # while the latest session showed zero change, because recent quarters have
+    # no gaps. That is the same silent regression AT24 exists to prevent,
+    # wearing a different disguise.
+    view = [h for h in (history or []) if h.get("back", 0) <= depth]
     quarters = [h.get("quarter") for h in view]
     digest = hashlib.sha256("|".join(str(q) for q in quarters).encode()).hexdigest()[:16]
     return view, {
@@ -348,6 +357,12 @@ def core_history(statements: dict, quarter: str,
         eq = past.val("avg_equity")
         out.append({
             "quarter": cq,
+            # HOW FAR BACK this window sits, in quarters. The window a
+            # criterion owns is defined by THIS, never by position in the list
+            # — a quarter with no balance sheet is skipped above, so the list
+            # has gaps and "the first 13 entries" reaches further back the
+            # deeper the builder runs. See history_window().
+            "back": back,
             "core_npat": cn,
             "reported_npat": rep,
             "noncore": (rep - cn) if (cn is not None and rep is not None) else None,
