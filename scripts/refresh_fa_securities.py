@@ -107,6 +107,44 @@ def market_adtv_yoy(client, as_of: str) -> float | None:
     return _num(rows[0]) if rows else None
 
 
+def c18_drivers(client) -> tuple[dict, dict]:
+    """The two market drivers C18 regresses against, keyed by quarter label.
+
+    market_adtv_yoy comes from the deep point-in-time backfill; the index
+    return is the VN-Index quarter-on-quarter change, built from the same
+    macro_series the FCI uses so both sides share one calendar.
+    """
+    rows = safe_execute(
+        client.table("macro_series").select("value,meta")
+        .eq("metric", METRIC_ADTV_Q_YOY).order("date"),
+        label="c18 adtv yoy",
+    ).data or []
+    market_yoy = {r["meta"]["quarter"]: float(r["value"])
+                  for r in rows if r.get("value") is not None
+                  and (r.get("meta") or {}).get("quarter")}
+
+    vn = paged_select(
+        lambda off, lim: client.table("macro_series").select("date,value")
+        .eq("metric", "vnindex").gte("date", "2018-01-01")
+        .order("date").range(off, off + lim - 1),
+        label="c18 vnindex")
+    last_of_quarter: dict[str, float] = {}
+    for r in vn:
+        if r.get("value") is None:
+            continue
+        d = r["date"]
+        q = f"{d[:4]}-Q{(int(d[5:7]) - 1) // 3 + 1}"
+        last_of_quarter[q] = float(r["value"])   # ascending, so last wins
+    index_return = {}
+    for q, v in last_of_quarter.items():
+        y, n = int(q[:4]), int(q[-1])
+        prev = f"{y}-Q{n-1}" if n > 1 else f"{y-1}-Q4"
+        base = last_of_quarter.get(prev)
+        if base and base > 0:
+            index_return[q] = v / base - 1
+    return market_yoy, index_return
+
+
 def load_adtv_yoy_series(client) -> list[tuple[str, float]]:
     """The whole quarterly ADTV-YoY series, ascending, for the backfill.
 
@@ -220,6 +258,16 @@ DEFAULT_RISK_FREE = 0.045
 # where the current valuation sits in ITS OWN range, not against peers: a broker
 # that always trades at 8x is not cheap at 8x.
 CORE_PE_HISTORY_QUARTERS = 12
+# C18 regresses YoY growth, so it loses FOUR windows to the year-ago base: a
+# 13-window history yields only 9 comparable pairs and every broker fell to the
+# exposure proxy, which is the opposite of what the 2019 ADTV backfill was for.
+# Sheet 47 allows a 12-20 quarter window; 20 windows give 16 pairs.
+#
+# The builder is SHARED with C19, and AT20 freezes C19 — so the depth is raised
+# HERE and `valuation_inputs` slices back to CORE_PE_HISTORY_QUARTERS + 1
+# before computing the core-P/E percentile. Deepening the list without that
+# slice would silently change C19's own-history denominator for every broker.
+C18_HISTORY_QUARTERS = 20
 
 
 def risk_free_rate(client) -> float:
@@ -242,14 +290,15 @@ def latest_prices(client, symbols: list[str], as_of: str) -> dict[str, float]:
     return out
 
 
-def core_history(statements: dict, quarter: str) -> list[dict]:
+def core_history(statements: dict, quarter: str,
+                 depth: int = C18_HISTORY_QUARTERS) -> list[dict]:
     """Core_NPAT, core ROE and non-core, for each of the trailing TTM windows.
 
     One pass, shared by everything that needs the past: C14's dispersion, the
     C20 shadows' non-core normalization, and the core P/E percentile.
     """
     out = []
-    for back in range(0, CORE_PE_HISTORY_QUARTERS + 1):
+    for back in range(0, depth + 1):
         qs, oq, cq = sec.ttm_window(quarter)
         qs = _shift_quarters(qs, back)
         oq, cq = _shift_quarters([oq, cq], back)
@@ -272,7 +321,36 @@ def core_history(statements: dict, quarter: str) -> list[dict]:
             "total_roe": (rep / eq) if (rep is not None and eq) else None,
             "equity": bal_q.get(sec.BS_EQUITY),
             "shares": bal_q.get(sec.BS_SHARES),
+            # --- C18 inputs. Each TTM window carries the three cyclical
+            # profit lines plus the denominators the sensitivities need, so the
+            # regression reads one already-computed history instead of
+            # recomputing Core_NPAT once per component.
+            "avg_equity": eq,
+            "brokerage_gp": past.val("brokerage_ib_gross_profit"),
+            "margin_net": past.val("margin_net"),
+            "prop_pnl": past.val("core_treasury_net"),
+            "core_pbt": past.val("core_pbt"),
+            "core_npat_ttm": cn,
         })
+    # YoY growth of each line, matched by POSITION in the window list — entry i
+    # is one quarter older than i-1, so entry i's year-ago base is i+4. Matching
+    # by label would be equivalent here but breaks the moment a quarter is
+    # skipped for want of a balance sheet, which `continue` above allows.
+    by_q = {h["quarter"]: h for h in out}
+    for h in out:
+        # back=4 steps BACK one year. A negative `back` would step forward and
+        # produce "2026-Q6": the helper's normalisation loop only handles
+        # n <= 0, so it cannot repair an overflow.
+        base = by_q.get(_shift_quarters([h["quarter"]], 4)[0])
+        for field, name in (("brokerage_gp", "brokerage_gp_yoy"),
+                            ("margin_net", "margin_net_yoy"),
+                            ("core_npat_ttm", "core_npat_yoy")):
+            now, prior = h.get(field), (base or {}).get(field)
+            h[name] = (now / prior - 1) if (now is not None and prior
+                                            and prior > 0) else None
+        eq_h = h.get("avg_equity")
+        pnl = h.get("prop_pnl")
+        h["prop_return_on_equity"] = (pnl / eq_h) if (pnl is not None and eq_h) else None
     return out
 
 
@@ -312,7 +390,11 @@ def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
     # charts avoid by reading provider ratios for history). There is no provider
     # ratio for a CORE P/E, so neither option is clean. This one at least has a
     # known, single-signed bias. C19 is PROVISIONAL until the backtest.
-    hist = history or []
+    # SLICED to C19's own depth. The shared builder now runs deeper for C18,
+    # and the core-P/E percentile is a rank within this list — so passing the
+    # longer history straight through would move C19 for every broker and
+    # break AT20's "C19 unchanged outside scope".
+    hist = (history or [])[:CORE_PE_HISTORY_QUARTERS + 1]
     pe_hist = [market_cap / h["core_npat"] for h in hist[1:]
                if h["core_npat"] and h["core_npat"] > 0]
     p_core_pe = None
@@ -412,7 +494,15 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
         # recomputations, so doing it three times over would triple the cost of
         # the whole pass for identical numbers.
         history = core_history(st, quarter)
-        core_roes = [h["core_roe"] for h in history if h["core_roe"] is not None]
+        # C14 ranks the DISPERSION of core ROE, so its answer depends on how
+        # many quarters it sees. The shared builder now runs 20 deep for C18;
+        # C14 must keep reading the original 13 or every broker's stability
+        # score shifts — measured on 2026-09-07, deepening it silently moved
+        # C14 on 20 of 42 brokers and 12 final scores with it. Same slice, same
+        # reason, as the one inside valuation_inputs for C19.
+        core_roes = [h["core_roe"]
+                     for h in history[:CORE_PE_HISTORY_QUARTERS + 1]
+                     if h["core_roe"] is not None]
 
         margin_income = sec.ttm(st, "income", sec.MARGIN_INCOME, qs)
         cof = (efc / avg_ea) if (efc and avg_ea) else None
@@ -449,6 +539,10 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
             # C5 spread — but carried per symbol so the criterion stays a pure
             # function of its own ctx.
             "market_adtv_yoy": adtv_yoy,
+            # C9: RiskAssets / Equity at the close quarter. None (not 0) when
+            # any required line is absent — see sec.risk_assets_ratio.
+            "risk_assets_ratio": sec.risk_assets_ratio(
+                bal.get(close_q, {}), bal.get(close_q, {}).get(sec.BS_EQUITY)),
         }
         ctx.update(valuation_inputs(st, core, quarter, prices.get(sym), coe, history))
         ctx["has_market_cap"] = prices.get(sym) is not None and bool(
@@ -536,14 +630,67 @@ def add_c20_cross_section(collected: dict) -> dict:
     return result["model"]
 
 
+def add_c9_cross_section(collected: dict) -> dict:
+    """Pass 2a-ter — rank RiskAssets/Equity across the peer group for C9.
+
+    LOWER RiskAssets/Equity is safer, so the safety percentile ranks the ratio
+    DESCENDING: the broker with the least risk per unit of equity sits at 100.
+    Symbols missing any required line never enter the sample and receive an
+    N/A criterion, never a zero (sheet 46).
+    """
+    ratios = {s: d["ctx"].get("risk_assets_ratio") for s, d in collected.items()}
+    valid = {s: v for s, v in ratios.items() if v is not None}
+    pct = sec._avg_rank_percentile(valid, ascending=False) if valid else {}
+    for sym, d in collected.items():
+        d["ctx"]["c9_criterion"] = sec.score_c9_proxy(pct.get(sym), len(valid))
+    return {"n": len(valid), "min_sample": sec.C9_MIN_SAMPLE,
+            "scored": sum(1 for d in collected.values()
+                          if d["ctx"]["c9_criterion"].points is not None)}
+
+
+def add_c18_cross_section(collected: dict, market_yoy: dict,
+                          index_return: dict) -> dict:
+    """Pass 2a-quater — route each broker to a C18 method and rank the result.
+
+    The ROUTER is per symbol but the PERCENTILE is per sector, and the two
+    methods are ranked in ONE pool. That is deliberate: C18's question is
+    "which brokers benefit most", and splitting the pool would rank a
+    proxy-scored broker only against other proxy-scored ones, so its percentile
+    would mean something different from its neighbour's on the same column.
+    Confidence, not the ranking, is what records that the method was weaker.
+    """
+    per_symbol, methods = {}, {}
+    for sym, d in collected.items():
+        hist = d.get("history") or []
+        comp = sec.c18_components(hist, market_yoy, index_return)
+        if comp["obs"] >= sec.C18_ROUTE_HISTORICAL:
+            methods[sym] = "HISTORICAL_SENSITIVITY"
+        else:
+            comp = sec.c18_exposure(hist)
+            methods[sym] = "EXPOSURE_PROXY"
+        per_symbol[sym] = comp
+
+    composite = sec.c18_composite(per_symbol)
+    for sym, d in collected.items():
+        d["ctx"]["c18_criterion"] = sec.score_c18(
+            composite.get(sym), methods[sym], per_symbol[sym]["obs"])
+    from collections import Counter
+    return {"methods": dict(Counter(methods.values())),
+            "ranked": len(composite),
+            "scored": sum(1 for d in collected.values()
+                          if d["ctx"]["c18_criterion"].points is not None)}
+
+
 def score_all(collected: dict, market: dict, fci: dict) -> dict:
     """Pass 2b — score every broker against the same formulas."""
-    cycle = sec.score_cycle(market, fci)          # identical for every symbol
     out = {}
     for sym, d in collected.items():
+        # C15-C17 are identical for every broker; C18 is not, so the cycle
+        # block is built per symbol with that one criterion injected.
         criteria = {}
         criteria.update(sec.score_quality(d["core"], d["ctx"]))
-        criteria.update(cycle)
+        criteria.update(sec.score_cycle(
+            market, fci, c18_criterion=d["ctx"].get("c18_criterion")))
         criteria.update(sec.score_valuation(d["core"], d["ctx"]))
         totals = sec.assemble(criteria)
         out[sym] = {"criteria": criteria, "totals": totals, "core": d["core"],
@@ -588,6 +735,15 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
         "provisional_coverage": totals["provisional_coverage"],
         "provisional_fa_score": totals["provisional_fa_score"],
         "model_status": totals["model_status"],
+        # V11v3 publish gate (migration 063). Stored, not recomputed by any
+        # reader: "why did this symbol stop publishing" is a question about a
+        # past session, and `criteria` alone would need the tier rules replayed
+        # to answer it.
+        "publish_gate": totals["publish_gate"],
+        "publish_gate_reason": totals["publish_gate_reason"],
+        "quality_locked_available": totals["quality_locked_available"],
+        "sector_cycle_available": totals["sector_cycle_available"],
+        "valuation_locked_available": totals["valuation_locked_available"],
         "criteria": totals["criteria"],
         "fa_status": totals["fa_status"],
         "score_status": score_status,
@@ -610,6 +766,13 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
     for key in sec.CRITERION_POINTS:
         c = criteria.get(key)
         row[f"{key}_score"] = c.points if c else None
+    # C18's own record, kept beside the grid so AT13 can assert that nothing
+    # promoted a provisional cycle score into final_fa_score.
+    c18 = criteria.get("c18")
+    if c18 is not None:
+        row["c18_provisional_score"] = c18.points
+        row["c18_method"] = c18.method
+        row["c18_confidence"] = c18.confidence
     return row
 
 
@@ -726,6 +889,7 @@ def run_backfill(client, args, st) -> int:
               f"{len(qdates)} sessions {qdates[0]} .. {qdates[-1]}")
         cores = collect(client, symbols, quarter, {}, coe)   # prices added per date
         adtv_series = load_adtv_yoy_series(client)
+        market_yoy, index_return = c18_drivers(client)
         if not cores:
             continue
         for as_of in qdates:
@@ -748,7 +912,11 @@ def run_backfill(client, args, st) -> int:
                 # regression V10 had to fix.
                 d["ctx"]["market_adtv_yoy"] = adtv_yoy_asof(adtv_series, as_of)
                 d["ctx"].pop("c20_criterion", None)
+                d["ctx"].pop("c9_criterion", None)
+                d["ctx"].pop("c18_criterion", None)
             add_percentiles(cores)
+            add_c9_cross_section(cores)
+            add_c18_cross_section(cores, market_yoy, index_return)
             c20_model = add_c20_cross_section(cores)
             scored = score_all(cores, market, fci)
             for sym, sc in scored.items():
@@ -835,6 +1003,13 @@ def main():
     st.require("Collected brokers", len(collected), minimum=1, unit="symbols",
                detail=f"of {len(symbols)} in the ICB {SECURITIES_ICB_L4} universe")
     add_percentiles(collected)
+    c9_stats = add_c9_cross_section(collected)
+    market_yoy, index_return = c18_drivers(client)
+    c18_stats = add_c18_cross_section(collected, market_yoy, index_return)
+    print(f"C9 risk-asset proxy: {c9_stats['scored']}/{len(collected)} scored "
+          f"(sample {c9_stats['n']}, min {c9_stats['min_sample']})")
+    print(f"C18 cycle benefit: {c18_stats['scored']}/{len(collected)} scored, "
+          f"methods {c18_stats['methods']}")
     c20_model = add_c20_cross_section(collected)
     print(f"C20 cross-section: {c20_model.get('status')} "
           f"n={c20_model.get('n')}"

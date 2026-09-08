@@ -46,6 +46,17 @@ export const TH_NUM =
   "label row-h px-2 font-normal text-right whitespace-nowrap transition-colors hover:text-fg hover:bg-line-faint cursor-pointer";
 
 /**
+ * Header cell over a column of TEXT, allowed to wrap.
+ *
+ * Same trap as TH_NUM_WRAP, on the other alignment: `TH`'s `whitespace-nowrap`
+ * lets a three-word label set the column width for cells that hold far less.
+ * Measured on the securities summary tab — "Động lực nổi bật" / "Main driver"
+ * over a short placeholder pushed the table 159px past 1280.
+ */
+export const TH_WRAP =
+  "label h-auto py-1 px-2 font-normal text-left align-bottom whitespace-normal leading-tight transition-colors hover:text-fg hover:bg-line-faint cursor-pointer";
+
+/**
  * Header cell over a column of numbers, allowed to WRAP.
  *
  * For the case where the label is much wider than the data under it — a

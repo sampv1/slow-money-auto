@@ -16,6 +16,7 @@ import {
   fundingSourceStyle,
   secStatusLabel,
   secStatusStyle,
+  secDisplayScore,
 } from "@/lib/fa-securities";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatNumber } from "@/lib/format";
@@ -33,6 +34,8 @@ import {
 } from "@/lib/table";
 import { PinButton } from "@/components/pin-button";
 import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
+import { SecSummaryTable } from "./sec-summary";
+import { SecSectorPanel } from "./sec-sector-panel";
 
 // Brokers are far more liquid than the tail of the universe, so the other
 // tabs' 20k floor would filter nothing. Kept as a control rather than removed:
@@ -49,6 +52,16 @@ const BLOCK_EDGE = "border-l-2 border-sky-300";
 const BLOCK_SPLIT = "border-l border-sky-300";
 
 type SortKey = "symbol" | "normalized_fa_score" | "coverage" | string;
+
+// The detail table's own criterion list. C15-C17 are excluded because they are
+// market-wide: identical for every broker on a session, so repeating them down
+// 42 rows both wasted three columns of an already-overflowing table and read as
+// if each broker had been measured on them. They move to the sector panel and
+// are STILL counted in every symbol's score — the cycle subtotal below keeps
+// reporting the engine's real number, which includes them.
+const DETAIL_CRITERIA = SEC_CRITERIA.filter(
+  (c) => !["c15", "c16", "c17"].includes(c.key),
+);
 
 export function SecScannerClient({
   rows,
@@ -71,6 +84,10 @@ export function SecScannerClient({
   // thing this rubric produces — that some brokers cannot be scored at all —
   // so it is a choice the reader makes, not one the page makes for them.
   const [publishableOnly, setPublishableOnly] = useState(false);
+  // Tab 1 opens by default (V11v3 AT18-A). The detail table is the reference
+  // view for the team; the summary is what a reader arriving at the page needs
+  // first, and the spec makes which one opens part of the acceptance test.
+  const [tab, setTab] = useState<"summary" | "detail">("summary");
   const [sortKey, setSortKey] = useState<SortKey>("provisional_score");
   const [sortAsc, setSortAsc] = useState(false);
   const { pinned, toggle } = usePinnedSymbols();
@@ -177,6 +194,36 @@ export function SecScannerClient({
         </span>
       </div>
 
+      <SecSectorPanel rows={rows} locale={locale} />
+
+      {/* Both tabs render the SAME filtered array. There is no second query and
+          no second score — which is what makes AT18's "same score, coverage and
+          status for one symbol" true by construction rather than by care. */}
+      <div className="flex items-stretch gap-x-1 border-b border-line mb-4" role="tablist">
+        {([
+          { id: "summary", label: "secTabSummary", hint: "secTabSummaryHint" },
+          { id: "detail", label: "secTabDetail", hint: "secTabDetailHint" },
+        ] as const).map((x) => (
+          <button
+            key={x.id}
+            role="tab"
+            aria-selected={tab === x.id}
+            title={t(locale, x.hint)}
+            onClick={() => setTab(x.id)}
+            className={`-mb-px border-b-2 px-3 py-2 text-body-lg font-semibold transition-colors duration-100 ${
+              tab === x.id
+                ? "border-fg text-fg"
+                : "border-transparent text-fg-muted hover:border-fg-muted hover:bg-panel-2 hover:text-fg"
+            }`}
+          >
+            {t(locale, x.label)}
+          </button>
+        ))}
+      </div>
+
+      {tab === "summary" ? <SecSummaryTable rows={filtered} locale={locale} /> : null}
+
+      {tab === "detail" ? (
       <div className={TABLE_FREEZE}>
         <table className={TABLE}>
           <thead className={THEAD_STICKY}>
@@ -204,7 +251,7 @@ export function SecScannerClient({
               {SEC_BLOCK_SPANS.map((b, i) => (
                 <th
                   key={b.block}
-                  colSpan={b.n + 1}
+                  colSpan={DETAIL_CRITERIA.filter((c) => c.block === b.block).length + 1}
                   title={t(locale, `${b.label}Hint` as Parameters<typeof t>[1])}
                   className={`label row-h px-2 text-center ${BLOCK_HEAD} ${i === 0 ? BLOCK_EDGE : BLOCK_SPLIT}`}
                 >
@@ -218,8 +265,8 @@ export function SecScannerClient({
             <tr>
               {/* Each block sub-header divides by the row's ACTUAL available
                   max, not the design weight in the group heading above it. */}
-              {SEC_CRITERIA.map((c, i) => {
-                const first = SEC_CRITERIA.findIndex((x) => x.block === c.block) === i;
+              {DETAIL_CRITERIA.map((c, i) => {
+                const first = DETAIL_CRITERIA.findIndex((x) => x.block === c.block) === i;
                 const blk = SEC_BLOCKS.find((x) => x.key.startsWith(c.block));
                 return (
                   <Fragment key={c.key}>
@@ -288,30 +335,31 @@ export function SecScannerClient({
                       {r.data_group ?? "—"}
                     </span>
                   </td>
-                  {/* A group A row shows its final score. B shows the same
-                      arithmetic marked with an asterisk, because it is NOT
-                      comparable with A and must never be read as if it were.
-                      C shows nothing: there was not enough to score. */}
+                  {/* Shared with the summary tab — see secDisplayScore. An
+                      official score prints bare; a provisional one carries the
+                      asterisk that says it is not comparable with an official
+                      one; group C prints nothing, because there was not enough
+                      to score at all. */}
                   <td className={`${TD_NUM} font-semibold`}>
-                    {r.final_fa_score !== null && r.final_fa_score !== undefined ? (
-                      r.final_fa_score.toFixed(1)
-                    ) : r.provisional_score !== null && r.provisional_score !== undefined
-                      && r.data_group === "B" ? (
-                      <span className="text-fg-muted" title={t(locale, "secProvisional")}>
-                        {r.provisional_score.toFixed(1)}*
-                      </span>
-                    ) : (
-                      "—"
-                    )}
+                    {(() => {
+                      const score = secDisplayScore(r);
+                      return score.provisional ? (
+                        <span className="text-fg-muted" title={t(locale, "secProvisional")}>
+                          {score.text}*
+                        </span>
+                      ) : (
+                        score.text
+                      );
+                    })()}
                   </td>
                   {/* Coverage sits beside the score, never behind a tooltip:
                       the same number means different things at 45% and 82%. */}
                   <td className={`${TD_NUM} ${coverageColor(r.coverage)}`}>
                     {r.coverage === null ? "—" : `${Math.round(r.coverage * 100)}%`}
                   </td>
-                  {SEC_CRITERIA.map((c, i) => {
+                  {DETAIL_CRITERIA.map((c, i) => {
                     const cell = r.criteria?.[c.key];
-                    const first = SEC_CRITERIA.findIndex((x) => x.block === c.block) === i;
+                    const first = DETAIL_CRITERIA.findIndex((x) => x.block === c.block) === i;
                     const blk = SEC_BLOCKS.find((x) => x.key.startsWith(c.block));
                     const d = criterionDisplay(cell, c.max);
                     const earned = blk ? (r as unknown as Record<string, number | null>)[blk.key] : null;
@@ -347,8 +395,13 @@ export function SecScannerClient({
           </tbody>
         </table>
       </div>
+      ) : null}
 
-      <p className="mt-3 text-body text-fg-label max-w-[76ch]">{t(locale, "secProvisionalNote")}</p>
+      {tab === "detail" ? (
+        <p className="mt-3 text-body text-fg-label max-w-[76ch]">
+          {t(locale, "secProvisionalNote")}
+        </p>
+      ) : null}
     </div>
   );
 }

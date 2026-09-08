@@ -39,6 +39,24 @@ export type SecScore = {
   breadth_denominator: number | null;
   field_metadata: Record<string, SecField> | null;
   dependency_flags: Record<string, { status: string; reason: string }> | null;
+  // --- V11v2 tier split -----------------------------------------------------
+  final_earned: number | null;
+  final_available_max: number | null;
+  final_coverage: number | null;
+  provisional_earned: number | null;
+  provisional_available_max: number | null;
+  provisional_coverage: number | null;
+  provisional_fa_score: number | null;
+  model_status: "SECTOR_MODEL_PENDING" | "READY" | null;
+  // --- V11v3 publish gate ---------------------------------------------------
+  publish_gate: "PASS" | "FAIL" | null;
+  publish_gate_reason: string | null;
+  quality_locked_available: number | null;
+  sector_cycle_available: number | null;
+  valuation_locked_available: number | null;
+  c18_provisional_score: number | null;
+  c18_method: string | null;
+  c18_confidence: string | null;
 } & Partial<Record<SecCriterionKey, number | null>>;
 
 export type SecField = {
@@ -135,7 +153,60 @@ export type SecCriterionCell = {
   status: "VALID" | "N_A" | "SHADOW";
   reason_code: string | null;
   value: number | null;
+  // V11v2: which tier the criterion's METHOD belongs to. A PROVISIONAL cell is
+  // measured but sits outside the official score, so it renders with a `*`.
+  tier?: "LOCKED" | "PROVISIONAL" | null;
+  method?: string | null;
+  confidence?: string | null;
 };
+
+/**
+ * The three Tab-1 quality columns.
+ *
+ * Sheet 52 lists `quality_groups` as "Asset/operation/capital" with its
+ * criteria mapping left BLANK, and the sheet-49 mockup shows sub-totals
+ * (7/10, 16/21) that match no combination of the rubric's weights. But the
+ * sheet-51 tooltip dictionary names C13 "Chất lượng tài sản", C8 "Hiệu quả
+ * hoạt động" and C9 "An toàn vốn" — exactly the three column headers. Mapping
+ * each to its own criterion is therefore the reading the spec supports;
+ * inventing an aggregate to match an illustrative mockup would not be.
+ */
+/**
+ * How a symbol's headline FA score renders — the SINGLE source for both tabs.
+ *
+ * This existed twice for about an hour and the two copies disagreed: the
+ * summary showed `41.2*` for TCI, AAS and APS where the detail tab showed
+ * "—". That is precisely the divergence AT18 tests for, and duplicated display
+ * logic is how it happens — so the rule lives here and neither tab computes
+ * it.
+ *
+ * Three outcomes, and the middle one is the one worth being careful about:
+ *
+ *   "65.7"   the official score; the publish gate passed
+ *   "51.4*"  the arithmetic exists but is NOT official — shown for reference,
+ *            never comparable with an unstarred number, never sent to Pro
+ *   "—"      group C: there was not enough to score at all
+ *
+ * Group C is excluded rather than starred because a `*` says "provisional
+ * measurement"; C says "no measurement". The rubric spends a lot of effort
+ * keeping those apart and the headline cell must not collapse them.
+ */
+export function secDisplayScore(row: SecScore): { text: string; provisional: boolean } {
+  if (row.data_group === "C") return { text: "—", provisional: false };
+  if (row.publish_gate === "PASS" && row.final_fa_score !== null
+      && row.final_fa_score !== undefined) {
+    return { text: row.final_fa_score.toFixed(1), provisional: false };
+  }
+  const prov = row.provisional_fa_score ?? row.provisional_score;
+  if (prov === null || prov === undefined) return { text: "—", provisional: false };
+  return { text: prov.toFixed(1), provisional: true };
+}
+
+export const SEC_SUMMARY_QUALITY = [
+  { key: "c13", label: "secC13" },
+  { key: "c8", label: "secC8" },
+  { key: "c9", label: "secC9" },
+] as const;
 
 export function criterionDisplay(cell: SecCriterionCell | undefined, max: number) {
   if (!cell || cell.earned === null) {
@@ -162,7 +233,7 @@ export function criterionDisplay(cell: SecCriterionCell | undefined, max: number
  * page still says it updates daily. V8, V9 and V10 rows are all preserved and
  * still queryable by version.
  */
-export const SEC_ACTIVE_MODEL = "CTCK_V11v2";
+export const SEC_ACTIVE_MODEL = "CTCK_V11v3";
 
 export const SEC_MAX_SCORE = 100;
 export const SEC_PUBLISH_COVERAGE = 0.7;

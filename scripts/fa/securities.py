@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 # excluded one, which moves every broker's denominator, so V8 rows must stay
 # readable as what they were. Governance rule G6 — lock by issuing a version,
 # never by rewriting history.
-MODEL_VERSION = "CTCK_V11v2"
+MODEL_VERSION = "CTCK_V11v3"
 
 # Points per criterion (sheet 1). Sums to 100 — asserted at import.
 CRITERION_POINTS = {
@@ -441,8 +441,72 @@ C20_PB = [(.75, 12), (.90, 9), (1.10, 6), (1.25, 3)]
 # not a weak measurement, it is no measurement.
 UNSOURCED_CRITERIA = {
     "c4": "broker market share not published by the provider",
-    "c9": "ATTC capital-adequacy ratio is a UBCK filing, absent from the provider",
 }
+
+# --- C9 (V11v3 sheet 46) — capital safety ----------------------------------
+# The OFFICIAL measure is the ATTC ratio (tỷ lệ an toàn tài chính), a separate
+# UBCK filing: all 45 ratio ids a broker carries were checked and none is it.
+# So only the proxy runs, and it is PROVISIONAL for that reason — not because
+# the brokers are unsafe.
+#
+# THE PROXY'S SCOPE IS DECLARED, NOT IMPLIED. Sheet 46 defines RiskAssets as
+# margin loans + FVTPL + FVOCI + corporate bonds held + risky receivables, and
+# BA confirmed in writing that only the first three are mappable: bonds HELD
+# are not a separate line (BS_SHORT_TERM_BONDS / BS_LONG_TERM_BONDS are
+# LIABILITIES — the broker's own issuance, already inside BS_DEBT), and there
+# is no principled subset of the ~20 receivable lines that means "risky". The
+# tooltip must therefore never claim this proxy covers them.
+C9_RISK_ASSETS = [BS_MARGIN, "BS_FVTPL_FINANCIAL_ASSETS",
+                  "BS_AVAILABLE_FOR_SALE_FINANCIAL_ASSETS_AFS"]
+
+# Safety percentile bands. HIGHER percentile = SAFER = lower RiskAssets/Equity.
+# The proxy is capped at 3 of 4: a full mark is reserved for the official CAR,
+# because a broker that merely ranks well among peers on three balance-sheet
+# lines has not demonstrated regulatory capital adequacy.
+C9_PROXY_BANDS = [(80, 3), (50, 2), (20, 1)]
+C9_PROXY_CODES = {3: "C9_PROXY_TOP20", 2: "C9_PROXY_50_80",
+                  1: "C9_PROXY_20_50", 0: "C9_PROXY_BOTTOM20"}
+C9_MIN_SAMPLE = 20
+
+
+def risk_assets_ratio(balance_q: dict, equity: float | None) -> float | None:
+    """RiskAssets / Equity for one quarter, or None if it cannot be formed.
+
+    A MISSING component is not a zero. Sheet 46 is explicit: if any required
+    field is absent, or equity is non-positive, C9 is N/A with available_max 0
+    — because coalescing a missing line to 0 would make an under-reporting
+    broker look like the safest in the sector, which is the exact inversion the
+    criterion is supposed to catch.
+    """
+    if not equity or equity <= 0:
+        return None
+    total = 0.0
+    for key in C9_RISK_ASSETS:
+        v = balance_q.get(key)
+        if v is None:
+            return None
+        total += float(v)
+    return total / equity
+
+
+def score_c9_proxy(percentile: float | None, sample_n: int) -> Criterion:
+    """C9 from the safety percentile. `percentile` is 0-100, higher = safer."""
+    if sample_n < C9_MIN_SAMPLE:
+        return Criterion(None, None, "N_A",
+                         "no sector distribution — fewer than 20 brokers with "
+                         "a complete risk-asset proxy",
+                         code="C9_INSUFFICIENT_SAMPLE")
+    if percentile is None:
+        return Criterion(None, None, "N_A",
+                         "risk-asset proxy unavailable — a required balance "
+                         "sheet line is missing, or equity is not positive",
+                         code="C9_INSUFFICIENT_DATA")
+    pts = _bands_desc(percentile, C9_PROXY_BANDS)
+    return Criterion(pts, round(percentile, 2), "OK",
+                     f"safety percentile {percentile:.0f} on the risk-asset "
+                     f"proxy; capped at 3/4 without an official CAR",
+                     tier=TIER_PROVISIONAL, method="RISK_ASSET_PROXY",
+                     confidence="MEDIUM", code=C9_PROXY_CODES[int(pts)])
 
 # C5 PROXY (sheet 45): brokerage gross-profit growth against the market's own
 # trading-value growth. The question C5 asks is whether the broker is winning
@@ -786,6 +850,13 @@ def score_quality(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
     for key, reason in UNSOURCED_CRITERIA.items():
         na(key, reason)
 
+    # C9 capital safety — injected by the caller from the peer cross-section,
+    # since a percentile cannot be computed from one symbol's own numbers.
+    out["c9"] = ctx.get("c9_criterion") or Criterion(
+        None, None, "N_A",
+        "no sector distribution — the risk-asset proxy could not be ranked",
+        code="C9_INSUFFICIENT_SAMPLE")
+
     # C5 share growth. OFFICIAL (a verified market-share filing, two comparable
     # quarters) outranks the proxy absolutely; the proxy only runs when there is
     # no filing, and is provisional when it does. Neither available => N/A.
@@ -933,6 +1004,203 @@ def score_valuation(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
         "or no usable P/B and normalized ROE",
         code="C20_INSUFFICIENT")
     return out
+
+
+# --- C18 (V11v3 sheet 47) — how much THIS broker benefits from the cycle ----
+#
+# Not a price beta. Price beta measures how the SHARE moves with the market,
+# which is a different question and one the TA half of the platform already
+# answers; C18 asks how the broker's own OPERATIONS respond when market
+# activity rises. Two brokers with identical price betas can have completely
+# different exposure to trading volume.
+#
+# Two methods, routed on how much comparable history the broker has. Both end
+# in a sector percentile, because "benefits strongly" is only meaningful
+# relative to peers measured on the same quarters.
+C18_ROUTE_HISTORICAL = 12     # quarterly pairs required for the regression
+C18_ROUTE_PROXY = 8           # below this, nothing is scored
+C18_MIN_SAMPLE = 15           # peers needed before a percentile means anything
+C18_WINSOR = 0.05
+C18_BANDS = [(80, 7), (60, 5), (40, 3), (20, 2)]
+C18_CODES = {7: "C18_BENEFIT_VERY_STRONG", 5: "C18_BENEFIT_STRONG",
+             3: "C18_BENEFIT_MEDIUM", 2: "C18_BENEFIT_LOW",
+             0: "C18_BENEFIT_MINIMAL"}
+C18_WEIGHTS = {"brokerage": 0.30, "margin": 0.30, "prop": 0.15, "oplev": 0.25}
+# Operating leverage only reads quarters where the market actually moved: a
+# ratio of two near-zero changes is noise amplified, not sensitivity.
+C18_OPLEV_MIN_MARKET_MOVE = 0.05
+C18_OPLEV_CAP = 5.0
+
+
+def ols_slope(xs: list[float], ys: list[float],
+              winsor: float = C18_WINSOR) -> float | None:
+    """Winsorized OLS slope of y on x, or None when x has no variance.
+
+    Winsorized because a single blowout quarter — a market that doubled, a
+    broker that swung from loss to profit — otherwise sets the slope for the
+    whole window.
+    """
+    if len(xs) != len(ys) or len(xs) < 3:
+        return None
+    xw, yw = _winsorize(xs, winsor), _winsorize(ys, winsor)
+    n = len(xw)
+    mx, my = sum(xw) / n, sum(yw) / n
+    sxx = sum((v - mx) ** 2 for v in xw)
+    if sxx <= 0:
+        return None
+    return sum((a - mx) * (b - my) for a, b in zip(xw, yw)) / sxx
+
+
+def median_response(pairs: list[tuple[float, float]]) -> float | None:
+    """Median of firm-change / market-change, over quarters the market moved.
+
+    Deliberately a median of RATIOS rather than a regression: operating
+    leverage is a multiplier, and one quarter where the market barely moved
+    would produce an enormous ratio that a mean or a slope would carry.
+    """
+    vals = []
+    for firm, market in pairs:
+        if market is None or firm is None or abs(market) < C18_OPLEV_MIN_MARKET_MOVE:
+            continue
+        r = firm / market
+        vals.append(max(-C18_OPLEV_CAP, min(C18_OPLEV_CAP, r)))
+    if not vals:
+        return None
+    vals.sort()
+    m = len(vals) // 2
+    return vals[m] if len(vals) % 2 else (vals[m - 1] + vals[m]) / 2
+
+
+def c18_components(history: list[dict], market_yoy: dict[str, float],
+                   index_return: dict[str, float]) -> dict:
+    """The four historical sensitivities for one broker.
+
+    `history` is newest-first TTM windows (from core_history); `market_yoy` and
+    `index_return` are keyed by quarter label. Each component returns a raw
+    sensitivity or None — None means "not measurable", never 0.
+    """
+    def series(field):
+        out = []
+        for h in history:
+            q = h.get("quarter")
+            v = h.get(field)
+            if q is None or v is None:
+                continue
+            out.append((q, v))
+        return out
+
+    def paired(field, driver):
+        xs, ys = [], []
+        for q, v in series(field):
+            d = driver.get(q)
+            if d is None:
+                continue
+            xs.append(d)
+            ys.append(v)
+        return xs, ys
+
+    xs, ys = paired("brokerage_gp_yoy", market_yoy)
+    brokerage = ols_slope(xs, ys)
+    xs, ys = paired("margin_net_yoy", market_yoy)
+    margin = ols_slope(xs, ys)
+    xs, ys = paired("prop_return_on_equity", index_return)
+    prop = ols_slope(xs, ys)
+    oplev = median_response(
+        [(v, market_yoy.get(q)) for q, v in series("core_npat_yoy")])
+    obs = max(len(paired("brokerage_gp_yoy", market_yoy)[0]),
+              len(paired("margin_net_yoy", market_yoy)[0]))
+    return {"brokerage": brokerage, "margin": margin, "prop": prop,
+            "oplev": oplev, "obs": obs}
+
+
+def c18_exposure(history: list[dict]) -> dict:
+    """Fallback: how much of the profit pool each cyclical line already is.
+
+    Used when there is not enough history to regress. It answers a WEAKER
+    question — "how exposed is this broker" rather than "how has it actually
+    responded" — which is why it is LOW/MEDIUM confidence and why the router
+    prefers the historical method whenever it can run.
+
+    A LOSS-MAKING prop desk is not negative exposure to a good market; it is
+    an unmeasurable one, so only positive contributions enter the pool.
+    """
+    if not history:
+        return {"brokerage": None, "margin": None, "prop": None,
+                "oplev": None, "obs": 0}
+    cur = history[0]
+    pool = 0.0
+    for f in ("brokerage_gp", "margin_net", "prop_pnl"):
+        v = cur.get(f)
+        if v is not None and v > 0:
+            pool += v
+    if pool <= 0:
+        return {"brokerage": None, "margin": None, "prop": None,
+                "oplev": None, "obs": len(history)}
+
+    def share(f):
+        v = cur.get(f)
+        return (max(v, 0.0) / pool) if v is not None else None
+
+    eq = cur.get("avg_equity")
+    core_op = cur.get("core_pbt")
+    return {
+        "brokerage": share("brokerage_gp"),
+        "margin": share("margin_net"),
+        "prop": share("prop_pnl"),
+        "oplev": (core_op / eq) if (core_op is not None and eq) else None,
+        "obs": len(history),
+    }
+
+
+def c18_composite(per_symbol: dict[str, dict], min_sample: int = C18_MIN_SAMPLE
+                  ) -> dict[str, float]:
+    """Weighted composite of each component's SECTOR percentile.
+
+    Percentiles per component rather than raw values, because the four are on
+    incompatible scales — a regression slope against a profit share against a
+    return on equity. A symbol missing a component is dropped from THAT
+    component's ranking only, and its composite re-weights over what remains,
+    so one absent input does not silently score it as least cyclical.
+    """
+    pct_by_component: dict[str, dict[str, float]] = {}
+    for comp in C18_WEIGHTS:
+        vals = {s: d[comp] for s, d in per_symbol.items() if d.get(comp) is not None}
+        if len(vals) < min_sample:
+            continue
+        pct_by_component[comp] = _avg_rank_percentile(vals, ascending=True)
+
+    out = {}
+    for sym in per_symbol:
+        num = den = 0.0
+        for comp, w in C18_WEIGHTS.items():
+            p = pct_by_component.get(comp, {}).get(sym)
+            if p is None:
+                continue
+            num += w * p
+            den += w
+        if den > 0:
+            out[sym] = num / den
+    return out
+
+
+def score_c18(percentile: float | None, method: str, obs: int) -> Criterion:
+    """Map the composite percentile to points, or explain why it cannot be."""
+    if obs < C18_ROUTE_PROXY:
+        return Criterion(None, None, "N_A",
+                         f"only {obs} comparable quarters; C18 needs at least "
+                         f"{C18_ROUTE_PROXY}",
+                         code="C18_INSUFFICIENT_HISTORY")
+    if percentile is None:
+        return Criterion(None, None, "N_A",
+                         "no sector distribution — too few peers carry the same "
+                         "components on this session",
+                         code="C18_INSUFFICIENT_HISTORY")
+    pts = _bands_desc(percentile, C18_BANDS)
+    conf = "MEDIUM" if method == "HISTORICAL_SENSITIVITY" else "LOW"
+    return Criterion(pts, round(percentile, 2), "OK",
+                     f"cycle-benefit percentile {percentile:.0f} ({method})",
+                     tier=TIER_PROVISIONAL, method=method, confidence=conf,
+                     code=C18_CODES[int(pts)])
 
 
 # --- C20 shadow: raw values only, never a score ----------------------------
@@ -1165,7 +1433,8 @@ def c17_breadth(breadth: float | None, d5: float | None, d10: float | None):
     return 0, "P6"
 
 
-def score_cycle(market: dict, fci: dict, c18_locked_score: float | None = None):
+def score_cycle(market: dict, fci: dict, c18_locked_score: float | None = None,
+                c18_criterion: "Criterion | None" = None):
     """C15-C18 from the day's market context."""
     out: dict[str, Criterion] = {}
 
@@ -1194,18 +1463,56 @@ def score_cycle(market: dict, fci: dict, c18_locked_score: float | None = None):
     out["c17"] = Criterion(pts, market.get("breadth"),
                            "OK" if pts is not None else "N_A", rule or "breadth unavailable")
 
-    # C18 stays N/A until its mapping is backtested and LOCKED. Its 7 points
-    # leave the denominator; a hand-assigned value here is exactly what the
-    # spec forbids, and the DB check constraint refuses to store one.
-    if c18_locked_score is None:
-        out["c18"] = Criterion(None, None, "N_A", "cycle-sensitivity mapping not LOCKED")
-    else:
+    # C18 is per-SYMBOL, unlike C15-C17 — it is the one cycle criterion that
+    # differs between brokers, so the caller injects it from the peer
+    # cross-section. It is PROVISIONAL until C18-G2 passes, which means its 7
+    # points reach `provisional_score` and never `final_fa_score`.
+    #
+    # `c18_locked_score` remains the ONLY route to a locked C18 and is still
+    # gated by migration 059's check constraint, which V11v3 AT13 keeps in
+    # place: a hand-assigned production score is exactly what the spec forbids.
+    if c18_locked_score is not None:
         out["c18"] = Criterion(c18_locked_score, None)
+    elif c18_criterion is not None:
+        out["c18"] = c18_criterion
+    else:
+        out["c18"] = Criterion(None, None, "N_A",
+                               "cycle-sensitivity not measured for this symbol",
+                               code="C18_INSUFFICIENT_HISTORY")
     return out
 
 
 PUBLISH_THRESHOLD = 0.70
 PROVISIONAL_THRESHOLD = 0.50
+
+# V11v3 publish gate. Four conditions, evaluated together, all on LOCKED
+# availability — a provisional method can never buy a symbol past the gate.
+#
+# The numbers are not arbitrary: today's locked ceiling is 39 + 23 + 8 = 70, so
+# 65 leaves exactly 5 points of quality slack (a broker can lose C13, or C10 or
+# C11, and still publish; losing C1's 6 points still fails at 64). The cycle
+# floor is an EQUALITY because C15-C17 are market-wide — every broker has the
+# same 23 on the same session, so anything else means the market series failed
+# to compute and the whole sector should stop, not one symbol.
+GATE_MIN_FINAL_AVAILABLE = 65
+GATE_MIN_QUALITY = 34
+GATE_REQUIRED_CYCLE = 23
+GATE_MIN_VALUATION = 8
+
+SECTOR_CYCLE_CRITERIA = ["c15", "c16", "c17"]
+
+
+def _locked_available(criteria: dict, keys) -> float:
+    """Sum of available_max over the LOCKED, scored criteria in `keys`."""
+    total = 0.0
+    for k in keys:
+        c = criteria.get(k)
+        if c is None or c.points is None:
+            continue
+        if c.effective_tier(k) != TIER_LOCKED:
+            continue
+        total += CRITERION_POINTS[k]
+    return total
 
 
 def assemble(criteria: dict[str, Criterion]) -> dict:
@@ -1287,23 +1594,35 @@ def assemble(criteria: dict[str, Criterion]) -> dict:
 
     status = {"A": "PUBLISHABLE", "B": "PROVISIONAL", "C": "INSUFFICIENT_COVERAGE"}[group]
 
-    # The official score needs BOTH tests, and they ask different questions.
-    # The GROUP asks whether enough of the broker was measured at all, and it
-    # still carries V10's rule that a score with no usable valuation is not a
-    # publishable score — half the rubric's job is telling you what you are
-    # paying, and V11v2 keeps that gate unchanged (changelog: "Gate A/B/C |
-    # Có | V10 | Không đổi"). FINAL_COVERAGE asks a different question that
-    # only V11v2 raises: whether enough of what we measured sits on a method
-    # that has passed its own gate.
+    # --- PUBLISH GATE (V11v3 sheet 44) -------------------------------------
+    # FOUR conditions, all on LOCKED availability, all required together.
     #
-    # Requiring group A rather than merely "not C" is the conservative reading
-    # where the two could disagree. Sheet 44 gates final_fa_score on coverage
-    # alone and TC-GATE-01 names only group C, but a B symbol is by definition
-    # one whose valuation could not be measured, and letting it publish an
-    # official score would quietly undo the V10 rule V11v2 says it is keeping.
-    publishable = (group == "A"
-                   and final_coverage >= PUBLISH_THRESHOLD
-                   and final_normalized is not None)
+    # V11v2 gated on `final_coverage >= 70`, which was exactly the locked
+    # ceiling — 39 (C1-C3,C6-C8,C10-C14) + 23 (C15-C17) + 8 (C19) = 70 — so
+    # every publishable broker sat on the line with no margin and one missing
+    # criterion would have dropped the whole sector at once. V11v3 lowers the
+    # total to 65 and adds per-BLOCK floors, which buys a buffer without
+    # lowering the valuation bar: a broker may now lose up to 5 quality points
+    # and still publish, but losing its valuation cannot be traded away against
+    # a healthy quality block.
+    #
+    # The valuation floor also REPLACES the `group == "A"` test this used to
+    # carry, and is strictly better than it. `valuation_usable` is satisfied by
+    # C19 *or* C20, and since V11v2 gives C20 provisional points it can now be
+    # true for a broker with no C19 at all — the criterion the official score
+    # actually needs. Counting LOCKED valuation availability says what was
+    # meant, without depending on a provisional method.
+    quality_locked_available = _locked_available(criteria, QUALITY_CRITERIA)
+    sector_cycle_available = _locked_available(criteria, SECTOR_CYCLE_CRITERIA)
+    valuation_locked_available = _locked_available(criteria, VALUATION_CRITERIA)
+    gate_checks = {
+        "final_available_max": final_available >= GATE_MIN_FINAL_AVAILABLE,
+        "quality_available": quality_locked_available >= GATE_MIN_QUALITY,
+        "cycle_available": sector_cycle_available == GATE_REQUIRED_CYCLE,
+        "valuation_available": valuation_locked_available >= GATE_MIN_VALUATION,
+        "score_computable": final_normalized is not None,
+    }
+    publishable = all(gate_checks.values())
 
     return {
         "earned_score": round(earned, 2),
@@ -1320,6 +1639,14 @@ def assemble(criteria: dict[str, Criterion]) -> dict:
         "provisional_coverage": round(coverage, 4),
         "provisional_fa_score": round(normalized, 2) if normalized is not None else None,
         "model_status": "READY" if publishable else "SECTOR_MODEL_PENDING",
+        # The frontend renders this and never recomputes it (V11v3 sheet 52).
+        "publish_gate": "PASS" if publishable else "FAIL",
+        "publish_gate_reason": ("PUBLISH_GATE_PASS" if publishable
+                                else "PUBLISH_GATE_FAIL"),
+        "publish_gate_checks": gate_checks,
+        "quality_locked_available": quality_locked_available,
+        "sector_cycle_available": sector_cycle_available,
+        "valuation_locked_available": valuation_locked_available,
         # SPLIT DELIBERATELY. `provisional_score` always carries the arithmetic,
         # so a B row can be inspected and a backtest has something to work on.
         # `final_fa_score` exists ONLY for group A, because it is what the Pro
