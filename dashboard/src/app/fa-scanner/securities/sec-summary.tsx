@@ -196,15 +196,27 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                   <td className={TD_NUM}>
                     <Growth value={cr.c2?.value} />
                   </td>
-                  {SEC_SUMMARY_QUALITY.map((g) => (
-                    <td key={g.key} className={TD_NUM}>
-                      <Cell
-                        earned={cr[g.key]?.earned}
-                        max={cr[g.key]?.available_max}
-                        provisional={cr[g.key]?.tier === "PROVISIONAL"}
-                      />
-                    </td>
-                  ))}
+                  {/* Read straight off the row. Sheet 44: the backend owns
+                      this sum and the UI must not re-add it from criteria[] —
+                      a second implementation of the tier rules is what made
+                      the two tabs disagree in V11v3.
+                      The OFFICIAL side is shown; where a group also carries
+                      provisional points (C9's proxy inside capital safety)
+                      the `*` says the two differ. */}
+                  {SEC_SUMMARY_QUALITY.map((g) => {
+                    const grp = r.quality_groups?.[g.key];
+                    return (
+                      <td key={g.key} className={TD_NUM}>
+                        <Cell
+                          earned={grp?.final_earned}
+                          max={grp?.final_available_max}
+                          provisional={
+                            !!grp && grp.provisional_available_max > grp.final_available_max
+                          }
+                        />
+                      </td>
+                    );
+                  })}
                   <td className={TD_NUM}>
                     <Cell
                       earned={cr.c18?.earned}
@@ -250,7 +262,7 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
         </table>
       </div>
       <p className="mt-3 text-body text-fg-label max-w-[76ch]">
-        {t(locale, "secSumQualityAssumption")}
+        {t(locale, "secSumGroupNote")}
       </p>
     </>
   );

@@ -55,6 +55,8 @@ export type SecScore = {
   sector_cycle_available: number | null;
   valuation_locked_available: number | null;
   c18_provisional_score: number | null;
+  quality_groups: Record<string, SecQualityGroup> | null;
+  history_lineage: Record<string, Record<string, string | number | null>> | null;
   c18_method: string | null;
   c18_confidence: string | null;
 } & Partial<Record<SecCriterionKey, number | null>>;
@@ -161,17 +163,6 @@ export type SecCriterionCell = {
 };
 
 /**
- * The three Tab-1 quality columns.
- *
- * Sheet 52 lists `quality_groups` as "Asset/operation/capital" with its
- * criteria mapping left BLANK, and the sheet-49 mockup shows sub-totals
- * (7/10, 16/21) that match no combination of the rubric's weights. But the
- * sheet-51 tooltip dictionary names C13 "Chất lượng tài sản", C8 "Hiệu quả
- * hoạt động" and C9 "An toàn vốn" — exactly the three column headers. Mapping
- * each to its own criterion is therefore the reading the spec supports;
- * inventing an aggregate to match an illustrative mockup would not be.
- */
-/**
  * How a symbol's headline FA score renders — the SINGLE source for both tabs.
  *
  * This existed twice for about an hour and the two copies disagreed: the
@@ -202,10 +193,34 @@ export function secDisplayScore(row: SecScore): { text: string; provisional: boo
   return { text: prov.toFixed(1), provisional: true };
 }
 
+/**
+ * The three Tab-1 quality GROUPS (V11v4 sheet 44).
+ *
+ * Groups, not single criteria — an earlier reading here mapped each column to
+ * one criterion because the mockup's 10 / 21 / 8 denominators looked
+ * unreconcilable against any combination of the rubric's weights. They
+ * reconcile exactly: the three groups partition C1-C14 once and sum to 50
+ * (10 + 28 + 12), and 10 / 21 / 8 is what those design maxima become under the
+ * available-max rule once C4 and C5 have no source and C9 is proxy-only.
+ *
+ * The numbers come from `row.quality_groups`, which the SCORER computes. This
+ * file must never re-add them from `criteria` — sheet 44 forbids it, and the
+ * reason is fresh: a second implementation of the tier rules is what made the
+ * two tabs disagree about the headline score in V11v3.
+ */
+export type SecQualityGroup = {
+  criteria: string[];
+  design_max: number;
+  final_earned: number;
+  final_available_max: number;
+  provisional_earned: number;
+  provisional_available_max: number;
+};
+
 export const SEC_SUMMARY_QUALITY = [
-  { key: "c13", label: "secC13" },
-  { key: "c8", label: "secC8" },
-  { key: "c9", label: "secC9" },
+  { key: "asset_quality", label: "secGroupAsset" },
+  { key: "operating_efficiency", label: "secGroupOperation" },
+  { key: "capital_safety", label: "secGroupCapital" },
 ] as const;
 
 export function criterionDisplay(cell: SecCriterionCell | undefined, max: number) {
@@ -233,7 +248,7 @@ export function criterionDisplay(cell: SecCriterionCell | undefined, max: number
  * page still says it updates daily. V8, V9 and V10 rows are all preserved and
  * still queryable by version.
  */
-export const SEC_ACTIVE_MODEL = "CTCK_V11v3";
+export const SEC_ACTIVE_MODEL = "CTCK_V11v4";
 
 export const SEC_MAX_SCORE = 100;
 export const SEC_PUBLISH_COVERAGE = 0.7;

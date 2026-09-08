@@ -23,6 +23,7 @@ Usage:
 
 import argparse
 import datetime as dt
+import hashlib
 import sys
 from pathlib import Path
 
@@ -258,16 +259,53 @@ DEFAULT_RISK_FREE = 0.045
 # where the current valuation sits in ITS OWN range, not against peers: a broker
 # that always trades at 8x is not cheap at 8x.
 CORE_PE_HISTORY_QUARTERS = 12
-# C18 regresses YoY growth, so it loses FOUR windows to the year-ago base: a
-# 13-window history yields only 9 comparable pairs and every broker fell to the
-# exposure proxy, which is the opposite of what the 2019 ADTV backfill was for.
-# Sheet 47 allows a 12-20 quarter window; 20 windows give 16 pairs.
+
+# EVERY CRITERION OWNS ITS WINDOW, and none may read the raw list (V11v4 AT24).
 #
-# The builder is SHARED with C19, and AT20 freezes C19 — so the depth is raised
-# HERE and `valuation_inputs` slices back to CORE_PE_HISTORY_QUARTERS + 1
-# before computing the core-P/E percentile. Deepening the list without that
-# slice would silently change C19's own-history denominator for every broker.
-C18_HISTORY_QUARTERS = 20
+# This is legislation written from a real incident. C18 regresses YoY growth, so
+# it loses four windows to the year-ago base: at 13 windows only 9 comparable
+# pairs survive, every broker fell to the exposure proxy, and the 2019 ADTV
+# backfill bought nothing. Deepening the SHARED builder to 20 fixed C18 and
+# silently moved C14 on 20 of 42 brokers — C14 measures the DISPERSION of core
+# ROE across whatever it is handed, so a longer list is a different answer.
+# Nothing raised; only the numbers changed, and AT20 is what caught it.
+#
+# So depth is no longer a property of the builder. The builder produces the
+# deepest window anyone needs, and each consumer takes its OWN slice through
+# `history_window()`, which refuses a criterion that has not declared one. A new
+# reader cannot inherit someone else's depth by accident: it gets a KeyError.
+#
+# V11v4 sheet 47 §F additionally requires the window and a content hash to be
+# recorded per criterion, so "did the C18 backfill move C14?" is answerable from
+# stored lineage rather than by re-running both.
+CRITERION_WINDOWS = {
+    # Frozen at the V10 depth. AT24-B: these two must not move when C18 does.
+    "c14": CORE_PE_HISTORY_QUARTERS,   # core-ROE dispersion
+    "c19": CORE_PE_HISTORY_QUARTERS,   # core-P/E own-history percentile
+    # 20 windows leave 16 YoY pairs against C18's minimum of 12 (sheet 47).
+    "c18": 20,
+}
+HISTORY_DEPTH = max(CRITERION_WINDOWS.values())
+
+
+def history_window(history: list[dict], criterion: str) -> tuple[list[dict], dict]:
+    """The slice `criterion` owns, with the lineage AT24-D asks to be stored.
+
+    Raises for an undeclared criterion rather than defaulting — inheriting a
+    neighbour's depth by omission is exactly the bug this replaces.
+    """
+    depth = CRITERION_WINDOWS[criterion]
+    view = (history or [])[:depth + 1]
+    quarters = [h.get("quarter") for h in view]
+    digest = hashlib.sha256("|".join(str(q) for q in quarters).encode()).hexdigest()[:16]
+    return view, {
+        "criterion": criterion,
+        "required_window": depth + 1,
+        "observed_window": len(view),
+        "source_start": quarters[-1] if quarters else None,
+        "source_end": quarters[0] if quarters else None,
+        "source_hash": digest,
+    }
 
 
 def risk_free_rate(client) -> float:
@@ -291,7 +329,7 @@ def latest_prices(client, symbols: list[str], as_of: str) -> dict[str, float]:
 
 
 def core_history(statements: dict, quarter: str,
-                 depth: int = C18_HISTORY_QUARTERS) -> list[dict]:
+                 depth: int = HISTORY_DEPTH) -> list[dict]:
     """Core_NPAT, core ROE and non-core, for each of the trailing TTM windows.
 
     One pass, shared by everything that needs the past: C14's dispersion, the
@@ -362,16 +400,22 @@ def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
     prop desk had a good quarter looks cheap on headline P/E precisely when its
     recurring business has not changed.
     """
+    # Taken FIRST so it is reported on every path. A broker with no price still
+    # has a declared C19 window; recording nothing would leave the audit unable
+    # to tell "this criterion used the wrong window" from "this criterion never
+    # ran", which is the distinction AT24-D exists to keep.
+    hist, c19_lineage = history_window(history, "c19")
+    unpriced = {"core_pe": None, "p_core_pe": None, "pb_ratio": None,
+                "current_pb": None, "c20_shadow": None,
+                "c19_lineage": c19_lineage}
     if price is None:
-        return {"core_pe": None, "p_core_pe": None, "pb_ratio": None,
-                "current_pb": None, "c20_shadow": None}
+        return unpriced
     _, _, close_q = sec.ttm_window(quarter)
     bal = statements.get("balance", {}).get(close_q, {})
     shares = bal.get(sec.BS_SHARES) or 0
     equity = bal.get(sec.BS_EQUITY) or 0
     if not shares:
-        return {"core_pe": None, "p_core_pe": None, "pb_ratio": None,
-                "current_pb": None, "c20_shadow": None}
+        return unpriced
     market_cap = price * shares
 
     core_npat = core.val("core_npat_ttm")
@@ -390,11 +434,9 @@ def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
     # charts avoid by reading provider ratios for history). There is no provider
     # ratio for a CORE P/E, so neither option is clean. This one at least has a
     # known, single-signed bias. C19 is PROVISIONAL until the backtest.
-    # SLICED to C19's own depth. The shared builder now runs deeper for C18,
-    # and the core-P/E percentile is a rank within this list — so passing the
-    # longer history straight through would move C19 for every broker and
-    # break AT20's "C19 unchanged outside scope".
-    hist = (history or [])[:CORE_PE_HISTORY_QUARTERS + 1]
+    # `hist` is C19's OWN window, taken by name above. The shared builder runs
+    # deeper for C18, and the core-P/E percentile is a rank within this list —
+    # passing the longer history straight through moves C19 for every broker.
     pe_hist = [market_cap / h["core_npat"] for h in hist[1:]
                if h["core_npat"] and h["core_npat"] > 0]
     p_core_pe = None
@@ -449,7 +491,8 @@ def valuation_inputs(statements: dict, core, quarter: str, price: float | None,
     # 110.32 against a true P/B of 1.10, and the four such names all sat at low
     # ROE, dragging b to -6.8).
     return {"core_pe": core_pe, "p_core_pe": p_core_pe, "pb_ratio": pb_ratio,
-            "current_pb": current_pb, "c20_shadow": shadow}
+            "current_pb": current_pb, "c20_shadow": shadow,
+            "c19_lineage": c19_lineage}
 
 
 def _shift_quarters(quarters: list[str], back: int) -> list[str]:
@@ -495,14 +538,9 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
         # the whole pass for identical numbers.
         history = core_history(st, quarter)
         # C14 ranks the DISPERSION of core ROE, so its answer depends on how
-        # many quarters it sees. The shared builder now runs 20 deep for C18;
-        # C14 must keep reading the original 13 or every broker's stability
-        # score shifts — measured on 2026-09-07, deepening it silently moved
-        # C14 on 20 of 42 brokers and 12 final scores with it. Same slice, same
-        # reason, as the one inside valuation_inputs for C19.
-        core_roes = [h["core_roe"]
-                     for h in history[:CORE_PE_HISTORY_QUARTERS + 1]
-                     if h["core_roe"] is not None]
+        # many quarters it sees — it takes its window by name for that reason.
+        c14_view, c14_lineage = history_window(history, "c14")
+        core_roes = [h["core_roe"] for h in c14_view if h["core_roe"] is not None]
 
         margin_income = sec.ttm(st, "income", sec.MARGIN_INCOME, qs)
         cof = (efc / avg_ea) if (efc and avg_ea) else None
@@ -526,6 +564,7 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
             # C14: dispersion of core ROE, penalised for core-loss quarters.
             "stability": sec.core_roe_volatility(core_roes),
             "core_history_n": len(core_roes),
+            "c14_lineage": c14_lineage,
             # C20 (V11v2 sheet 48): median TTM whole-firm ROE over the last 8
             # quarters, requiring at least 6 valid. The MEDIAN, not the mean,
             # because a single blowout prop quarter should not reset a broker's
@@ -661,7 +700,11 @@ def add_c18_cross_section(collected: dict, market_yoy: dict,
     """
     per_symbol, methods = {}, {}
     for sym, d in collected.items():
-        hist = d.get("history") or []
+        # C18's OWN window, by name (AT24-B). It is the deepest of the three,
+        # and taking it explicitly is what stops the depth leaking back into
+        # C14 and C19 the way it did in round 3.
+        hist, lineage = history_window(d.get("history"), "c18")
+        d["ctx"]["c18_lineage"] = lineage
         comp = sec.c18_components(hist, market_yoy, index_return)
         if comp["obs"] >= sec.C18_ROUTE_HISTORICAL:
             methods[sym] = "HISTORICAL_SENSITIVITY"
@@ -694,7 +737,10 @@ def score_all(collected: dict, market: dict, fci: dict) -> dict:
         criteria.update(sec.score_valuation(d["core"], d["ctx"]))
         totals = sec.assemble(criteria)
         out[sym] = {"criteria": criteria, "totals": totals, "core": d["core"],
-                    "shadow": d["ctx"].get("c20_shadow")}
+                    "shadow": d["ctx"].get("c20_shadow"),
+                    "c14_lineage": d["ctx"].get("c14_lineage"),
+                    "c19_lineage": d["ctx"].get("c19_lineage"),
+                    "c18_lineage": d["ctx"].get("c18_lineage")}
     return out
 
 
@@ -742,6 +788,8 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
         "publish_gate": totals["publish_gate"],
         "publish_gate_reason": totals["publish_gate_reason"],
         "quality_locked_available": totals["quality_locked_available"],
+        # AT22: the backend owns this sum; the UI renders it and never re-adds.
+        "quality_groups": totals["quality_groups"],
         "sector_cycle_available": totals["sector_cycle_available"],
         "valuation_locked_available": totals["valuation_locked_available"],
         "criteria": totals["criteria"],
@@ -752,6 +800,16 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
         "breadth_denominator": market.get("breadth_denominator"),
         "field_metadata": {
             **{k: c.as_meta() for k, c in core.fields.items()},
+            # AT24-D: which window each history-reading criterion actually saw,
+            # with a hash of the quarters, so "did the C18 backfill move C14?"
+            # is answerable from the stored row instead of by re-running both.
+            "history_lineage": {
+                k: v for k, v in (
+                    ("c14", scored.get("c14_lineage")),
+                    ("c19", scored.get("c19_lineage")),
+                    ("c18", scored.get("c18_lineage")),
+                ) if v
+            },
             # Shadow candidates ride in the audit blob rather than in columns:
             # they are evidence for a future lock decision, not something any
             # query should be able to sort or rank on today.

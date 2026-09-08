@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 # excluded one, which moves every broker's denominator, so V8 rows must stay
 # readable as what they were. Governance rule G6 — lock by issuing a version,
 # never by rewriting history.
-MODEL_VERSION = "CTCK_V11v3"
+MODEL_VERSION = "CTCK_V11v4"
 
 # Points per criterion (sheet 1). Sums to 100 — asserted at import.
 CRITERION_POINTS = {
@@ -1501,6 +1501,54 @@ GATE_MIN_VALUATION = 8
 
 SECTOR_CYCLE_CRITERIA = ["c15", "c16", "c17"]
 
+# The three quality groups Tab 1 shows (V11v4 sheet 44).
+#
+# BA supplied this mapping after we read the mockup's 10 / 21 / 8 denominators
+# as unreconcilable and guessed the columns were single criteria. They were not,
+# and the giveaway was in the rubric all along: the three groups PARTITION
+# C1-C14 exactly once and sum to 50, and 10 / 21 / 8 is what their DESIGN maxima
+# (10 / 28 / 12) become once C4 and C5 are unavailable and C9 is proxy-only —
+# the available-max rule the rest of the rubric already runs on.
+#
+# THE BACKEND OWNS THIS SUM. Sheet 44: "frontend tuyệt đối không cộng lại từ
+# criteria[]". A group re-added in the UI is a second implementation of the
+# tier rules, which is how the two tabs disagreed about the headline score in
+# V11v3 — the same failure one level down.
+QUALITY_GROUPS = {
+    "asset_quality":        ["c3", "c12", "c13"],
+    "operating_efficiency": ["c1", "c2", "c4", "c5", "c6", "c7", "c8"],
+    "capital_safety":       ["c9", "c10", "c11", "c14"],
+}
+
+
+def quality_groups(criteria: dict) -> dict:
+    """Per-group earned/available, split by tier exactly as the total is.
+
+    Each group reports FINAL (locked only) and PROVISIONAL (locked +
+    provisional) sides, because the split is the whole point: capital safety
+    reads 8 official today and its C9 line is provisional, and collapsing those
+    into one number would put a proxy inside an official subtotal.
+    """
+    out = {}
+    for name, keys in QUALITY_GROUPS.items():
+        fe = fa = pe = pa = 0.0
+        for k in keys:
+            c = criteria.get(k)
+            if c is None or c.points is None:
+                continue
+            pe += c.points
+            pa += CRITERION_POINTS[k]
+            if c.effective_tier(k) == TIER_LOCKED:
+                fe += c.points
+                fa += CRITERION_POINTS[k]
+        out[name] = {
+            "criteria": keys,
+            "design_max": sum(CRITERION_POINTS[k] for k in keys),
+            "final_earned": round(fe, 2), "final_available_max": fa,
+            "provisional_earned": round(pe, 2), "provisional_available_max": pa,
+        }
+    return out
+
 
 def _locked_available(criteria: dict, keys) -> float:
     """Sum of available_max over the LOCKED, scored criteria in `keys`."""
@@ -1645,6 +1693,7 @@ def assemble(criteria: dict[str, Criterion]) -> dict:
                                 else "PUBLISH_GATE_FAIL"),
         "publish_gate_checks": gate_checks,
         "quality_locked_available": quality_locked_available,
+        "quality_groups": quality_groups(criteria),
         "sector_cycle_available": sector_cycle_available,
         "valuation_locked_available": valuation_locked_available,
         # SPLIT DELIBERATELY. `provisional_score` always carries the arithmetic,
