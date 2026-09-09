@@ -4,18 +4,27 @@ import { type Locale, t } from "@/lib/i18n";
 import type { SecScore } from "@/lib/fa-securities";
 
 /**
- * C15-C17, shown ONCE above both tabs (V11v3 sheets 49 and 50).
+ * "Bối cảnh thị trường chung" — C15-C17, shown ONCE above both tabs.
  *
  * These three describe the MARKET, not a broker: the FCI, market-wide ADTV
- * momentum and breadth are identical for every symbol on a given session. The
- * detail table used to repeat all three down 42 rows, which read as if each
- * broker had been measured on them and cost three columns of a table that was
- * already overflowing.
+ * momentum and breadth are identical for every symbol on a given session, so
+ * repeating them down 42 rows read as if each broker had been measured on them.
  *
- * They are still COUNTED in every symbol's score — moving them here is a
- * display decision, not an engine change, and the note says so. That
- * distinction matters: a reader who sees 8/23 in a panel and a broker total of
- * 65/100 should not conclude the 23 was left out.
+ * They are still COUNTED once in every symbol's score. V11v6 §2 is emphatic
+ * that showing them here and again in the detail table is a DISPLAY repetition
+ * and must never become a second addition ("tuyệt đối không cộng thêm ngoài lần
+ * đã tính ở backend") — which is safe by construction here, because this panel
+ * only reads `criteria` and adds nothing to any total.
+ *
+ * WHAT THE CAPTIONS MAY AND MAY NOT SAY. Each card gets a plain-language
+ * question describing what the criterion measures. BA rules out reading a
+ * verdict out of the number — 1/5 must not become "few stocks rose today",
+ * 3/8 must not become "liquidity is absolutely low", and the total must not
+ * become confirmation of a price trend. The reason is that these are BANDED
+ * percentile scores, not levels: a low C17 means breadth sits low in its own
+ * historical distribution, which is a different claim from any statement about
+ * today's tape. So the caption describes the QUESTION and the number answers
+ * it; nothing here interprets.
  *
  * `sector_cycle_available` is read from the rows rather than assumed to be 23,
  * and a session where symbols disagree renders as unavailable — that can only
@@ -26,24 +35,32 @@ const CARD = "bg-panel border border-line px-3 py-2";
 
 function Card({
   label,
-  hint,
+  caption,
   earned,
   max,
-  strong,
+  locale,
 }: {
   label: string;
-  hint: string;
+  caption: string;
   earned: number | null;
   max: number | null;
-  strong?: boolean;
+  locale: Locale;
 }) {
   const known = earned !== null && max !== null && max > 0;
   return (
-    <div className={CARD} title={hint}>
-      <div className="label text-fg-label">{label}</div>
-      <div className={`tabular-nums ${strong ? "text-h3 font-semibold" : "text-body-lg"}`}>
-        {known ? `${Number(earned).toFixed(0)}/${max}` : <span className="text-fg-muted">N/A</span>}
+    <div className={CARD}>
+      <div className="sec-note text-fg-label uppercase tracking-wide">{label}</div>
+      <div className="sec-score font-semibold tabular-nums">
+        {known ? (
+          <>
+            {Number(earned).toFixed(0)}/{max}{" "}
+            <span className="sec-body font-normal">{t(locale, "secPoints")}</span>
+          </>
+        ) : (
+          <span className="text-fg-muted">N/A</span>
+        )}
       </div>
+      <div className="sec-note text-fg-label mt-0.5">{caption}</div>
     </div>
   );
 }
@@ -60,9 +77,9 @@ export function SecSectorPanel({ rows, locale }: { rows: SecScore[]; locale: Loc
   const first = rows[0];
   const cr = first.criteria ?? {};
   const cells = [
-    { key: "c15", label: "secC15", hint: "secC15Hint" },
-    { key: "c16", label: "secC16", hint: "secC16Hint" },
-    { key: "c17", label: "secC17", hint: "secC17Hint" },
+    { key: "c15", label: "secMarketFci", caption: "secMarketFciHint" },
+    { key: "c16", label: "secMarketLiquidity", caption: "secMarketLiquidityHint" },
+    { key: "c17", label: "secMarketBreadth", caption: "secMarketBreadthHint" },
   ] as const;
 
   const sectorEarned = consistent
@@ -71,28 +88,29 @@ export function SecSectorPanel({ rows, locale }: { rows: SecScore[]; locale: Loc
   const sectorMax = consistent ? (first.sector_cycle_available ?? null) : null;
 
   return (
-    <section className="mb-4" aria-label={t(locale, "secSectorPanel")}>
-      <h2 className="text-body-lg font-semibold mb-2">{t(locale, "secSectorPanel")}</h2>
+    <section className="mb-4" aria-label={t(locale, "secMarketContext")}>
+      <h2 className="text-body-lg font-semibold mb-2">{t(locale, "secMarketContext")}</h2>
       <div className="grid gap-2 grid-cols-2 lg:grid-cols-4">
         <Card
-          label={t(locale, "secSectorTotal")}
-          hint={t(locale, "secSectorPanelHint")}
+          label={t(locale, "secMarketTotal")}
+          caption={t(locale, "secMarketTotalHint")}
           earned={sectorEarned}
           max={sectorMax}
-          strong
+          locale={locale}
         />
         {cells.map((c) => (
           <Card
             key={c.key}
-            label={`${c.key.toUpperCase()} · ${t(locale, c.label)}`}
-            hint={t(locale, c.hint)}
+            label={t(locale, c.label)}
+            caption={t(locale, c.caption)}
             earned={cr[c.key]?.earned ?? null}
             max={cr[c.key]?.available_max ?? null}
+            locale={locale}
           />
         ))}
       </div>
-      <p className="mt-2 text-body text-fg-label max-w-[76ch]">
-        {t(locale, "secSectorPanelHint")}
+      <p className="mt-2 sec-note text-fg-label max-w-[100ch]">
+        {t(locale, "secMarketNote")}
       </p>
     </section>
   );

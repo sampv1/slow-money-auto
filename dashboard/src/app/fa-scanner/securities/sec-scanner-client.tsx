@@ -6,32 +6,25 @@ import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 import {
   type SecScore,
-  SEC_BLOCKS,
-  SEC_BLOCK_SPANS,
   SEC_CRITERIA,
   criterionDisplay,
-  coverageColor,
+  fmtPts,
+  ctFraction,
   fundingSourceLabel,
   fundingSourceStyle,
-  secStatusLabel,
-  secStatusStyle,
+  secDataStatus,
   secDisplayScore,
+  secGateReasons,
+  secSortRows,
+  SEC_COL1_W,
+  SEC_COL2_LEFT,
+  SEC_FROZEN_CELL,
+  SEC_FROZEN_HEAD,
 } from "@/lib/fa-securities";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import { formatNumber } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
-import {
-  TABLE,
-  TABLE_FREEZE,
-  THEAD_STICKY,
-  TH,
-  TH_NUM,
-  TH_NUM_WRAP,
-  TH_WRAP,
-  TR,
-  TD_NUM,
-  TD_SYMBOL,
-} from "@/lib/table";
+import { TABLE, TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
 import { PinButton } from "@/components/pin-button";
 import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
 import { SecSummaryTable } from "./sec-summary";
@@ -53,15 +46,32 @@ const BLOCK_SPLIT = "border-l border-sky-300";
 
 type SortKey = "symbol" | "normalized_fa_score" | "coverage" | string;
 
-// The detail table's own criterion list. C15-C17 are excluded because they are
-// market-wide: identical for every broker on a session, so repeating them down
-// 42 rows both wasted three columns of an already-overflowing table and read as
-// if each broker had been measured on them. They move to the sector panel and
-// are STILL counted in every symbol's score — the cycle subtotal below keeps
-// reporting the engine's real number, which includes them.
-const DETAIL_CRITERIA = SEC_CRITERIA.filter(
-  (c) => !["c15", "c16", "c17"].includes(c.key),
-);
+// ALL TWENTY, C15-C17 INCLUDED. V11v3 had dropped them from this table because
+// they are market-wide — identical for every broker on a session — so repeating
+// them down 42 rows read as if each broker had been measured on them, and the
+// table was overflowing anyway.
+//
+// V11v6 §2 puts them back and answers both objections. The repetition is now
+// explicitly a DISPLAY choice ("Việc lặp C15–C17 trên từng dòng là hiển thị"),
+// with the hard constraint that it must never become a second addition —
+// which holds here because every total on this tab is read from
+// `ui_contract`, not summed from these cells. And the width objection is gone:
+// V6 asks for horizontal scrolling rather than a table squeezed to 1280.
+const DETAIL_CRITERIA = SEC_CRITERIA;
+
+// The three group bands of the two-tier header. Each spans its own official
+// total column plus its criteria.
+const DETAIL_BANDS = [
+  { block: "quality", label: "secGroupHeaderQuality" },
+  { block: "cycle", label: "secGroupHeaderCycle" },
+  { block: "valuation", label: "secGroupHeaderValuation" },
+] as const;
+
+const TH_SEC =
+  "sec-note uppercase tracking-wide px-2 py-1 font-semibold text-left align-bottom whitespace-normal leading-tight text-fg-label";
+const TH_SEC_NUM = `${TH_SEC} text-right`;
+const TD_SEC = "sec-body sec-row-h px-2 align-top py-1";
+const TD_SEC_NUM = `${TD_SEC} text-right font-mono tnum`;
 
 export function SecScannerClient({
   rows,
@@ -88,7 +98,7 @@ export function SecScannerClient({
   // view for the team; the summary is what a reader arriving at the page needs
   // first, and the spec makes which one opens part of the acceptance test.
   const [tab, setTab] = useState<"summary" | "detail">("summary");
-  const [sortKey, setSortKey] = useState<SortKey>("provisional_score");
+  const [sortKey, setSortKey] = useState<SortKey>("__ct");
   const [sortAsc, setSortAsc] = useState(false);
   const { pinned, toggle } = usePinnedSymbols();
 
@@ -105,6 +115,12 @@ export function SecScannerClient({
       const vol = volBySymbol.get(r.symbol) ?? 0;
       return vol >= minAvgVolume;
     });
+    // DEFAULT ORDER IS THE CONTRACT'S (sheet 04, UI-05): official score
+    // descending, ties by symbol ascending, unscored rows last. It lives in
+    // `secSortRows` so both tabs cannot drift, and sorting on the PROVISIONAL
+    // score is explicitly forbidden — it would interleave numbers computed
+    // over two different denominators.
+    if (sortKey === "__ct") return floatPinned(secSortRows(out), pinned, (r) => r.symbol);
     const dir = sortAsc ? 1 : -1;
     out.sort((a, b) => {
       if (sortKey === "symbol") return dir * a.symbol.localeCompare(b.symbol);
@@ -131,10 +147,13 @@ export function SecScannerClient({
   // Counted over the FULL row set, never the filtered one: these describe the
   // sector, and a liquidity filter changing "how many brokers have enough data"
   // would be nonsense.
-  const enoughData = useMemo(
-    () => rows.filter((r) => r.data_group === "A").length, [rows]);
+  // §5: the page must say plainly how many symbols are SHOWN WITH AN OFFICIAL
+  // SCORE, and UI-04 requires every counter to state whether it is before or
+  // after filtering and to come from the same snapshot. "Công bố" may no longer
+  // stand alone as a word — on its own it read as a verdict on the company
+  // rather than a statement about the score.
   const published = useMemo(
-    () => rows.filter((r) => r.publish_gate === "PASS").length, [rows]);
+    () => rows.filter((r) => r.ui_contract?.publish_gate.pass).length, [rows]);
 
 
   return (
@@ -198,11 +217,12 @@ export function SecScannerClient({
             gate and carry an official score. Each number is now named for what
             it counts, and the one that actually governs publication is
             present. */}
-        <span className="ml-auto text-body text-fg-label" title={t(locale, "secCountTip")}>
+        <span className="ml-auto sec-body text-fg-label" title={t(locale, "secCountTip")}>
           {formatNumber(rows.length)} {t(locale, "secCountTracked")}
-          {" · "}{formatNumber(enoughData)} {t(locale, "secCountEnoughData")}
-          {" · "}{formatNumber(published)} {t(locale, "secCountPublished")}
-          {" · "}{formatNumber(filtered.length)} {t(locale, "secCountLiquid")}
+          {" ("}{t(locale, "secCountBeforeFilter")}{")"}
+          {" · "}{formatNumber(published)} {t(locale, "secCountShownOfficial")}
+          {" ("}{t(locale, "secCountBeforeFilter")}{")"}
+          {" · "}{formatNumber(filtered.length)} {t(locale, "secCountAfterFilter")}
         </span>
       </div>
 
@@ -237,87 +257,90 @@ export function SecScannerClient({
 
       {tab === "detail" ? (
       <div className={TABLE_FREEZE}>
-        <table className={TABLE}>
+        {/* `min-w-full w-max`, NOT the house `w-full`.
+            `w-full` makes the table exactly as wide as its container and then
+            squeezes 25 columns into it — which is what BA rules out in as many
+            words: "Ảnh toàn bảng là ảnh mở rộng, không phải chỉ thị co cả bảng
+            vừa màn hình", and "Cho cuộn ngang, không ép C1–C20 thành chữ li ti".
+            Squeezed, "Gồm tạm tính 35/46*" wrapped onto four lines and the row
+            height tripled. Sized to content the columns take what they need and
+            the container scrolls, which is the behaviour the spec asks for. */}
+        <table className={`${TABLE} min-w-full w-max`}>
           <thead className={THEAD_STICKY}>
+            {/* TIER 1 — the three group bands. Each spans its own official
+                total column PLUS its criteria, which is what makes "I. Chất
+                lượng doanh nghiệp · 50 điểm" sit over the total it describes
+                rather than beside it (sheet 04, DT-01). */}
             <tr>
-              <th className={TH} rowSpan={2}>
+              <th className={`${TH_SEC} ${SEC_COL1_W} ${SEC_FROZEN_HEAD} left-0`} rowSpan={2}>
                 <button onClick={() => sortBy("symbol")} className="hover:underline">
                   {t(locale, "symbol")}{arrow("symbol")}
                 </button>
               </th>
-              <th className={TH_NUM_WRAP} rowSpan={2} title={t(locale, "secFinalScoreTip")}>
-                <button onClick={() => sortBy("provisional_score")} className="hover:underline">
-                  {t(locale, "secFinalScore")}{arrow("provisional_score")}
+              <th
+                className={`${TH_SEC_NUM} ${SEC_FROZEN_HEAD} ${SEC_COL2_LEFT}`}
+                rowSpan={2}
+                title={t(locale, "secScoreHeadTip")}
+              >
+                <button onClick={() => sortBy("__ct")} className="hover:underline">
+                  <div>{t(locale, "secScoreTitle")}</div>
+                  <div className="font-normal">{t(locale, "secScoreSubtitle")}{arrow("__ct")}</div>
                 </button>
               </th>
-              {SEC_BLOCK_SPANS.map((b, i) => (
+              {DETAIL_BANDS.map((b, i) => (
                 <th
                   key={b.block}
                   colSpan={DETAIL_CRITERIA.filter((c) => c.block === b.block).length + 1}
-                  title={t(locale, `${b.label}Hint` as Parameters<typeof t>[1])}
-                  className={`label row-h px-2 text-center ${BLOCK_HEAD} ${i === 0 ? BLOCK_EDGE : BLOCK_SPLIT}`}
+                  className={`sec-note uppercase tracking-wide px-2 py-1 text-center font-semibold ${BLOCK_HEAD} ${i === 0 ? BLOCK_EDGE : BLOCK_SPLIT}`}
                 >
-                  {t(locale, b.label)} · {b.staticMax}
+                  {t(locale, b.label)}
                 </th>
               ))}
-              <th className={TH_WRAP} rowSpan={2} title={t(locale, "secFundingTip")}>
-                {t(locale, "secFunding")}
+              <th className={TH_SEC} rowSpan={2} title={t(locale, "secFundingTip")}>
+                {t(locale, "secDataSourceCol")}
               </th>
-              {/* Fixed as the last two on BOTH tabs (V11v5 #25 / AT27), in this
-                  order. Coverage used to sit at column four beside the score,
-                  where it was easy to read as part of the score itself; at the
-                  end it pairs with the gate, which is the question it actually
-                  answers — how much was measured, and did that clear the bar. */}
-              <th className={TH_NUM_WRAP} rowSpan={2} title={t(locale, "secCoverageTip")}>
-                <button onClick={() => sortBy("coverage")} className="hover:underline">
-                  {t(locale, "secSumDisclosure")}{arrow("coverage")}
-                </button>
-              </th>
-              <th className={TH_WRAP} rowSpan={2} title={t(locale, "secGateTip")}>
-                {t(locale, "secStatus")}
+              {/* Last column on BOTH tabs (§5), and the same merged cell the
+                  summary renders — not a second status vocabulary. */}
+              <th className={TH_SEC} rowSpan={2} title={t(locale, "secDataStatusTip")}>
+                {t(locale, "secDataStatusCol")}
               </th>
             </tr>
+            {/* TIER 2 — the official group total, then C1..C20 with the full
+                name and the DESIGN maximum under the code (sheet 04, DT-02). */}
             <tr>
-              {/* Each block sub-header divides by the row's ACTUAL available
-                  max, not the design weight in the group heading above it. */}
               {DETAIL_CRITERIA.map((c, i) => {
                 const first = DETAIL_CRITERIA.findIndex((x) => x.block === c.block) === i;
-                const blk = SEC_BLOCKS.find((x) => x.key.startsWith(c.block));
                 return (
                   <Fragment key={c.key}>
-                  {/* Block subtotal, leading its criteria. earned/AVAILABLE —
-                      the number the reader can actually check against the
-                      cells to its right, unlike the design weight overhead. */}
-                  {first && blk ? (
+                    {first ? (
+                      <th
+                        className={`${TH_SEC_NUM} ${BLOCK_HEAD} ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE} font-bold`}
+                      >
+                        {t(locale, "secGroupTotalOfficial")}
+                      </th>
+                    ) : null}
                     <th
-                      className={`${TH_NUM_WRAP} ${BLOCK_HEAD} ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE} font-bold`}
-                      title={t(locale, blk.hint)}
+                      className={`${TH_SEC_NUM} ${BLOCK_HEAD} ${first && i > 0 ? BLOCK_SPLIT : ""}`}
+                      title={t(locale, c.hint)}
                     >
-                      {/* "Total", not the block name — the group header
-                          immediately above already says which block this is,
-                          and repeating "Valuation" set a 9-character floor on
-                          a column showing "8/8". */}
-                      <button onClick={() => sortBy(blk.key)} className="hover:underline">
-                        {t(locale, "secBlockSubtotal")}{arrow(blk.key)}
+                      <button onClick={() => sortBy(`${c.key}_score`)} className="hover:underline">
+                        <div className="font-mono">{c.key.toUpperCase()}{arrow(`${c.key}_score`)}</div>
+                        {/* THE FULL NAME IS BACK. V11v3 reduced these headers to
+                            bare codes because twenty spelled-out labels
+                            overflowed 1280 by 586px in English. V6 asks for the
+                            name and the design maximum in the header and
+                            accepts horizontal scrolling to get them — so the
+                            constraint that forced the codes no longer applies,
+                            and the code stays as the first line because it is
+                            the vocabulary the rubric itself uses. */}
+                        <div className="font-normal normal-case tracking-normal">
+                          {t(locale, c.label)}
+                        </div>
+                        <div className="font-normal normal-case tracking-normal text-fg-muted">
+                          {c.max} {t(locale, "secPoints")}
+                        </div>
                       </button>
                     </th>
-                  ) : null}
-                  <th
-                    key={c.key}
-                    className={`${TH_NUM} ${BLOCK_HEAD} ${first && i > 0 ? BLOCK_SPLIT : ""}`}
-                    // The CODE is the header and the name is the tooltip.
-                    // Twenty spelled-out labels overflow by 586px at 1280 in
-                    // ENGLISH — the wider locale here, because "durability",
-                    // "Liquidity" and "Leverage" are single unbreakable words
-                    // that set a min-content floor, while Vietnamese wraps for
-                    // free. C1..C20 is also the vocabulary the rubric and every
-                    // spec conversation already use.
-                    title={`${t(locale, c.label)} — ${t(locale, c.hint)}`}
-                  >
-                    <button onClick={() => sortBy(`${c.key}_score`)} className="hover:underline">
-                      {c.key.toUpperCase()}{arrow(`${c.key}_score`)}
-                    </button>
-                  </th>
                   </Fragment>
                 );
               })}
@@ -326,14 +349,17 @@ export function SecScannerClient({
           <tbody>
             {filtered.map((r) => {
               const funding = r.field_metadata?.eligible_funding_cost;
+              const uc = r.ui_contract;
+              const score = secDisplayScore(r);
+              const status = secDataStatus(r, locale);
+              const gateReasons = secGateReasons(r, locale);
               return (
-                <tr key={r.symbol} className={TR}>
-                  <td className={TD_SYMBOL}>
+                <tr key={r.symbol} className="group border-b border-line-faint hover:bg-panel-2">
+                  <td
+                    className={`${TD_SEC} ${SEC_COL1_W} ${SEC_FROZEN_CELL} left-0 font-mono font-semibold text-accent whitespace-nowrap`}
+                  >
                     <span className="flex items-center gap-1">
                       <PinButton symbol={r.symbol} pinned={pinned.has(r.symbol)} onToggle={toggle} locale={locale} />
-                      {/* The only Analysis link. A trailing "Analysis →" column
-                          is a second route to the same page and costs ~100px —
-                          affordable at 8 columns, not at 24. */}
                       <Link
                         href={`/analysis/${r.symbol}`}
                         title={t(locale, "taOpenAnalysisTitle")}
@@ -343,74 +369,78 @@ export function SecScannerClient({
                       </Link>
                     </span>
                   </td>
-                  {/* Shared with the summary tab — see secDisplayScore. An
-                      official score prints bare; a provisional one carries the
-                      asterisk that says it is not comparable with an official
-                      one; group C prints nothing, because there was not enough
-                      to score at all. */}
-                  <td className={`${TD_NUM} font-semibold`}>
-                    {(() => {
-                      const score = secDisplayScore(r);
-                      return score.provisional ? (
-                        <span className="text-fg-muted" title={t(locale, "secProvisional")}>
-                          {score.text}*
-                        </span>
-                      ) : (
-                        score.text
-                      );
-                    })()}
+                  {/* Identical to the summary tab by construction — one
+                      `secDisplayScore`, one `ui_contract`. AT18's "same score
+                      for one symbol on both tabs" is true because there is
+                      nothing here that could compute a different answer. */}
+                  <td
+                    className={`${TD_SEC_NUM} ${SEC_FROZEN_CELL} ${SEC_COL2_LEFT} leading-tight`}
+                  >
+                    <div className="sec-score font-semibold">{score.text}</div>
+                    <div className="sec-note text-fg-label">
+                      {t(locale, "secOfficialPrefix")}{" "}
+                      {uc ? `${fmtPts(uc.final_earned)}/${fmtPts(uc.final_available)}` : "N/A"}
+                    </div>
                   </td>
                   {DETAIL_CRITERIA.map((c, i) => {
                     const cell = r.criteria?.[c.key];
                     const first = DETAIL_CRITERIA.findIndex((x) => x.block === c.block) === i;
-                    const blk = SEC_BLOCKS.find((x) => x.key.startsWith(c.block));
-                    const d = criterionDisplay(cell, c.max);
-                    const earned = blk ? (r as unknown as Record<string, number | null>)[blk.key] : null;
-                    const avail = blk ? (r as unknown as Record<string, number | null>)[blk.availKey] : null;
+                    const tier = uc?.blocks?.[c.block as "quality" | "cycle" | "valuation"];
+                    const d = criterionDisplay(cell, cell?.available_max ?? c.max);
+                    const provisional = cell?.status === "VALID" && cell?.tier === "PROVISIONAL";
                     return (
                       <Fragment key={c.key}>
-                        {first && blk ? (
+                        {first ? (
                           <td
-                            className={`${TD_NUM} ${BLOCK_BODY} font-semibold ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE}`}
+                            className={`${TD_SEC_NUM} ${BLOCK_BODY} font-semibold ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE} leading-tight whitespace-nowrap`}
                           >
-                            {/* N/A when the whole block is unavailable — a
-                                block that scored 0 of 0 was not measured. */}
-                            {avail ? `${Number(earned).toFixed(0)}/${avail}` : (
-                              <span className="text-fg-muted">N/A</span>
-                            )}
+                            {/* CT x/y on the main line, "gồm tạm tính a/b*"
+                                only when the backend says one is owed. Both
+                                denominators zero renders N/A, never 0/0 —
+                                a zero denominator is not a fraction. */}
+                            <div>
+                              <span className="text-fg-label">
+                                {t(locale, "secOfficialPrefix")}{" "}
+                              </span>
+                              {ctFraction(tier)}
+                            </div>
+                            {tier?.has_provisional ? (
+                              <div className="sec-note text-amber-800" title={t(locale, "secLegendStar")}>
+                                {t(locale, "secCombinedNote")} {fmtPts(tier.combined_earned)}/
+                                {fmtPts(tier.combined_available)}*
+                              </div>
+                            ) : null}
                           </td>
                         ) : null}
                         <td
-                          className={`${TD_NUM} ${BLOCK_BODY} ${d.className}`}
+                          className={`${TD_SEC_NUM} ${BLOCK_BODY} ${d.className} whitespace-nowrap`}
                           title={d.title}
                         >
                           {d.text}
+                          {provisional ? <span className="text-fg-muted">*</span> : null}
                         </td>
                       </Fragment>
                     );
                   })}
-                  {/* No `whitespace-nowrap`: the longest funding label held
-                      115px open in Vietnamese for a cell usually reading
-                      "Báo cáo". Letting it wrap hands the width back to the
-                      data, exactly as TH_WRAP does for the headers. */}
-                  <td className={`px-2 row-h text-body leading-tight ${fundingSourceStyle(funding)}`}>
+                  {/* "Nguồn vốn" → "Nguồn dữ liệu" (§6). The old heading named
+                      the broker's FUNDING, but the column reports where the
+                      figure came from — a reported line, a cash-flow fallback,
+                      or nothing. */}
+                  <td className={`${TD_SEC} leading-tight whitespace-nowrap ${fundingSourceStyle(funding)}`}>
                     {fundingSourceLabel(locale, funding)}
                   </td>
-                  {/* Coverage is never behind a tooltip: the same number means
-                      different things at 45% and 82%. */}
-                  <td className={`${TD_NUM} ${coverageColor(r.coverage)}`}>
-                    {r.coverage === null ? "—" : `${Math.round(r.coverage * 100)}%`}
-                  </td>
-                  {/* Plain text here, a badge on the summary tab. The badge's
-                      border and padding cost ~30px, which is the difference
-                      between this 25-column table fitting 1280 and not; the
-                      summary has room for it and this does not. The WORD still
-                      carries the meaning, so colour is never the only signal. */}
-                  <td className="px-1.5 row-h whitespace-nowrap text-body font-semibold"
-                      title={secStatusLabel(locale, r.fa_status)}>
-                    <span className={r.publish_gate === "PASS" ? "text-emerald-800" : "text-fg-muted"}>
-                      {t(locale, r.publish_gate === "PASS" ? "secGatePass" : "secGateFail")}
-                    </span>
+                  <td className={`${TD_SEC} leading-tight whitespace-nowrap`}>
+                    <div
+                      className={`font-semibold ${status.className}`}
+                      title={
+                        gateReasons.length
+                          ? `${t(locale, "secGateFailedTitle")}\n${gateReasons.join("\n")}`
+                          : t(locale, "secDataStatusTip")
+                      }
+                    >
+                      {status.headline}
+                    </div>
+                    <div className="sec-note text-fg-label">{status.detail}</div>
                   </td>
                 </tr>
               );
@@ -421,8 +451,9 @@ export function SecScannerClient({
       ) : null}
 
       {tab === "detail" ? (
-        <p className="mt-3 text-body text-fg-label max-w-[76ch]">
-          {t(locale, "secProvisionalNote")}
+        <p className="mt-3 sec-note text-fg-label max-w-[110ch]">
+          {t(locale, "secLegendCT")} {t(locale, "secLegendStar")} {t(locale, "secLegendNA")}{" "}
+          {t(locale, "secLegendCoverage")}
         </p>
       ) : null}
     </div>

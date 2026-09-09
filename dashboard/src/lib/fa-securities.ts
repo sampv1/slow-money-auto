@@ -86,7 +86,82 @@ export type SecScore = {
   history_lineage: Record<string, Record<string, string | number | null>> | null;
   c18_method: string | null;
   c18_confidence: string | null;
+  // --- V11v6 UI FINAL -------------------------------------------------------
+  ui_version: string | null;
+  ui_contract: SecUiContract | null;
 } & Partial<Record<SecCriterionKey, number | null>>;
+
+/**
+ * Everything the two tabs render, computed once by `fa/securities_ui.py`.
+ *
+ * NOTHING IN THIS OBJECT IS RECOMPUTED HERE, and that is the point of it
+ * existing. V11v6 sheet 04 (API-01/03/04) puts the group totals, the three
+ * subgroups, the gate reasons and the coverage on the backend and forbids the
+ * frontend re-deriving them — because the V11v3 headline score and the V11v4
+ * group sums each shipped as two implementations that disagreed, and both times
+ * one symbol showed different numbers on the two tabs.
+ *
+ * So the rule for this file: read these fields, format them, never add them up.
+ */
+export type SecUiTier = {
+  final_earned: number;
+  final_available: number;
+  combined_earned: number;
+  combined_available: number;
+  design_max: number;
+  /** Whether a "Gồm tạm tính" second line is owed. The BACKEND decides it. */
+  has_provisional: boolean;
+};
+
+export type SecUiSubgroup = SecUiTier & {
+  criteria: string[];
+  level: SecLevel;
+  provisional_criteria: string[];
+};
+
+export type SecLevel = "GOOD" | "FAIR" | "MID" | "LOW" | "NO_DATA";
+
+export type SecGateCondition = {
+  id: "total" | "quality" | "sector_cycle" | "valuation";
+  actual_available: number;
+  required_available: number;
+  op: ">=" | "==";
+  pass: boolean;
+};
+
+export type SecUiContract = {
+  ui_version: string;
+  blocks: Record<"quality" | "cycle" | "valuation", SecUiTier>;
+  subgroups: Record<"asset" | "operation" | "capital", SecUiSubgroup>;
+  publish_gate: {
+    pass: boolean;
+    conditions: SecGateCondition[];
+    failed_conditions: SecGateCondition[];
+  };
+  coverage_display: number;
+  coverage_final: number;
+  final_earned: number;
+  final_available: number;
+  /** NULL whenever the gate fails — the "—" is an absent number, not a hidden one. */
+  final_composite_score: number | null;
+  narratives: SecNarratives;
+  provisional_criteria: string[];
+  always_provisional: string[];
+};
+
+export type SecNarratives = {
+  business_model: { code: string; evidence: Record<string, unknown> | null };
+  drivers: {
+    items: { code: string; value: number; criterion_id: string | null;
+             period: string | null; source: string | null }[];
+    code?: string;
+  };
+  risks: {
+    items: { criterion_id: string; code: string; severity: number;
+             earned: number; available_max: number; provisional?: boolean }[];
+    code?: string;
+  };
+};
 
 export type SecField = {
   value: number | null;
@@ -210,14 +285,43 @@ export type SecCriterionCell = {
  * keeping those apart and the headline cell must not collapse them.
  */
 export function secDisplayScore(row: SecScore): { text: string; provisional: boolean } {
-  if (row.data_group === "C") return { text: "—", provisional: false };
-  if (row.publish_gate === "PASS" && row.final_fa_score !== null
-      && row.final_fa_score !== undefined) {
-    return { text: row.final_fa_score.toFixed(1), provisional: false };
-  }
-  const prov = row.provisional_fa_score ?? row.provisional_score;
-  if (prov === null || prov === undefined) return { text: "—", provisional: false };
-  return { text: prov.toFixed(1), provisional: true };
+  // V11v6 §2 SIMPLIFIES THIS AND REMOVES THE STARRED HEADLINE. There are now
+  // two outcomes, not three: the official score when the gate passes, and "—"
+  // when it does not ("Khi gate FAIL, điểm là '—'").
+  //
+  // The starred provisional headline is gone deliberately. It let a number that
+  // is not comparable with its neighbours sit in the same column as ones that
+  // are, distinguished only by a `*` — and the column then sorted them together.
+  // What replaces it is not less information: the CT x/y breakdown stays on
+  // the sub-line under the dash, and the status column says which condition
+  // failed, so a reader still sees what was measured and why it is not
+  // published.
+  const score = row.ui_contract?.final_composite_score;
+  if (score === null || score === undefined) return { text: "—", provisional: false };
+  return { text: score.toFixed(1), provisional: false };
+}
+
+/**
+ * Default row order (sheet 04, UI-05): official score DESC, ties by symbol ASC,
+ * unscored rows last.
+ *
+ * The tie-break is not cosmetic. Twenty-three brokers publish and several share
+ * a score to the decimal, so without a deterministic second key the same data
+ * renders in a different order on each request and "the table changed" becomes
+ * indistinguishable from "the data changed". Sorting on the PROVISIONAL score
+ * is explicitly forbidden — it would interleave numbers from two different
+ * denominators.
+ */
+export function secSortRows(rows: SecScore[]): SecScore[] {
+  return [...rows].sort((a, b) => {
+    const sa = a.ui_contract?.final_composite_score ?? null;
+    const sb = b.ui_contract?.final_composite_score ?? null;
+    if (sa === null && sb === null) return a.symbol.localeCompare(b.symbol);
+    if (sa === null) return 1;
+    if (sb === null) return -1;
+    if (sb !== sa) return sb - sa;
+    return a.symbol.localeCompare(b.symbol);
+  });
 }
 
 /**
@@ -245,35 +349,89 @@ export type SecQualityGroup = {
 };
 
 /**
- * The plain-language verdict beside a group score (V11v5 sheet 52).
+ * The label beside a group's official ratio (V11v6 sheet 04, UI-02).
  *
- * V11v5 sheet 52 states them outright: <40% Yếu, 40-<65% Trung bình,
- * 65-<85% Khá, >=85% Tốt. They had been INFERRED in V11v4 from three worked
- * examples with no band table (4/10 "Trung bình", 17/21 "Khá", 7/8 "Tốt"), and
- * the specified bands turn out to be exactly those — so nothing here moves,
- * but the thresholds are now a contract rather than a reconstruction.
+ * TWO THINGS CHANGED IN V6 AND THE WORDING MATTERS MORE THAN THE NUMBERS.
  *
- * A group with nothing measurable gets no verdict at all: "Yếu" on an unmeasured
- * group would be the N/A-as-zero mistake the whole rubric is built to avoid.
+ * The bands moved from 0.85 / 0.65 / 0.40 to 0.80 / 0.65 / 0.50. Only the word
+ * printed beside the ratio moves; no score, gate or total depends on it.
+ *
+ * The wording moved from a bare verdict ("Tốt") to a SCORE-LEVEL statement
+ * ("Mức điểm tốt"), and BA is explicit about why: a bare verdict reads as an
+ * independent conclusion about the company's risk — "Tài sản an toàn", "Không
+ * rủi ro" — when the denominator it rests on may be missing half its criteria.
+ * A level says where a ratio sits. It certifies nothing, which is all we are
+ * entitled to say.
+ *
+ * THE BAND IS NOT COMPUTED HERE. The backend already banded it (`level`), so
+ * this only translates — recomputing the ratio in the UI is exactly what sheet
+ * 04 forbids, and rounding before classifying is what V6-08 tests against.
  */
-export function groupVerdict(
-  earned: number | null | undefined,
-  max: number | null | undefined,
-  locale: Locale,
-): string | null {
-  if (earned === null || earned === undefined || !max) return null;
-  const r = earned / max;
-  const key = r >= 0.85 ? "secVerdictGood"
-    : r >= 0.65 ? "secVerdictFair"
-    : r >= 0.40 ? "secVerdictMid"
-    : "secVerdictWeak";
-  return t(locale, key);
+export function levelLabel(level: SecLevel | null | undefined, locale: Locale): string | null {
+  if (!level) return null;
+  const key = {
+    GOOD: "secLevelGood",
+    FAIR: "secLevelFair",
+    MID: "secLevelMid",
+    LOW: "secLevelLow",
+    NO_DATA: "secLevelNoData",
+  }[level];
+  return t(locale, key as Parameters<typeof t>[1]);
 }
 
+/** NO_DATA is an absence, so it must not wear the ramp's bottom colour. */
+export function levelStyle(level: SecLevel | null | undefined): string {
+  switch (level) {
+    case "GOOD": return "text-emerald-800";
+    case "FAIR": return "text-fg";
+    case "MID": return "text-amber-800";
+    case "LOW": return "text-rose-800";
+    default: return "text-fg-muted";
+  }
+}
+
+/**
+ * One group total as "CT x/y", or "N/A" when nothing official could be scored.
+ *
+ * Sheet 04, DT-03: "Cả hai mẫu số bằng 0 hiển thị N/A, không 0/0." A zero
+ * denominator is not a fraction — printing 0/0 asserts a measurement that does
+ * not exist, and it is the same absence-vs-zero distinction the rubric's
+ * normalization is built around.
+ */
+export function ctFraction(tier: SecUiTier | null | undefined): string {
+  if (!tier || !tier.final_available) return "N/A";
+  return `${fmtPts(tier.final_earned)}/${fmtPts(tier.final_available)}`;
+}
+
+/** Points print without trailing zeros: "3" and "2.5", never "3.00". */
+export function fmtPts(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+/**
+ * Frozen-column geometry, shared by BOTH tabs (sheet 04, UI-06).
+ *
+ * Two things have to agree or the freeze breaks, and they lived in two files
+ * with different numbers until this was hoisted: the second column's `left`
+ * offset must equal the first column's WIDTH, and the frozen cells need an
+ * OPAQUE background or the scrolling body shows straight through them — BA's
+ * "nền ô cố định phải kín".
+ *
+ * `bg-canvas` is the content sheet. The first attempt used `bg-paper`, which is
+ * not a token in this theme — Tailwind emits no rule for an unknown colour, so
+ * the class sat in the DOM looking correct while the cells stayed transparent.
+ * The same silent-miss shape as the glued arbitrary value documented in
+ * `table.ts`: a class that compiles to nothing is invisible in devtools.
+ */
+export const SEC_COL1_W = "w-[92px] min-w-[92px]";
+export const SEC_COL2_LEFT = "left-[92px]";
+export const SEC_FROZEN_HEAD = "sticky z-30 bg-panel-2";
+export const SEC_FROZEN_CELL = "sticky z-10 bg-canvas group-hover:bg-panel-2";
+
 export const SEC_SUMMARY_QUALITY = [
-  { key: "asset_quality", label: "secGroupAsset" },
-  { key: "operating_efficiency", label: "secGroupOperation" },
-  { key: "capital_safety", label: "secGroupCapital" },
+  { key: "asset", label: "secGroupAsset" },
+  { key: "operation", label: "secGroupOperation" },
+  { key: "capital", label: "secGroupCapital" },
 ] as const;
 
 export function criterionDisplay(cell: SecCriterionCell | undefined, max: number) {
@@ -366,6 +524,144 @@ export function fundingSourceStyle(field: SecField | undefined): string {
   // Derived is legitimate but not the same as reported — it earns a mark, not
   // a warning colour.
   return field.source_type === "DIRECT" ? "text-fg" : "text-amber-700";
+}
+
+/**
+ * The last column: one merged data-status cell (V11v6 §5).
+ *
+ * THE COLOUR FOLLOWS THE GATE, NEVER THE PERCENTAGE. BA says it twice ("X% cao
+ * không tự làm gate PASS", "Màu xanh/vàng theo gate, không theo riêng X%"), and
+ * the two really do come apart: APS reads 81% coverage and still fails, because
+ * coverage counts the PROVISIONAL layer while the gate counts only what can be
+ * published. A cell that went green on 81% would be telling the reader the
+ * opposite of what the row means.
+ *
+ * The percentage is `coverage_display` — combined available over the design 100
+ * — and it is not a measure of the company, of its disclosure, or of whether it
+ * is worth buying. The tooltip has to say so, because a bare "81%" invites all
+ * three readings.
+ */
+export function secDataStatus(row: SecScore, locale: Locale): {
+  headline: string; detail: string; className: string; pass: boolean;
+} {
+  const c = row.ui_contract;
+  const pass = c?.publish_gate.pass ?? false;
+  const pct = c ? Math.round(c.coverage_display * 100) : null;
+  const shown = pct === null ? "—" : `${pct}%`;
+  return {
+    headline: `${t(locale, pass ? "secDataEnough" : "secDataReferenceOnly")} · ${shown}`,
+    detail: t(locale, pass ? "secDataScoreShown" : "secDataScoreWithheld"),
+    className: pass ? "text-emerald-800" : "text-amber-800",
+    pass,
+  };
+}
+
+/**
+ * Why the gate failed, one line per condition, for the status tooltip.
+ *
+ * Every condition reports ACTUAL vs REQUIRED availability rather than a bare
+ * "not published", because the two questions a reader has are "how far off is
+ * it" and "off on what". Note the conditions are not independent — 34 + 23 + 8
+ * is exactly 65 — so losing a quality point below the floor also drops the
+ * total below its own, and two lines appear for one cause. That is a faithful
+ * list of failed conditions, not double-counting.
+ */
+export function secGateReasons(row: SecScore, locale: Locale): string[] {
+  const failed = row.ui_contract?.publish_gate.failed_conditions ?? [];
+  return failed.map((f) => {
+    const name = t(locale, {
+      total: "secGateTotal", quality: "secGateQuality",
+      sector_cycle: "secGateCycle", valuation: "secGateValuation",
+    }[f.id] as Parameters<typeof t>[1]);
+    return `${name}: ${fmtPts(f.actual_available)} / ${f.op === "==" ? "=" : "≥"} ${f.required_available}`;
+  });
+}
+
+/**
+ * The three narrative columns (V11v6 §6).
+ *
+ * Every branch returns TRANSLATED text keyed off a code the backend chose. The
+ * scorer never writes a sentence — `fa/real_estate.py` did exactly that once,
+ * storing its reasoning as English prose, and a Vietnamese reader got "cash
+ * burn scores 0 regardless of debt" rendered verbatim on the page.
+ *
+ * There is no empty state. BA bans both the bare dash and "Chưa cập nhật", so
+ * an absence is a sentence that names its reason — which is why the fallbacks
+ * below are real strings rather than `null`.
+ */
+export function secModelText(row: SecScore, locale: Locale): string {
+  const code = row.ui_contract?.narratives.business_model.code;
+  const key = {
+    MODEL_BROKERAGE_MARGIN: "secModelBrokerageMargin",
+    MODEL_PROPRIETARY: "secModelProprietary",
+    MODEL_BALANCED: "secModelBalanced",
+  }[code ?? ""] ?? "secModelInsufficient";
+  return t(locale, key as Parameters<typeof t>[1]);
+}
+
+export function secDriverLines(row: SecScore, locale: Locale): string[] {
+  const n = row.ui_contract?.narratives.drivers;
+  if (!n) return [t(locale, "secDriverInsufficient")];
+  if (n.items.length === 0) {
+    return [t(locale, n.code === "DRIVER_NONE_QUALIFIED"
+      ? "secDriverNoneQualified" : "secDriverInsufficient")];
+  }
+  return n.items.map((d) => {
+    const key = { DRIVER_CORE_PROFIT: "secDriverCoreProfit",
+                  DRIVER_MARGIN_BOOK: "secDriverMarginBook",
+                  DRIVER_MARKET_SHARE: "secDriverMarketShare" }[d.code];
+    return t(locale, key as Parameters<typeof t>[1])
+      .replace("{v}", fmtSignedPct(d.value));
+  });
+}
+
+/**
+ * Reason codes the scorer attaches to a zero. Live today: C9_PROXY_BOTTOM20 (9
+ * brokers), C5_PROXY_WEAK (1), C20_EXPENSIVE_BOTTOM20 (1); every other zero
+ * carries none and gets BA's generic "0 điểm theo tiêu chí".
+ *
+ * All three name what the SCORER found — bottom quintile of a peer ranking, a
+ * negative growth spread — never a conclusion about the firm. That distinction
+ * is why C9's line says "ranked in the bottom fifth of peers" and not "capital
+ * is unsafe": C9 is a proxy capped at 3/4 precisely because it cannot support
+ * the second claim.
+ */
+const REASON_KEYS: Record<string, Parameters<typeof t>[1]> = {
+  C9_PROXY_BOTTOM20: "secReasonC9Bottom",
+  C5_PROXY_WEAK: "secReasonC5Weak",
+  C20_EXPENSIVE_BOTTOM20: "secReasonC20Expensive",
+};
+
+export function secRiskLines(row: SecScore, locale: Locale): string[] {
+  const n = row.ui_contract?.narratives.risks;
+  if (!n) return [t(locale, "secRiskInsufficient")];
+  if (n.items.length === 0) {
+    return [t(locale, n.code === "RISK_INSUFFICIENT"
+      ? "secRiskInsufficient" : "secRiskNotConclusive")];
+  }
+  // A criterion that scored zero on real data is a finding the ENGINE already
+  // made; this reports it with the code the engine attached. It must never
+  // reason forward from a score to a conclusion — BA singles out "C9 = 0 ⇒
+  // capital is unsafe", because C9 is a peer-ranked proxy capped at 3/4 and a
+  // zero on it means last among peers, not impaired capital.
+  return n.items.map((r) => {
+    const label = t(locale, `secC${r.criterion_id.slice(1)}` as Parameters<typeof t>[1]);
+    // Explicit map, not a dynamic `secReason_${code}` lookup. `t()` takes a
+    // TranslationKey, so a computed key that misses returns `undefined` and
+    // renders the string "undefined" into the page rather than failing — the
+    // untranslated-string trap the bilingual check exists to catch. An unknown
+    // code falls back to BA's own wording for the no-reason case.
+    const reason = REASON_KEYS[r.code];
+    // The `*` marks a finding drawn from a provisional method, exactly as it
+    // marks that method's score. Without it a proxy's bottom-quintile ranking
+    // reads as a settled conclusion about the firm.
+    const star = r.provisional ? "*" : "";
+    return `${label}${star}: ${t(locale, reason ?? "secRiskZeroGeneric")}`;
+  });
+}
+
+export function fmtSignedPct(ratio: number): string {
+  return `${ratio >= 0 ? "+" : ""}${(ratio * 100).toFixed(1)}%`;
 }
 
 /** Coverage drives the eye more than the raw points do, so it gets the ramp. */

@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fa import securities as sec
+from fa import securities_ui as sec_ui
 from fa.securities import Criterion
 from ta.common import get_supabase_client, paged_select, safe_execute
 from ta.market_series import (METRIC_ADTV_MOMENTUM, METRIC_BREADTH,
@@ -608,6 +609,23 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
             "cof": cof,
             "leverage": (debt / equity) if (equity and debt is not None) else None,
             "prop_risk": (trading_book / equity) if equity else None,
+            # V11v6 §6, business model. The classification is a STRUCTURE read
+            # off one filed balance sheet — the close quarter — never a growth
+            # rate: BA bans assigning a model from margin growth alone, because
+            # one quarter of lending says nothing about what a firm is. All
+            # three legs share the close-quarter basis so the shares are parts
+            # of the same whole.
+            "bs_margin": sec._sum(bal.get(close_q, {}), [sec.BS_MARGIN]),
+            "bs_prop_assets": trading_book,
+            "bs_earning_assets": sec._sum(bal.get(close_q, {}), sec.BS_EARNING_ASSETS),
+            "quality_period": quarter,
+            # The same YoY C2 bands, kept as the raw ratio so the driver column
+            # can print the fact ("LN lõi +25,0% YoY") rather than C2's score.
+            "core_profit_growth_yoy": (
+                (core.val("core_npat_ttm") / prior.val("core_npat_ttm") - 1)
+                if (core.val("core_npat_ttm") is not None
+                    and (_pc := prior.val("core_npat_ttm")) and _pc > 0)
+                else None),
             "margin_growth": _mg["blend"],
             # Shown to the reader as percentages; C7's score is the sub-line.
             "margin_loan_growth_yoy_pct": _mg["yoy"],
@@ -901,8 +919,25 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
         # the UI, never a stand-in for it.
         "margin_loan_growth_yoy_pct": (scored.get("ctx") or {}).get("margin_loan_growth_yoy_pct"),
         "margin_loan_growth_qoq_pct": (scored.get("ctx") or {}).get("margin_loan_growth_qoq_pct"),
-        # Qualitative copy is Research-owned and never derived from C1-C20.
-        # PENDING until someone writes one; the UI says "Chưa cập nhật".
+        # V11v6: the whole display contract, computed once by a module that can
+        # only READ the scored row (migration 067). Both tabs render this and
+        # neither re-derives any of it — sheet 04, API-01/03/04.
+        "ui_version": sec_ui.UI_VERSION,
+        "ui_contract": sec_ui.ui_contract(totals, scored.get("ctx") or {}),
+        # STILL "PENDING", AND THE TWO NARRATIVE SYSTEMS ARE NOT THE SAME ONE.
+        #
+        # This column tracks the RESEARCH-owned free text in
+        # `business_model_summary` / `key_driver_summary` / `key_risk_summary`
+        # (migration 065), which nobody has written and which V11v6 does not
+        # populate. V6's §6 narratives are a different artefact living in
+        # `ui_contract.narratives`: reason-coded selections over facts the row
+        # already carries, each with its criterion, period and source.
+        #
+        # Writing "DERIVED_V6" here would claim the analyst copy now exists —
+        # exactly the conflation 065's comment warns against, and the check
+        # constraint refused it, correctly. What V6 changes is that the UI no
+        # longer RENDERS these columns at all, so 065's note about showing
+        # "Chưa cập nhật" describes a screen that no longer exists.
         "narrative_status": "PENDING",
         "sector_cycle_available": totals["sector_cycle_available"],
         "valuation_locked_available": totals["valuation_locked_available"],

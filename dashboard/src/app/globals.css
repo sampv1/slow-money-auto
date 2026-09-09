@@ -210,6 +210,46 @@ body {
   height: var(--row-h);
 }
 
+/* --- CTCK securities scanner: BA's minimum legible sizes -------------------
+   V11v6 sheet 04 (UI-06) sets a floor for this page specifically: body text at
+   least 14px, notes at least 12px, at 1280 / 1440 / 1920.
+
+   THAT CONFLICTS WITH THE HOUSE TABLE, WHICH IS 12px BY DESIGN — `--text-data`
+   plus a 26px row is a deliberate density copied from LSEG Workspace's Halo,
+   and it is right for Signal Pro and Portfolio where the job is to scan many
+   rows at once. Raising the shared token would silently re-space five other
+   tables to satisfy one spec, so these are SCOPED utilities that only the
+   securities tab spends.
+
+   The reason BA can ask for this and still fit 20 criteria is that V6 also
+   drops the fit-to-width requirement: "Cho cuộn ngang, không ép C1–C20 thành
+   chữ li ti" and "Ảnh toàn bảng là ảnh mở rộng". Earlier rounds squeezed labels
+   to keep the table inside 1280; that trade is now explicitly refused in favour
+   of horizontal scrolling. Bigger text and a wider table are the same decision.
+
+   The row height rises with the text for the same reason `row-h` is 26px at
+   12px: at 14px with line-height 1.25 the line box is 17.5px, and Vietnamese
+   stacked marks on Ề/Ệ/ữ/ậ need the clearance. 30px was checked against
+   "ĐỘNG LƯỢNG THANH KHOẢN" and "Chưa đủ căn cứ kết luận rủi ro chính". */
+@utility sec-body {
+  font-size: 0.875rem; /* 14px — BA's content floor */
+  line-height: 1.3;
+}
+
+@utility sec-note {
+  font-size: 0.75rem; /* 12px — BA's caption floor */
+  line-height: 1.3;
+}
+
+@utility sec-score {
+  font-size: 1.125rem; /* 18px — the headline figure, clearly above body */
+  line-height: 1.2;
+}
+
+@utility sec-row-h {
+  height: 30px;
+}
+
 /* Suppress the browser's own number spinners.
    A native <input type="number"> steps by a single fixed amount, which cannot
    walk a non-uniform ladder like the volume presets (0, 5k, 10k, 20k, 30k...).
