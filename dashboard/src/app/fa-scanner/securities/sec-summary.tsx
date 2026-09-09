@@ -284,7 +284,7 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                     <Lead lines={secDriverLines(r, locale)} />
                   </td>
                   <td className={`${TD_SEC} leading-tight`}>
-                    <Lead lines={secRiskLines(r, locale)} />
+                    <Lead lines={secRiskLines(r, locale, true)} />
                   </td>
                   {/* The SHARE is the headline and C4's score is the sub-line —
                       the same rule the margin column follows. "Outside the

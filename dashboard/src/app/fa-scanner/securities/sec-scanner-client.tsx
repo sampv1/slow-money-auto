@@ -334,9 +334,22 @@ export function SecScannerClient({
                       <th
                         className={`${TH_SEC_CENTER} ${GROUP_W} ${BLOCK_HEAD} ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE} font-bold`}
                       >
-                        {/* Wraps to the two lines BA asks for — "TỔNG NHÓM" /
-                            "CHÍNH THỨC" — inside the fixed 160px width. */}
-                        {t(locale, "secGroupTotalOfficial")}
+                        {/* TWO LINES, SPLIT EXPLICITLY. BA writes this header
+                            as "TỔNG ĐIỂM" / "NHÓM", and at 160px the phrase
+                            fits on one line, so natural wrapping would not
+                            produce it. Splitting at the last space gives their
+                            break in Vietnamese and a sensible one in English
+                            ("GROUP" / "TOTAL") without a second stored string
+                            that could drift from the tooltip's. */}
+                        {(() => {
+                          const w = t(locale, "secGroupTotalOfficial").split(" ");
+                          return (
+                            <>
+                              <div>{w.slice(0, -1).join(" ")}</div>
+                              <div>{w[w.length - 1]}</div>
+                            </>
+                          );
+                        })()}
                       </th>
                     ) : null}
                     <th
@@ -416,15 +429,21 @@ export function SecScannerClient({
                                 only when the backend says one is owed. Both
                                 denominators zero renders N/A, never 0/0 —
                                 a zero denominator is not a fraction. */}
-                            <div>
+                            {/* Two LABELLED lines (BA close-out §2A). "Chính
+                                thức" and "Gồm tạm tính" are spelled out rather
+                                than abbreviated to CT, and the tooltip says the
+                                thing a reader would otherwise get wrong: the
+                                second line already contains the first, so the
+                                two are never added together. */}
+                            <div title={t(locale, "secTotalRowsNote")}>
                               <span className="text-fg-label">
-                                {t(locale, "secOfficialPrefix")}{" "}
+                                {t(locale, "secOfficialFull")}:{" "}
                               </span>
                               {ctFraction(tier)}
                             </div>
                             {tier?.has_provisional ? (
-                              <div className="sec-note text-amber-800" title={t(locale, "secLegendStar")}>
-                                {t(locale, "secCombinedNote")} {fmtPts(tier.combined_earned)}/
+                              <div className="sec-note text-fg-muted" title={t(locale, "secTotalRowsNote")}>
+                                {t(locale, "secCombinedFull")}: {fmtPts(tier.combined_earned)}/
                                 {fmtPts(tier.combined_available)}*
                               </div>
                             ) : null}

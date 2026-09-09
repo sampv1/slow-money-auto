@@ -641,10 +641,15 @@ const REASON_KEYS: Record<string, Parameters<typeof t>[1]> = {
   C20_EXPENSIVE_BOTTOM20: "secReasonC20Expensive",
 };
 
-export function secRiskLines(row: SecScore, locale: Locale): string[] {
+export function secRiskLines(row: SecScore, locale: Locale, short = false): string[] {
   const n = row.ui_contract?.narratives.risks;
-  if (!n) return [t(locale, "secRiskInsufficient")];
+  // SHORT IS FOR THE CELL, FULL IS FOR THE PANEL. BA asked for "Chưa đủ căn cứ"
+  // in the column and the whole sentence kept in the expansion — and ruled out
+  // the two rewrites that would have been shorter still: "Không có rủi ro" and
+  // "An toàn" say something we did not measure.
+  if (!n) return [t(locale, short ? "secRiskShortNone" : "secRiskInsufficient")];
   if (n.items.length === 0) {
+    if (short) return [t(locale, "secRiskShortNone")];
     return [t(locale, n.code === "RISK_INSUFFICIENT"
       ? "secRiskInsufficient" : "secRiskNotConclusive")];
   }
@@ -671,6 +676,50 @@ export function secRiskLines(row: SecScore, locale: Locale): string[] {
 
 export function fmtSignedPct(ratio: number): string {
   return `${ratio >= 0 ? "+" : ""}${(ratio * 100).toFixed(1)}%`;
+}
+
+
+/**
+ * "C3 — Chất lượng lợi nhuận": the code AND the full name, from the SAME
+ * catalog the detail tab's headers read.
+ *
+ * BA's close-out asks for this because the expanded panel is where a customer
+ * reads what a group is made of, and "C3 + C12 + C13" makes them look the codes
+ * up. One catalog is the other half of the requirement — "tránh cùng một mã
+ * nhưng hai nơi gọi khác nhau" — so both places resolve `secC{n}` rather than
+ * keeping a second list that can drift.
+ *
+ * The label carries non-breaking spaces inside its word groups (they pin the
+ * detail header's line breaks); they render as ordinary spaces here.
+ */
+export function secCriterionName(key: string, locale: Locale): string {
+  const n = key.replace(/^c/i, "");
+  return `${key.toUpperCase()} — ${t(locale, `secC${n}` as Parameters<typeof t>[1])}`;
+}
+
+/**
+ * Three states a criterion cell can be in, in words rather than a code.
+ *
+ * `N/A` is "Chưa có dữ liệu", never a zero — the distinction the whole rubric
+ * is built on, and the one BA restates every round ("thiếu dữ liệu không được
+ * đổi thành điểm 0").
+ */
+export function secCriterionStatus(
+  cell: SecCriterionCell | undefined, locale: Locale,
+): { label: string; provisional: boolean; scored: boolean } {
+  const scored = !!cell && cell.earned !== null && cell.earned !== undefined;
+  const provisional = scored && cell!.tier === "PROVISIONAL";
+  return {
+    label: t(locale, !scored ? "secStNoData" : provisional ? "secStProvisional" : "secStOfficial"),
+    provisional,
+    scored,
+  };
+}
+
+/** "3/5", "3/5*", or "—" when nothing was measured. */
+export function secCriterionScore(cell: SecCriterionCell | undefined): string {
+  if (!cell || cell.earned === null || cell.earned === undefined) return "—";
+  return `${fmtPts(cell.earned)}/${fmtPts(cell.available_max)}${cell.tier === "PROVISIONAL" ? "*" : ""}`;
 }
 
 /** Coverage drives the eye more than the raw points do, so it gets the ramp. */
