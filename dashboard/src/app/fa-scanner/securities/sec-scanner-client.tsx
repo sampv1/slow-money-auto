@@ -27,6 +27,7 @@ import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { TABLE, TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
 import { PinButton } from "@/components/pin-button";
 import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
+import { TapTooltips } from "@/components/tap-tooltip";
 import { SecSummaryTable } from "./sec-summary";
 import { SecSectorPanel } from "./sec-sector-panel";
 
@@ -157,7 +158,11 @@ export function SecScannerClient({
 
 
   return (
-    <div>
+    <div id="sec-scanner">
+      {/* Touch devices have no hover, so every `title` on these two tables is
+          unreachable on a phone without this. One delegated listener covers all
+          ~284 of them (sheet 04, UI-06). */}
+      <TapTooltips scope="#sec-scanner" />
       <div className="bg-panel border border-line px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
         <MinVolumeFilter
           id="fa-sec-min-avg-vol"

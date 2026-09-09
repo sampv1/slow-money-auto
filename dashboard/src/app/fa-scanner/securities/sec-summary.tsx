@@ -124,7 +124,15 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
   return (
     <>
       <div className={TABLE_FREEZE}>
-        <table className={TABLE}>
+        {/* A READABILITY FLOOR, not a fixed width. `w-full` alone lets the
+            13 columns compress to whatever the viewport is, and at 390px that
+            wrapped "Chưa đủ căn cứ kết luận rủi ro chính" onto six lines — the
+            squeeze BA rules out ("không ép toàn bộ bảng vừa màn hình khiến tiêu
+            đề và nội dung xuống quá nhiều dòng"). Below this width the box
+            scrolls instead, which is what UI-06 asks for on mobile; at 1280 and
+            up the table still fills its container, so desktop is unchanged.
+            The detail tab needs no floor — it is `w-max` and always wider. */}
+        <table className={`${TABLE} min-w-[1120px]`}>
           <thead className={THEAD_STICKY}>
             <tr>
               {/* Mã CK and Điểm cơ bản are FROZEN (sheet 04, UI-06). The

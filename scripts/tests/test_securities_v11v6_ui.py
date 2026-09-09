@@ -254,23 +254,51 @@ check("quality carries its actual", by_id["quality"]["actual_available"], 33)
 check("quality carries its requirement", by_id["quality"]["required_available"], 34)
 check("total carries its actual (33+23+8)", by_id["total"]["actual_available"], 64)
 check("total carries its requirement", by_id["total"]["required_available"], 65)
-# SHEET 07'S "Valuation 7" ROW CANNOT OCCUR, and that is a property of the
-# rubric rather than a defect in the gate. Valuation is C19 (8) + C20 (12), so
-# the only locked availabilities reachable are 0, 8, 12 and 20 — 7 is not a
-# state any payload can be in. The floor is still worth testing at the boundary
-# that IS reachable: 0 fails, 8 passes.
+# THE VALUATION CONDITION, AT THE TWO LEVELS BA SPECIFIES (their V6 response).
 #
-# The case that matters is the floor failing ALONE, with the quality block
-# carrying enough slack that the total still clears 65 (42 + 23 + 0 = 65). That
-# is the whole reason V11v3 added per-block floors: quality slack must not be
-# spendable on valuation, which is the half V10 established can never be traded
-# away.
-g2 = gate_from(42, 23, 0)
-check("valuation 0 fails ALONE while total still reaches 65",
-      [c["id"] for c in g2["failed_conditions"]], ["valuation"])
-check("...and the total condition genuinely passed at 65",
-      next(c["actual_available"] for c in g2["conditions"] if c["id"] == "total"), 65)
-check("valuation 8 is the smallest passing value", gate_from(42, 23, 8)["pass"], True)
+# Sheet 07's "Valuation 7" row was dropped because it cannot occur, and the
+# reason is tighter than "the weights don't add to 7". C20 is UNCONDITIONALLY
+# provisional (`ALWAYS_PROVISIONAL`), so it never contributes locked
+# availability at all — while that holds, the locked valuation block is C19's 8
+# points or nothing. The reachable set is exactly {0, 8}, not {0, 8, 12, 20}.
+#
+# So the condition is tested at both of its reachable levels, and then at the
+# thing BA is careful to separate: meeting this condition is NOT passing the
+# publish gate ("Đạt điều kiện này chưa đồng nghĩa đạt toàn bộ publish gate").
+check("locked valuation availability is reachable only as 0 or 8 while C20 is provisional",
+      sorted({gate_from(42, 23, v)["conditions"][3]["actual_available"] for v in (0, 8)}),
+      [0, 8])
+
+# Level 1 — valuation 0: the condition FAILS. Quality carries enough slack that
+# the total still clears 65 (42 + 23 + 0), so valuation fails ALONE. That is the
+# whole reason V11v3 added per-block floors: quality slack must never be
+# spendable on valuation, the half V10 established can never be traded away.
+g_val0 = gate_from(42, 23, 0)
+val0 = next(c for c in g_val0["conditions"] if c["id"] == "valuation")
+check("valuation 0 -> condition NOT met", val0["pass"], False)
+check("valuation 0 -> it is the ONLY failing condition",
+      [c["id"] for c in g_val0["failed_conditions"]], ["valuation"])
+check("...total genuinely reached 65 on its own",
+      next(c["actual_available"] for c in g_val0["conditions"] if c["id"] == "total"), 65)
+check("valuation 0 -> whole gate FAILS", g_val0["pass"], False)
+
+# Level 2 — valuation 8: the condition is MET.
+g_val8 = gate_from(42, 23, 8)
+val8 = next(c for c in g_val8["conditions"] if c["id"] == "valuation")
+check("valuation 8 -> condition met", val8["pass"], True)
+check("valuation 8 -> whole gate passes when the others also hold", g_val8["pass"], True)
+
+# BA'S POINT, MADE EXPLICIT: the valuation condition can be met while the gate
+# still refuses. Quality at 33 drops both its own floor and the total, and the
+# met valuation condition does not rescue either — the four conditions are ANDed,
+# never traded off.
+g_mixed = gate_from(33, 23, 8)
+mixed_val = next(c for c in g_mixed["conditions"] if c["id"] == "valuation")
+check("valuation met but quality short -> valuation condition still reads met",
+      mixed_val["pass"], True)
+check("...and the gate still FAILS", g_mixed["pass"], False)
+check("...naming the conditions that actually failed",
+      [c["id"] for c in g_mixed["failed_conditions"]], ["total", "quality"])
 # EARNED MUST NOT SUBSTITUTE FOR AVAILABLE. A broker that scored zero on every
 # criterion it could measure still passes the gate — and then publishes a 0.0,
 # which is the honest outcome.
