@@ -379,12 +379,21 @@ export function levelLabel(level: SecLevel | null | undefined, locale: Locale): 
   return t(locale, key as Parameters<typeof t>[1]);
 }
 
-/** NO_DATA is an absence, so it must not wear the ramp's bottom colour. */
+/**
+ * NO_DATA is an absence, so it must not wear the ramp's bottom colour.
+ *
+ * MID IS DELIBERATELY NOT AMBER. It was, and across 32 rows three amber columns
+ * made an ordinary middling score look like a warning on almost every line —
+ * the failure BA names as "không dùng màu cam cho mọi thông tin ... như thể đều
+ * là cảnh báo". An average score is not a caution; only the bottom band earns a
+ * colour that stops the eye, and the two middle bands separate on weight and
+ * wording instead.
+ */
 export function levelStyle(level: SecLevel | null | undefined): string {
   switch (level) {
-    case "GOOD": return "text-emerald-800";
-    case "FAIR": return "text-fg";
-    case "MID": return "text-amber-800";
+    case "GOOD": return "text-emerald-800 font-semibold";
+    case "FAIR": return "text-fg font-medium";
+    case "MID": return "text-fg";
     case "LOW": return "text-rose-800";
     default: return "text-fg-muted";
   }
@@ -423,8 +432,8 @@ export function fmtPts(n: number): string {
  * The same silent-miss shape as the glued arbitrary value documented in
  * `table.ts`: a class that compiles to nothing is invisible in devtools.
  */
-export const SEC_COL1_W = "w-[92px] min-w-[92px]";
-export const SEC_COL2_LEFT = "left-[92px]";
+export const SEC_COL1_W = "w-[108px] min-w-[108px]";
+export const SEC_COL2_LEFT = "left-[108px]";
 export const SEC_FROZEN_HEAD = "sticky z-30 bg-panel-2";
 export const SEC_FROZEN_CELL = "sticky z-10 bg-canvas group-hover:bg-panel-2";
 

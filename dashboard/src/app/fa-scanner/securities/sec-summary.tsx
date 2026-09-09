@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import {
@@ -21,6 +22,7 @@ import {
   secModelText,
   secRiskLines,
 } from "@/lib/fa-securities";
+import { SecRowDetail } from "./sec-expand";
 import { TABLE, TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
 import { PinButton } from "@/components/pin-button";
 import { usePinnedSymbols } from "@/lib/pinned-symbols";
@@ -73,6 +75,28 @@ function Cell({
   );
 }
 
+/**
+ * The leading line of a narrative cell, with a "+n" chip when more exist.
+ *
+ * The remainder is never dropped — it is in the expanded panel, and the chip is
+ * what says so. A cell that silently showed one of three findings would be the
+ * condensation BA rules out: "Rút gọn phần trình bày không được làm thay đổi ý
+ * nghĩa dữ liệu."
+ */
+function Lead({ lines }: { lines: string[] }) {
+  if (lines.length === 0) return <span className="text-fg-muted">—</span>;
+  return (
+    <>
+      <div className="line-clamp-2">{lines[0]}</div>
+      {lines.length > 1 ? (
+        <span className="sec-note text-fg-muted border border-line-faint px-1 mt-0.5 inline-block">
+          +{lines.length - 1}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 // Above ten-fold, a percentage stops informing and starts looking like a bug.
 // These are real: a broker whose margin book was near zero a year ago prints
 // +5,247.8% (WSS) or +1,315.4% (VUA) on live data, and "Gấp 53,5 lần" reads as
@@ -120,6 +144,15 @@ const TD_SEC_NUM = `${TD_SEC} text-right font-mono tnum`;
 
 export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Locale }) {
   const { pinned, toggle } = usePinnedSymbols();
+  // Which rows have their explanation open. A plain <button> drives it, so a
+  // pointer and a finger reach it identically (V6-17).
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggleRow = (sym: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(sym)) next.delete(sym); else next.add(sym);
+      return next;
+    });
 
   return (
     <>
@@ -190,8 +223,10 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
               const c4src = r.field_metadata?.c4_source;
               const status = secDataStatus(r, locale);
               const gateReasons = secGateReasons(r, locale);
+              const isOpen = open.has(r.symbol);
               return (
-                <tr key={r.symbol} className="group border-b border-line-faint hover:bg-panel-2">
+                <Fragment key={r.symbol}>
+                <tr className="group border-b border-line-faint hover:bg-panel-2">
                   <td
                     className={`${TD_SEC} ${SEC_COL1_W} ${SEC_FROZEN_CELL} left-0 font-mono font-semibold text-accent whitespace-nowrap`}
                   >
@@ -209,6 +244,21 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                       >
                         {r.symbol}
                       </Link>
+                      <button
+                        type="button"
+                        onClick={() => toggleRow(r.symbol)}
+                        aria-expanded={isOpen}
+                        title={t(locale, isOpen ? "secCollapseRow" : "secExpandRow")}
+                        /* A REAL TOUCH TARGET. At 16x14 the glyph was the
+                           size of the character it drew — fine for a mouse,
+                           marginal for a finger, and inside a horizontally
+                           scrollable table a small tap gets read as the start
+                           of a pan. 24px square with `touch-action:manipulation`
+                           makes it a control rather than a hyperlink-sized dot. */
+                        className="ml-auto grid place-items-center w-6 h-6 shrink-0 touch-manipulation border border-line-faint text-fg-muted hover:text-fg hover:bg-panel-2 leading-none"
+                      >
+                        {isOpen ? "\u2212" : "+"}
+                      </button>
                     </span>
                   </td>
                   {/* THE SCORE, AND THE COMPOSITION UNDER IT. When the gate
@@ -225,15 +275,16 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                     </div>
                   </td>
                   <td className={`${TD_SEC} leading-tight`}>{secModelText(r, locale)}</td>
+                  {/* ONE leading item per narrative cell, with a "+n" chip when
+                      more exist. BA: "Hiển thị một động lực ưu tiên, tối đa hai
+                      dòng" / "Một thông điệp ngắn, tối đa hai dòng; nếu còn nội
+                      dung thì có chỉ báo +1 để mở xem." The rest is in the
+                      expanded panel, never dropped. */}
                   <td className={`${TD_SEC} leading-tight`}>
-                    {secDriverLines(r, locale).map((line, i) => (
-                      <div key={i}>{line}</div>
-                    ))}
+                    <Lead lines={secDriverLines(r, locale)} />
                   </td>
                   <td className={`${TD_SEC} leading-tight`}>
-                    {secRiskLines(r, locale).map((line, i) => (
-                      <div key={i}>{line}</div>
-                    ))}
+                    <Lead lines={secRiskLines(r, locale)} />
                   </td>
                   {/* The SHARE is the headline and C4's score is the sub-line —
                       the same rule the margin column follows. "Outside the
@@ -257,12 +308,9 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                             <span className="text-fg-label"> · {c4src.exchange_scope}</span>
                           ) : null}
                         </div>
-                        <div className="sec-note text-fg-label">
-                          C4: <Cell earned={cr.c4.earned} max={cr.c4.available_max} />
-                        </div>
                       </>
                     ) : (
-                      <span className="text-fg-muted">{t(locale, "secSumShareUnknown")}</span>
+                      <span className="text-fg-muted">{t(locale, "secShareUnverified")}</span>
                     )}
                   </td>
                   {/* The margin book's ACTUAL growth, with C7's score demoted
@@ -274,59 +322,30 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                       <Growth value={r.margin_loan_growth_yoy_pct} locale={locale} />
                       <span className="text-fg-label"> YoY</span>
                     </div>
-                    <div>
+                    <div className="sec-note text-fg-muted">
                       <Growth value={r.margin_loan_growth_qoq_pct} locale={locale} />
-                      <span className="text-fg-label"> QoQ</span>
-                    </div>
-                    <div className="sec-note text-fg-label" title={t(locale, "secC7SubLine")}>
-                      C7{" "}
-                      <Cell
-                        earned={cr.c7?.earned}
-                        max={cr.c7?.available_max}
-                        provisional={cr.c7?.tier === "PROVISIONAL"}
-                      />
+                      <span> QoQ</span>
                     </div>
                   </td>
                   {/* The three quality subgroups, straight off the contract.
                       The level label is BANDED BY THE BACKEND — classifying
                       here would round before comparing, which V6-08 tests
                       against, and would be a second implementation besides. */}
+                  {/* LEVEL LABEL IS THE MAIN LINE, CT x/y THE SUB-LINE. The
+                      first pass had these the other way round, and BA's
+                      close-out is explicit: "Mức đánh giá là thông tin chính;
+                      CT x/y là dòng phụ." The mapping, the group's design
+                      coverage and the C5/C9 provisional members move into the
+                      expanded panel. */}
                   {SEC_SUMMARY_QUALITY.map((g) => {
                     const grp: SecUiSubgroup | undefined = uc?.subgroups?.[g.key];
                     const level = levelLabel(grp?.level, locale);
                     return (
                       <td key={g.key} className={`${TD_SEC_NUM} leading-tight`}>
-                        <div>
-                          <span className="text-fg-label">
-                            {t(locale, "secOfficialPrefix")}{" "}
-                          </span>
-                          {ctFraction(grp)}
+                        <div className={levelStyle(grp?.level)}>{level ?? "N/A"}</div>
+                        <div className="sec-note text-fg-muted">
+                          {t(locale, "secOfficialPrefix")} {ctFraction(grp)}
                         </div>
-                        {level ? (
-                          <div
-                            className={`sec-note ${levelStyle(grp?.level)}`}
-                            title={t(locale, "secLevelTip")
-                              .replace("{scored}", grp ? fmtPts(grp.final_available) : "0")
-                              .replace("{design}", grp ? String(grp.design_max) : "0")}
-                          >
-                            {level}
-                          </div>
-                        ) : null}
-                        {/* The provisional part gets its OWN line rather than a
-                            `*` on the official total: capital safety's official
-                            side and C9's proxy are different measurements, and
-                            one starred number cannot say which half is which. */}
-                        {(grp?.provisional_criteria ?? []).map((k) => {
-                          const cell = cr[k];
-                          if (!cell || cell.status !== "VALID") return null;
-                          return (
-                            <div key={k} className="sec-note text-amber-800">
-                              {k.toUpperCase()}: {fmtPts(cell.earned ?? 0)}/
-                              {fmtPts(cell.available_max)}* ·{" "}
-                              {t(locale, "secProvisionalTag")}
-                            </div>
-                          );
-                        })}
                       </td>
                     );
                   })}
@@ -339,8 +358,8 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                       provisional={cr.c18?.tier === "PROVISIONAL"}
                     />
                     {cr.c18?.status === "VALID" && cr.c18?.tier === "PROVISIONAL" ? (
-                      <div className="sec-note text-amber-800">
-                        {t(locale, "secCyclePending")}
+                      <div className="sec-note text-fg-muted">
+                        {t(locale, "secProvShort")}
                       </div>
                     ) : null}
                   </td>
@@ -377,9 +396,16 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                     >
                       {status.headline}
                     </div>
-                    <div className="sec-note text-fg-label">{status.detail}</div>
                   </td>
                 </tr>
+                {isOpen ? (
+                  <tr>
+                    <td colSpan={13} className="p-0">
+                      <SecRowDetail row={r} locale={locale} />
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               );
             })}
           </tbody>

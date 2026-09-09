@@ -68,11 +68,24 @@ const DETAIL_BANDS = [
   { block: "valuation", label: "secGroupHeaderValuation" },
 ] as const;
 
+/* Column widths are BA's, from the V6 close-out (§B "Kích thước triển khai").
+   They are FIXED rather than content-derived: the point of the pass is to bring
+   the detail table's width down by wrapping the header instead of letting a
+   long criterion name stretch its column. `table-fixed` is what makes the
+   widths bind — under `auto` layout the longest word still sets a min-content
+   floor and the numbers would be advisory. */
+const CRIT_W = "w-[112px] min-w-[112px] max-w-[112px]";
+const CRIT_W_C14 = "w-[136px] min-w-[136px] max-w-[136px]";
+const GROUP_W = "w-[160px] min-w-[160px] max-w-[160px]";
+
 const TH_SEC =
   "sec-note uppercase tracking-wide px-2 py-1 font-semibold text-left align-bottom whitespace-normal leading-tight text-fg-label";
 const TH_SEC_NUM = `${TH_SEC} text-right`;
 const TD_SEC = "sec-body sec-row-h px-2 align-top py-1";
 const TD_SEC_NUM = `${TD_SEC} text-right font-mono tnum`;
+const TH_SEC_CENTER =
+  "sec-note uppercase tracking-wide px-1.5 py-1 font-semibold text-center align-bottom whitespace-normal leading-tight text-fg-label";
+const TD_SEC_CENTER = `${TD_SEC} text-center font-mono tnum`;
 
 export function SecScannerClient({
   rows,
@@ -270,7 +283,7 @@ export function SecScannerClient({
             Squeezed, "Gồm tạm tính 35/46*" wrapped onto four lines and the row
             height tripled. Sized to content the columns take what they need and
             the container scrolls, which is the behaviour the spec asks for. */}
-        <table className={`${TABLE} min-w-full w-max`}>
+        <table className={`${TABLE} min-w-full w-max table-fixed`}>
           <thead className={THEAD_STICKY}>
             {/* TIER 1 — the three group bands. Each spans its own official
                 total column PLUS its criteria, which is what makes "I. Chất
@@ -319,26 +332,26 @@ export function SecScannerClient({
                   <Fragment key={c.key}>
                     {first ? (
                       <th
-                        className={`${TH_SEC_NUM} ${BLOCK_HEAD} ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE} font-bold`}
+                        className={`${TH_SEC_CENTER} ${GROUP_W} ${BLOCK_HEAD} ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE} font-bold`}
                       >
+                        {/* Wraps to the two lines BA asks for — "TỔNG NHÓM" /
+                            "CHÍNH THỨC" — inside the fixed 160px width. */}
                         {t(locale, "secGroupTotalOfficial")}
                       </th>
                     ) : null}
                     <th
-                      className={`${TH_SEC_NUM} ${BLOCK_HEAD} ${first && i > 0 ? BLOCK_SPLIT : ""}`}
+                      className={`${TH_SEC_CENTER} ${c.key === "c14" ? CRIT_W_C14 : CRIT_W} ${BLOCK_HEAD} ${first && i > 0 ? BLOCK_SPLIT : ""}`}
                       title={t(locale, c.hint)}
                     >
-                      <button onClick={() => sortBy(`${c.key}_score`)} className="hover:underline">
+                      {/* THREE LINES BY CONSTRUCTION (BA §B): the C code on its
+                          own, the name wrapped by word groups, then the design
+                          maximum. The name wraps INSIDE the fixed width rather
+                          than widening the column — no ellipsis and no smaller
+                          type, which BA rules out explicitly ("không cắt tên
+                          bằng dấu ba chấm, không giảm cỡ chữ để ép vừa"). */}
+                      <button onClick={() => sortBy(`${c.key}_score`)} className="hover:underline w-full">
                         <div className="font-mono">{c.key.toUpperCase()}{arrow(`${c.key}_score`)}</div>
-                        {/* THE FULL NAME IS BACK. V11v3 reduced these headers to
-                            bare codes because twenty spelled-out labels
-                            overflowed 1280 by 586px in English. V6 asks for the
-                            name and the design maximum in the header and
-                            accepts horizontal scrolling to get them — so the
-                            constraint that forced the codes no longer applies,
-                            and the code stays as the first line because it is
-                            the vocabulary the rubric itself uses. */}
-                        <div className="font-normal normal-case tracking-normal">
+                        <div className="font-normal normal-case tracking-normal break-words hyphens-none">
                           {t(locale, c.label)}
                         </div>
                         <div className="font-normal normal-case tracking-normal text-fg-muted">
@@ -397,7 +410,7 @@ export function SecScannerClient({
                       <Fragment key={c.key}>
                         {first ? (
                           <td
-                            className={`${TD_SEC_NUM} ${BLOCK_BODY} font-semibold ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE} leading-tight whitespace-nowrap`}
+                            className={`${TD_SEC_NUM} ${GROUP_W} ${BLOCK_BODY} font-semibold ${i > 0 ? BLOCK_SPLIT : BLOCK_EDGE} leading-tight`}
                           >
                             {/* CT x/y on the main line, "gồm tạm tính a/b*"
                                 only when the backend says one is owed. Both
@@ -418,7 +431,7 @@ export function SecScannerClient({
                           </td>
                         ) : null}
                         <td
-                          className={`${TD_SEC_NUM} ${BLOCK_BODY} ${d.className} whitespace-nowrap`}
+                          className={`${TD_SEC_CENTER} ${c.key === "c14" ? CRIT_W_C14 : CRIT_W} ${BLOCK_BODY} ${d.className}`}
                           title={d.title}
                         >
                           {d.text}
@@ -445,7 +458,6 @@ export function SecScannerClient({
                     >
                       {status.headline}
                     </div>
-                    <div className="sec-note text-fg-label">{status.detail}</div>
                   </td>
                 </tr>
               );
