@@ -113,27 +113,31 @@ def market_share_rows(client) -> list[dict]:
     try:
         return paged_select(
             lambda o, l: client.table("fa_broker_market_share")
-            .select("symbol,period,exchange_scope,market_share_pct,source,source_date")
-            .order("source_date").order("symbol").range(o, o + l - 1),
+            .select("symbol,period,exchange_scope,market_share_pct,source,"
+                    "source_date,effective_from,source_type")
+            .order("effective_from").order("symbol").range(o, o + l - 1),
             label="broker market share")
-    except Exception as e:  # noqa: BLE001 — table arrives with migration 065
+    except Exception as e:  # noqa: BLE001 — table arrives with 065, columns 066
         print(f"::warning::market share unavailable ({type(e).__name__}: {e}); "
               "C4 stays N/A")
         return []
 
 
 def market_share_asof(rows: list[dict], as_of: str) -> dict[str, dict]:
-    """{symbol: row} — the newest figure PUBLISHED on or before `as_of`.
+    """{symbol: row} — the newest figure USABLE on `as_of`.
 
-    The date test is on `source_date`, the publication date, not on the period
-    it covers. A Q2 share is not knowable the day the quarter ends; scoring a
-    past session with a figure released weeks later is look-ahead, and the
-    backfill replays 242 of them. Rows arrive ordered by source_date, so the
-    last match wins.
+    The test is on `effective_from`, not on the period the figure covers and
+    not on its publication timestamp. A Q2 share is not knowable the day the
+    quarter ends, so scoring a past session with a figure released weeks later
+    is look-ahead and the backfill replays 242 of them. The two dates usually
+    coincide, but the Q2/2026 release went out at 16:30 — after the close — so
+    it is usable from the NEXT session (V11v5 sheet 53, TC-C4-PIT-01/02).
+    Rows arrive ordered by effective_from, so the last match wins.
     """
     out: dict[str, dict] = {}
     for r in rows:
-        if not r.get("source_date") or str(r["source_date"]) > as_of:
+        eff = r.get("effective_from") or r.get("source_date")
+        if not eff or str(eff) > as_of:
             continue
         out[r["symbol"]] = r
     return out
@@ -616,7 +620,10 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
             "market_share_pct": (float(sh["market_share_pct"]) if sh else None),
             "market_share_scope": (sh.get("exchange_scope") if sh else None),
             "market_share_source": (sh.get("source") if sh else None),
+            "market_share_source_type": (sh.get("source_type") if sh else None),
             "market_share_period": (sh.get("period") if sh else None),
+            "market_share_effective_from": (sh.get("effective_from") if sh else None),
+            "market_share_source_date": (sh.get("source_date") if sh else None),
             # C13: what the broker charged against its own earning assets.
             "asset_risk": (abs(sec.ttm(st, "income", sec.PROVISION_EXPENSE, qs)) / avg_ea)
                           if avg_ea else None,
@@ -820,6 +827,30 @@ def score_all(collected: dict, market: dict, fci: dict) -> dict:
     return out
 
 
+def _c4_provenance(scored: dict) -> dict | None:
+    """The share figure C4 was scored from, or None when it had no source.
+
+    A row without this key was scored N/A, and the reason is one of two that
+    look identical on screen: the broker is outside the published Top 10, or
+    the figure exists but was not yet effective on this session. Storing the
+    effective date beside the value is what tells those apart afterwards.
+    """
+    ctx = scored.get("ctx") or {}
+    if ctx.get("market_share_pct") is None:
+        return None
+    return {
+        "market_share_pct": ctx.get("market_share_pct"),
+        "period": ctx.get("market_share_period"),
+        "exchange_scope": ctx.get("market_share_scope"),
+        "source": ctx.get("market_share_source"),
+        "source_type": ctx.get("market_share_source_type"),
+        "source_date": str(ctx["market_share_source_date"])
+                       if ctx.get("market_share_source_date") else None,
+        "effective_from": str(ctx["market_share_effective_from"])
+                          if ctx.get("market_share_effective_from") else None,
+    }
+
+
 def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
               market: dict, fci: dict, score_status: str) -> dict:
     """One fa_securities_scores row, with the audit trail the spec requires."""
@@ -893,6 +924,12 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
                     ("c18", scored.get("c18_lineage")),
                 ) if v
             },
+            # C4's provenance, written whenever a share figure was actually
+            # used. AT26 asks for per-symbol JSON evidence either side of
+            # 07/07/2026, and the effective date is the only thing that
+            # distinguishes "outside the Top 10" from "not published yet" —
+            # both of which render as N/A.
+            **({"c4_source": _c4_source} if (_c4_source := _c4_provenance(scored)) else {}),
             # Shadow candidates ride in the audit blob rather than in columns:
             # they are evidence for a future lock decision, not something any
             # query should be able to sort or rank on today.
@@ -1064,7 +1101,11 @@ def run_backfill(client, args, st) -> int:
                 d["ctx"]["market_share_pct"] = float(sh["market_share_pct"]) if sh else None
                 d["ctx"]["market_share_scope"] = sh.get("exchange_scope") if sh else None
                 d["ctx"]["market_share_source"] = sh.get("source") if sh else None
+                d["ctx"]["market_share_source_type"] = sh.get("source_type") if sh else None
                 d["ctx"]["market_share_period"] = sh.get("period") if sh else None
+                d["ctx"]["market_share_effective_from"] = (
+                    sh.get("effective_from") if sh else None)
+                d["ctx"]["market_share_source_date"] = sh.get("source_date") if sh else None
                 d["ctx"].pop("c20_criterion", None)
                 d["ctx"].pop("c9_criterion", None)
                 d["ctx"].pop("c18_criterion", None)

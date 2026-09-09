@@ -342,6 +342,131 @@ try:
 except KeyError:
     print("   ok:   an undeclared criterion raises rather than inheriting a neighbour's depth")
 
-print("\n" + ("ALL FIXTURES PASS (AT17 + AT21 + AT22-24)" if not fails
+print("\n=== V11v5 C4 broker market share: bands (AT05/AT06) ===")
+
+# C4 was N/A sector-wide from V8 to V11v4 because the quarterly HOSE/HNX
+# release is not in our data provider. V11v5 sheet 45 supplies it for seven
+# brokers, so both halves of the rule now need pinning: the bands here, the
+# DATE below — and the date is the half that is easy to get wrong silently.
+
+c = sec.score_c4(3.0, "HOSE")
+ok = c.points == 2 and c.contract("c4")["available_max"] == 4
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  TC-C4-01: a verified 3% scores 2/4")
+
+ok = c.tier == sec.TIER_LOCKED and c.method == "OFFICIAL"
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  TC-C4-01: LOCKED/OFFICIAL, so it reaches final_fa_score")
+
+na = sec.score_c4(None)
+ok = na.points is None and na.contract("c4")["available_max"] == 0
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  TC-C4-02: no source is N/A with max 0 — it leaves the "
+      f"DENOMINATOR, it does not score zero")
+
+# The withdrawn V11 draft awarded 1/4 to any confirmed-active broker. That adds
+# 1 to every numerator and 4 to every denominator, dragging every symbol toward
+# 25% while separating nobody, so an ABSENT figure must never become a band.
+# A verified 0% is a different statement and does score.
+ok = na.code == "C4_NO_VERIFIED_SOURCE" and sec.score_c4(0.0).points == 0
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  an absent share is N/A; a VERIFIED zero is a measured 0/4")
+
+SHEET_45 = [("SSI", 11.17, 4), ("TCX", 9.36, 3), ("VCI", 7.00, 3),
+            ("HCM", 6.80, 3), ("MBS", 4.79, 2), ("VND", 3.96, 2),
+            ("VPX", 3.57, 2)]
+bad = [(s_, p_, sec.score_c4(p_, "HOSE").points)
+       for s_, p_, w in SHEET_45 if sec.score_c4(p_, "HOSE").points != w]
+if bad:
+    fails += 1
+print(f"   {'PASS' if not bad else f'FAIL {bad}'}  TC-C4-MAP: all seven Q2/2026 brokers map to "
+      f"sheet 45's scores")
+
+# Band EDGES, which none of the seven happens to sit on. The lower bound of
+# each band is inclusive, so a broker landing exactly on 10.00 takes 4/4 rather
+# than falling through to 3/4.
+edges = [(10.0, 4), (9.99, 3), (5.0, 3), (4.99, 2), (2.0, 2), (1.99, 1)]
+bad = [(v, w, sec.score_c4(v).points) for v, w in edges if sec.score_c4(v).points != w]
+if bad:
+    fails += 1
+print(f"   {'PASS' if not bad else f'FAIL {bad}'}  every band boundary is inclusive below")
+
+
+print("\n=== V11v5 C4 point-in-time (AT26 / TC-C4-PIT) ===")
+
+# THE FIGURES WERE PUBLISHED AT 16:30 — AFTER THE CLOSE — so the first session
+# that may use them is the NEXT one. That is why `effective_from` is a separate
+# column from `source_date`: publication is the evidence, effectiveness is the
+# rule, and on this release they are different dates. The scorer replays 242
+# sessions back to 2025-09-17, so applying a Q2/2026 share one session early is
+# look-ahead that produces a perfectly plausible number and no error.
+ROWS = [{"symbol": s_, "period": "2026-Q2", "exchange_scope": "HOSE",
+         "market_share_pct": p_, "source": "HOSE",
+         "source_type": "SECONDARY_QUOTING_HOSE",
+         "source_date": "2026-07-06", "effective_from": "2026-07-07"}
+        for s_, p_, _ in SHEET_45]
+NAMES = {s_ for s_, _, _ in SHEET_45}
+
+ok = rfs.market_share_asof(ROWS, "2026-07-06") == {}
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  TC-C4-PIT-01: on 06/07 — the publication date itself — "
+      f"nothing is usable yet")
+
+ok = set(rfs.market_share_asof(ROWS, "2026-07-07")) == NAMES
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  TC-C4-PIT-02: on 07/07 all seven become usable")
+
+ok = (rfs.market_share_asof(ROWS, "2025-09-17") == {}
+      and set(rfs.market_share_asof(ROWS, "2026-09-08")) == NAMES)
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  AT26: the oldest replayed session sees nothing, a session "
+      f"after the effective date sees all seven")
+
+# TC-C4-OUTSIDE. A broker absent from the release keeps N/A — never 0%, never
+# 1/4. "Outside the published Top 10" is not a measurement of its share.
+ok = "VIX" not in rfs.market_share_asof(ROWS, "2026-09-08")
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  TC-C4-OUTSIDE: VIX is not in the release, so C4 stays N/A")
+
+# A figure published DURING a session is usable that session; the ordinary case
+# where the two dates coincide is unchanged.
+same_day = [dict(ROWS[0], source_date="2026-07-07", effective_from="2026-07-07")]
+ok = set(rfs.market_share_asof(same_day, "2026-07-07")) == {"SSI"}
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  a figure published intraday is usable the same session")
+
+# Rows written before migration 066 carry no effective_from. They fall back to
+# source_date rather than vanishing — a column that has not been added yet is
+# not a reason to silently stop scoring a criterion.
+legacy = [{k: v for k, v in ROWS[0].items() if k != "effective_from"}]
+ok = set(rfs.market_share_asof(legacy, "2026-07-06")) == {"SSI"}
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  a pre-066 row with no effective_from falls back to its "
+      f"publication date")
+
+# Newest EFFECTIVE wins, not newest published: a Q3 release supersedes Q2 from
+# the day it lands and not before.
+two = [dict(ROWS[0], period="2026-Q2", market_share_pct=11.17),
+       dict(ROWS[0], period="2026-Q3", market_share_pct=8.10,
+            source_date="2026-10-05", effective_from="2026-10-06")]
+ok = (rfs.market_share_asof(two, "2026-09-08")["SSI"]["period"] == "2026-Q2"
+      and rfs.market_share_asof(two, "2026-10-06")["SSI"]["period"] == "2026-Q3")
+if not ok:
+    fails += 1
+print(f"   {'PASS' if ok else 'FAIL'}  a later release supersedes an earlier one only from its "
+      f"own effective date")
+
+
+print("\n" + ("ALL FIXTURES PASS (AT17 + AT21 + AT22-24 + AT05/AT06/AT26)" if not fails
              else f"{fails} CHECK(S) FAILED"))
 sys.exit(1 if fails else 0)

@@ -16,7 +16,7 @@ import { PinButton } from "@/components/pin-button";
 import { usePinnedSymbols } from "@/lib/pinned-symbols";
 
 /**
- * Tab 1 — the plain-language summary (V11v3 sheet 49).
+ * Tab 1 — \u201cT\u1ed5ng quan ng\u00e0nh\u201d, the sector overview (V11v5 sheet 49).
  *
  * Same rows, same engine, same session as the detail tab: this receives the
  * ALREADY-FILTERED array and reads only fields the scorer wrote. It never
@@ -62,18 +62,39 @@ function Cell({
 
 // Above ten-fold, a percentage stops informing and starts looking like a bug.
 // These are real: a broker whose margin book was near zero a year ago prints
-// +5,247.8% (WSS) or +1,315.4% (VUA) on live data. "x53.5" says the same thing
-// in four characters and reads as a magnitude rather than a typo. The cutoff is
-// on the RATIO, so it is symmetric and never fires on an ordinary quarter.
+// +5,247.8% (WSS) or +1,315.4% (VUA) on live data, and "Gấp 53,5 lần" reads as
+// a magnitude rather than a typo.
+//
+// The threshold and the arithmetic are the spec's, not ours (V11v5 #26 /
+// AT28): above |YoY| > 1,000% show `1 + YoY/100` as a multiple, and KEEP the
+// raw percentage in the tooltip. That last clause is the point — the multiple
+// is a rounding for legibility, so the exact figure has to stay reachable or
+// the column stops being auditable.
+//
+// It fires UPWARD only. The spec writes the test as |YoY| > 1,000%, but its
+// formula is `1 + YoY/100`, which on the downward side would print "Gấp -10,0
+// lần" — a multiple of a negative number, which says nothing. A shrinking book
+// is bounded at -100% whenever it started positive, so the downward case is
+// unreachable in practice, and a large negative would be a data fault better
+// seen as a percentage anyway.
 const GROWTH_AS_MULTIPLE = 10;
 
-function Growth({ value }: { value: number | null | undefined }) {
+function Growth({ value, locale }: { value: number | null | undefined; locale: Locale }) {
   if (value === null || value === undefined) return <span className="text-fg-muted">N/A</span>;
   const up = value >= 0;
-  const text = value >= GROWTH_AS_MULTIPLE
-    ? `\u00d7${(1 + value).toFixed(1)}`
-    : `${up ? "+" : ""}${(value * 100).toFixed(1)}%`;
-  return <span className={up ? "text-up" : "text-down"}>{text}</span>;
+  const raw = `${up ? "+" : ""}${(value * 100).toFixed(1)}%`;
+  if (value < GROWTH_AS_MULTIPLE) {
+    return <span className={up ? "text-up" : "text-down"}>{raw}</span>;
+  }
+  const multiple = (1 + value).toFixed(1);
+  return (
+    <span
+      className={up ? "text-up" : "text-down"}
+      title={t(locale, "secGrowthMultipleTip").replace("{raw}", raw)}
+    >
+      {t(locale, "secGrowthMultiple").replace("{x}", multiple)}
+    </span>
+  );
 }
 
 export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Locale }) {
@@ -89,18 +110,12 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
               <th className={TH_NUM_WRAP} title={t(locale, "secFinalScoreTip")}>
                 {t(locale, "secFinalScore")}
               </th>
-              <th className={TH_WRAP} title={t(locale, "secCoverageTip")}>
-                {t(locale, "secSumDisclosure")}
-              </th>
               <th className={TH_WRAP}>{t(locale, "secSumModel")}</th>
               <th className={TH_WRAP}>{t(locale, "secSumDriver")}</th>
               <th className={TH_WRAP}>{t(locale, "secSumRisk")}</th>
               <th className={TH_WRAP} title={t(locale, "secC4Hint")}>{t(locale, "secC4")}</th>
               <th className={TH_NUM_WRAP} title={t(locale, "secC7Hint")}>
                 {t(locale, "secSumMarginGrowth")}
-              </th>
-              <th className={TH_NUM_WRAP} title={t(locale, "secC2Hint")}>
-                {t(locale, "secSumCoreGrowth")}
               </th>
               {SEC_SUMMARY_QUALITY.map((g) => (
                 <th
@@ -118,6 +133,16 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                 {t(locale, "secBlockValuation")}
               </th>
               <th className={TH_NUM_WRAP}>{t(locale, "secSumTotal")}</th>
+              {/* The last three, in this order, on BOTH tabs (V11v5 #25 /
+                  AT27). "Dữ liệu công bố" and "Trạng thái" are fixed as the
+                  final two: one says how much was measured, the other whether
+                  the result is official, and a reader who has scrolled a wide
+                  table should meet them together at the end rather than find
+                  coverage back at column three. */}
+              <th className={TH_WRAP}>{t(locale, "secSumNote")}</th>
+              <th className={TH_WRAP} title={t(locale, "secCoverageTip")}>
+                {t(locale, "secSumDisclosure")}
+              </th>
               <th className={TH_WRAP} title={t(locale, "secGateTip")}>
                 {t(locale, "secSumVerdict")}
               </th>
@@ -129,6 +154,7 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
               // ONE rule for both tabs — see secDisplayScore. Computing it
               // here is how the two tabs disagreed in the first place.
               const score = secDisplayScore(r);
+              const c4src = r.field_metadata?.c4_source;
               const passed = r.publish_gate === "PASS";
               return (
                 <tr key={r.symbol} className={TR}>
@@ -158,15 +184,6 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                       score.text
                     )}
                   </td>
-                  <td className="px-2 row-h whitespace-nowrap">
-                    <span className={coverageColor(r.coverage)}>
-                      {r.coverage === null ? "—" : `${Math.round(r.coverage * 100)}%`}
-                    </span>
-                    <span className="text-fg-label" title={secStatusLabel(locale, r.fa_status)}>
-                      {" "}
-                      · {r.data_group ?? "—"}
-                    </span>
-                  </td>
                   {/* Research-owned copy. NEVER derived from C1-C20 — a
                       business model inferred from scores would be the system
                       inventing an opinion and presenting it as analysis. Only
@@ -192,7 +209,16 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                   <td className="px-2 row-h text-body leading-tight">
                     {cr.c4?.status === "VALID" ? (
                       <>
-                        <div>{r.market_share_pct?.toFixed(2)}%</div>
+                        {/* The share itself, from the audit blob the scorer
+                            writes — see field_metadata.c4_source. The score is
+                            the sub-line; the FACT is the headline, the same
+                            rule the margin-growth column follows. */}
+                        <div title={c4src ? `${c4src.source_type ?? ""} · ${c4src.period ?? ""}`
+                                           : undefined}>
+                          {c4src?.market_share_pct != null
+                            ? `${c4src.market_share_pct.toFixed(2)}%`
+                            : "—"}
+                        </div>
                         <div className="text-fg-label">
                           C4: <Cell earned={cr.c4.earned} max={cr.c4.available_max} />
                         </div>
@@ -210,11 +236,11 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                         does not say which number is which — and it held the
                         column at 138px, the widest on the tab. */}
                     <div>
-                      <Growth value={r.margin_loan_growth_yoy_pct} />
+                      <Growth value={r.margin_loan_growth_yoy_pct} locale={locale} />
                       <span className="text-fg-label"> YoY</span>
                     </div>
                     <div>
-                      <Growth value={r.margin_loan_growth_qoq_pct} />
+                      <Growth value={r.margin_loan_growth_qoq_pct} locale={locale} />
                       <span className="text-fg-label"> QoQ</span>
                     </div>
                     <div className="text-fg-label" title={t(locale, "secC7SubLine")}>
@@ -225,9 +251,6 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                         provisional={cr.c7?.tier === "PROVISIONAL"}
                       />
                     </div>
-                  </td>
-                  <td className={TD_NUM}>
-                    <Growth value={cr.c2?.value} />
                   </td>
                   {/* Read straight off the row. Sheet 44: the backend owns
                       this sum and the UI must not re-add it from criteria[] —
@@ -290,10 +313,34 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                       provisional={!passed}
                     />
                   </td>
-                  {/* The GATE, not the data group. The column beside the
-                      score already says how much data there was; this says
-                      whether the official score is published, and the two can
-                      disagree — which is the whole point of having both. */}
+                  {/* Why there is no official score, when there is none. The
+                      copy is the STATUS the scorer already wrote, translated —
+                      not a sentence composed here, which would be a second
+                      opinion about the same row. A published broker needs no
+                      note and gets a dash. */}
+                  {/* break-words: the English status copy contains
+                      "Insufficient", a 12-character unbreakable word that held
+                      this column at 89px for a cell whose usual value is a
+                      dash. Vietnamese wraps on its own. */}
+                  <td className="px-2 row-h text-body text-fg-label leading-tight break-words">
+                    {passed
+                      ? <span className="text-fg-faint">{t(locale, "secSumNoteNone")}</span>
+                      : secStatusLabel(locale, r.fa_status)}
+                  </td>
+                  <td className="px-2 row-h whitespace-nowrap">
+                    <span className={coverageColor(r.coverage)}>
+                      {r.coverage === null ? "—" : `${Math.round(r.coverage * 100)}%`}
+                    </span>
+                  </td>
+                  {/* The GATE, not the data group. The column beside it already
+                      says how much data there was; this says whether the
+                      official score is published, and the two can disagree —
+                      which is the whole point of having both. A/B/C used to
+                      ride along beside the coverage percentage and is now gone
+                      from the UI entirely (V11v5 #24 / AT27): it reads as a
+                      RANKING of the stock when it grades the measurement. It
+                      is still on the row for the counter and the group-C rule,
+                      just never rendered. */}
                   <td className="px-2 row-h whitespace-nowrap">
                     <span
                       className={`inline-block border px-1.5 text-body font-semibold leading-tight ${secStatusStyle(r.fa_status)}`}

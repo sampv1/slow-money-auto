@@ -37,7 +37,17 @@ export type SecScore = {
   score_status: string;
   fci_as_of_date: string | null;
   breadth_denominator: number | null;
-  field_metadata: Record<string, SecField> | null;
+  field_metadata: (Record<string, SecField> & {
+    c4_source?: {
+      market_share_pct: number | null;
+      period: string | null;
+      exchange_scope: string | null;
+      source: string | null;
+      source_type: string | null;
+      source_date: string | null;
+      effective_from: string | null;
+    };
+  }) | null;
   dependency_flags: Record<string, { status: string; reason: string }> | null;
   // --- V11v2 tier split -----------------------------------------------------
   final_earned: number | null;
@@ -58,7 +68,17 @@ export type SecScore = {
   quality_groups: Record<string, SecQualityGroup> | null;
   margin_loan_growth_yoy_pct: number | null;
   margin_loan_growth_qoq_pct: number | null;
-  market_share_pct: number | null;
+  /**
+   * C4's provenance, read out of `field_metadata.c4_source`.
+   *
+   * There is NO `market_share_pct` column on the row — the type used to claim
+   * one, and nothing noticed because C4 was N/A sector-wide from V8 to V11v4,
+   * so the cell that reads it never rendered. The moment C4 started scoring it
+   * printed "% C4: 4/4" with the number missing. The share lives in the audit
+   * blob beside the effective date it was admitted under, which is where a
+   * reader checking AT26 needs it anyway.
+   */
+  market_share_pct?: never;
   business_model_summary: string | null;
   key_driver_summary: string | null;
   key_risk_summary: string | null;
@@ -201,7 +221,7 @@ export function secDisplayScore(row: SecScore): { text: string; provisional: boo
 }
 
 /**
- * The three Tab-1 quality GROUPS (V11v4 sheet 44).
+ * The three Tab-1 quality GROUPS (V11v5 sheet 44).
  *
  * Groups, not single criteria — an earlier reading here mapped each column to
  * one criterion because the mockup's 10 / 21 / 8 denominators looked
@@ -225,13 +245,13 @@ export type SecQualityGroup = {
 };
 
 /**
- * The plain-language verdict beside a group score (V11v4 BA review §I).
+ * The plain-language verdict beside a group score (V11v5 sheet 52).
  *
- * BA gave three worked examples and no band table: 4/10 "Trung bình",
- * 17/21 "Khá", 7/8 "Tốt". Those pin the thresholds to 0.40 / 0.65 / 0.85 —
- * 17/21 is 0.81 and must stay BELOW "Tốt", which is the constraint that fixes
- * the top band. Stated here because the bands are inferred from examples, not
- * specified, and are the first thing to correct if BA says otherwise.
+ * V11v5 sheet 52 states them outright: <40% Yếu, 40-<65% Trung bình,
+ * 65-<85% Khá, >=85% Tốt. They had been INFERRED in V11v4 from three worked
+ * examples with no band table (4/10 "Trung bình", 17/21 "Khá", 7/8 "Tốt"), and
+ * the specified bands turn out to be exactly those — so nothing here moves,
+ * but the thresholds are now a contract rather than a reconstruction.
  *
  * A group with nothing measurable gets no verdict at all: "Yếu" on an unmeasured
  * group would be the N/A-as-zero mistake the whole rubric is built to avoid.
@@ -281,7 +301,7 @@ export function criterionDisplay(cell: SecCriterionCell | undefined, max: number
  * page still says it updates daily. V8, V9 and V10 rows are all preserved and
  * still queryable by version.
  */
-export const SEC_ACTIVE_MODEL = "CTCK_V11v4";
+export const SEC_ACTIVE_MODEL = "CTCK_V11v5";
 
 export const SEC_MAX_SCORE = 100;
 export const SEC_PUBLISH_COVERAGE = 0.7;

@@ -27,6 +27,7 @@ import {
   TH,
   TH_NUM,
   TH_NUM_WRAP,
+  TH_WRAP,
   TR,
   TD_NUM,
   TD_SYMBOL,
@@ -244,19 +245,9 @@ export function SecScannerClient({
                   {t(locale, "symbol")}{arrow("symbol")}
                 </button>
               </th>
-              <th className={TH} rowSpan={2} title={t(locale, "secDataGroupTip")}>
-                <button onClick={() => sortBy("data_group")} className="hover:underline">
-                  {t(locale, "secDataGroup")}{arrow("data_group")}
-                </button>
-              </th>
               <th className={TH_NUM_WRAP} rowSpan={2} title={t(locale, "secFinalScoreTip")}>
                 <button onClick={() => sortBy("provisional_score")} className="hover:underline">
                   {t(locale, "secFinalScore")}{arrow("provisional_score")}
-                </button>
-              </th>
-              <th className={TH_NUM_WRAP} rowSpan={2} title={t(locale, "secCoverageTip")}>
-                <button onClick={() => sortBy("coverage")} className="hover:underline">
-                  {t(locale, "secCoverage")}{arrow("coverage")}
                 </button>
               </th>
               {SEC_BLOCK_SPANS.map((b, i) => (
@@ -269,8 +260,21 @@ export function SecScannerClient({
                   {t(locale, b.label)} · {b.staticMax}
                 </th>
               ))}
-              <th className={TH} rowSpan={2} title={t(locale, "secFundingTip")}>
+              <th className={TH_WRAP} rowSpan={2} title={t(locale, "secFundingTip")}>
                 {t(locale, "secFunding")}
+              </th>
+              {/* Fixed as the last two on BOTH tabs (V11v5 #25 / AT27), in this
+                  order. Coverage used to sit at column four beside the score,
+                  where it was easy to read as part of the score itself; at the
+                  end it pairs with the gate, which is the question it actually
+                  answers — how much was measured, and did that clear the bar. */}
+              <th className={TH_NUM_WRAP} rowSpan={2} title={t(locale, "secCoverageTip")}>
+                <button onClick={() => sortBy("coverage")} className="hover:underline">
+                  {t(locale, "secSumDisclosure")}{arrow("coverage")}
+                </button>
+              </th>
+              <th className={TH_WRAP} rowSpan={2} title={t(locale, "secGateTip")}>
+                {t(locale, "secStatus")}
               </th>
             </tr>
             <tr>
@@ -339,13 +343,6 @@ export function SecScannerClient({
                       </Link>
                     </span>
                   </td>
-                  <td className="px-2 row-h whitespace-nowrap" title={secStatusLabel(locale, r.fa_status)}>
-                    <span
-                      className={`inline-block border px-1.5 text-body font-semibold leading-tight ${secStatusStyle(r.fa_status)}`}
-                    >
-                      {r.data_group ?? "—"}
-                    </span>
-                  </td>
                   {/* Shared with the summary tab — see secDisplayScore. An
                       official score prints bare; a provisional one carries the
                       asterisk that says it is not comparable with an official
@@ -362,11 +359,6 @@ export function SecScannerClient({
                         score.text
                       );
                     })()}
-                  </td>
-                  {/* Coverage sits beside the score, never behind a tooltip:
-                      the same number means different things at 45% and 82%. */}
-                  <td className={`${TD_NUM} ${coverageColor(r.coverage)}`}>
-                    {r.coverage === null ? "—" : `${Math.round(r.coverage * 100)}%`}
                   </td>
                   {DETAIL_CRITERIA.map((c, i) => {
                     const cell = r.criteria?.[c.key];
@@ -397,8 +389,28 @@ export function SecScannerClient({
                       </Fragment>
                     );
                   })}
-                  <td className={`px-2 row-h text-body whitespace-nowrap ${fundingSourceStyle(funding)}`}>
+                  {/* No `whitespace-nowrap`: the longest funding label held
+                      115px open in Vietnamese for a cell usually reading
+                      "Báo cáo". Letting it wrap hands the width back to the
+                      data, exactly as TH_WRAP does for the headers. */}
+                  <td className={`px-2 row-h text-body leading-tight ${fundingSourceStyle(funding)}`}>
                     {fundingSourceLabel(locale, funding)}
+                  </td>
+                  {/* Coverage is never behind a tooltip: the same number means
+                      different things at 45% and 82%. */}
+                  <td className={`${TD_NUM} ${coverageColor(r.coverage)}`}>
+                    {r.coverage === null ? "—" : `${Math.round(r.coverage * 100)}%`}
+                  </td>
+                  {/* Plain text here, a badge on the summary tab. The badge's
+                      border and padding cost ~30px, which is the difference
+                      between this 25-column table fitting 1280 and not; the
+                      summary has room for it and this does not. The WORD still
+                      carries the meaning, so colour is never the only signal. */}
+                  <td className="px-1.5 row-h whitespace-nowrap text-body font-semibold"
+                      title={secStatusLabel(locale, r.fa_status)}>
+                    <span className={r.publish_gate === "PASS" ? "text-emerald-800" : "text-fg-muted"}>
+                      {t(locale, r.publish_gate === "PASS" ? "secGatePass" : "secGateFail")}
+                    </span>
                   </td>
                 </tr>
               );

@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 # excluded one, which moves every broker's denominator, so V8 rows must stay
 # readable as what they were. Governance rule G6 — lock by issuing a version,
 # never by rewriting history.
-MODEL_VERSION = "CTCK_V11v4"
+MODEL_VERSION = "CTCK_V11v5"
 
 # Points per criterion (sheet 1). Sums to 100 — asserted at import.
 CRITERION_POINTS = {
@@ -445,7 +445,7 @@ C20_PB = [(.75, 12), (.90, 9), (1.10, 6), (1.25, 3)]
 # it, and a future criterion may need the same treatment.
 UNSOURCED_CRITERIA: dict[str, str] = {}
 
-# C4 bands (V11v4 sheet 45), on the OFFICIAL share only. There is no proxy: the
+# C4 bands (V11v5 sheet 45), on the OFFICIAL share only. There is no proxy: the
 # V11 draft's "1/4 for any active broker" was withdrawn because it adds 1 to
 # every numerator and 4 to every denominator, dragging every symbol toward 25%
 # while separating nobody.
@@ -458,8 +458,10 @@ def score_c4(share_pct: float | None, scope: str | None = None) -> Criterion:
 
     LOCKED, not provisional: this is the exchange's own published figure, which
     is exactly the source the rubric asks for. The caller is responsible for
-    passing only a row whose PUBLICATION date precedes the scoring session —
-    see market_share_asof.
+    passing only a row already EFFECTIVE on the scoring session — the figure
+    may be published the evening before and still be unusable that day, so the
+    test is effective_from, not the publication timestamp. See
+    market_share_asof.
     """
     if share_pct is None:
         return Criterion(None, None, "N_A",
