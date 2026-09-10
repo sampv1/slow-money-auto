@@ -5,6 +5,7 @@ import {
   type SecScore,
   SEC_SUMMARY_QUALITY,
   ctFraction,
+  fmtPct,
   fmtPts,
   fmtSignedPct,
   secCriterionName,
@@ -145,7 +146,7 @@ export function SecRowDetail({ row, locale }: { row: SecScore; locale: Locale })
           {c4?.market_share_pct != null ? (
             <>
               <div className={BODY}>
-                {secCriterionName("c4", locale)}: {c4.market_share_pct.toFixed(2)}%
+                {secCriterionName("c4", locale)}: {fmtPct(c4.market_share_pct)}
                 {c4.exchange_scope ? ` · ${c4.exchange_scope}` : ""}
               </div>
               <KV k={t(locale, "secExpScoreCol")} v={secCriterionScore(cr.c4)} />

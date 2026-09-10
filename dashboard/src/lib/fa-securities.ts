@@ -1,5 +1,6 @@
 import type { Locale } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import { formatNumber, formatPercent } from "@/lib/format";
 
 /**
  * The securities (CTCK) rubric, as the scanner reads it.
@@ -147,6 +148,61 @@ export type SecUiContract = {
   narratives: SecNarratives;
   provisional_criteria: string[];
   always_provisional: string[];
+  // --- UI-CTCK-01 ---
+  comment_rule_id?: string;
+  context_cards?: Record<"support_total" | "financial" | "liquidity" | "breadth", SecContextCard>;
+  main_comment?: SecMainComment;
+  valuation_verdict?: SecValuationVerdict;
+  market_share?: SecMarketShare;
+};
+
+
+// --- UI-CTCK-01 additions -----------------------------------------------------
+
+/** A market-context card (§6). `level` is a CODE, never a word. */
+export type SecContextCard = {
+  criteria: string[];
+  earned: number;
+  available: number;
+  design_max: number;
+  missing: string[];
+  insufficient: boolean;
+  level: "NO_BAND_MAPPING" | string;
+};
+
+export type SecMainComment = {
+  code: "MAIN_STRENGTH_LIMIT" | "MAIN_UNIFORM" | "MAIN_INCOMPLETE" | "MAIN_INSUFFICIENT";
+  rule_id: string;
+  levels: Record<string, SecLevel>;
+  strength?: string; strength_level?: SecLevel;
+  limit?: string; limit_level?: SecLevel;
+  level?: SecLevel;
+  missing?: string[];
+  banded?: Record<string, SecLevel>;
+};
+
+export type SecValuationVerdict = {
+  code: "VAL_FULL" | "VAL_PARTIAL" | "VAL_INSUFFICIENT";
+  c19: "LOCKED" | "PROVISIONAL" | "NA";
+  c20: "LOCKED" | "PROVISIONAL" | "NA";
+  level: "NO_BAND_MAPPING" | string;
+};
+
+export type SecMarketShare = {
+  code: "SHARE_REPORTED" | "SHARE_UNVERIFIED";
+  /** Present only on SHARE_REPORTED. */
+  pct?: number;
+  value_ratio?: number;
+  rank?: number | null;
+  exchange?: string | null;
+  period?: string | null;
+  source?: string | null;
+  source_type?: string | null;
+  published_at?: string | null;
+  effective_from?: string | null;
+  /** FALSE today: no Top-10 list check is recorded, so "outside the top 10"
+   *  can never be asserted (§8.4, A09/A10). */
+  top10_checked: boolean;
 };
 
 export type SecNarratives = {
@@ -298,7 +354,7 @@ export function secDisplayScore(row: SecScore): { text: string; provisional: boo
   // published.
   const score = row.ui_contract?.final_composite_score;
   if (score === null || score === undefined) return { text: "—", provisional: false };
-  return { text: score.toFixed(1), provisional: false };
+  return { text: formatNumber(score, 1), provisional: false };
 }
 
 /**
@@ -412,9 +468,16 @@ export function ctFraction(tier: SecUiTier | null | undefined): string {
   return `${fmtPts(tier.final_earned)}/${fmtPts(tier.final_available)}`;
 }
 
-/** Points print without trailing zeros: "3" and "2.5", never "3.00". */
+/**
+ * Points print without trailing zeros: "3" and "2,5", never "3,00".
+ *
+ * Through `formatNumber`, so the decimal separator is the app's single
+ * convention — Vietnamese comma, thousands period (UI-CTCK-01 §13.2). The
+ * securities tab had been calling `toFixed` directly, which is the drift
+ * `lib/format.ts` exists to prevent: "1,773.41" beside "−0,80" reads as a bug.
+ */
 export function fmtPts(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+  return Number.isInteger(n) ? formatNumber(n, 0) : formatNumber(n, 1);
 }
 
 /**
@@ -675,7 +738,12 @@ export function secRiskLines(row: SecScore, locale: Locale, short = false): stri
 }
 
 export function fmtSignedPct(ratio: number): string {
-  return `${ratio >= 0 ? "+" : ""}${(ratio * 100).toFixed(1)}%`;
+  return formatPercent(ratio * 100, 1, true);
+}
+
+/** An unsigned percentage from a percentage value (not a ratio): 11.17 → "11,17%". */
+export function fmtPct(pct: number, digits = 2): string {
+  return formatPercent(pct, digits);
 }
 
 
@@ -720,6 +788,91 @@ export function secCriterionStatus(
 export function secCriterionScore(cell: SecCriterionCell | undefined): string {
   if (!cell || cell.earned === null || cell.earned === undefined) return "—";
   return `${fmtPts(cell.earned)}/${fmtPts(cell.available_max)}${cell.tier === "PROVISIONAL" ? "*" : ""}`;
+}
+
+
+/**
+ * §8.9 "Nhận xét chính" — rendered from the BACKEND's rule, not composed here.
+ *
+ * `securities_ui.main_comment` picks the strength and the limitation from the
+ * three group levels and stamps `rule_id`, so the same data and the same rule
+ * version always give the same sentence. This function only translates the
+ * code it chose. Composing the sentence in the UI would put a versioned
+ * business rule in a place with no version.
+ */
+export function secMainCommentText(row: SecScore, locale: Locale): string {
+  const m = row.ui_contract?.main_comment;
+  if (!m) return t(locale, "secMainInsufficient");
+  const groupName = (k?: string) =>
+    k ? t(locale, ({ asset: "secGroupAsset", operation: "secGroupOperation",
+                     capital: "secGroupCapital" }[k] ?? "secGroupAsset") as Parameters<typeof t>[1])
+      : "";
+  switch (m.code) {
+    case "MAIN_STRENGTH_LIMIT":
+      return t(locale, "secMainStrengthLimit")
+        .replace("{strength}", t(locale, "secMainStrengthOf").replace("{group}", groupName(m.strength)))
+        .replace("{limit}", t(locale, "secMainLimitOf").replace("{group}", groupName(m.limit)));
+    case "MAIN_UNIFORM":
+      return t(locale, "secMainUniform");
+    case "MAIN_INCOMPLETE":
+      return t(locale, "secMainIncomplete")
+        .replace("{groups}", (m.missing ?? []).map(groupName).join(", "));
+    default:
+      return t(locale, "secMainInsufficient");
+  }
+}
+
+/** "Tài sản: Khá · Hiệu quả: Tốt · Vốn: Trung bình" — only when all three band. */
+export function secMainSubLine(row: SecScore, locale: Locale): string | null {
+  const sg = row.ui_contract?.subgroups;
+  if (!sg) return null;
+  const lab = (k: "asset" | "operation" | "capital") => levelLabel(sg[k]?.level, locale);
+  const a = lab("asset"), o = lab("operation"), c = lab("capital");
+  if (!a || !o || !c) return null;
+  const strip = (x: string) => x.replace(/^Mức điểm\s*/i, "").replace(/\s*score level$/i, "");
+  return t(locale, "secMainSub")
+    .replace("{a}", strip(a)).replace("{o}", strip(o)).replace("{c}", strip(c));
+}
+
+/**
+ * §8.4 — the market-share cell, in the only two states we can support.
+ *
+ * "Ngoài top 10" is deliberately unreachable: it requires a verified Top-10
+ * list for the period (A09), and nothing records that check, so an absent
+ * figure is "Chưa xác minh" (A10) rather than an inference. A rank is likewise
+ * never printed — none is stored, because BA published 7 of the Top 10 and
+ * positions would be a guess.
+ */
+export function secShareCell(row: SecScore, locale: Locale): {
+  main: string; sub: string | null; verified: boolean;
+} {
+  const ms = row.ui_contract?.market_share;
+  if (!ms || ms.code !== "SHARE_REPORTED" || ms.pct === undefined) {
+    return { main: t(locale, "secShareUnverified"), sub: null, verified: false };
+  }
+  const rank = ms.rank != null
+    ? ` · ${t(locale, "secShareRank").replace("{r}", String(ms.rank))}`
+    : "";
+  const sub = [ms.exchange, ms.period].filter(Boolean).join(" · ") || null;
+  return { main: `${fmtPct(ms.pct)}${rank}`, sub, verified: true };
+}
+
+/** §8.11 — which valuation conclusion the model permits, in words. */
+export function secValuationText(row: SecScore, locale: Locale): string {
+  const v = row.ui_contract?.valuation_verdict;
+  if (!v) return t(locale, "secValInsufficientShort");
+  if (v.code === "VAL_INSUFFICIENT") return t(locale, "secValInsufficientShort");
+  if (v.code === "VAL_PARTIAL") return t(locale, "secValPartial");
+  // VAL_FULL is reachable only once C20 locks; the LEVEL word still has no
+  // approved mapping, so the state is named and no verdict is asserted.
+  return t(locale, "secValFull");
+}
+
+/** A context card's status line: the score, and no invented level. */
+export function secContextLevel(card: SecContextCard | undefined, locale: Locale): string {
+  if (!card) return t(locale, "secCtxInsufficient");
+  if (card.insufficient) return t(locale, "secCtxInsufficient");
+  return t(locale, "secCtxNoBand");
 }
 
 /** Coverage drives the eye more than the raw points do, so it gets the ramp. */

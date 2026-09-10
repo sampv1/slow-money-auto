@@ -52,6 +52,20 @@ from .securities import (
 # would orphan every V11v5 row in the same table (SEC_ACTIVE_MODEL reads it).
 UI_VERSION = "CTCK_UI_FINAL_20260909"
 
+# The versioned rule that composes the sentences §8.9 and §6 render.
+# Stamped separately from UI_VERSION because BA's requirement is that the
+# SAME data and the SAME rule version always yield the same sentence — so the
+# rule needs its own identity, and a reader can tell a re-worded sentence from
+# a re-scored row.
+COMMENT_RULE_ID = "CTCK_COMMENT_RULE_V1"
+
+# WHERE A BAND MAPPING DOES NOT EXIST, SAY SO. The spec is emphatic and
+# repeats it per section: a label with no approved rule behind it must render
+# as "chưa có phân loại", never as a threshold we picked. Four context cards,
+# C18's sensitivity level and the valuation verdict are all in that state
+# today, so each returns this code rather than a word.
+NO_BAND_MAPPING = "NO_BAND_MAPPING"
+
 # Level bands for the three quality groups (sheet 04, UI-02).
 #
 # THESE MOVED IN V6 AND THE MOVE IS DELIBERATE: V11v5 sheet 52 specified
@@ -372,6 +386,174 @@ def risks(criteria: dict) -> dict:
     return {"items": flagged[:MAX_RISKS]}
 
 
+# --- §6 market-context cards, §8.9 main comment, §8.11 valuation, §8.4 share ---
+
+CONTEXT_CARDS = (
+    ("support_total", ("c15", "c16", "c17")),   # Mức hỗ trợ chung
+    ("financial", ("c15",)),                    # Điều kiện tài chính
+    ("liquidity", ("c16",)),                    # Động lượng thanh khoản
+    ("breadth", ("c17",)),                      # Xu hướng tăng lan tỏa
+)
+
+
+def context_cards(criteria: dict) -> dict:
+    """The four cards above the table (§6.1).
+
+    EACH CARD REPORTS A SCORE AND REFUSES TO NAME A LEVEL. The spec offers a
+    vocabulary (Thấp / Trung bình / Cao, Yếu / Trung bình / Mạnh, …) and then
+    forbids using it until the mapping is approved: "Không quy đổi cả bốn thẻ
+    theo một ngưỡng phần trăm tự đặt." There is no such mapping in the model, so
+    `level` is NO_BAND_MAPPING and the UI prints "Chưa có phân loại trạng thái".
+
+    A card whose criteria are not all scored is `insufficient` — not zero, and
+    not "Yếu". §6.3: a missing input may never become a low label.
+    """
+    out = {}
+    for name, keys in CONTEXT_CARDS:
+        earned = avail = 0.0
+        missing = []
+        for k in keys:
+            c = criteria.get(k)
+            e = (c.get("earned") if isinstance(c, dict) else (c.points if c else None))
+            if e is None:
+                missing.append(k)
+                continue
+            earned += e
+            avail += CRITERION_POINTS[k]
+        out[name] = {
+            "criteria": list(keys),
+            "earned": round(earned, 2),
+            "available": round(avail, 2),
+            "design_max": sum(CRITERION_POINTS[k] for k in keys),
+            "missing": missing,
+            "insufficient": bool(missing),
+            "level": NO_BAND_MAPPING,
+        }
+    return out
+
+
+# Ordered worst-to-best so a comparison can pick a strength and a limitation.
+LEVEL_ORDER = {"LOW": 0, "MID": 1, "FAIR": 2, "GOOD": 3}
+
+MAIN_INSUFFICIENT = "MAIN_INSUFFICIENT"
+MAIN_INCOMPLETE = "MAIN_INCOMPLETE"
+MAIN_UNIFORM = "MAIN_UNIFORM"
+MAIN_STRENGTH_LIMIT = "MAIN_STRENGTH_LIMIT"
+
+
+def main_comment(subs: dict) -> dict:
+    """§8.9 "Nhận xét chính" — a conclusion about BUSINESS QUALITY only.
+
+    Composed from the three quality groups' levels, which are the one banding on
+    this page that IS approved (sheet 04, UI-02). It therefore adds no threshold
+    of its own; it selects and orders what the bands already decided.
+
+    Four outcomes, and the middle two are the ones that keep it honest:
+      - a group with no official availability at all ⇒ MAIN_INSUFFICIENT
+      - some groups banded, some absent ⇒ MAIN_INCOMPLETE, which explicitly
+        refuses a whole-company verdict ("Không kết luận toàn diện khi nhóm
+        quan trọng thiếu dữ liệu")
+      - all three at one level ⇒ MAIN_UNIFORM
+      - otherwise ⇒ the best group as the strength and the worst as the
+        limitation, because the spec asks for both and a sentence naming only
+        the strength reads as a recommendation.
+
+    It never mentions valuation: §8.9 forbids folding price into a quality
+    label.
+    """
+    banded = {k: v["level"] for k, v in subs.items() if v["level"] in LEVEL_ORDER}
+    absent = [k for k, v in subs.items() if v["level"] not in LEVEL_ORDER]
+    ev = {"rule_id": COMMENT_RULE_ID,
+          "levels": {k: v["level"] for k, v in subs.items()}}
+    if not banded:
+        return {"code": MAIN_INSUFFICIENT, "missing": absent, **ev}
+    if absent:
+        return {"code": MAIN_INCOMPLETE, "missing": absent,
+                "banded": banded, **ev}
+    ranked = sorted(banded.items(), key=lambda kv: LEVEL_ORDER[kv[1]])
+    if LEVEL_ORDER[ranked[0][1]] == LEVEL_ORDER[ranked[-1][1]]:
+        return {"code": MAIN_UNIFORM, "level": ranked[-1][1], **ev}
+    return {"code": MAIN_STRENGTH_LIMIT,
+            "strength": ranked[-1][0], "strength_level": ranked[-1][1],
+            "limit": ranked[0][0], "limit_level": ranked[0][1], **ev}
+
+
+VAL_FULL = "VAL_FULL"
+VAL_PARTIAL = "VAL_PARTIAL"
+VAL_INSUFFICIENT = "VAL_INSUFFICIENT"
+
+
+def valuation_verdict(criteria: dict) -> dict:
+    """§8.11 — which valuation conclusion the model permits.
+
+    THE STATE IS DETERMINABLE EVEN THOUGH THE WORD IS NOT. Whether a broker's
+    valuation can be concluded at all follows from the TIERS: C19 official and
+    C20 provisional is a partial assessment, and that is the case A07/A17 test —
+    "Độ phủ toàn bộ 100% không tự làm C20 trở thành chính thức."
+
+    Since C20 is unconditionally provisional today, VAL_FULL is currently
+    unreachable; it is kept because the tier, not this function, decides. When
+    a case does reach it the LEVEL word (Hấp dẫn / Hợp lý / Kém hấp dẫn) still
+    has no approved mapping, so `level` stays NO_BAND_MAPPING.
+    """
+    def state(k):
+        c = criteria.get(k)
+        if c is None:
+            return "NA"
+        e = c.get("earned") if isinstance(c, dict) else c.points
+        if e is None:
+            return "NA"
+        return "LOCKED" if _tier_of(criteria, k) == TIER_LOCKED else "PROVISIONAL"
+    c19, c20 = state("c19"), state("c20")
+    if c19 == "NA" and c20 == "NA":
+        code = VAL_INSUFFICIENT
+    elif c19 == "LOCKED" and c20 == "LOCKED":
+        code = VAL_FULL
+    elif c19 == "LOCKED" or c20 in ("LOCKED", "PROVISIONAL"):
+        code = VAL_PARTIAL
+    else:
+        code = VAL_INSUFFICIENT
+    return {"code": code, "c19": c19, "c20": c20, "level": NO_BAND_MAPPING}
+
+
+SHARE_REPORTED = "SHARE_REPORTED"
+SHARE_UNVERIFIED = "SHARE_UNVERIFIED"
+
+
+def market_share(ctx: dict) -> dict:
+    """§8.4 — the four cases, and the two we can actually distinguish.
+
+    We store the percentage, exchange scope, period, source, source type and
+    both dates. We do NOT store a rank (deliberately NULL — BA published 7 of
+    the Top 10, so positions would be an inference) and we do NOT store whether
+    a full Top-10 list was checked for the period.
+
+    That second gap is what forces the answer here. Without it, "Ngoài top 10"
+    is unsupportable: A09 allows it only when the list "đã kiểm tra", and A10
+    requires "Chưa xác minh" otherwise. So an absent figure is UNVERIFIED, never
+    "outside the Top 10" and never 0%.
+    """
+    pct = ctx.get("market_share_pct")
+    if pct is None:
+        return {"code": SHARE_UNVERIFIED, "top10_checked": False}
+    return {
+        "code": SHARE_REPORTED,
+        "value_ratio": round(float(pct) / 100.0, 6),
+        "pct": float(pct),
+        # No rank is stored; the UI must not print one.
+        "rank": None,
+        "exchange": ctx.get("market_share_scope"),
+        "period": ctx.get("market_share_period"),
+        "source": ctx.get("market_share_source"),
+        "source_type": ctx.get("market_share_source_type"),
+        "published_at": (str(ctx["market_share_source_date"])
+                         if ctx.get("market_share_source_date") else None),
+        "effective_from": (str(ctx["market_share_effective_from"])
+                           if ctx.get("market_share_effective_from") else None),
+        "top10_checked": False,
+    }
+
+
 def narratives(ctx: dict, criteria: dict) -> dict:
     return {"business_model": business_model(ctx),
             "drivers": drivers(ctx),
@@ -389,6 +571,7 @@ def ui_contract(totals: dict, ctx: dict | None = None) -> dict:
     criteria = totals["criteria"]
     ctx = ctx or {}
     blocks = block_totals(criteria)
+    sg = subgroups(criteria)
     gate = gate_detail(criteria)
     combined_available = sum(b["combined_available"] for b in blocks.values())
     final_available = sum(b["final_available"] for b in blocks.values())
@@ -398,7 +581,7 @@ def ui_contract(totals: dict, ctx: dict | None = None) -> dict:
     return {
         "ui_version": UI_VERSION,
         "blocks": blocks,
-        "subgroups": subgroups(criteria),
+        "subgroups": sg,
         "publish_gate": gate,
         # Sheet 04, API-06: the status column's percentage is the COMBINED
         # layer over the design maximum — how much of the rubric we could
@@ -413,6 +596,12 @@ def ui_contract(totals: dict, ctx: dict | None = None) -> dict:
         "final_composite_score": (round(score, 2)
                                   if (gate["pass"] and score is not None) else None),
         "narratives": narratives(ctx, criteria),
+        # --- UI-CTCK-01 additions ---
+        "comment_rule_id": COMMENT_RULE_ID,
+        "context_cards": context_cards(criteria),
+        "main_comment": main_comment(sg),
+        "valuation_verdict": valuation_verdict(criteria),
+        "market_share": market_share(ctx),
         "provisional_criteria": sorted(
             (k for k in CRITERION_POINTS
              if _tier_of(criteria, k) is not None

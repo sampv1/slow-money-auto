@@ -29,12 +29,19 @@ import { PinButton } from "@/components/pin-button";
 import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
 import { TapTooltips } from "@/components/tap-tooltip";
 import { SecSummaryTable } from "./sec-summary";
-import { SecSectorPanel } from "./sec-sector-panel";
+import { SecContextBlock } from "./sec-context";
+import { SecGuide } from "./sec-guide";
 
 // Brokers are far more liquid than the tail of the universe, so the other
 // tabs' 20k floor would filter nothing. Kept as a control rather than removed:
 // the UPCOM names in this set (AAS, ABW, BMS…) genuinely do trade thinly.
 const DEFAULT_MIN_AVG_VOLUME_20D = 20_000;
+
+/** `2026-09-09` → `09/09/2026`. Display only; the stored value stays ISO. */
+function toDmy(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
 
 // Same cool tint as the other tabs' trailing block — these are the rubric's
 // three sub-totals, not a competing score, and amber already means "headline".
@@ -85,6 +92,34 @@ const TD_SEC = "sec-body sec-row-h px-2 align-top py-1";
 const TD_SEC_NUM = `${TD_SEC} text-right font-mono tnum`;
 const TH_SEC_CENTER =
   "sec-note uppercase tracking-wide px-1.5 py-1 font-semibold text-center align-bottom whitespace-normal leading-tight text-fg-label";
+/* The criterion header is a THREE-ROW grid and must be ALIGN-TOP.
+   `align-bottom` (right for a one-line header) bottom-aligns the whole block,
+   so a column with a short name has its C-code pushed DOWN to sit above the
+   maximum — measured as two distinct code-row tops, 15px apart, across the
+   twenty columns. §10 and A21 forbid exactly that: "Tên ngắn để trống phần
+   dưới, không kéo mã xuống thấp theo đáy khối chữ." With align-top the button
+   fills the cell, the code pins to row 1, the name takes the 1fr middle and
+   the maximum pins to row 3 — one horizontal line each, whatever the name. */
+/* ALIGN-TOP plus a RESERVED name height is what §10 actually asks for:
+   "chừa chiều cao bằng tên dài nhất". Two other approaches were tried and
+   measured first — `align-bottom` gave two distinct code-row tops (a short name
+   drags its C-code down), and `h-full` on the button has no resolved height to
+   fill inside a table cell, which fixed the codes but split the maximum row
+   instead. Making the `th` itself a grid is worse still: a table cell turned
+   grid container stops participating in table layout and the headers stack
+   vertically. A fixed name-row height is deterministic and needs no layout
+   trick. */
+const TH_CRIT =
+  "sec-note uppercase tracking-wide px-1.5 py-1 font-semibold text-center whitespace-normal leading-tight text-fg-label align-top";
+
+/* THE NAME ROW RESERVES A UNIFORM HEIGHT — the approach §10 itself sanctions
+   ("CSS grid với ba hàng nội bộ và chiều cao thống nhất"). Measured at the
+   pinned column widths, the longest criterion name wraps to two lines in BOTH
+   locales, so 30px is exactly "chiều cao bằng tên dài nhất"; a one-line name
+   leaves the lower half blank instead of dragging its C-code down.
+   If a future name needs three lines this constant is what moves — the name
+   must never be clipped or shrunk to fit (§10). */
+const CRIT_NAME_H = "h-[30px]";
 const TD_SEC_CENTER = `${TD_SEC} text-center font-mono tnum`;
 
 export function SecScannerClient({
@@ -185,8 +220,8 @@ export function SecScannerClient({
         />
         <span className="hidden sm:block h-5 w-px bg-line" aria-hidden />
 
-        <label htmlFor="fa-sec-search" className="text-body text-fg">
-          {t(locale, "symbol")}
+        <label htmlFor="fa-sec-search" className="sec-body text-fg">
+          {t(locale, "secCtrlSymbol")}
         </label>
         <input
           id="fa-sec-search"
@@ -201,13 +236,16 @@ export function SecScannerClient({
             checked={publishableOnly}
             onChange={(e) => setPublishableOnly(e.target.checked)}
           />
-          {t(locale, "secStatusPublishable")}
+          {/* §5.1: the checkbox keeps the model's publication condition. It is
+              NOT "đủ dữ liệu 100%" — coverage and eligibility are different
+              questions, and the label has to say which one it filters on. */}
+          {t(locale, "secCtrlEligible")}
         </label>
 
         <span className="hidden sm:block h-5 w-px bg-line" aria-hidden />
 
-        <label htmlFor="fa-sec-date" className="text-body text-fg">
-          {t(locale, "secDateLabel")}
+        <label htmlFor="fa-sec-date" className="sec-body text-fg">
+          {t(locale, "secCtrlSession")}
         </label>
         <select
           id="fa-sec-date"
@@ -220,9 +258,12 @@ export function SecScannerClient({
           }
           className="border border-line px-2 py-1 disabled:opacity-60"
         >
+          {/* §5.2: dates DISPLAY as dd/mm/yyyy while the option value stays
+              ISO — the route, the cache key and the backend all key on ISO, so
+              only the label is localised. */}
           {dates.map((d) => (
             <option key={d} value={d}>
-              {d}
+              {toDmy(d)}
             </option>
           ))}
         </select>
@@ -235,16 +276,20 @@ export function SecScannerClient({
             gate and carry an official score. Each number is now named for what
             it counts, and the one that actually governs publication is
             present. */}
+        {/* §5.2: three counters, each naming its own scope. N is the tracked
+            universe, M is how many are eligible for a published score BEFORE
+            filtering, K is how many rows are on screen after it. Conflating N
+            with K, or M with "eligible after filtering", is the error the
+            wording exists to prevent. */}
         <span className="ml-auto sec-body text-fg-label" title={t(locale, "secCountTip")}>
-          {formatNumber(rows.length)} {t(locale, "secCountTracked")}
-          {" ("}{t(locale, "secCountBeforeFilter")}{")"}
-          {" · "}{formatNumber(published)} {t(locale, "secCountShownOfficial")}
-          {" ("}{t(locale, "secCountBeforeFilter")}{")"}
-          {" · "}{formatNumber(filtered.length)} {t(locale, "secCountAfterFilter")}
+          {t(locale, "secCountLine")
+            .replace("{n}", formatNumber(rows.length))
+            .replace("{m}", formatNumber(published))
+            .replace("{k}", formatNumber(filtered.length))}
         </span>
       </div>
 
-      <SecSectorPanel rows={rows} locale={locale} />
+      <SecContextBlock rows={rows} locale={locale} id="sec-context" />
 
       {/* Both tabs render the SAME filtered array. There is no second query and
           no second score — which is what makes AT18's "same score, coverage and
@@ -271,7 +316,11 @@ export function SecScannerClient({
         ))}
       </div>
 
-      {tab === "summary" ? <SecSummaryTable rows={filtered} locale={locale} /> : null}
+      {/* The guide's step buttons focus this anchor, so it needs to be
+          focusable without joining the tab order (§11.3). */}
+      <div id="sec-table" tabIndex={-1} className="scroll-mt-24 outline-none">
+        {tab === "summary" ? <SecSummaryTable rows={filtered} locale={locale} /> : null}
+      </div>
 
       {tab === "detail" ? (
       <div className={TABLE_FREEZE}>
@@ -353,7 +402,7 @@ export function SecScannerClient({
                       </th>
                     ) : null}
                     <th
-                      className={`${TH_SEC_CENTER} ${c.key === "c14" ? CRIT_W_C14 : CRIT_W} ${BLOCK_HEAD} ${first && i > 0 ? BLOCK_SPLIT : ""}`}
+                      className={`${TH_CRIT} ${c.key === "c14" ? CRIT_W_C14 : CRIT_W} ${BLOCK_HEAD} ${first && i > 0 ? BLOCK_SPLIT : ""}`}
                       title={t(locale, c.hint)}
                     >
                       {/* THREE LINES BY CONSTRUCTION (BA §B): the C code on its
@@ -362,12 +411,23 @@ export function SecScannerClient({
                           than widening the column — no ellipsis and no smaller
                           type, which BA rules out explicitly ("không cắt tên
                           bằng dấu ba chấm, không giảm cỡ chữ để ép vừa"). */}
-                      <button onClick={() => sortBy(`${c.key}_score`)} className="hover:underline w-full">
+                      {/* THREE ROWS THAT LINE UP ACROSS ALL TWENTY COLUMNS
+                          (§10). A short name must leave its middle row empty
+                          rather than pull the code down to the bottom of the
+                          text block — which is what happens with plain stacked
+                          divs, because each cell then sizes independently.
+                          `grid-rows-[auto_1fr_auto]` pins the code to the top
+                          row and the maximum to the bottom, and the name takes
+                          whatever the tallest name in the row needs. */}
+                      <button
+                        onClick={() => sortBy(`${c.key}_score`)}
+                        className="hover:underline w-full grid grid-rows-[auto_auto_auto] gap-0.5 text-center"
+                      >
                         <div className="font-mono">{c.key.toUpperCase()}{arrow(`${c.key}_score`)}</div>
-                        <div className="font-normal normal-case tracking-normal break-words hyphens-none">
+                        <div className={`font-normal normal-case tracking-normal break-words hyphens-none self-start overflow-hidden ${CRIT_NAME_H}`}>
                           {t(locale, c.label)}
                         </div>
-                        <div className="font-normal normal-case tracking-normal text-fg-muted">
+                        <div className="font-normal normal-case tracking-normal text-fg-muted self-end">
                           {c.max} {t(locale, "secPoints")}
                         </div>
                       </button>
@@ -492,6 +552,11 @@ export function SecScannerClient({
           {t(locale, "secLegendCoverage")}
         </p>
       ) : null}
+
+      {/* §3 and §11.1: the five steps sit BELOW the table and its note, outside
+          the table's scroll container, so scrolling the page reaches them.
+          Required under Tổng quan; the spec allows hiding it on Chi tiết. */}
+      {tab === "summary" ? <SecGuide locale={locale} /> : null}
     </div>
   );
 }

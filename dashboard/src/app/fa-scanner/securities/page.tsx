@@ -65,7 +65,7 @@ export default async function FaScannerSecuritiesPage({
   return (
     <div>
       {subtitle}
-      <p className="text-body text-fg-label mb-4 max-w-[76ch]">{t(locale, "secRubricNote")}</p>
+      <p className="text-body text-fg-label mb-4 max-w-[76ch]">{t(locale, "secUpdateNote")}</p>
       <SecScannerClient
         rows={rows}
         universe={universe}
