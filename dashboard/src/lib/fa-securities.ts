@@ -154,6 +154,9 @@ export type SecUiContract = {
   main_comment?: SecMainComment;
   valuation_verdict?: SecValuationVerdict;
   market_share?: SecMarketShare;
+  // --- "Chi tiết 20 tiêu chí" ---
+  market_summary?: SecMarketSummary;
+  market_band_config?: SecMarketBandConfig | null;
 };
 
 
@@ -168,6 +171,9 @@ export type SecContextCard = {
   missing: string[];
   insufficient: boolean;
   level: "NO_BAND_MAPPING" | string;
+  /** Present from the "Chi tiết 20 tiêu chí" contract on. */
+  band?: SecBand;
+  provisional?: string[];
 };
 
 export type SecMainComment = {
@@ -500,6 +506,16 @@ export const SEC_COL2_LEFT = "left-[108px]";
 export const SEC_FROZEN_HEAD = "sticky z-30 bg-panel-2";
 export const SEC_FROZEN_CELL = "sticky z-10 bg-canvas group-hover:bg-panel-2";
 
+/**
+ * The SECOND frozen column (the score) freezes only from `md` up.
+ *
+ * §12: "trên màn hình nhỏ ưu tiên giữ mã cổ phiếu". At 390px the symbol and the
+ * score together held ~230px of a ~358px box still, leaving a sliver for the
+ * columns the reader scrolled to see. Below `md` only the symbol stays put.
+ */
+export const SEC_FROZEN_HEAD_2 = "z-30 bg-panel-2 md:sticky md:left-[108px]";
+export const SEC_FROZEN_CELL_2 = "z-10 bg-canvas group-hover:bg-panel-2 md:sticky md:left-[108px]";
+
 export const SEC_SUMMARY_QUALITY = [
   { key: "asset", label: "secGroupAsset" },
   { key: "operation", label: "secGroupOperation" },
@@ -507,14 +523,21 @@ export const SEC_SUMMARY_QUALITY = [
 ] as const;
 
 export function criterionDisplay(cell: SecCriterionCell | undefined, max: number) {
-  if (!cell || cell.earned === null) {
-    return { text: "N/A", className: "text-fg-muted", title: cell?.reason_code ?? undefined };
+  if (!cell || cell.earned === null || cell.earned === undefined) {
+    return { text: "N/A", className: "text-fg-muted", provisional: false, zero: false };
   }
+  // The star stays on a provisional ZERO too ("0/4*", §10.2): red says the
+  // result is the worst band, the star says the method is not locked, and
+  // dropping either misreports the cell.
+  const provisional = cell.tier === "PROVISIONAL";
   const zero = cell.earned === 0;
   return {
-    text: `${cell.earned}/${max}`,
+    // fmtExact, not a template on the raw number: that printed "6.75/10" with a
+    // dot decimal on a page that otherwise writes "6,75".
+    text: `${fmtExact(cell.earned)}/${fmtExact(max)}${provisional ? "*" : ""}`,
     className: zero ? "text-rose-700" : "text-fg",
-    title: undefined,
+    provisional,
+    zero,
   };
 }
 
@@ -787,7 +810,7 @@ export function secCriterionStatus(
 /** "3/5", "3/5*", or "—" when nothing was measured. */
 export function secCriterionScore(cell: SecCriterionCell | undefined): string {
   if (!cell || cell.earned === null || cell.earned === undefined) return "—";
-  return `${fmtPts(cell.earned)}/${fmtPts(cell.available_max)}${cell.tier === "PROVISIONAL" ? "*" : ""}`;
+  return `${fmtExact(cell.earned)}/${fmtExact(cell.available_max)}${cell.tier === "PROVISIONAL" ? "*" : ""}`;
 }
 
 
@@ -881,4 +904,229 @@ export function coverageColor(coverage: number | null): string {
   if (coverage >= SEC_PUBLISH_COVERAGE) return "text-fg";
   if (coverage >= SEC_PROVISIONAL_COVERAGE) return "text-amber-700";
   return "text-fg-muted";
+}
+
+// --- "Chi tiết 20 tiêu chí" (11/09/2026) --------------------------------------
+
+export type SecCardKey = "support_total" | "financial" | "liquidity" | "breadth";
+export type SecBand =
+  | "LOW" | "MID" | "HIGH"
+  | "INSUFFICIENT" | "OUT_OF_RANGE" | "PROVISIONAL" | "NO_BAND_MAPPING";
+
+/** The sentence under the four cards, as codes the backend chose. */
+export type SecMarketSummary = {
+  code: "MARKET_BANDED" | "MARKET_INSUFFICIENT" | "MARKET_NO_BAND";
+  bands: Record<SecCardKey, SecBand>;
+  config_id: string | null;
+  config_status: string | null;
+};
+
+/** The versioned threshold config, carried in the contract so the info panel
+ *  prints the rule that was actually applied — never a second copy of it. */
+export type SecMarketBandConfig = {
+  id: string;
+  status: "PROPOSED" | "CONFIRMED" | string;
+  source: string;
+  cards: Record<SecCardKey, { max: number; cuts: [number, number] }>;
+};
+
+type Key = Parameters<typeof t>[1];
+
+const CARD_WORD: Record<SecCardKey, string> = {
+  support_total: "Support", financial: "Financial", liquidity: "Liquidity", breadth: "Breadth",
+};
+
+/**
+ * Colour by the state's MEANING (§11): low/weak/narrow a muted orange, neutral
+ * a dark grey, favourable a muted green. The word carries the meaning; the
+ * colour only confirms it, so no state is colour-alone.
+ */
+const BAND_TONE: Record<"LOW" | "MID" | "HIGH", string> = {
+  LOW: "text-[#b84a0b]",
+  MID: "text-fg-muted",
+  HIGH: "text-up",
+};
+
+/** `2026-09-09` → `09/09/2026`. Display only; the stored value stays ISO. */
+export function secDmy(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
+/**
+ * A score at its true precision: "6", "2,5", "6,75" — never "6,8".
+ *
+ * `fmtPts` rounds to one decimal, which is fine for a group total but wrong
+ * beside a state word: C15 moves in quarter points, and "6,8/10" next to
+ * "Trung tính" invites a reader to ask why 6,8 is not "Thuận lợi" at the cut of
+ * 7. The label is classified on the raw 6,75 (§13.7); the number has to show it.
+ */
+export function fmtExact(n: number): string {
+  if (Number.isInteger(n)) return formatNumber(n, 0);
+  const oneDecimal = Math.abs(n * 10 - Math.round(n * 10)) < 1e-9;
+  return formatNumber(n, oneDecimal ? 1 : 2);
+}
+
+/** A market card's state line and its one-sentence explanation. */
+export function secCardState(
+  card: SecContextCard | undefined, key: SecCardKey, locale: Locale,
+): { label: string; explain: string; tone: string; banded: boolean } {
+  // A contract written before this spec has no `band`; read its `insufficient`
+  // flag rather than inventing a band for it.
+  const band: SecBand = card?.band ?? (card?.insufficient ? "INSUFFICIENT" : "NO_BAND_MAPPING");
+  const w = CARD_WORD[key];
+  if (card && (band === "LOW" || band === "MID" || band === "HIGH")) {
+    return {
+      label: t(locale, `secBand${w}${band}` as Key),
+      explain: t(locale, `secBandWhy${w}${band}` as Key),
+      tone: BAND_TONE[band],
+      banded: true,
+    };
+  }
+  if (!card || band === "INSUFFICIENT") {
+    return {
+      label: t(locale, key === "support_total" ? "secCtxInsufficientTotal" : "secCtxInsufficient"),
+      explain: t(locale, "secCtxInsufficientWhy")
+        .replace("{c}", (card?.missing ?? []).map((c) => c.toUpperCase()).join(", ") || "—"),
+      tone: "text-fg-muted",
+      banded: false,
+    };
+  }
+  if (band === "OUT_OF_RANGE") {
+    return { label: t(locale, "secCtxOutOfRange"), explain: t(locale, "secCtxOutOfRangeWhy"),
+             tone: "text-fg-muted", banded: false };
+  }
+  if (band === "PROVISIONAL") {
+    return { label: t(locale, "secCtxProvisionalState"), explain: t(locale, "secCtxProvisionalWhy"),
+             tone: "text-fg-muted", banded: false };
+  }
+  return { label: t(locale, "secCtxNoBand"), explain: t(locale, "secCtxNoBandWhyShort"),
+           tone: "text-fg-muted", banded: false };
+}
+
+/** "0–<10: Mức hỗ trợ thấp" … read from the contract's config, never restated. */
+export function secBandRanges(
+  key: SecCardKey, config: SecMarketBandConfig | null | undefined, locale: Locale,
+): string[] {
+  const spec = config?.cards?.[key];
+  if (!spec) return [];
+  const [lo, hi] = spec.cuts;
+  const w = CARD_WORD[key];
+  const f = (n: number) => fmtExact(n);
+  return [
+    `${f(0)}–<${f(lo)}: ${t(locale, `secBand${w}LOW` as Key)}`,
+    `${f(lo)}–<${f(hi)}: ${t(locale, `secBand${w}MID` as Key)}`,
+    `${f(hi)}–${f(spec.max)}: ${t(locale, `secBand${w}HIGH` as Key)}`,
+  ];
+}
+
+/** Whether the rule behind the words is confirmed — said, never implied (§5.5). */
+export function secRuleStatus(config: SecMarketBandConfig | null | undefined, locale: Locale): string {
+  if (!config) return t(locale, "secInfoRuleNone");
+  return t(locale, config.status === "CONFIRMED" ? "secInfoRuleConfirmed" : "secInfoRuleProposed")
+    .replace("{id}", config.id);
+}
+
+export function secMarketSummaryText(summary: SecMarketSummary | undefined, locale: Locale): string {
+  if (!summary) return t(locale, "secSumInsufficient");
+  if (summary.code === "MARKET_NO_BAND") return t(locale, "secSumNoBand");
+  if (summary.code !== "MARKET_BANDED") return t(locale, "secSumInsufficient");
+  const b = summary.bands;
+  return t(locale, "secSumTemplate")
+    .replace("{support}", t(locale, `secSumSupport${b.support_total}` as Key))
+    .replace("{financial}", t(locale, `secSumFinancial${b.financial}` as Key))
+    .replace("{liquidity}", t(locale, `secSumLiquidity${b.liquidity}` as Key))
+    .replace("{breadth}", t(locale, `secSumBreadth${b.breadth}` as Key));
+}
+
+/**
+ * The two READING blocks over C1–C14 (§8.2, §13).
+ *
+ * Presentation config, keyed by criterion CODE — never by column position — and
+ * deliberately NOT a scoring group: neither block has a total, a denominator or
+ * a sort. The rubric's scoring groups (asset / operation / capital) cut C1–C14
+ * differently and are untouched.
+ */
+export const SEC_READING_BLOCKS = [
+  { id: "business_results", label: "secReadBlockBusiness", tip: "secReadBlockBusinessTip",
+    criteria: ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"] },
+  { id: "capital_and_risk", label: "secReadBlockCapital", tip: "secReadBlockCapitalTip",
+    criteria: ["c9", "c10", "c11", "c12", "c13", "c14"] },
+] as const;
+
+/**
+ * Why a criterion is N/A, in words (§10.2): "Không gán cùng một lý do cho tất
+ * cả N/A." Each sentence opens with its KIND — thiếu công bố, chưa xác minh,
+ * không áp dụng, chưa đủ căn cứ — so two different absences never read alike.
+ */
+const NA_REASON: Record<string, Key> = {
+  FUNDING_MISSING: "secNaFunding",
+  C4_NO_VERIFIED_SOURCE: "secNaC4",
+  NO_SOURCE_MARKET_SHARE: "secNaC4",
+  C5_NO_SOURCE: "secNaC5",
+  NO_EQUITY: "secNaNoEquity",
+  NO_PRIOR_CORE: "secNaNoPriorCore",
+  SPECIAL_CASE_NEG_NPAT: "secNaNegNpat",
+  SHORT_CORE_HISTORY: "secNaShortHistory",
+  NO_PEER_DISTRIBUTION: "secNaNoPeers",
+  C9_INSUFFICIENT_DATA: "secNaC9Data",
+  C9_INSUFFICIENT_SAMPLE: "secNaC9Sample",
+  NO_PROVISION_DATA: "secNaProvision",
+  NO_MARGIN_HISTORY: "secNaMarginHistory",
+  C18_INSUFFICIENT_HISTORY: "secNaC18History",
+  C19_NO_MARKET_CAP: "secNaC19MarketCap",
+  C19_NO_POSITIVE_CORE: "secNaC19NoCore",
+  C19_INSUFFICIENT_HISTORY: "secNaC19History",
+  C20_INSUFFICIENT: "secNaC20",
+  NO_FCI: "secNaFci",
+  NO_MARKET_SERIES: "secNaMarket",
+};
+
+export function secNaReason(cell: SecCriterionCell | undefined, locale: Locale): string {
+  return t(locale, NA_REASON[cell?.reason_code ?? ""] ?? "secNaGeneric");
+}
+
+/** Why a scored criterion is provisional — by criterion and method, not a blanket "*". */
+export function secProvReason(key: string, cell: SecCriterionCell | undefined, locale: Locale): string {
+  const k = ({ c5: "secProvC5", c9: "secProvC9", c18: "secProvC18", c20: "secProvC20" } as Record<string, Key>)[key];
+  if (key === "c5" && cell?.method && cell.method !== "PROXY") return t(locale, "secProvGeneric");
+  return t(locale, k ?? "secProvGeneric");
+}
+
+/**
+ * The input value, ONLY where its unit is verified against the scorer.
+ *
+ * Every entry below was read off the `Criterion(points, value)` call that
+ * produces it. The rest are ranked percentiles, blended spreads or model
+ * residuals whose raw number would need its own explanation — printing them
+ * bare would invite a reading the value does not support, so they show none.
+ */
+const VALUE_FORMAT: Record<string, (v: number) => string> = {
+  c1: (v) => formatPercent(v * 100, 1),          // core NPAT TTM / average equity
+  c2: (v) => formatPercent(v * 100, 1, true),    // core NPAT YoY
+  c3: (v) => formatPercent(v * 100, 1),          // core / reported NPAT, TTM
+  c4: (v) => formatPercent(v, 2),                // published share, already in %
+  c7: (v) => formatPercent(v * 100, 1, true),    // 70% YoY + 30% QoQ margin growth
+  c15: (v) => `FCI ${formatNumber(v, 2)}`,       // index level, more negative = easier
+  c16: (v) => formatPercent(v * 100, 1, true),   // market ADTV momentum
+  c17: (v) => formatPercent(v * 100, 1),         // share of stocks above MA20
+};
+
+export function secCellValue(key: string, cell: SecCriterionCell | undefined): string | null {
+  const f = VALUE_FORMAT[key];
+  if (!f || cell?.value === null || cell?.value === undefined) return null;
+  return f(cell.value);
+}
+
+/** Which period a criterion reads: the quarter, the session, or both. */
+export function secCellPeriod(key: string, row: SecScore, locale: Locale): string {
+  const n = Number(key.slice(1));
+  const d = secDmy(row.as_of_date);
+  if (n >= 15 && n <= 17) return t(locale, "secCellSessionPeriod").replace("{d}", d);
+  if (n >= 19) {
+    return t(locale, "secCellQuarterSession")
+      .replace("{q}", row.quality_period ?? "—").replace("{d}", d);
+  }
+  return row.quality_period ?? "—";
 }

@@ -61,9 +61,10 @@ COMMENT_RULE_ID = "CTCK_COMMENT_RULE_V1"
 
 # WHERE A BAND MAPPING DOES NOT EXIST, SAY SO. The spec is emphatic and
 # repeats it per section: a label with no approved rule behind it must render
-# as "chưa có phân loại", never as a threshold we picked. Four context cards,
-# C18's sensitivity level and the valuation verdict are all in that state
-# today, so each returns this code rather than a word.
+# as "chưa có phân loại", never as a threshold we picked. C18's sensitivity
+# level and the valuation verdict are in that state today, so each returns this
+# code rather than a word. (The four market cards left it on 2026-09-11, when BA
+# supplied thresholds — see MARKET_BAND_CONFIG, which is still only PROPOSED.)
 NO_BAND_MAPPING = "NO_BAND_MAPPING"
 
 # Level bands for the three quality groups (sheet 04, UI-02).
@@ -395,23 +396,79 @@ CONTEXT_CARDS = (
     ("breadth", ("c17",)),                      # Xu hướng tăng lan tỏa
 )
 
+# The four cards' state words (UI "Chi tiết 20 tiêu chí" §5.3), as ONE
+# versioned config — §13.6: "Ngưỡng diễn giải thị trường nằm trong cấu hình có
+# phiên bản; không rải các điều kiện số ở nhiều component."
+#
+# STATUS IS "PROPOSED", AND THAT IS A FACT THE PAGE HAS TO SHOW. BA supplied
+# these as a proposal needing the model owner's confirmation; the owner chose
+# (2026-09-11) to display them now, marked as proposed, rather than hold the
+# words back. So the config travels INTO the contract with its id and status,
+# and the UI prints the caveat whenever status != CONFIRMED. Confirming is one
+# edit here plus a contract refresh — never a second copy of the numbers in the
+# frontend.
+#
+# Measured before adopting (244 OFFICIAL sessions, 2025-09-17..2026-09-10):
+# every boundary is reachable (C15 moves in quarter points, C16/C17 in
+# integers); the overall card reads low/mid/high on 178/58/8 sessions; and
+# C17's level word contradicted actual breadth once (2026-01-23: "hẹp" at 50.7%
+# breadth, falling 6.6pp) — C17 scores the CHANGE in breadth, which the
+# wording "phạm vi" does not say.
+#
+# Each band is [lower, upper) except the top, which is closed at the card's
+# maximum. A score outside [0, max] is NOT clamped into a band (§5.4, UI07).
+MARKET_BAND_CONFIG = {
+    "id": "CTCK_MARKET_BANDS_PROPOSED_20260911",
+    "status": "PROPOSED",           # PROPOSED | CONFIRMED
+    "source": "Dac_ta_UI_Tab_Chi_tiet_20_tieu_chi_Cho_IT.md §5.3",
+    "cards": {
+        "support_total": {"max": 23, "cuts": (10, 17)},
+        "financial": {"max": 10, "cuts": (4, 7)},
+        "liquidity": {"max": 8, "cuts": (3, 6)},
+        "breadth": {"max": 5, "cuts": (2, 4)},
+    },
+}
 
-def context_cards(criteria: dict) -> dict:
-    """The four cards above the table (§6.1).
+BAND_LOW, BAND_MID, BAND_HIGH = "LOW", "MID", "HIGH"
+BAND_INSUFFICIENT = "INSUFFICIENT"      # a constituent criterion is N/A
+BAND_OUT_OF_RANGE = "OUT_OF_RANGE"      # a data error, reported, never clamped
+BAND_PROVISIONAL = "PROVISIONAL"        # no rule permits interpreting it
 
-    EACH CARD REPORTS A SCORE AND REFUSES TO NAME A LEVEL. The spec offers a
-    vocabulary (Thấp / Trung bình / Cao, Yếu / Trung bình / Mạnh, …) and then
-    forbids using it until the mapping is approved: "Không quy đổi cả bốn thẻ
-    theo một ngưỡng phần trăm tự đặt." There is no such mapping in the model, so
-    `level` is NO_BAND_MAPPING and the UI prints "Chưa có phân loại trạng thái".
 
-    A card whose criteria are not all scored is `insufficient` — not zero, and
-    not "Yếu". §6.3: a missing input may never become a low label.
+def classify_band(score: float | None, card: str, config: dict | None = MARKET_BAND_CONFIG) -> str:
+    """One card's band from its RAW score.
+
+    Raw, never the displayed value (§13.7): C15 is a sum of quarter points, so
+    6.75 prints as "6,8" at one decimal and must still read "Trung tính", not
+    "Thuận lợi". Rounding before classifying would change the label with the
+    number format.
+    """
+    spec = (config or {}).get("cards", {}).get(card)
+    if spec is None:
+        return NO_BAND_MAPPING
+    if score is None:
+        return BAND_INSUFFICIENT
+    lo, hi = spec["cuts"]
+    if score < 0 or score > spec["max"]:
+        return BAND_OUT_OF_RANGE
+    return BAND_LOW if score < lo else BAND_MID if score < hi else BAND_HIGH
+
+
+def context_cards(criteria: dict, config: dict | None = MARKET_BAND_CONFIG) -> dict:
+    """The four cards above the table.
+
+    A card whose criteria are not all scored is INSUFFICIENT — not zero, and not
+    "Yếu": a missing input may never become a low label, and the overall card
+    must not present a partial sum as a complete /23 (§5.4, UI09).
+
+    A provisional constituent withholds the word (§5.4: "chỉ diễn giải tạm tính
+    nếu có quy tắc cho phép" — none does). C15-C17 are LOCKED today, so this
+    branch is dormant, which is exactly why it is pinned by a test.
     """
     out = {}
     for name, keys in CONTEXT_CARDS:
         earned = avail = 0.0
-        missing = []
+        missing, provisional = [], []
         for k in keys:
             c = criteria.get(k)
             e = (c.get("earned") if isinstance(c, dict) else (c.points if c else None))
@@ -420,6 +477,14 @@ def context_cards(criteria: dict) -> dict:
                 continue
             earned += e
             avail += CRITERION_POINTS[k]
+            if _tier_of(criteria, k) != TIER_LOCKED:
+                provisional.append(k)
+        if missing:
+            band = BAND_INSUFFICIENT
+        elif provisional:
+            band = BAND_PROVISIONAL
+        else:
+            band = classify_band(earned, name, config)
         out[name] = {
             "criteria": list(keys),
             "earned": round(earned, 2),
@@ -427,9 +492,48 @@ def context_cards(criteria: dict) -> dict:
             "design_max": sum(CRITERION_POINTS[k] for k in keys),
             "missing": missing,
             "insufficient": bool(missing),
-            "level": NO_BAND_MAPPING,
+            "provisional": provisional,
+            "band": band,
+            # Kept for readers of the UI-CTCK-01 contract: the card still has
+            # no APPROVED mapping while the config is only proposed.
+            "level": (band if (config or {}).get("status") == "CONFIRMED"
+                      else NO_BAND_MAPPING),
         }
     return out
+
+
+MARKET_SUMMARY_BANDED = "MARKET_BANDED"
+MARKET_SUMMARY_INSUFFICIENT = "MARKET_INSUFFICIENT"
+MARKET_SUMMARY_NO_BAND = "MARKET_NO_BAND"
+
+
+def market_summary(cards: dict, config: dict | None = MARKET_BAND_CONFIG) -> dict:
+    """The sentence under the four cards (§6), as codes.
+
+    Composed only when ALL FOUR cards carry a band. Otherwise it says there is
+    not enough to summarise, rather than reusing a previous session's sentence
+    or a whole-market verdict drawn from the cards that did band. The template
+    names every factor, so opposing factors are stated rather than averaged
+    away by a high total.
+    """
+    bands = {k: v["band"] for k, v in cards.items()}
+    base = {"bands": bands,
+            "config_id": (config or {}).get("id"),
+            "config_status": (config or {}).get("status")}
+    if any(b == NO_BAND_MAPPING for b in bands.values()):
+        return {"code": MARKET_SUMMARY_NO_BAND, **base}
+    if all(b in (BAND_LOW, BAND_MID, BAND_HIGH) for b in bands.values()):
+        return {"code": MARKET_SUMMARY_BANDED, **base}
+    return {"code": MARKET_SUMMARY_INSUFFICIENT, **base}
+
+
+def market_band_config_public(config: dict | None = MARKET_BAND_CONFIG) -> dict | None:
+    """What the info popover prints: the thresholds, their id and their status."""
+    if not config:
+        return None
+    return {"id": config["id"], "status": config["status"], "source": config["source"],
+            "cards": {k: {"max": v["max"], "cuts": list(v["cuts"])}
+                      for k, v in config["cards"].items()}}
 
 
 # Ordered worst-to-best so a comparison can pick a strength and a limitation.
@@ -578,6 +682,7 @@ def ui_contract(totals: dict, ctx: dict | None = None) -> dict:
     final_earned = sum(b["final_earned"] for b in blocks.values())
     design_max = sum(CRITERION_POINTS.values())
     score = (final_earned / final_available * 100) if final_available else None
+    cards = context_cards(criteria)
     return {
         "ui_version": UI_VERSION,
         "blocks": blocks,
@@ -598,7 +703,10 @@ def ui_contract(totals: dict, ctx: dict | None = None) -> dict:
         "narratives": narratives(ctx, criteria),
         # --- UI-CTCK-01 additions ---
         "comment_rule_id": COMMENT_RULE_ID,
-        "context_cards": context_cards(criteria),
+        "context_cards": cards,
+        # --- "Chi tiết 20 tiêu chí" additions ---
+        "market_summary": market_summary(cards),
+        "market_band_config": market_band_config_public(),
         "main_comment": main_comment(sg),
         "valuation_verdict": valuation_verdict(criteria),
         "market_share": market_share(ctx),

@@ -1,38 +1,94 @@
-# UI-CTCK-01 — Danh sách rule chưa có mapping (IT gửi BA)
+# UI-CTCK-01 và "Chi tiết 20 tiêu chí" — Danh sách rule/mapping (IT gửi BA)
 
-Theo §1.2, §6.1, §8.6, §8.10, §8.11 và §18: nơi nào đặc tả cần một nhãn mà mô
-hình chưa có quy tắc, IT **không tự đặt ngưỡng**. Giao diện hiển thị điểm thật
-kèm trạng thái trung tính, và ghi nhận khoảng trống ở đây.
+Nơi nào đặc tả cần một nhãn mà mô hình chưa có quy tắc đã xác nhận, IT **không tự
+đặt ngưỡng**. Tài liệu này ghi nhận khoảng trống và trạng thái kích hoạt.
+
+Cập nhật 11/09/2026 theo `Dac_ta_UI_Tab_Chi_tiet_20_tieu_chi_Cho_IT.md`.
+
+## A. Bốn ô bối cảnh thị trường — đã có ngưỡng ĐỀ XUẤT, chưa xác nhận chính thức
+
+BA cung cấp ngưỡng tại §5.3. Người phụ trách mô hình chọn **hiển thị ngay, ghi rõ là
+ngưỡng đề xuất** (không giữ lại nhãn chờ xác nhận).
+
+| Mục | Giá trị |
+|---|---|
+| Cấu hình | `securities_ui.MARKET_BAND_CONFIG` |
+| Mã phiên bản | `CTCK_MARKET_BANDS_PROPOSED_20260911` |
+| Trạng thái | `PROPOSED` — **chưa kích hoạt chính thức** (§16.7) |
+| Ghi chú hiển thị | Dưới câu tổng hợp: “Minh họa theo ngưỡng phân loại đề xuất · Cần đối chiếu V6 trước triển khai.” Nút “i” của mỗi ô ghi “Ngưỡng đề xuất, chưa được xác nhận chính thức (mã cấu hình)”. |
+| Cách chính thức hóa | Đổi `status` thành `CONFIRMED` và chạy lại contract; dòng ghi chú tự biến mất. Giao diện không giữ bản sao ngưỡng nào. |
+
+| Ô | Ngưỡng (điểm gốc `s`, khoảng `[a, b)`, mức trên cùng đóng tại điểm tối đa) |
+|---|---|
+| Mức hỗ trợ chung /23 | thấp `< 10` · trung bình `10 ≤ s < 17` · cao `17 ≤ s ≤ 23` |
+| Điều kiện tài chính /10 (C15) | chưa thuận lợi `< 4` · trung tính `4 ≤ s < 7` · thuận lợi `7 ≤ s ≤ 10` |
+| Động lượng thanh khoản /8 (C16) | yếu `< 3` · trung bình `3 ≤ s < 6` · mạnh `6 ≤ s ≤ 8` |
+| Xu hướng tăng lan tỏa /5 (C17) | hẹp `< 2` · trung bình `2 ≤ s < 4` · rộng `4 ≤ s ≤ 5` |
+
+### Kết quả kiểm tra của IT để đội mô hình xác nhận (§5.3)
+
+1. **Mọi ranh giới đều đạt được.** C15 = mức (0 / 0,75 / 1,75 / 2,5 / 3) + tốc độ (0–4) + đảo chiều (0–3), nên C15 và tổng thay đổi theo bước 0,25; C16 và C17 là số nguyên.
+2. **Phân loại dùng điểm gốc, không dùng số đã làm tròn** (§13.7): C15 = 6,75 hiển thị “6,75” và vẫn là “Trung tính”.
+3. **Phân bố trên 244 phiên chính thức (17/09/2025–10/09/2026):**
+   - Mức hỗ trợ chung: thấp 178 · trung bình 58 · cao 8 phiên.
+   - C15: chưa thuận lợi 154 · trung tính 62 · thuận lợi 28.
+   - C16: yếu 141 · trung bình 76 · mạnh 27.
+   - C17: hẹp 113 · trung bình 80 · rộng 51.
+4. **Điểm cần đội mô hình cân nhắc:** C17 chấm *mức thay đổi* của độ rộng, không chỉ *mức* độ rộng, nên chữ “phạm vi rộng/hẹp” có thể lệch với độ rộng thực tế. Trong 244 phiên, lệch **một lần**: 23/01/2026 C17 = 1 (“Lan tỏa hẹp”) khi độ rộng là 50,7% nhưng giảm 6,6 điểm % trong 5 phiên. Không phiên nào có “Lan tỏa rộng” khi độ rộng dưới 35%.
+5. **Tổng “thấp” chiếm 73% số phiên.** Đây là quyết định kinh tế của đội mô hình, IT không tự hiệu chỉnh.
+6. Phiên 10/09/2026 đúng trường hợp minh họa 6 + 2 + 1 = 9: thấp · trung tính · yếu · hẹp (UI04).
+
+### Trạng thái không phân loại (§5.4)
+
+| Trường hợp | Hiển thị |
+|---|---|
+| Thiếu một trong C15–C17 | Ô tổng “Chưa đủ dữ liệu tổng hợp”, không hiện /23; ô thiếu “Chưa đủ dữ liệu”; không tạo câu tổng hợp |
+| Điểm ngoài `[0, tối đa]` | “Chưa thể hiển thị trạng thái”; ghi cảnh báo trong log chạy; không ép vào ngưỡng |
+| Điểm thị trường tạm tính | “Tạm tính”; không diễn giải (chưa có quy tắc cho phép) |
+| Không có cấu hình | “Chưa có phân loại trạng thái” |
+
+## B. Còn thiếu mapping (giữ nguyên từ UI-CTCK-01)
 
 | # | Nhãn đặc tả yêu cầu | Trạng thái hiện tại trên UI | Cần BA cung cấp |
 |---:|---|---|---|
-| 1 | Mức hỗ trợ chung: Thấp / Trung bình / Cao (tổng C15–C17) | Hiện điểm `7/23 điểm` + “Chưa có phân loại trạng thái” | Ngưỡng phân loại cho tổng C15–C17 |
-| 2 | Điều kiện tài chính: Chưa thuận lợi / Trung tính / Thuận lợi (C15) | Hiện `4/10 điểm` + “Chưa có phân loại trạng thái” | Ngưỡng phân loại C15 |
-| 3 | Động lượng thanh khoản: Yếu / Trung bình / Mạnh (C16) | Hiện `2/8 điểm` + “Chưa có phân loại trạng thái” | Ngưỡng phân loại C16 |
-| 4 | Xu hướng tăng lan tỏa: Hẹp / Trung bình / Rộng (C17) | Hiện `1/5 điểm` + “Chưa có phân loại trạng thái” | Ngưỡng phân loại C17 |
-| 5 | Độ nhạy chu kỳ: mức nhạy thấp / vừa / cao (C18) | Hiện điểm `x/7` + trạng thái Chính thức/Tạm tính | Ngưỡng mức nhạy cho C18 |
-| 6 | Nhận xét định giá: Hấp dẫn / Hợp lý / Kém hấp dẫn | Hiện trạng thái mô hình cho phép: “Đánh giá một phần” / “Chưa đủ căn cứ” | Mapping mức định giá; hiện chỉ suy được TRẠNG THÁI từ tier C19/C20 |
+| 1 | Độ nhạy chu kỳ: mức nhạy thấp / vừa / cao (C18) | Điểm `x/7` + Chính thức/Tạm tính | Ngưỡng mức nhạy cho C18 |
+| 2 | Nhận xét định giá: Hấp dẫn / Hợp lý / Kém hấp dẫn | “Đánh giá một phần” / “Chưa đủ căn cứ” theo tier C19/C20 | Mapping mức định giá |
 
-Ghi chú về mục 6: vì C20 đang `PROVISIONAL` không điều kiện, mọi mã có C19 đều
-là “Đánh giá một phần”. Đây đúng theo A07/A17 — độ phủ 100% không làm C20 thành
-chính thức. `VAL_FULL` chỉ xuất hiện khi C20 được khóa.
+Vì C20 đang `PROVISIONAL` không điều kiện, mọi mã có C19 đều là “Đánh giá một phần” (A07/A17). `VAL_FULL` chỉ xuất hiện khi C20 được khóa.
 
-## Giới hạn dữ liệu, không phải giới hạn giao diện
+## C. Đối soát tên và điểm tối đa C1–C14 (§8.4)
+
+Tên hiển thị và điểm tối đa của 14 tiêu chí **khớp** cấu hình V6 (`CRITERION_POINTS`, tổng 50). Hai ghi nhận để xác minh, không tự sửa mô hình:
+
+- C14 “Khả năng tạo tiền/lợi nhuận bền vững”: phương pháp V6 hiện đo **độ ổn định ROE cốt lõi** (có phạt quý lỗ); chưa có thành phần dòng tiền. Tên giữ theo V6.
+- Hai khối đọc (C1–C8 / C9–C14) **không** trùng ba nhóm chấm điểm V6 (tài sản C3+C12+C13 · hoạt động C1+C2+C4–C8 · vốn C9+C10+C11+C14). Khối đọc không có tổng riêng; nhóm chấm điểm giữ nguyên.
+
+## D. Lý do N/A (§10.2)
+
+Trước bản sửa, 7.994 ô N/A trong dữ liệu lưu mang cùng mã `OTHER`. Nay tách theo nguyên nhân thực tế (chỉ là siêu dữ liệu; đối chiếu 10.248 dòng trước/sau: **không thay đổi điểm, mẫu số, trạng thái hoặc điều kiện công bố nào**):
+
+| Mã | Nội dung hiển thị (tóm tắt) | Số ô đã đổi |
+|---|---|---:|
+| `FUNDING_MISSING` | Chưa chấm được: chưa tính được lợi nhuận cốt lõi (thiếu chi phí vốn đủ điều kiện/số liệu phân bổ) | 4.290 |
+| `C5_NO_SOURCE` | Chưa xác minh: không có số liệu thị phần công bố và không có ước tính dùng được | 4.074 |
+| `NO_MARGIN_HISTORY` | Thiếu công bố: không có lịch sử dư nợ ký quỹ | 488 |
+
+C14 của các mã bị chặn do chi phí vốn trước đây ghi nhầm “chưa đủ 8 quý”; nay ghi đúng nguyên nhân.
+
+## E. Giới hạn dữ liệu, không phải giới hạn giao diện
 
 | # | Đặc tả | Vì sao chưa làm được |
 |---:|---|---|
-| 7 | Thị phần: hiển thị **Hạng {hạng}** | Không lưu `rank`. BA công bố 7/10 tên nên suy hạng 1–7 là suy diễn (đã thống nhất từ V11v5) |
-| 8 | Thị phần: **“Ngoài top 10”** | Không lưu cờ “đã đối chiếu danh sách top 10 của kỳ đó”. Theo A09/A10, thiếu cờ này thì phải ghi “Chưa xác minh”, không được suy “Ngoài top 10”. Hiện 35/42 mã ở trạng thái này |
-| 9 | Thị phần: **“Số kỳ trước”** | Chỉ có một kỳ (2026-Q2). Khi có kỳ thứ hai, luồng đã sẵn `period` để phân biệt |
-| 10 | Bộ chọn **Kỳ BCTC** | §5.1: chỉ tạo dropdown khi backend hỗ trợ. Backend chọn theo PHIÊN, không theo quý — nên kỳ BCTC hiển thị dạng nhãn thông tin, không phải dropdown giả |
-| 11 | Thiếu dữ liệu: phân biệt “doanh nghiệp công bố không đủ” và “chưa nhập/xác minh nội bộ” | §8.12 và A20 yêu cầu phân biệt. Hiện `reason_code` chưa tách hai nguyên nhân này; UI đã có sẵn hai câu chờ dữ liệu |
-| 12 | Nhãn điều khiển “KLGD trung bình 20 phiên tối thiểu” | Nhãn hiện dùng dạng viết gọn và **dùng chung với 3 tab scanner khác**. Đổi ở đây sẽ đổi cả các tab kia; đề nghị BA xác nhận trước khi sửa dùng chung |
+| 1 | Thị phần: **Hạng** | Không lưu `rank`; BA công bố 7/10 tên nên suy hạng là suy diễn |
+| 2 | Thị phần: **“Ngoài top 10”** | Không lưu cờ “đã đối chiếu danh sách top 10 của kỳ”; theo A09/A10 phải ghi “Chưa xác minh” |
+| 3 | Thị phần: **kỳ trước** | Mới có một kỳ (2026-Q2) |
+| 4 | Bộ chọn **Kỳ BCTC** | Backend chọn theo PHIÊN; không tạo dropdown hình thức |
+| 5 | Phân biệt “doanh nghiệp công bố không đủ” và “chưa nhập/xác minh nội bộ” | Mã lý do chưa tách hai nguồn này |
+| 6 | Giá trị đầu vào trong ô giải thích (§10.3) | Chỉ hiện cho C1, C2, C3, C4, C7, C15, C16, C17 — các chỉ tiêu đã kiểm tra đơn vị. Các chỉ tiêu còn lại là phân vị/phần dư mô hình; hiện số thô dễ bị hiểu sai |
+| 7 | Ngưỡng chấm điểm V6 trong ô giải thích | Ô hiện “Cách tính” theo mô tả tiêu chí; bảng ngưỡng chi tiết từng tiêu chí chưa có trong contract hiển thị |
 
-## Những gì đã dùng rule có sẵn (không phải khoảng trống)
+## F. Những gì đã dùng rule có sẵn
 
-- Nhãn ba nhóm chất lượng (Tốt / Khá / Trung bình / Thấp) dùng ngưỡng đã duyệt
-  0,80 / 0,65 / 0,50 (V11v6 sheet 04, UI-02).
-- Nhận xét chính sinh từ ba nhãn nhóm đó, có `rule_id = CTCK_COMMENT_RULE_V1`;
-  cùng dữ liệu và cùng phiên bản luôn cho cùng câu (§8.9).
-- Điều kiện công bố điểm giữ nguyên bốn điều kiện V11v3.
-- Độ phủ giữ nguyên công thức hiện hành; không dùng `available_max` làm coverage mới.
+- Nhãn ba nhóm chất lượng dùng ngưỡng đã duyệt 0,80 / 0,65 / 0,50 (V11v6 sheet 04, UI-02).
+- Nhận xét chính có `rule_id = CTCK_COMMENT_RULE_V1`.
+- Điều kiện công bố điểm giữ nguyên bốn điều kiện V11v3; checkbox “Chỉ hiện mã đủ điều kiện công bố điểm” lọc đúng điều kiện này.

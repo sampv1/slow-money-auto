@@ -5,9 +5,10 @@ import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import {
   type SecScore,
-  SEC_COL2_LEFT,
   SEC_FROZEN_CELL,
+  SEC_FROZEN_CELL_2,
   SEC_FROZEN_HEAD,
+  SEC_FROZEN_HEAD_2,
   ctFraction,
   fmtPts,
   fmtSignedPct,
@@ -24,6 +25,7 @@ import {
   secValuationText,
 } from "@/lib/fa-securities";
 import { SecRowDetail } from "./sec-expand";
+import { SecScrollBox } from "./sec-scroll-box";
 import { TABLE, TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
 import { PinButton } from "@/components/pin-button";
 import { usePinnedSymbols } from "@/lib/pinned-symbols";
@@ -133,7 +135,7 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
 
   return (
     <>
-      <div className={TABLE_FREEZE}>
+      <SecScrollBox className={TABLE_FREEZE} hint={t(locale, "secScrollHint")}>
         {/* `min-w-full w-max`, the same pattern the detail tab uses. `TABLE` carries
             `w-full`, which pins the table to the container and turns the fixed
             column widths into mere proportions — the squeeze §7.1 rules out
@@ -149,7 +151,7 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                 {t(locale, "symbol")}
               </th>
               <th
-                className={`${TH_SEC_NUM} ${W.score} ${SEC_FROZEN_HEAD} ${SEC_COL2_LEFT}`}
+                className={`${TH_SEC_NUM} ${W.score} ${SEC_FROZEN_HEAD_2}`}
                 rowSpan={2}
                 title={t(locale, "secScoreHeadTip")}
               >
@@ -237,7 +239,7 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                     {/* §8.2: the published score, then "Chính thức: đạt/tối đa
                         đủ điều kiện". When the gate fails it is "—" with a
                         reason, never a substitute total. */}
-                    <td className={`${TD_SEC_NUM} ${W.score} ${SEC_FROZEN_CELL} ${SEC_COL2_LEFT} leading-tight`}>
+                    <td className={`${TD_SEC_NUM} ${W.score} ${SEC_FROZEN_CELL_2} leading-tight`}>
                       <div className="sec-score font-semibold">{score.text}</div>
                       {uc ? (
                         <div className="sec-note text-fg-muted">
@@ -384,7 +386,7 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
             })}
           </tbody>
         </table>
-      </div>
+      </SecScrollBox>
       <p className="mt-3 sec-note text-fg-label max-w-[120ch]">
         {t(locale, "secLegendCT")} {t(locale, "secLegendStar")} {t(locale, "secLegendNA")}{" "}
         {t(locale, "secLegendCoverage")}

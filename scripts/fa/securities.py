@@ -759,6 +759,21 @@ REASON_CODES = [
     ("reported NPAT <= 0", "SPECIAL_CASE_NEG_NPAT"),
     ("no average equity", "NO_EQUITY"),
     ("no positive prior-year core", "NO_PRIOR_CORE"),
+    # UI tab "Chi tiết 20 tiêu chí" §10.2: "Không gán cùng một lý do cho tất cả
+    # N/A." These five texts are the funding-dependency cascade (`core.blocked`)
+    # and three other N/A paths, and every one fell through to OTHER — 7,994 of
+    # the stored N/A cells, i.e. the page could only say "no reason recorded".
+    # Metadata only: the criterion is N/A before and after.
+    ("core_npat unavailable", "FUNDING_MISSING"),
+    ("needs funding cost", "FUNDING_MISSING"),
+    ("core profit stream unavailable", "FUNDING_MISSING"),
+    ("needs normalized core earnings", "FUNDING_MISSING"),
+    ("needs core ROE", "FUNDING_MISSING"),
+    ("margin balance history unavailable", "NO_MARGIN_HISTORY"),
+    ("no usable growth proxy", "C5_NO_SOURCE"),
+    ("no FCI for this date", "NO_FCI"),
+    ("no ADTV momentum", "NO_MARKET_SERIES"),
+    ("breadth unavailable", "NO_MARKET_SERIES"),
 ]
 
 
@@ -957,7 +972,11 @@ def score_quality(core: CoreResult, ctx: dict) -> dict[str, Criterion]:
     # C14 durability — how steady the core return has been, not how high.
     # Needs a real history: eight quarters is the floor, below which the
     # dispersion of three or four readings is noise rather than a character.
-    if blocked or ctx.get("core_history_n", 0) < C14_MIN_QUARTERS:
+    # Two different absences, previously reported as one: a broker whose core
+    # profit cannot be computed at all was told it lacked eight quarters of it.
+    if blocked:
+        na("c14", "core_npat unavailable")
+    elif ctx.get("core_history_n", 0) < C14_MIN_QUARTERS:
         na("c14", f"needs {C14_MIN_QUARTERS}+ quarters of core history")
     else:
         out["c14"] = Criterion(_pctile_bands(ctx.get("p_stability"), C14_STABILITY),

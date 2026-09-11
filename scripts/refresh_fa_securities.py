@@ -1255,6 +1255,15 @@ def main():
     rows = [build_row(s, d, as_of, quarter, market, fci, score_status)
             for s, d in sorted(scored.items())]
 
+    # A market card scored outside [0, max] is a data error, and the UI refuses
+    # to band it rather than clamp it (§5.4, UI07). Say so in the run log too,
+    # or the only place the error surfaces is a reader's screen.
+    cards = ((rows[0].get("ui_contract") or {}).get("context_cards") or {}) if rows else {}
+    bad = sorted(k for k, v in cards.items() if v.get("band") == sec_ui.BAND_OUT_OF_RANGE)
+    if bad:
+        st.warn("Market context", f"card score outside its valid range on {as_of}: "
+                                  f"{', '.join(bad)} — state withheld, not clamped")
+
     by_status = {}
     for r in rows:
         by_status[r["fa_status"]] = by_status.get(r["fa_status"], 0) + 1
