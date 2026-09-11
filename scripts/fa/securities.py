@@ -37,6 +37,7 @@ then rescued honestly: `CF_INTEREST_EXPENSE` carries 1,893.6 tỷ, and across th
 
 from __future__ import annotations
 
+import bisect
 import math
 
 from dataclasses import dataclass, field
@@ -598,6 +599,80 @@ C20_V11_CODES = {12: "C20_CHEAP_TOP20", 9: "C20_CHEAP_60_80", 6: "C20_MID",
                  3: "C20_EXPENSIVE_20_40", 0: "C20_EXPENSIVE_BOTTOM20"}
 C20_MIN_SAMPLE = 20
 C20_WINSOR = 0.05
+
+# A PRICE OLDER THAN THIS MANY SESSIONS IS NO PRICE (model owner, 2026-09-11).
+#
+# Why a rule had to exist at all: the daily path marked each broker to its
+# newest close with NO age limit, while the backfill loaded prices only from
+# its own first session — so a broker that stopped trading was valued in one
+# path and not the other. ART last traded 2024-07-25; on 2026-09-09 the daily
+# run valued it on that two-year-old close, the backfill had no price, and
+# because C20 is a peer regression the one extra point moved five other
+# brokers' C20 (AGR, APS, BVS, ORS, SSI). Neither behaviour was a stated rule.
+#
+# Why 60: measured over the 244 stored sessions, ART is 528 sessions stale and
+# the next-stalest broker, UPS, peaks at 46 (a genuine no-trade stretch); PHS
+# 11, everyone else 9 or less. 60 separates the dead line from every live one.
+# Applied by ONE resolver used by both paths, so the answer cannot depend on
+# which path wrote the row.
+PRICE_MAX_AGE_SESSIONS = 60
+PRICE_RULE_ID = "CTCK_PRICE_MAX_AGE_60S"
+
+
+def price_age_sessions(bar_date: str | None, as_of: str, calendar: list[str]) -> int | None:
+    """Sessions between a price's date and the scoring session, on the house calendar.
+
+    A bar dated on a day the calendar lacks counts from the last session at or
+    before it. None when either date falls before the calendar starts — an age
+    that cannot be measured is not assumed fresh.
+    """
+    if bar_date is None or not calendar:
+        return None
+    i_bar = bisect.bisect_right(calendar, bar_date) - 1
+    i_now = bisect.bisect_right(calendar, as_of) - 1
+    if i_bar < 0 or i_now < 0:
+        return None
+    return max(0, i_now - i_bar)
+
+
+def price_bar_asof(series: list[tuple[str, float]], as_of: str) -> tuple[str, float] | None:
+    """Newest (date, close) on or before `as_of` from an ascending series."""
+    prev = None
+    for d, c in series:
+        if d > as_of:
+            break
+        prev = (d, c)
+    return prev
+
+
+def sessions_before(calendar: list[str], as_of: str, n: int) -> str:
+    """The session `n` sessions before `as_of` — how far back a loader must reach
+    so its first scored session can still see a price at the age limit."""
+    if not calendar:
+        return as_of
+    return calendar[max(0, bisect.bisect_left(calendar, as_of) - n)]
+
+
+def resolve_price(bar: tuple[str, float] | None, as_of: str, calendar: list[str],
+                  max_age: int = PRICE_MAX_AGE_SESSIONS) -> tuple[float | None, dict]:
+    """The ONE place a price becomes usable for valuation. Returns (price, basis).
+
+    `basis` travels into the display contract, so a panel can say which session
+    the price came from and why a valuation is absent.
+    """
+    base = {"rule_id": PRICE_RULE_ID, "max_age_sessions": max_age}
+    if not bar or bar[1] is None:
+        return None, {**base, "date": None, "age_sessions": None, "usable": False,
+                      "reason": "NO_PRICE"}
+    d, close = bar
+    age = price_age_sessions(d, as_of, calendar)
+    if age is None:
+        return None, {**base, "date": d, "age_sessions": None, "usable": False,
+                      "reason": "NO_CALENDAR"}
+    if age > max_age:
+        return None, {**base, "date": d, "age_sessions": age, "usable": False,
+                      "reason": "STALE_PRICE"}
+    return float(close), {**base, "date": d, "age_sessions": age, "usable": True, "reason": None}
 C20_MIN_BUCKET = 5
 
 

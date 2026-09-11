@@ -31,8 +31,10 @@ import { createPortal } from "react-dom";
 const GAP = 6;
 const MARGIN = 8;
 const WIDTH = 320;
+/** Below this, a side is too cramped to scroll in; the panel takes the full height. */
+const MIN_SIDE = 240;
 
-type Pos = { left: number; top: number; width: number };
+type Pos = { left: number; top: number; width: number; maxHeight: number };
 
 export function SecPopover({
   label, title, closeLabel, className, trigger, children,
@@ -60,17 +62,44 @@ export function SecPopover({
 
   // Measure after the panel is in the DOM but before paint, so it never flashes
   // at the wrong place.
+  //
+  // A PANEL TALLER THAN THE ROOM ON EITHER SIDE SCROLLS INSIDE ITSELF. The
+  // C17 and C20 traces run to a dozen rows, and the first version placed such a
+  // panel below its cell regardless — its bottom half then sat off-screen,
+  // exactly the "bị cắt" BA rules out (UI25). It now takes whichever side of the
+  // trigger has more room, caps its height to that room and scrolls; only when
+  // both sides are cramped does it use the full viewport height.
   useLayoutEffect(() => {
     if (!open || !btn.current || !pop.current) return;
     const r = btn.current.getBoundingClientRect();
+    const vh = window.innerHeight;
     const width = Math.min(WIDTH, window.innerWidth - 2 * MARGIN);
     const left = Math.min(Math.max(MARGIN, r.left), window.innerWidth - width - MARGIN);
-    const h = pop.current.offsetHeight;
+    const h = pop.current.scrollHeight;
     const below = r.bottom + GAP;
-    const fitsBelow = below + h <= window.innerHeight - MARGIN;
-    const above = r.top - GAP - h;
-    const top = fitsBelow || above < MARGIN ? Math.max(MARGIN, below) : above;
-    setPos({ left, top, width });
+    const spaceBelow = vh - MARGIN - below;
+    const spaceAbove = r.top - GAP - MARGIN;
+    let top: number;
+    let maxHeight: number;
+    if (h <= spaceBelow) {
+      top = below;
+      maxHeight = spaceBelow;
+    } else if (h <= spaceAbove) {
+      top = r.top - GAP - h;
+      maxHeight = spaceAbove;
+    } else if (Math.max(spaceBelow, spaceAbove) >= MIN_SIDE) {
+      if (spaceBelow >= spaceAbove) {
+        top = below;
+        maxHeight = spaceBelow;
+      } else {
+        top = MARGIN;
+        maxHeight = spaceAbove;
+      }
+    } else {
+      top = MARGIN;
+      maxHeight = vh - 2 * MARGIN;
+    }
+    setPos({ left, top, width, maxHeight });
   }, [open]);
 
   useEffect(() => {
@@ -128,11 +157,12 @@ export function SecPopover({
               tabIndex={-1}
               data-sec-popover=""
               style={pos
-                ? { left: pos.left, top: pos.top, width: pos.width }
+                ? { left: pos.left, top: pos.top, width: pos.width, maxHeight: pos.maxHeight, overflowY: "auto" }
                 : { left: -9999, top: 0, width: Math.min(WIDTH, window.innerWidth - 2 * MARGIN), visibility: "hidden" }}
-              className="fixed z-[60] bg-panel border border-line shadow-[0_4px_16px_rgba(20,18,15,0.12)] px-3 py-2.5 text-left normal-case tracking-normal font-normal outline-none"
+              className="fixed z-[60] bg-panel border border-line shadow-[0_4px_16px_rgba(20,18,15,0.12)] px-3 pb-2.5 text-left normal-case tracking-normal font-normal outline-none"
             >
-              <div className="flex items-start justify-between gap-3 mb-1.5">
+              {/* The title and close button stay put while a long trace scrolls. */}
+              <div className="sticky top-0 z-10 bg-panel flex items-start justify-between gap-3 pt-2.5 pb-1.5">
                 <div className="sec-body font-semibold text-fg leading-snug">{title}</div>
                 <button
                   type="button"

@@ -44,6 +44,11 @@ from .securities import (
     SECTOR_CYCLE_CRITERIA,
     TIER_LOCKED,
     VALUATION_CRITERIA,
+    c15_level,
+    c15_reversal,
+    c15_speed,
+    c16_adtv,
+    c17_breadth,
 )
 
 # Stamped on every row so a screenshot can be traced to the spec that dictated
@@ -417,15 +422,32 @@ CONTEXT_CARDS = (
 #
 # Each band is [lower, upper) except the top, which is closed at the card's
 # maximum. A score outside [0, max] is NOT clamped into a band (§5.4, UI07).
+#
+# V2 (2026-09-11) CHANGES ONLY THE C17 WORDING, and it is a new version because
+# the confirmation record BA asks for names the labels, not just the cuts. The
+# first proposal called C17 "Lan tỏa hẹp / rộng" — a statement about the LEVEL
+# of breadth. C17 scores its DIRECTION: over 244 sessions scores 0-1 coincide
+# with falling breadth in 111 of 113 sessions and scores 4-5 with rising breadth
+# in 51 of 51, while the levels overlap heavily. 2026-01-23 is the case BA
+# flagged: breadth 50.7% (599/1,182), down 6.6 pp in five sessions, rule P5 -> 1
+# — "hẹp" beside a 50.7% reading. `label_set` BREADTH_MOMENTUM is BA's proposed
+# wording (Động lượng yếu / trung bình / mạnh). One out-of-sample caveat stays
+# on record: the formula's level-only branches (breadth >= 60%) never fired in
+# the window, so a flat, very broad market would still score 5.
+#
+# Customers do not see these words while status is PROPOSED ("Keep hidden until
+# confirmed", 2026-09-11); only the internal preview does.
 MARKET_BAND_CONFIG = {
-    "id": "CTCK_MARKET_BANDS_PROPOSED_20260911",
+    "id": "CTCK_MARKET_BANDS_PROPOSED_20260911_V2",
     "status": "PROPOSED",           # PROPOSED | CONFIRMED
-    "source": "Dac_ta_UI_Tab_Chi_tiet_20_tieu_chi_Cho_IT.md §5.3",
+    "supersedes": "CTCK_MARKET_BANDS_PROPOSED_20260911",
+    "source": ("Dac_ta_UI_Tab_Chi_tiet_20_tieu_chi_Cho_IT.md §5.3; "
+               "Phan_hoi_IT_Ra_soat_Production_CTCK_C17_C20_Panel.md §5.3"),
     "cards": {
-        "support_total": {"max": 23, "cuts": (10, 17)},
-        "financial": {"max": 10, "cuts": (4, 7)},
-        "liquidity": {"max": 8, "cuts": (3, 6)},
-        "breadth": {"max": 5, "cuts": (2, 4)},
+        "support_total": {"max": 23, "cuts": (10, 17), "label_set": "SUPPORT"},
+        "financial": {"max": 10, "cuts": (4, 7), "label_set": "FINANCIAL"},
+        "liquidity": {"max": 8, "cuts": (3, 6), "label_set": "LIQUIDITY"},
+        "breadth": {"max": 5, "cuts": (2, 4), "label_set": "BREADTH_MOMENTUM"},
     },
 }
 
@@ -527,12 +549,70 @@ def market_summary(cards: dict, config: dict | None = MARKET_BAND_CONFIG) -> dic
     return {"code": MARKET_SUMMARY_INSUFFICIENT, **base}
 
 
+def market_trace(market: dict | None, fci: dict | None, criteria: dict) -> dict | None:
+    """The inputs behind C15, C16 and C17, for the panels (BA: "truy vết").
+
+    Each part is recomputed with the SCORER'S OWN functions from the same inputs
+    and compared with the stored score. `matches_stored` is the proof a reader
+    can check: if the panel's numbers did not produce the stored points, the
+    panel says so rather than showing an explanation for a different score.
+    """
+    if market is None and fci is None:
+        return None
+    m, f = market or {}, fci or {}
+
+    def earned(k):
+        c = criteria.get(k)
+        return c.get("earned") if isinstance(c, dict) else (c.points if c else None)
+
+    lvl = c15_level(f.get("value"))
+    spd, conf = c15_speed(f.get("delta5"), f.get("percentile"), f.get("history_obs"))
+    rev = c15_reversal(f.get("event_valid", False), f.get("prior_positive"),
+                       f.get("negative_streak", 0), f.get("delta10"),
+                       f.get("days_since_reversal"))
+    c15 = None if lvl is None else lvl + (spd or 0) + rev
+
+    p16, bonus = c16_adtv(m.get("momentum"), m.get("breadth"),
+                          m.get("breadth_change_5d"), m.get("breadth_valid", False))
+
+    b, d5, d10 = m.get("breadth"), m.get("breadth_change_5d"), m.get("breadth_change_10d")
+    p17, rule = c17_breadth(b, d5, d10)
+    return {
+        "c15": {"fci": f.get("value"), "fci_as_of": f.get("as_of"),
+                "delta5": f.get("delta5"), "delta10": f.get("delta10"),
+                "percentile": f.get("percentile"), "history_obs": f.get("history_obs"),
+                "negative_streak": f.get("negative_streak"),
+                "days_since_reversal": f.get("days_since_reversal"),
+                "level_points": lvl, "speed_points": spd, "reversal_points": rev,
+                "confidence": conf, "recomputed": c15, "matches_stored": c15 == earned("c15")},
+        "c16": {"momentum": m.get("momentum"),
+                "base_points": None if p16 is None else p16 - bonus,
+                "breadth_bonus": None if p16 is None else bonus,
+                "recomputed": p16, "matches_stored": p16 == earned("c16")},
+        # Breadth changes are DIFFERENCES OF TWO RATIOS — percentage points, and
+        # the panel labels them so.
+        "c17": {"breadth": b, "numerator": m.get("breadth_numerator"),
+                "denominator": m.get("breadth_denominator"),
+                "universe_count": m.get("breadth_universe_count"),
+                "excluded": m.get("breadth_excluded"),
+                "ma_obs": m.get("breadth_ma_obs"),
+                "max_stale_sessions": m.get("breadth_max_stale_sessions"),
+                "convention": m.get("breadth_convention"),
+                "breadth_5d_ago": None if b is None or d5 is None else round(b - d5, 6),
+                "breadth_10d_ago": None if b is None or d10 is None else round(b - d10, 6),
+                "change_5d": d5, "change_10d": d10, "rule": rule,
+                "recomputed": p17, "matches_stored": p17 == earned("c17")},
+    }
+
+
 def market_band_config_public(config: dict | None = MARKET_BAND_CONFIG) -> dict | None:
-    """What the info popover prints: the thresholds, their id and their status."""
+    """What the info popover prints: thresholds, label set, id, status, lineage."""
     if not config:
         return None
     return {"id": config["id"], "status": config["status"], "source": config["source"],
-            "cards": {k: {"max": v["max"], "cuts": list(v["cuts"])}
+            "supersedes": config.get("supersedes"),
+            "cards": {k: {"max": v["max"], "cuts": list(v["cuts"]),
+                          "label_set": v.get("label_set")}
                       for k, v in config["cards"].items()}}
 
 
@@ -666,7 +746,8 @@ def narratives(ctx: dict, criteria: dict) -> dict:
 
 # --- the whole contract -------------------------------------------------------
 
-def ui_contract(totals: dict, ctx: dict | None = None) -> dict:
+def ui_contract(totals: dict, ctx: dict | None = None,
+                market: dict | None = None, fci: dict | None = None) -> dict:
     """Everything the two tabs render, from one scored row.
 
     `totals` is `securities.assemble(...)`'s return value. Both tabs read this
@@ -707,6 +788,11 @@ def ui_contract(totals: dict, ctx: dict | None = None) -> dict:
         # --- "Chi tiết 20 tiêu chí" additions ---
         "market_summary": market_summary(cards),
         "market_band_config": market_band_config_public(),
+        # Panel traces (2026-09-11): the inputs behind the market criteria, the
+        # C20 peer fit, and which session's price valuation used.
+        "market_trace": market_trace(market, fci, criteria),
+        "c20_trace": ctx.get("c20_trace"),
+        "price_basis": ctx.get("price_basis"),
         "main_comment": main_comment(sg),
         "valuation_verdict": valuation_verdict(criteria),
         "market_share": market_share(ctx),

@@ -34,7 +34,9 @@ from fa.securities_ui import (  # noqa: E402
     NO_BAND_MAPPING,
     classify_band,
     context_cards,
+    market_band_config_public,
     market_summary,
+    market_trace,
     ui_contract,
 )
 
@@ -164,6 +166,51 @@ def test_contract_carries_summary_and_config():
     check("contract market_summary", uc["market_summary"]["code"], MARKET_SUMMARY_BANDED)
     check("contract config id", uc["market_band_config"]["id"], MARKET_BAND_CONFIG["id"])
     check("contract config cuts", uc["market_band_config"]["cards"]["liquidity"]["cuts"], [3, 6])
+
+
+def test_config_v2_versions_the_c17_wording():
+    # The confirmation record names the labels, so re-wording C17 is a new
+    # version that says what it replaced — never an edit of the old one.
+    check("V2 supersedes the first proposal", MARKET_BAND_CONFIG.get("supersedes"),
+          "CTCK_MARKET_BANDS_PROPOSED_20260911")
+    check("still only proposed", MARKET_BAND_CONFIG["status"], "PROPOSED")
+    check("C17 carries the MOMENTUM label set",
+          MARKET_BAND_CONFIG["cards"]["breadth"]["label_set"], "BREADTH_MOMENTUM")
+    check("cuts unchanged by the re-wording", MARKET_BAND_CONFIG["cards"]["breadth"]["cuts"], (2, 4))
+    pub = market_band_config_public()
+    check("public config exposes the label set", pub["cards"]["breadth"]["label_set"], "BREADTH_MOMENTUM")
+
+
+JAN23 = {"momentum": -0.05, "breadth": 0.507, "breadth_change_5d": -0.066,
+         "breadth_change_10d": 0.062, "breadth_valid": True,
+         "breadth_numerator": 599, "breadth_denominator": 1182}
+
+
+def test_market_trace_reproduces_23_jan():
+    # BA's flagged session: 50.7% breadth, down 6.6 pp in five sessions -> P5 -> 1.
+    tr = market_trace(JAN23, {}, market(6, 2, 1))["c17"]
+    check("23/01 rule", tr["rule"], "P5")
+    check("23/01 recomputed = stored", (tr["recomputed"], tr["matches_stored"]), (1, True))
+    check("23/01 breadth five sessions earlier", tr["breadth_5d_ago"], 0.573)
+    check("23/01 breadth ten sessions earlier", tr["breadth_10d_ago"], 0.445)
+    check("23/01 ratio's parts carried", (tr["numerator"], tr["denominator"]), (599, 1182))
+    c16 = market_trace(JAN23, {}, market(6, 2, 1))["c16"]
+    check("C16 base + bonus = stored", (c16["base_points"], c16["breadth_bonus"], c16["matches_stored"]),
+          (2, 0, True))
+
+
+def test_market_trace_c15_parts():
+    fci = {"value": -1.2, "delta5": -0.05, "percentile": 0.05, "history_obs": 600,
+           "event_valid": False, "negative_streak": 0}
+    tr = market_trace({}, fci, market(7, 2, 1))["c15"]
+    check("C15 level + speed + reversal", (tr["level_points"], tr["speed_points"], tr["reversal_points"]),
+          (3, 4, 0))
+    check("C15 recomputed = stored", (tr["recomputed"], tr["matches_stored"]), (7, True))
+
+
+def test_market_trace_says_when_it_does_not_reproduce():
+    tr = market_trace(JAN23, {}, market(6, 2, 3))["c17"]
+    check("a panel that would explain a different score says so", tr["matches_stored"], False)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ Usage:
 import argparse
 import datetime as dt
 import hashlib
+import math
 import sys
 from pathlib import Path
 
@@ -81,6 +82,13 @@ def _market_from(by: dict) -> dict:
         "breadth_valid": breadth is not None,
         "breadth_denominator": meta.get("denominator"),
         "breadth_convention": meta.get("convention"),
+        # For the C17 panel: what the ratio is a ratio OF.
+        "breadth_numerator": meta.get("numerator"),
+        "breadth_universe_count": meta.get("universe_count"),
+        "breadth_ma_obs": meta.get("ma_obs"),
+        "breadth_max_stale_sessions": meta.get("max_stale_sessions"),
+        "breadth_excluded": {k: meta.get(k) for k in (
+            "stale_excluded_count", "invalid_price_count", "insufficient_history_count")},
     }
 
 
@@ -360,8 +368,13 @@ def risk_free_rate(client) -> float:
     return (float(r[0]["value"]) / 100) if r and r[0].get("value") else DEFAULT_RISK_FREE
 
 
-def latest_prices(client, symbols: list[str], as_of: str) -> dict[str, float]:
-    """Close on or before `as_of` for each symbol — the price the score is marked to."""
+def latest_price_bars(client, symbols: list[str], as_of: str) -> dict[str, tuple[str, float]]:
+    """Newest (date, close) on or before `as_of` per symbol.
+
+    Deliberately NO age filter here: the age rule lives in `sec.resolve_price`,
+    which the backfill calls too. Filtering in two loaders is how the two paths
+    came to disagree in the first place.
+    """
     out = {}
     for sym in symbols:
         r = safe_execute(
@@ -369,8 +382,21 @@ def latest_prices(client, symbols: list[str], as_of: str) -> dict[str, float]:
             .lte("date", as_of).order("date", desc=True).limit(1),
             label=f"price {sym}").data
         if r and r[0].get("close"):
-            out[sym] = float(r[0]["close"])
+            out[sym] = (r[0]["date"], float(r[0]["close"]))
     return out
+
+
+def load_session_calendar(client, since: str = "2018-01-01") -> list[str]:
+    """VN-Index session dates — the calendar a price's age is counted on.
+
+    The same series `interbank_interior_gaps` and `count_sessions_held` trust:
+    one row per real session, so a holiday is not an extra day of staleness.
+    """
+    rows = paged_select(
+        lambda o, l: client.table("macro_series").select("date").eq("metric", "vnindex")
+        .gte("date", since).order("date").range(o, o + l - 1),
+        label="session calendar")
+    return [r["date"] for r in rows]
 
 
 def core_history(statements: dict, quarter: str,
@@ -668,8 +694,11 @@ def collect(client, symbols: list[str], quarter: str, prices: dict, coe: float,
                 bal.get(close_q, {}), bal.get(close_q, {}).get(sec.BS_EQUITY)),
         }
         ctx.update(valuation_inputs(st, core, quarter, prices.get(sym), coe, history))
-        ctx["has_market_cap"] = prices.get(sym) is not None and bool(
-            bal.get(close_q, {}).get(sec.BS_SHARES))
+        # Shares belong to the FILING, the price to the SESSION — kept apart so
+        # the backfill, which prices per date, can rebuild the flag per date
+        # instead of inheriting the empty price map it calls collect() with.
+        ctx["has_shares"] = bool(bal.get(close_q, {}).get(sec.BS_SHARES))
+        ctx["has_market_cap"] = prices.get(sym) is not None and ctx["has_shares"]
         out[sym] = {"core": core, "ctx": ctx, "statements": st, "history": history}
     return out
 
@@ -766,6 +795,29 @@ def add_c20_cross_section(collected: dict) -> dict:
     result = sec.c20_cross_section(obs)
     for sym, crit in result["scores"].items():
         collected[sym]["ctx"]["c20_criterion"] = crit
+    # THE TRACE FOR THE C20 PANEL — the fit, this broker's inputs, where it sat.
+    # Written for EVERY broker, in or out of the sample, so "why no C20" has an
+    # answer on the row. Refreshed per date because the backfill re-fits per date.
+    model = result["model"]
+    resid, cheap = model.get("residual") or {}, model.get("cheapness") or {}
+    for sym, d in collected.items():
+        pb, roe = obs[sym]
+        inside = sym in resid
+        fitted = (math.exp(model["a"] + model["b"] * roe)
+                  if inside and model.get("a") is not None and roe is not None else None)
+        d["ctx"]["c20_trace"] = {
+            "status": model.get("status"), "n": model.get("n"),
+            "a": model.get("a"), "b": model.get("b"), "r2": model.get("r2"),
+            "pb": pb, "normalized_roe": roe, "fitted_pb": fitted,
+            "in_sample": inside, "residual": resid.get(sym), "cheapness_pct": cheap.get(sym),
+            "bands": [list(x) for x in sec.C20_V11_BANDS],
+            "min_sample": sec.C20_MIN_SAMPLE,
+            "excluded_reason": None if inside else (
+                "NO_PB" if pb is None or pb <= 0 else
+                "NO_NORMALIZED_ROE" if roe is None else
+                "INSUFFICIENT_SAMPLE" if model.get("status") == "INSUFFICIENT_SAMPLE" else
+                "NOT_RANKED"),
+        }
     return result["model"]
 
 
@@ -923,7 +975,8 @@ def build_row(symbol: str, scored: dict, as_of: str, quarter: str,
         # only READ the scored row (migration 067). Both tabs render this and
         # neither re-derives any of it — sheet 04, API-01/03/04.
         "ui_version": sec_ui.UI_VERSION,
-        "ui_contract": sec_ui.ui_contract(totals, scored.get("ctx") or {}),
+        "ui_contract": sec_ui.ui_contract(totals, scored.get("ctx") or {},
+                                          market=market, fci=fci),
         # STILL "PENDING", AND THE TWO NARRATIVE SYSTEMS ARE NOT THE SAME ONE.
         #
         # This column tracks the RESEARCH-owned free text in
@@ -1015,14 +1068,26 @@ def effective_date_of(quarter: str) -> str:
 
 
 def price_history(client, symbols: list[str], since: str) -> dict:
-    """{symbol: [(date, close)]} ascending, for marking each session to its price."""
+    """{symbol: [(date, close)]} ascending, for marking each session to its price.
+
+    The series OPENS WITH THE SYMBOL'S LAST BAR BEFORE `since`, when one exists.
+    Without it a line that stopped trading before the window resolved to "no
+    price" here but "price N sessions old, beyond the limit" in the daily run —
+    the same valuation (none) with two different explanations on the panel,
+    which is still two answers to one question. Measured on 2026-09-11 for ART:
+    the only difference left between the paths once the age rule was shared.
+    """
     out = {}
     for sym in symbols:
+        prior = safe_execute(
+            client.table("ta_ohlcv").select("date,close").eq("symbol", sym)
+            .lt("date", since).order("date", desc=True).limit(1),
+            label=f"prior price {sym}").data or []
         rows = paged_select(
             lambda o, l, s=sym: client.table("ta_ohlcv").select("date,close")
             .eq("symbol", s).gte("date", since).order("date").range(o, o + l - 1),
             label=f"prices {sym}")
-        out[sym] = [(r["date"], float(r["close"])) for r in rows if r.get("close")]
+        out[sym] = [(r["date"], float(r["close"])) for r in prior + rows if r.get("close")]
     return out
 
 
@@ -1056,6 +1121,9 @@ def fci_context_from(series: list[tuple[str, float]], as_of: str) -> dict:
     return _fci_state([v for _, v in cut], as_of)
 
 
+BACKFILL_UPSERT_BATCH = 50
+
+
 def run_backfill(client, args, st) -> int:
     """Score every session that already has market series, point-in-time.
 
@@ -1073,7 +1141,13 @@ def run_backfill(client, args, st) -> int:
 
     symbols = args.symbols or broker_universe(client)
     coe = risk_free_rate(client) + EQUITY_RISK_PREMIUM
-    prices = price_history(client, symbols, dates[0])
+    calendar = load_session_calendar(client)
+    # REACH BACK PAST THE WINDOW by the age limit. Loading from `dates[0]` made
+    # the window's own start a hidden price floor — a broker whose last trade
+    # predated it had no price here while the daily path (no floor at all)
+    # valued it. Both now resolve through `sec.resolve_price`.
+    prices = price_history(client, symbols,
+                           sec.sessions_before(calendar, dates[0], sec.PRICE_MAX_AGE_SESSIONS + 1))
     fci_series = load_fci_series(client)
     market_rows = paged_select(
         lambda o, l: client.table("macro_series")
@@ -1116,9 +1190,16 @@ def run_backfill(client, args, st) -> int:
                 # and took C19 to N/A for the entire universe — while the daily
                 # path, which passes it, scored the same brokers 8/8. The
                 # backfill ran last, so it overwrote the good rows.
+                px, d["ctx"]["price_basis"] = sec.resolve_price(
+                    sec.price_bar_asof(prices.get(sym, []), as_of), as_of, calendar)
                 d["ctx"].update(valuation_inputs(
-                    d["statements"], d["core"], quarter,
-                    price_asof(prices.get(sym, []), as_of), coe, d["history"]))
+                    d["statements"], d["core"], quarter, px, coe, d["history"]))
+                # PER DATE, like the price it depends on. collect() above runs
+                # with NO prices, so the flag it set was False for every broker
+                # on every backfilled session, and each N/A C19 reported "no
+                # market cap" (4,059 stored cells) in place of its real reason.
+                # Only the reason moved — C19's points never read this flag.
+                d["ctx"]["has_market_cap"] = px is not None and d["ctx"].get("has_shares", False)
                 # Same reason `history` is required above: the C5 proxy and the
                 # C20 cross-section are BOTH date-dependent, so a per-date
                 # backfill must refresh them per date. Carrying one session's
@@ -1153,11 +1234,16 @@ def run_backfill(client, args, st) -> int:
                 row = build_row(sym, sc, as_of, quarter, market, fci, status)
                 all_rows.append(row)
 
-        for j in range(0, len(all_rows), 200):
+        # 50 rows per request, not 200. Each row now carries the panel traces
+        # (market inputs, the C20 fit, the price basis), and a 200-row upsert
+        # of those hit Postgres' statement timeout mid-quarter on 2026-09-11 —
+        # leaving the table half on the old contract and half on the new.
+        for j in range(0, len(all_rows), BACKFILL_UPSERT_BATCH):
             safe_execute(
                 client.table("fa_securities_scores")
-                .upsert(all_rows[j:j + 200], on_conflict="symbol,as_of_date,model_version"),
-                label=f"backfill upsert {quarter} [{j // 200}]")
+                .upsert(all_rows[j:j + BACKFILL_UPSERT_BATCH],
+                        on_conflict="symbol,as_of_date,model_version"),
+                label=f"backfill upsert {quarter} [{j // BACKFILL_UPSERT_BATCH}]")
         total += len(all_rows)
         print(f"    wrote {len(all_rows):,} rows ({total:,} so far)")
 
@@ -1224,7 +1310,16 @@ def main():
         st.warn("Market series", f"no breadth for {as_of} — C16/C17 go N/A, "
                                  f"costing 13 points of coverage")
 
-    prices = latest_prices(client, symbols, as_of)
+    calendar = load_session_calendar(client)
+    prices, price_basis = {}, {}
+    for sym, bar in latest_price_bars(client, symbols, as_of).items():
+        px, price_basis[sym] = sec.resolve_price(bar, as_of, calendar)
+        if px is not None:
+            prices[sym] = px
+    stale = sorted(s for s, b in price_basis.items() if b["reason"] == "STALE_PRICE")
+    if stale:
+        print(f"Price older than {sec.PRICE_MAX_AGE_SESSIONS} sessions, not used for "
+              f"valuation: {', '.join(f'{s} ({price_basis[s]["date"]})' for s in stale)}")
     coe = risk_free_rate(client) + EQUITY_RISK_PREMIUM
     print(f"Cost of equity {coe:.1%} (10y govbond + {EQUITY_RISK_PREMIUM:.0%} premium); "
           f"prices for {len(prices)}/{len(symbols)} brokers")
@@ -1235,6 +1330,8 @@ def main():
               f"(of {len(shares_all)} uploaded rows)")
     collected = collect(client, symbols, quarter, prices, coe,
                         adtv_yoy=market_adtv_yoy(client, as_of), shares=shares)
+    for sym, d in collected.items():
+        d["ctx"]["price_basis"] = price_basis.get(sym) or sec.resolve_price(None, as_of, calendar)[1]
     st.require("Collected brokers", len(collected), minimum=1, unit="symbols",
                detail=f"of {len(symbols)} in the ICB {SECURITIES_ICB_L4} universe")
     add_percentiles(collected)

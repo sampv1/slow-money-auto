@@ -42,6 +42,7 @@ import { SecContextBlock } from "./sec-context";
 import { SecGuide } from "./sec-guide";
 import { PopRow, SecPopover } from "./sec-popover";
 import { SecScrollBox } from "./sec-scroll-box";
+import { C20TraceRows, MarketTraceRows, PriceBasisRow } from "./sec-trace";
 
 // Brokers are far more liquid than the tail of the universe, so the other
 // tabs' 20k floor would filter nothing. Kept as a control rather than removed:
@@ -115,12 +116,18 @@ export function SecScannerClient({
   locale,
   dates,
   selectedDate,
+  internal = false,
+  labelsDisabled = false,
 }: {
   rows: SecScore[];
   universe: UniverseLiquidityRow[];
   locale: Locale;
   dates: string[];
   selectedDate: string;
+  /** Staff session: may see the PROPOSED market-state words, marked unconfirmed. */
+  internal?: boolean;
+  /** Kill switch for the market-state words on the customer view. */
+  labelsDisabled?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -288,6 +295,18 @@ export function SecScannerClient({
           <PopRow k={t(locale, "secCellPeriod")}>{secCellPeriod(c.key, r, locale)}</PopRow>
           <PopRow k={t(locale, "secCellMethod")}>{t(locale, c.hint)}</PopRow>
           {source ? <PopRow k={t(locale, "secCellSource")}>{source}</PopRow> : null}
+          {/* The basis for criteria that are not a single input value (BA §9.1):
+              the market criteria's inputs and matched rule, the C20 peer fit,
+              and which session's price valuation used. */}
+          {(c.key === "c15" || c.key === "c16" || c.key === "c17") && r.ui_contract?.market_trace ? (
+            <MarketTraceRows which={c.key} trace={r.ui_contract.market_trace} locale={locale} />
+          ) : null}
+          {(c.key === "c19" || c.key === "c20") && r.ui_contract?.price_basis ? (
+            <PriceBasisRow basis={r.ui_contract.price_basis} locale={locale} />
+          ) : null}
+          {c.key === "c20" && r.ui_contract?.c20_trace ? (
+            <C20TraceRows trace={r.ui_contract.c20_trace} locale={locale} />
+          ) : null}
         </SecPopover>
       </td>
     );
@@ -524,7 +543,13 @@ export function SecScannerClient({
       ) : null}
 
       <div aria-busy={isPending} className={isPending ? "opacity-40 pointer-events-none select-none" : undefined}>
-        <SecContextBlock rows={rows} locale={locale} id="sec-context" />
+        <SecContextBlock
+          rows={rows}
+          locale={locale}
+          id="sec-context"
+          internal={internal}
+          labelsDisabled={labelsDisabled}
+        />
 
         {/* ONE tab row, between the market context and the table (§3, UI02).
             The selected tab is bold AND underlined — never colour alone (§7). */}

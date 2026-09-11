@@ -4,6 +4,7 @@ import { getSecDates, getSecRows, getUniverseLiquidity } from "@/lib/cached-data
 import { getLocale, t } from "@/lib/i18n";
 import { SecScannerClient } from "./sec-scanner-client";
 import { DataError } from "@/components/data-error";
+import { getUserRole, isStaff } from "@/lib/supabase-server";
 
 export const revalidate = 0;
 
@@ -62,6 +63,17 @@ export default async function FaScannerSecuritiesPage({
     );
   }
 
+  // THE CUSTOMER VIEW HIDES THE PROPOSED MARKET-STATE WORDS; STAFF SEE THEM
+  // MARKED UNCONFIRMED (BA, 2026-09-11). Decided per request on the server, so
+  // no client flag can reveal them. The preview env flag exists for local and
+  // preview builds and is ignored on Vercel production by construction — a
+  // normal deploy can never switch the words on for customers.
+  const role = await getUserRole().catch(() => null);
+  const internal =
+    isStaff(role) ||
+    (process.env.SEC_MARKET_LABELS_PREVIEW === "1" && process.env.VERCEL_ENV !== "production");
+  const labelsDisabled = process.env.SEC_MARKET_LABELS_DISABLED === "1";
+
   return (
     <div>
       {subtitle}
@@ -72,6 +84,8 @@ export default async function FaScannerSecuritiesPage({
         locale={locale}
         dates={dates}
         selectedDate={selected}
+        internal={internal}
+        labelsDisabled={labelsDisabled}
       />
     </div>
   );

@@ -157,6 +157,10 @@ export type SecUiContract = {
   // --- "Chi tiết 20 tiêu chí" ---
   market_summary?: SecMarketSummary;
   market_band_config?: SecMarketBandConfig | null;
+  // --- panel traces (2026-09-11) ---
+  market_trace?: SecMarketTrace | null;
+  c20_trace?: SecC20Trace | null;
+  price_basis?: SecPriceBasis | null;
 };
 
 
@@ -927,14 +931,49 @@ export type SecMarketBandConfig = {
   id: string;
   status: "PROPOSED" | "CONFIRMED" | string;
   source: string;
-  cards: Record<SecCardKey, { max: number; cuts: [number, number] }>;
+  cards: Record<SecCardKey, { max: number; cuts: [number, number]; label_set?: string | null }>;
+  supersedes?: string | null;
 };
 
 type Key = Parameters<typeof t>[1];
 
-const CARD_WORD: Record<SecCardKey, string> = {
-  support_total: "Support", financial: "Financial", liquidity: "Liquidity", breadth: "Breadth",
+/**
+ * Which i18n word family a card's bands use, from the CONFIG's label set —
+ * so re-wording a card is a new config version, never a silent string swap.
+ * C17 moved from level words ("Lan tỏa hẹp/rộng") to BREADTH_MOMENTUM in V2.
+ */
+const LABEL_SET_WORD: Record<string, string> = {
+  SUPPORT: "Support",
+  FINANCIAL: "Financial",
+  LIQUIDITY: "Liquidity",
+  BREADTH_MOMENTUM: "BreadthMom",
 };
+
+function cardWord(key: SecCardKey, config: SecMarketBandConfig | null | undefined): string | null {
+  const ls = config?.cards?.[key]?.label_set;
+  return ls ? LABEL_SET_WORD[ls] ?? null : null;
+}
+
+/**
+ * Who may see the state words (BA, 2026-09-11: "Keep hidden until confirmed").
+ *
+ *   OFFICIAL — the config is CONFIRMED and the kill switch is off: everyone.
+ *   PREVIEW  — staff (or a non-production preview flag), config not confirmed:
+ *              the proposed words, marked unconfirmed.
+ *   HIDDEN   — everyone else: scores and inputs, no state words, no conclusion.
+ *
+ * One function, so the card, its info panel and the sentence cannot disagree.
+ */
+export type SecBandMode = "OFFICIAL" | "PREVIEW" | "HIDDEN";
+
+export function secBandMode(
+  config: SecMarketBandConfig | null | undefined,
+  opts: { internal: boolean; disabled: boolean },
+): SecBandMode {
+  if (!config) return "HIDDEN";
+  if (config.status === "CONFIRMED" && !opts.disabled) return "OFFICIAL";
+  return opts.internal ? "PREVIEW" : "HIDDEN";
+}
 
 /**
  * Colour by the state's MEANING (§11): low/weak/narrow a muted orange, neutral
@@ -968,20 +1007,41 @@ export function fmtExact(n: number): string {
   return formatNumber(n, oneDecimal ? 1 : 2);
 }
 
-/** A market card's state line and its one-sentence explanation. */
+const NEUTRAL_EXPLAIN: Record<SecCardKey, Key> = {
+  support_total: "secCtxNeutralSupport",
+  financial: "secCtxNeutralFinancial",
+  liquidity: "secCtxNeutralLiquidity",
+  breadth: "secCtxNeutralBreadth",
+};
+
+/**
+ * A market card's state line and one-sentence explanation, for a display mode.
+ *
+ * In HIDDEN mode a band that EXISTS in the data still renders "Chưa có phân
+ * loại trạng thái" with a neutral description — the word is withheld, not the
+ * measurement. Data states (insufficient, out of range, provisional) render the
+ * same in every mode, because they describe the data rather than interpret it.
+ */
 export function secCardState(
-  card: SecContextCard | undefined, key: SecCardKey, locale: Locale,
-): { label: string; explain: string; tone: string; banded: boolean } {
+  card: SecContextCard | undefined, key: SecCardKey,
+  config: SecMarketBandConfig | null | undefined, mode: SecBandMode, locale: Locale,
+): { label: string; explain: string; tone: string; banded: boolean; preview: boolean } {
   // A contract written before this spec has no `band`; read its `insufficient`
   // flag rather than inventing a band for it.
   const band: SecBand = card?.band ?? (card?.insufficient ? "INSUFFICIENT" : "NO_BAND_MAPPING");
-  const w = CARD_WORD[key];
+  const neutral = {
+    label: t(locale, "secCtxNoBand"), explain: t(locale, NEUTRAL_EXPLAIN[key]),
+    tone: "text-fg-muted", banded: false, preview: false,
+  };
   if (card && (band === "LOW" || band === "MID" || band === "HIGH")) {
+    const w = cardWord(key, config);
+    if (mode === "HIDDEN" || !w) return neutral;
     return {
       label: t(locale, `secBand${w}${band}` as Key),
       explain: t(locale, `secBandWhy${w}${band}` as Key),
       tone: BAND_TONE[band],
       banded: true,
+      preview: mode === "PREVIEW",
     };
   }
   if (!card || band === "INSUFFICIENT") {
@@ -989,20 +1049,18 @@ export function secCardState(
       label: t(locale, key === "support_total" ? "secCtxInsufficientTotal" : "secCtxInsufficient"),
       explain: t(locale, "secCtxInsufficientWhy")
         .replace("{c}", (card?.missing ?? []).map((c) => c.toUpperCase()).join(", ") || "—"),
-      tone: "text-fg-muted",
-      banded: false,
+      tone: "text-fg-muted", banded: false, preview: false,
     };
   }
   if (band === "OUT_OF_RANGE") {
     return { label: t(locale, "secCtxOutOfRange"), explain: t(locale, "secCtxOutOfRangeWhy"),
-             tone: "text-fg-muted", banded: false };
+             tone: "text-fg-muted", banded: false, preview: false };
   }
   if (band === "PROVISIONAL") {
     return { label: t(locale, "secCtxProvisionalState"), explain: t(locale, "secCtxProvisionalWhy"),
-             tone: "text-fg-muted", banded: false };
+             tone: "text-fg-muted", banded: false, preview: false };
   }
-  return { label: t(locale, "secCtxNoBand"), explain: t(locale, "secCtxNoBandWhyShort"),
-           tone: "text-fg-muted", banded: false };
+  return neutral;
 }
 
 /** "0–<10: Mức hỗ trợ thấp" … read from the contract's config, never restated. */
@@ -1012,7 +1070,8 @@ export function secBandRanges(
   const spec = config?.cards?.[key];
   if (!spec) return [];
   const [lo, hi] = spec.cuts;
-  const w = CARD_WORD[key];
+  const w = cardWord(key, config);
+  if (!w) return [];
   const f = (n: number) => fmtExact(n);
   return [
     `${f(0)}–<${f(lo)}: ${t(locale, `secBand${w}LOW` as Key)}`,
@@ -1028,16 +1087,22 @@ export function secRuleStatus(config: SecMarketBandConfig | null | undefined, lo
     .replace("{id}", config.id);
 }
 
-export function secMarketSummaryText(summary: SecMarketSummary | undefined, locale: Locale): string {
-  if (!summary) return t(locale, "secSumInsufficient");
+export function secMarketSummaryText(
+  summary: SecMarketSummary | undefined, config: SecMarketBandConfig | null | undefined,
+  mode: SecBandMode, locale: Locale,
+): string {
+  if (!summary || summary.code === "MARKET_INSUFFICIENT") return t(locale, "secSumInsufficient");
   if (summary.code === "MARKET_NO_BAND") return t(locale, "secSumNoBand");
-  if (summary.code !== "MARKET_BANDED") return t(locale, "secSumInsufficient");
+  // Customers get no market conclusion from an unconfirmed rule (BA TT02).
+  if (mode === "HIDDEN") return t(locale, "secSumHidden");
+  const w = (["support_total", "financial", "liquidity", "breadth"] as const).map((k) => cardWord(k, config));
+  if (w.some((x) => !x)) return t(locale, "secSumHidden");
   const b = summary.bands;
   return t(locale, "secSumTemplate")
-    .replace("{support}", t(locale, `secSumSupport${b.support_total}` as Key))
-    .replace("{financial}", t(locale, `secSumFinancial${b.financial}` as Key))
-    .replace("{liquidity}", t(locale, `secSumLiquidity${b.liquidity}` as Key))
-    .replace("{breadth}", t(locale, `secSumBreadth${b.breadth}` as Key));
+    .replace("{support}", t(locale, `secSum${w[0]}${b.support_total}` as Key))
+    .replace("{financial}", t(locale, `secSum${w[1]}${b.financial}` as Key))
+    .replace("{liquidity}", t(locale, `secSum${w[2]}${b.liquidity}` as Key))
+    .replace("{breadth}", t(locale, `secSum${w[3]}${b.breadth}` as Key));
 }
 
 /**
@@ -1130,3 +1195,42 @@ export function secCellPeriod(key: string, row: SecScore, locale: Locale): strin
   }
   return row.quality_period ?? "—";
 }
+
+// --- panel traces (2026-09-11) --------------------------------------------------
+
+/** Inputs behind C15–C17, each recomputed by the scorer's own functions. */
+export type SecMarketTrace = {
+  c15: {
+    fci: number | null; fci_as_of: string | null; delta5: number | null; delta10: number | null;
+    percentile: number | null; history_obs: number | null; negative_streak: number | null;
+    days_since_reversal: number | null; level_points: number | null; speed_points: number | null;
+    reversal_points: number | null; confidence: string | null; recomputed: number | null;
+    matches_stored: boolean;
+  } | null;
+  c16: {
+    momentum: number | null; base_points: number | null; breadth_bonus: number | null;
+    recomputed: number | null; matches_stored: boolean;
+  } | null;
+  c17: {
+    breadth: number | null; numerator: number | null; denominator: number | null;
+    universe_count: number | null; excluded: Record<string, number | null> | null;
+    ma_obs: number | null; max_stale_sessions: number | null; convention: string | null;
+    breadth_5d_ago: number | null; breadth_10d_ago: number | null;
+    change_5d: number | null; change_10d: number | null; rule: string | null;
+    recomputed: number | null; matches_stored: boolean;
+  } | null;
+};
+
+/** The C20 peer fit and this broker's place in it. */
+export type SecC20Trace = {
+  status: string | null; n: number | null; a: number | null; b: number | null; r2: number | null;
+  pb: number | null; normalized_roe: number | null; fitted_pb: number | null;
+  in_sample: boolean; residual: number | null; cheapness_pct: number | null;
+  bands: [number, number][]; min_sample: number; excluded_reason: string | null;
+};
+
+/** Which session's price valuation used, under the 60-session age rule. */
+export type SecPriceBasis = {
+  rule_id: string; max_age_sessions: number; date: string | null;
+  age_sessions: number | null; usable: boolean; reason: string | null;
+};
