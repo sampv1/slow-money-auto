@@ -4,6 +4,8 @@
 **Ngày:** 11/09/2026
 **Mô hình:** `CTCK_V11v5` (không đổi) · **Phạm vi:** chỉ giao diện; không rescore, không đổi công thức, trọng số, mẫu số hay điều kiện công bố (TQ §2.6, §13)
 **Phiên dùng để nghiệm thu:** 10/09/2026, 42 công ty chứng khoán (bộ lọc thanh khoản đặt 0 để đủ 42 dòng)
+**Triển khai production:** commit `581dac3`, 11/09/2026 13:37 UTC · số đo mục 5 lấy trực tiếp từ www.loctinhieu.com sau triển khai
+**Ảnh bàn giao (TQ §15):** hồ sơ nghiệm thu, mục “12 cột”: https://claude.ai/code/artifact/e3138c74-9456-41d1-87b2-ab1412f21242
 
 ## 0. Tóm tắt
 
