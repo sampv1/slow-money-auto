@@ -27,6 +27,10 @@ export function SecScrollBox({
     const el = box.current;
     if (!el) return;
     setMore(el.scrollWidth - el.clientWidth - el.scrollLeft > 2);
+    // The VISIBLE width, for anything inside the table that must fit the
+    // viewport rather than the table's scroll width — the summary tab's
+    // explanation panel ("Tổng quan ngành 12 cột" §8.1).
+    el.style.setProperty("--sec-box-w", `${el.clientWidth}px`);
   }, []);
 
   useEffect(() => {

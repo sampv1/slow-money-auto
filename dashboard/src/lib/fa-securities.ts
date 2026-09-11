@@ -641,15 +641,18 @@ export function fundingSourceStyle(field: SecField | undefined): string {
  * three readings.
  */
 export function secDataStatus(row: SecScore, locale: Locale): {
-  headline: string; detail: string; className: string; pass: boolean;
+  headline: string; coverage: string; className: string; pass: boolean;
 } {
+  // "Tổng quan ngành 12 cột" §6.12: the headline is the PUBLICATION right —
+  // "Đủ điều kiện" / "Chưa đủ điều kiện" — and never "Đủ dữ liệu", which a
+  // reader takes to mean nothing is N/A or provisional. Coverage is kept, but as
+  // its own labelled figure ("Dữ liệu: 96%"), so it cannot stand in for the gate.
   const c = row.ui_contract;
   const pass = c?.publish_gate.pass ?? false;
   const pct = c ? Math.round(c.coverage_display * 100) : null;
-  const shown = pct === null ? "—" : `${pct}%`;
   return {
-    headline: `${t(locale, pass ? "secDataEnough" : "secDataReferenceOnly")} · ${shown}`,
-    detail: t(locale, pass ? "secDataScoreShown" : "secDataScoreWithheld"),
+    headline: t(locale, pass ? "secPubEligible" : "secPubNotEligible"),
+    coverage: t(locale, "secPubCoverage").replace("{p}", pct === null ? "—" : `${pct}%`),
     className: pass ? "text-emerald-800" : "text-amber-800",
     pass,
   };
@@ -819,46 +822,111 @@ export function secCriterionScore(cell: SecCriterionCell | undefined): string {
 
 
 /**
- * §8.9 "Nhận xét chính" — rendered from the BACKEND's rule, not composed here.
+ * "Nhận xét chính" as ONE short sentence — rendered from the BACKEND's rule,
+ * not composed here.
  *
  * `securities_ui.main_comment` picks the strength and the limitation from the
  * three group levels and stamps `rule_id`, so the same data and the same rule
  * version always give the same sentence. This function only translates the
- * code it chose. Composing the sentence in the UI would put a versioned
- * business rule in a place with no version.
+ * code it chose and the levels it recorded.
+ *
+ * THE LEVEL IS STATED, NOT IMPLIED BY ORDER ("Tổng quan ngành 12 cột" §6.9,
+ * TQ06). The previous sentence said "Sức khỏe vốn ở mức tốt hơn" for a broker
+ * whose capital group scored MID and whose other two scored LOW: "better" was
+ * true only relative to the other two, and the shortening BA asked for
+ * ("Hiệu quả tốt; vốn còn hạn chế") would have turned it into an absolute
+ * "tốt" the rubric never awarded. Every group word here is followed by the
+ * approved band the backend attached to that group, so "mức tốt" appears only
+ * where the group really is GOOD. The same sentence serves the cell and the
+ * panel, so the two can never contradict each other (§13).
  */
-export function secMainCommentText(row: SecScore, locale: Locale): string {
+export function secMainShortText(row: SecScore, locale: Locale): string {
   const m = row.ui_contract?.main_comment;
-  if (!m) return t(locale, "secMainInsufficient");
-  const groupName = (k?: string) =>
-    k ? t(locale, ({ asset: "secGroupAsset", operation: "secGroupOperation",
-                     capital: "secGroupCapital" }[k] ?? "secGroupAsset") as Parameters<typeof t>[1])
-      : "";
+  if (!m) return t(locale, "secMainShortInsufficient");
+  const group = (k?: string) =>
+    t(locale, ({ asset: "secMainGrpAsset", operation: "secMainGrpOperation",
+                 capital: "secMainGrpCapital" }[k ?? ""] ?? "secMainGrpAsset") as Parameters<typeof t>[1]);
+  const lvKey: Partial<Record<SecLevel, Parameters<typeof t>[1]>> = {
+    GOOD: "secMainLvGood", FAIR: "secMainLvFair", MID: "secMainLvMid", LOW: "secMainLvLow",
+  };
+  const level = (l?: SecLevel) => (l && lvKey[l] ? t(locale, lvKey[l]!) : null);
+  const cap = (s: string) => s.charAt(0).toLocaleUpperCase(locale) + s.slice(1);
   switch (m.code) {
-    case "MAIN_STRENGTH_LIMIT":
-      return t(locale, "secMainStrengthLimit")
-        .replace("{strength}", t(locale, "secMainStrengthOf").replace("{group}", groupName(m.strength)))
-        .replace("{limit}", t(locale, "secMainLimitOf").replace("{group}", groupName(m.limit)));
-    case "MAIN_UNIFORM":
-      return t(locale, "secMainUniform");
+    case "MAIN_STRENGTH_LIMIT": {
+      const sl = level(m.strength_level), ll = level(m.limit_level);
+      if (!sl || !ll) return t(locale, "secMainShortInsufficient");
+      return t(locale, "secMainShortSL")
+        .replace("{S}", cap(group(m.strength))).replace("{sl}", sl)
+        .replace("{L}", group(m.limit)).replace("{ll}", ll);
+    }
+    case "MAIN_UNIFORM": {
+      const lv = level(m.level);
+      return lv ? t(locale, "secMainShortUniform").replace("{lv}", lv)
+                : t(locale, "secMainShortInsufficient");
+    }
     case "MAIN_INCOMPLETE":
-      return t(locale, "secMainIncomplete")
-        .replace("{groups}", (m.missing ?? []).map(groupName).join(", "));
+      return t(locale, "secMainShortIncomplete")
+        .replace("{groups}", (m.missing ?? []).map((k) => group(k)).join(", "));
     default:
-      return t(locale, "secMainInsufficient");
+      return t(locale, "secMainShortInsufficient");
   }
 }
 
-/** "Tài sản: Khá · Hiệu quả: Tốt · Vốn: Trung bình" — only when all three band. */
-export function secMainSubLine(row: SecScore, locale: Locale): string | null {
-  const sg = row.ui_contract?.subgroups;
-  if (!sg) return null;
-  const lab = (k: "asset" | "operation" | "capital") => levelLabel(sg[k]?.level, locale);
-  const a = lab("asset"), o = lab("operation"), c = lab("capital");
-  if (!a || !o || !c) return null;
-  const strip = (x: string) => x.replace(/^Mức điểm\s*/i, "").replace(/\s*score level$/i, "");
-  return t(locale, "secMainSub")
-    .replace("{a}", strip(a)).replace("{o}", strip(o)).replace("{c}", strip(c));
+/**
+ * The "Điểm cần lưu ý" CELL: one finding and its status, never the list.
+ *
+ * §6.8 wants "Chất lượng tài sản: 0 điểm" over "Theo bộ tiêu chí", or the
+ * provisional word when the finding comes from a provisional method — so the
+ * status travels with the finding in the table, not only in the panel. The
+ * criterion is named from the same `secC{n}` catalog as everywhere else, which
+ * is also what keeps "Chất lượng tài sản" from being shortened to a "Tài sản: 0"
+ * that reads as a company with no assets. The full sentence, and every further
+ * finding, is in the explanation panel; `more` is how many.
+ */
+export function secRiskCell(row: SecScore, locale: Locale): {
+  main: string; status: string | null; more: number; none: boolean;
+} {
+  const items = row.ui_contract?.narratives.risks.items ?? [];
+  if (items.length === 0) {
+    return { main: t(locale, "secRiskShortNone"), status: null, more: 0, none: true };
+  }
+  const r = items[0];
+  const name = t(locale, `secC${r.criterion_id.slice(1)}` as Parameters<typeof t>[1]).replace(/ /g, " ");
+  const key = RISK_CELL_KEYS[r.code] ?? "secRiskCellZero";
+  return {
+    main: t(locale, key).replace("{name}", name),
+    status: t(locale, r.provisional ? "secStProvisional" : "secRiskByRubric"),
+    more: items.length - 1,
+    none: false,
+  };
+}
+
+const RISK_CELL_KEYS: Record<string, Parameters<typeof t>[1]> = {
+  C9_PROXY_BOTTOM20: "secRiskCellC9",
+  C5_PROXY_WEAK: "secRiskCellC5",
+  C20_EXPENSIVE_BOTTOM20: "secRiskCellC20",
+};
+
+/** "2026-Q2" → "Q2/2026"; anything else passes through untouched. */
+export function secQuarter(p: string | null | undefined): string | null {
+  const m = /^(\d{4})-Q([1-4])$/.exec(p ?? "");
+  return m ? `Q${m[2]}/${m[1]}` : (p ?? null);
+}
+
+/**
+ * "Phiên 10/09/2026 · Kỳ BCTC Q2/2026" above the table (§3).
+ *
+ * The session and the reporting period are two different clocks and both are
+ * named. When the rows on screen do not share ONE period, the line says the
+ * period varies by ticker instead of printing whichever came first — a single
+ * period would tell a reader every broker was measured on the same filing.
+ */
+export function secPeriodLine(rows: SecScore[], session: string, locale: Locale): string {
+  const periods = new Set(rows.map((r) => r.quality_period).filter((p): p is string => !!p));
+  const q = periods.size === 1
+    ? t(locale, "secPeriodShort").replace("{q}", secQuarter([...periods][0]) ?? "")
+    : t(locale, "secPeriodPerSymbol");
+  return `${t(locale, "secSessionShort").replace("{d}", secDmy(session))} · ${q}`;
 }
 
 /**
@@ -880,8 +948,10 @@ export function secShareCell(row: SecScore, locale: Locale): {
   const rank = ms.rank != null
     ? ` · ${t(locale, "secShareRank").replace("{r}", String(ms.rank))}`
     : "";
-  const sub = [ms.exchange, ms.period].filter(Boolean).join(" · ") || null;
-  return { main: `${fmtPct(ms.pct)}${rank}`, sub, verified: true };
+  // The exchange is NOT repeated: the column header already says HOSE (§6.4).
+  // The period stays, and it is the figure's own period — an older release
+  // shows as the older quarter rather than passing for the current one.
+  return { main: `${fmtPct(ms.pct)}${rank}`, sub: secQuarter(ms.period), verified: true };
 }
 
 /** §8.11 — which valuation conclusion the model permits, in words. */

@@ -18,6 +18,7 @@ import {
   secCriterionName,
   secCriterionStatus,
   secDataStatus,
+  secPeriodLine,
   secDisplayScore,
   secDmy,
   secGateReasons,
@@ -453,6 +454,8 @@ export function SecScannerClient({
                   >
                     {status.headline}
                   </div>
+                  {/* Coverage is labelled as coverage, never as the status. */}
+                  <div className="sec-note text-fg-label tnum">{status.coverage}</div>
                 </td>
               </tr>
             );
@@ -573,6 +576,11 @@ export function SecScannerClient({
               {t(locale, x.label)}
             </button>
           ))}
+          {/* §3: the session and the reporting period, right-aligned — two
+              different clocks, both named. */}
+          <span className="ml-auto self-center pl-3 sec-note text-fg-label tnum hidden sm:inline" data-period-line="">
+            {secPeriodLine(filtered, selectedDate, locale)}
+          </span>
         </div>
 
         {/* The guide's step buttons focus this anchor, so it needs to be
