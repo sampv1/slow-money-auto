@@ -25,7 +25,7 @@
 | FB §9 · FB11–FB12 | Panel căn cứ theo loại tiêu chí | **Một phần** — xem mục 6 |
 | TT §8, FB §6 | Phân tích 244 phiên | **Đã làm** — đề xuất giữ ngưỡng |
 | FB §3.1 · FB14 | Mô tả căn header | **Đã sửa mô tả** — layout không đổi |
-| FB §13 · FB15 | Ảnh acceptance | **Đã bổ sung** vào hồ sơ nghiệm thu |
+| FB §13 · FB15 | Ảnh acceptance | **Đã bổ sung** vào hồ sơ nghiệm thu, mục “11/09”: https://claude.ai/code/artifact/e3138c74-9456-41d1-87b2-ab1412f21242 |
 | FB §10 · FB13 | C18, kết luận định giá | Giữ nguyên trạng thái chưa có mapping |
 
 ## 2. Chế độ hiển thị bốn ô thị trường
