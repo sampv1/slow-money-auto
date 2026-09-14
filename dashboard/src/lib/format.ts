@@ -13,6 +13,13 @@ export function todayVn(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date());
 }
 
+/** `YYYY-MM-DD…` → `dd/mm/yyyy` in both locales; "—" when absent. */
+export function formatDateDmy(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
 /**
  * The number locale for the whole app: Vietnamese convention \u2014 decimal COMMA,
  * thousands PERIOD. `1.773,41` and `25.516`, never `1,773.41`.

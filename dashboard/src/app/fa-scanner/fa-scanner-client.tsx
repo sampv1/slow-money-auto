@@ -22,6 +22,7 @@ import {
   pointsColor,
 } from "@/lib/fa";
 import { TABLE_FREEZE, THEAD_STICKY } from "@/lib/table";
+import { formatDateDmy } from "@/lib/format";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { PinButton } from "@/components/pin-button";
@@ -31,7 +32,7 @@ import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
 // bilingual. This set is the manufacturing rubric; real estate / banks rubrics
 // will add their own component sets later, so keep it a data-driven list.
 type PtsKey = (typeof FA_COMPONENTS)[number]["pts"];
-type SortKey = "total_score" | "symbol" | "industry" | PtsKey | FaExtraKey;
+type SortKey = "total_score" | "symbol" | "industry" | "release_date" | PtsKey | FaExtraKey;
 
 const N_QUARTERLY = FA_EXTRA.filter((c) => c.group === "q").length;
 const N_DAILY = FA_EXTRA.filter((c) => c.group === "d").length;
@@ -75,6 +76,7 @@ export function FaScannerClient({
   selectedQuarter,
   quarterly,
   priorQuarter,
+  releaseDates,
 }: {
   rows: FaScore[];
   universe: UniverseLiquidityRow[];
@@ -87,6 +89,8 @@ export function FaScannerClient({
   // Map serialization. Rebuilt into a Map once, below.
   quarterly: [string, QuarterlyFacts][];
   priorQuarter: string;
+  /** symbol -> publication date (YYYY-MM-DD) of the selected quarter's statements. Sparse. */
+  releaseDates: Record<string, string>;
 }) {
   const router = useRouter();
   // Pending state for the quarter switch: router.push runs a server round-trip
@@ -206,7 +210,7 @@ export function FaScannerClient({
         default:
           // "symbol" and "industry" are compared as text in the sort itself and
           // never reach here; the rest are real FaScore numeric columns.
-          return r[sortKey as Exclude<SortKey, "symbol" | "industry" | FaExtraKey>];
+          return r[sortKey as Exclude<SortKey, "symbol" | "industry" | "release_date" | FaExtraKey>];
       }
     };
 
@@ -228,6 +232,16 @@ export function FaScannerClient({
         if (!bi) return -1;
         const cmp = ai.localeCompare(bi, locale === "en" ? "en" : "vi");
         return sortAsc ? cmp : -cmp;
+      } else if (sortKey === "release_date") {
+        // ISO dates order correctly as plain text. Undated rows sort last in
+        // both directions, like every null column here.
+        const ad = releaseDates[a.symbol] ?? "";
+        const bd = releaseDates[b.symbol] ?? "";
+        if (!ad && !bd) return 0;
+        if (!ad) return 1;
+        if (!bd) return -1;
+        if (ad === bd) return 0;
+        return (ad < bd) === sortAsc ? -1 : 1;
       } else {
         // Nulls sort last regardless of direction.
         const an = pick(a);
@@ -246,7 +260,7 @@ export function FaScannerClient({
     // After the filters too: a pinned symbol that fails a floor stays hidden,
     // or the row count above the table would stop describing what is in it.
     return floatPinned(out, pinned, (r) => r.symbol);
-  }, [preIndustry, industryFilter, industry, locale,
+  }, [preIndustry, industryFilter, industry, locale, releaseDates,
       quarterlyBySymbol, sortKey, sortAsc, pinned]);
 
   function toggleSort(key: SortKey) {
@@ -428,6 +442,18 @@ export function FaScannerClient({
                   painted at all, so the rule under each group label rides on the
                   cell instead. */}
               <tr className="text-left">
+                {/* First column by request. The symbol column stays the frozen
+                    one: `sticky left-0` on the second cell holds its place until
+                    the date scrolls out, then pins — so the identity column is
+                    still on screen however far the table is scrolled. */}
+                <th
+                  rowSpan={2}
+                  title={t(locale, "faReleaseDateTip").replace("{q}", selectedQuarter)}
+                  className="label row-h px-2 align-bottom cursor-pointer select-none whitespace-normal leading-tight min-w-[5.5rem]"
+                  onClick={() => toggleSort("release_date")}
+                >
+                  {t(locale, "faReleaseDateCol")}{sortIndicator("release_date")}
+                </th>
                 <th rowSpan={2} className="label sticky left-0 z-30 bg-panel-2 row-h px-2 align-bottom cursor-pointer select-none" onClick={() => toggleSort("symbol")}>
                   {t(locale, "symbol")}{sortIndicator("symbol")}
                 </th>
@@ -511,6 +537,11 @@ export function FaScannerClient({
                 <tr key={row.symbol} className={`group transition-colors hover:bg-panel-2 [&>td]:border-b [&>td]:border-line-faint${
                   pinned.has(row.symbol) ? " bg-accent-soft" : ""}${
                   lastPinned ? " [&>td]:!border-b-line-strong" : ""}`}>
+                  <td className="row-h px-2 text-data font-mono tnum whitespace-nowrap text-fg-muted">
+                    {releaseDates[row.symbol]
+                      ? formatDateDmy(releaseDates[row.symbol])
+                      : <span className="text-fg-faint">—</span>}
+                  </td>
                   {/* Frozen identity column. Needs its own opaque background —
                       it paints over the cells scrolling beneath it — and
                       group-hover so it tracks the row highlight instead of

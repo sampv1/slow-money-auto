@@ -5,6 +5,7 @@ import {
   getFaQuarters,
   getFaRows,
   getFaQuarterlyFacts,
+  getFaReleaseDates,
   getUniverseLiquidity,
   getRealEstateSymbols,
   getSecuritiesSymbols,
@@ -36,6 +37,9 @@ export default async function FaScannerManufacturingPage({
   // RSC boundary versus a compact map, and the client's `filtered` memo re-runs
   // on every keystroke in the search box — a 2,600-row join has no business there.
   let quarterly: Map<string, QuarterlyFacts> = new Map();
+  // symbol -> publication date of the selected quarter's statements, trimmed to
+  // the rows actually shown.
+  let releaseDates: Record<string, string> = {};
   // Hold the ERROR ITSELF, not its message: a failed head:true count query
   // comes back with an empty message, and the old `string | null` + truthy
   // check swallowed it — during the 2026-07-27 Supabase outage this page
@@ -49,12 +53,13 @@ export default async function FaScannerManufacturingPage({
       // Score rows for the quarter + the 20-session avg volume for the
       // liquidity filter (same source as the TA scanner) — independent, so
       // fetched in parallel (both served from the data cache when warm).
-      const [allRows, uni, facts, realEstate, securities] = await Promise.all([
+      const [allRows, uni, facts, realEstate, securities, dates] = await Promise.all([
         getFaRows(selected),
         getUniverseLiquidity(),
         getFaQuarterlyFacts(selected),
         getRealEstateSymbols(),
         getSecuritiesSymbols(),
+        getFaReleaseDates(selected),
       ]);
       // Property developers and brokers live on their own sub-pages, each
       // scored by a rubric that can see what this one cannot — land bank and
@@ -66,6 +71,9 @@ export default async function FaScannerManufacturingPage({
       rows = excluded.size > 0 ? allRows.filter((r) => !excluded.has(r.symbol)) : allRows;
       universe = uni;
       quarterly = facts;
+      releaseDates = Object.fromEntries(
+        rows.flatMap((r) => (dates[r.symbol] ? [[r.symbol, dates[r.symbol]]] : [])),
+      );
     }
   } catch (e) {
     loadError = e ?? new Error("unknown error");
@@ -107,6 +115,7 @@ export default async function FaScannerManufacturingPage({
         selectedQuarter={selected}
         quarterly={Array.from(quarterly)}
         priorQuarter={yearAgoPeriod(selected)}
+        releaseDates={releaseDates}
       />
     </div>
   );

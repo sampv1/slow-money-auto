@@ -289,6 +289,41 @@ export async function getFaQuarterlyFacts(period: string) {
   return buildQuarterlyFacts(current, prior);
 }
 
+// --- Financial-statement release dates (FA scanner, first column) -----------
+
+/**
+ * symbol -> publication date (YYYY-MM-DD) of that quarter's financial
+ * statements, from `fa_statement_release_dates` (migration 068).
+ *
+ * Paged: a quarter holds ~1,600 filers, past PostgREST's silent 1000-row cap.
+ * A missing table yields an empty map rather than an error, so the page can
+ * deploy before the migration — the column reads "—" instead of the whole
+ * scanner going down. ~40 KB per quarter, far under the 2 MB cache limit.
+ */
+export const getFaReleaseDates = unstable_cache(
+  async (period: string): Promise<Record<string, string>> => {
+    try {
+      const rows = await fetchAllPaged<{ symbol: string; release_date: string }>((from, to, withCount) =>
+        supabase
+          .from("fa_statement_release_dates")
+          .select("symbol,release_date", withCount ? { count: "exact" } : undefined)
+          .eq("period", period)
+          .order("symbol", { ascending: true }) // PK is (symbol, period) → unique within a period
+          .range(from, to),
+      );
+      return Object.fromEntries(rows.map((r) => [r.symbol, r.release_date]));
+    } catch (e) {
+      console.warn(
+        "[fa] fa_statement_release_dates unavailable (apply supabase/068):",
+        e instanceof Error ? e.message : e,
+      );
+      return {};
+    }
+  },
+  ["fa-release-dates"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
 /**
  * NPAT in billions VND for each row, read at THAT ROW'S OWN quarter.
  *

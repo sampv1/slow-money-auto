@@ -65,6 +65,19 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python refresh_final_score.py
 
+      # Publication date of each quarter's statements (FA Scanner's first
+      # column, migration 068). Display data, so best-effort: a KBS outage must
+      # not turn the scoring run red or skip the revalidate below. Only symbols
+      # with no stored date are fetched, so off-season this is a few calls.
+      - name: Refresh statement release dates
+        continue-on-error: true
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python refresh_fa_release_dates.py
+
       # Expire the dashboard's server-side data cache so the next page view
       # shows today's scores immediately (see dashboard /api/revalidate).
       # Non-fatal: if it fails, the cache TTL still refreshes within the hour.
