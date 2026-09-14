@@ -21,6 +21,7 @@ import {
   secPeriodLine,
   secDisplayScore,
   secDmy,
+  secQuarter,
   secGateReasons,
   secNaReason,
   secProvReason,
@@ -119,6 +120,7 @@ export function SecScannerClient({
   selectedDate,
   internal = false,
   labelsDisabled = false,
+  releaseDates,
 }: {
   rows: SecScore[];
   universe: UniverseLiquidityRow[];
@@ -129,6 +131,8 @@ export function SecScannerClient({
   internal?: boolean;
   /** Kill switch for the market-state words on the customer view. */
   labelsDisabled?: boolean;
+  /** symbol -> publication date (YYYY-MM-DD) of the row's own `quality_period` statements. Sparse. */
+  releaseDates: Record<string, string>;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -172,6 +176,15 @@ export function SecScannerClient({
     const dir = sortAsc ? 1 : -1;
     out.sort((a, b) => {
       if (sortKey === "symbol") return dir * a.symbol.localeCompare(b.symbol);
+      if (sortKey === "__release") {
+        // ISO dates order correctly as text; undated rows last in both directions.
+        const ad = releaseDates[a.symbol] ?? "";
+        const bd = releaseDates[b.symbol] ?? "";
+        if (!ad && !bd) return a.symbol.localeCompare(b.symbol);
+        if (!ad) return 1;
+        if (!bd) return -1;
+        return dir * ad.localeCompare(bd);
+      }
       const av = (a as unknown as Record<string, number | null>)[sortKey];
       const bv = (b as unknown as Record<string, number | null>)[sortKey];
       // A null is "not scored", not "scored zero" — it sorts to the bottom in
@@ -181,7 +194,7 @@ export function SecScannerClient({
       return dir * (av - bv);
     });
     return floatPinned(out, pinned, (r) => r.symbol);
-  }, [rows, search, publishableOnly, minAvgVolume, volBySymbol, sortKey, sortAsc, pinned]);
+  }, [rows, search, publishableOnly, minAvgVolume, volBySymbol, releaseDates, sortKey, sortAsc, pinned]);
 
   function sortBy(key: SortKey) {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -326,6 +339,13 @@ export function SecScannerClient({
               own total plus criteria — and span two rows, because no reading
               block exists for them and none may be invented (§8.5). */}
           <tr>
+            {/* First column, by request; not frozen — the ticker keeps that
+                role and pins, with the score beside it, once this scrolls out. */}
+            <th className={`${TH_LEAD} w-[96px] min-w-[96px]`} rowSpan={3} title={t(locale, "secReleaseDateTip")} data-release-head="">
+              <button onClick={() => sortBy("__release")} className="hover:underline text-left">
+                {t(locale, "faReleaseDateCol")}{arrow("__release")}
+              </button>
+            </th>
             <th className={`${TH_LEAD} ${SEC_COL1_W} ${SEC_FROZEN_HEAD} left-0`} rowSpan={3}>
               <button onClick={() => sortBy("symbol")} className="hover:underline text-left">
                 {t(locale, "symbol")}{arrow("symbol")}
@@ -410,6 +430,14 @@ export function SecScannerClient({
             const gateReasons = secGateReasons(r, locale);
             return (
               <tr key={r.symbol} className="group border-b border-line-faint hover:bg-panel-2">
+                <td className={`${TD_SEC} w-[96px] min-w-[96px] leading-tight`} data-release={r.symbol}>
+                  {releaseDates[r.symbol] ? (
+                    <div className="font-mono tnum whitespace-nowrap">{secDmy(releaseDates[r.symbol])}</div>
+                  ) : (
+                    <div className="text-fg-faint">—</div>
+                  )}
+                  {r.quality_period ? <div className="sec-note text-fg-label">{secQuarter(r.quality_period)}</div> : null}
+                </td>
                 <td
                   className={`${TD_SEC} ${SEC_COL1_W} ${SEC_FROZEN_CELL} left-0 font-mono font-semibold text-accent whitespace-nowrap`}
                 >
@@ -593,7 +621,7 @@ export function SecScannerClient({
               {t(locale, "secNoMatch")}
             </div>
           ) : tab === "summary" ? (
-            <SecSummaryTable rows={filtered} locale={locale} />
+            <SecSummaryTable rows={filtered} locale={locale} releaseDates={releaseDates} />
           ) : (
             detailTable
           )}

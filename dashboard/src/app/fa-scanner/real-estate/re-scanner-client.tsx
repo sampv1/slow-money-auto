@@ -22,7 +22,7 @@ import {
   relativeValuationPct,
 } from "@/lib/fa";
 import type { RePb, UniverseLiquidityRow } from "@/lib/cached-data";
-import { formatBillions, formatNumber, formatPnl, pnlColor } from "@/lib/format";
+import { formatBillions, formatDateDmy, formatNumber, formatPnl, pnlColor } from "@/lib/format";
 import { MinVolumeFilter } from "@/components/min-volume-filter";
 import { TABLE, TABLE_FREEZE, THEAD_STICKY, TH, TH_NUM, TH_NUM_WRAP, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
 import { PinButton } from "@/components/pin-button";
@@ -95,6 +95,7 @@ export function ReScannerClient({
   priorQuarter,
   quarterly,
   pb,
+  releaseDates,
 }: {
   rows: ReScore[];
   universe: UniverseLiquidityRow[];
@@ -105,6 +106,8 @@ export function ReScannerClient({
   /** Entries, not a Map — a Map does not survive the RSC boundary. */
   quarterly: [string, QuarterlyFacts][];
   pb: [string, RePb][];
+  /** symbol -> publication date (YYYY-MM-DD) of the selected quarter's statements. Sparse. */
+  releaseDates: Record<string, string>;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -181,6 +184,15 @@ export function ReScannerClient({
       if (sortKey === "symbol") {
         av = a.symbol;
         bv = b.symbol;
+      } else if (sortKey === "release_date") {
+        // ISO dates order correctly as text; undated rows last in both directions.
+        const ad = releaseDates[a.symbol] ?? "";
+        const bd = releaseDates[b.symbol] ?? "";
+        if (!ad && !bd) return a.symbol.localeCompare(b.symbol);
+        if (!ad) return 1;
+        if (!bd) return -1;
+        av = ad;
+        bv = bd;
       } else {
         const an = pick(a);
         const bn = pick(b);
@@ -196,7 +208,7 @@ export function ReScannerClient({
     });
     // Pinned rows ride on top of the sort, keeping their own relative order.
     return floatPinned(out, pinned, (r) => r.symbol);
-  }, [rows, minScore, minAvgVolume, minNpatBn, volBySymbol,
+  }, [rows, minScore, minAvgVolume, minNpatBn, volBySymbol, releaseDates,
       quarterlyBySymbol, pbBySymbol, search, sortKey, sortAsc, pinned]);
 
   function toggleSort(key: SortKey) {
@@ -317,6 +329,21 @@ export function ReScannerClient({
             <thead className={THEAD_STICKY}>
               {/* Group row. Only Symbol, Score and Coverage span both rows. */}
               <tr>
+                {/* First column, as on the manufacturing tab. The symbol stays
+                    the frozen column: `sticky left-0` on the second cell pins
+                    once the date has scrolled out. */}
+                <th
+                  rowSpan={2}
+                  title={t(locale, "faReleaseDateTip").replace("{q}", selectedQuarter)}
+                  // px-1 and a 5rem floor, not the manufacturing tab's px-2 /
+                  // 5.5rem: this table already sat at exactly its 1,372px box
+                  // in Vietnamese at 1440, and 88px pushed it 5px over.
+                  className="label row-h px-1 text-left align-bottom whitespace-normal leading-tight min-w-[5rem]"
+                >
+                  <button type="button" onClick={() => toggleSort("release_date")} className="text-left">
+                    {t(locale, "faReleaseDateCol")}{arrow("release_date")}
+                  </button>
+                </th>
                 <th rowSpan={2} className={`${TH} sticky left-0 z-30 bg-panel-2 align-bottom`}>
                   <button type="button" onClick={() => toggleSort("symbol")}>
                     {t(locale, "symbol")}{arrow("symbol")}
@@ -405,6 +432,11 @@ export function ReScannerClient({
                 return (
                   <tr key={r.symbol} className={`${TR}${pinned.has(r.symbol) ? " bg-accent-soft" : ""}${
                     lastPinned ? " [&>td]:!border-b-line-strong" : ""}`}>
+                    <td className="row-h px-1 text-data font-mono tnum whitespace-nowrap text-fg-muted">
+                      {releaseDates[r.symbol]
+                        ? formatDateDmy(releaseDates[r.symbol])
+                        : <span className="text-fg-faint">—</span>}
+                    </td>
                     {/* The frozen cell paints its own background over the row,
                         so the pinned tint has to be repeated here or the marker
                         would stop at the first scrolling column. */}

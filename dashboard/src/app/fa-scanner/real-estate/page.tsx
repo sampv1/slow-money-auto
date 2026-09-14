@@ -8,6 +8,7 @@ import {
   getRePbMetrics,
   getUniverseLiquidity,
   getFaQuarterlyFacts,
+  getFaReleaseDates,
   type RePb,
 } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
@@ -38,6 +39,9 @@ export default async function FaScannerRealEstatePage({
   // the criterion sitting next to them. Entries, not a Map, for the same RSC
   // reason as `quarterly` above.
   let pb: [string, RePb][] = [];
+  // symbol -> publication date of the selected quarter's statements, trimmed
+  // to the rows on this tab.
+  let releaseDates: Record<string, string> = {};
   // Hold the ERROR ITSELF, not its message — a failed count query comes back
   // with an empty message, and a truthy check on a string swallows it, which is
   // how this shape once reported "no data" during a Supabase outage.
@@ -46,16 +50,20 @@ export default async function FaScannerRealEstatePage({
     quarters = await getReQuarters();
     selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
     if (selected) {
-      const [re, uni, facts, pbRows] = await Promise.all([
+      const [re, uni, facts, pbRows, dates] = await Promise.all([
         getReRows(selected),
         getUniverseLiquidity(),
         getFaQuarterlyFacts(selected),
         getRePbMetrics(selected),
+        getFaReleaseDates(selected),
       ]);
       rows = re;
       universe = uni;
       quarterly = facts;
       pb = pbRows;
+      releaseDates = Object.fromEntries(
+        re.flatMap((r) => (dates[r.symbol] ? [[r.symbol, dates[r.symbol]]] : [])),
+      );
     }
   } catch (e) {
     loadError = e ?? new Error("unknown error");
@@ -102,6 +110,7 @@ export default async function FaScannerRealEstatePage({
         priorQuarter={yearAgoPeriod(selected)}
         quarterly={Array.from(quarterly)}
         pb={pb}
+        releaseDates={releaseDates}
       />
     </div>
   );

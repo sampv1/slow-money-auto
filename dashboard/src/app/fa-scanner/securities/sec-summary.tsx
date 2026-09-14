@@ -18,6 +18,8 @@ import {
   secCriterionName,
   secDataStatus,
   secDisplayScore,
+  secDmy,
+  secQuarter,
   secDriverLines,
   secMainShortText,
   secModelText,
@@ -74,6 +76,11 @@ import { usePinnedSymbols } from "@/lib/pinned-symbols";
  * view, and at 1440/1280 the box scrolls rather than squeezing text (§10.3).
  */
 const COL_WIDTHS = [
+  // Added after BA's twelve, by request: first column. A px width, so the
+  // percentages below still normalise over exactly what they did before once
+  // the floor grows by the same 96px (1500 -> 1596) — the verified phrase
+  // breaks hold. The cost is ~62px of horizontal scroll at 1920.
+  "96px",  // Ngày công bố BCTC
   "108px", // Mã CK
   "7.5%",  // Điểm cơ bản CTCK
   "8.9%",  // Mô hình chính
@@ -164,7 +171,14 @@ function valPart(cell: SecCriterionCell | undefined, locale: Locale): string {
 
 type OpenState = { sym: string; target: SecPanelTarget; n: number } | null;
 
-export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Locale }) {
+export function SecSummaryTable({
+  rows, locale, releaseDates,
+}: {
+  rows: SecScore[];
+  locale: Locale;
+  /** symbol -> publication date (YYYY-MM-DD) of the row's own `quality_period` statements. Sparse. */
+  releaseDates: Record<string, string>;
+}) {
   const { pinned, toggle } = usePinnedSymbols();
   // ONE panel at a time (§9) — the table stays scannable, and a second open
   // panel would push the first out of view anyway.
@@ -206,7 +220,7 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
   return (
     <>
       <SecScrollBox className={TABLE_FREEZE} hint={t(locale, "secScrollHint")}>
-        <table ref={tableRef} className={`${TABLE} table-fixed min-w-[1500px]`} data-sec-summary="">
+        <table ref={tableRef} className={`${TABLE} table-fixed min-w-[1596px]`} data-sec-summary="">
           <colgroup>
             {COL_WIDTHS.map((w, i) => <col key={i} style={{ width: w }} />)}
           </colgroup>
@@ -216,6 +230,12 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                 group and span both tiers (§5.1). The questions that used to sit
                 under each group name are the group's tooltip now. */}
             <tr>
+              {/* Not frozen: the ticker stays the pinned identity column, and
+                  its `left-0` pins it (and the score at 108px) once this
+                  column has scrolled out. */}
+              <th className={TH_NAME} rowSpan={2} title={t(locale, "secReleaseDateTip")} data-release-head="">
+                {t(locale, "faReleaseDateCol")}
+              </th>
               <th className={`${TH_NAME} ${SEC_FROZEN_HEAD} left-0`} rowSpan={2}>
                 {t(locale, "secHdSymbol")}
               </th>
@@ -274,6 +294,14 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
               return (
                 <Fragment key={r.symbol}>
                   <tr className="group border-b border-line-faint hover:bg-panel-2 align-top">
+                    <td className={`${TD} leading-tight`} data-release={r.symbol}>
+                      {releaseDates[r.symbol] ? (
+                        <div className="tnum whitespace-nowrap">{secDmy(releaseDates[r.symbol])}</div>
+                      ) : (
+                        <div className="text-fg-faint">—</div>
+                      )}
+                      {r.quality_period ? <div className={`${NOTE} mt-0.5`}>{secQuarter(r.quality_period)}</div> : null}
+                    </td>
                     {/* §6.1: the chevron and the analysis link are SEPARATE
                         targets, so opening an explanation can never navigate
                         away. The repeated "Xem giải thích" text is gone; the
@@ -426,7 +454,7 @@ export function SecSummaryTable({ rows, locale }: { rows: SecScore[]; locale: Lo
                   </tr>
                   {isOpen ? (
                     <tr data-panel-row={r.symbol}>
-                      <td colSpan={12} className="p-0 border-b border-line">
+                      <td colSpan={COL_WIDTHS.length} className="p-0 border-b border-line">
                         {/* Keyed by symbol AND session: a session change
                             re-renders the panel from the new row and resets
                             its open groups, so no detail from the old session

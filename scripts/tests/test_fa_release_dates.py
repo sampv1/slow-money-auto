@@ -62,6 +62,30 @@ def test_fiscal_label_in_the_future_is_not_rejected():
     assert rejected == 0 and rows[0]["period"] == "2026-Q2"
 
 
+def test_missing_months_fall_back_to_the_label_for_a_calendar_year_filer():
+    # BVS, verbatim: Q2/2026 arrives with PeriodBegin/PeriodEnd "0".
+    heads = [head(2026, "Q2", "2026-07-17", "2026-07-17", begin="0", end="0"),
+             head(2026, "Q1", "2026-04-17", "2026-04-17")]
+    rows, rejected = parse_heads("BVS", heads, TODAY)
+    assert rejected == 0
+    assert {r["period"]: r["release_date"] for r in rows} == {
+        "2026-Q2": "2026-07-17", "2026-Q1": "2026-04-17"}
+
+
+def test_missing_months_are_refused_for_a_fiscal_year_filer():
+    # SBT-shaped: the one header with months shows label != calendar quarter,
+    # so a header without months cannot be placed and is refused.
+    heads = [head(2025, "Q4", "2026-07-30", "2026-07-30", begin="0", end="0"),
+             head(2025, "Q3", "2026-04-28", "2026-04-28", begin="202601", end="202603")]
+    rows, rejected = parse_heads("SBT", heads, TODAY)
+    assert rejected == 1 and [r["period"] for r in rows] == ["2026-Q1"]
+
+
+def test_missing_months_with_nothing_to_check_against_are_refused():
+    rows, rejected = parse_heads("X", [head(2026, "Q2", "2026-07-17", "2026-07-17", begin="0", end="0")], TODAY)
+    assert rows == [] and rejected == 1
+
+
 def test_refuses_periods_that_are_not_one_quarter():
     assert calendar_quarter({"PeriodBegin": "202601", "PeriodEnd": "202606"}) is None  # half-year
     assert calendar_quarter({"PeriodBegin": "202605", "PeriodEnd": "202606"}) is None  # 2 months

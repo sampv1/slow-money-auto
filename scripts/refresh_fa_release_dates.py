@@ -67,6 +67,25 @@ def main() -> int:
     print(f"Scanner quarters: {', '.join(quarters)}")
 
     filed = _pairs(client, "fa_quarterly", quarters)
+    # The real-estate and securities tabs show the date too, each on its own
+    # quarter: a real-estate row's scored period, a broker's `quality_period`.
+    # Neither is guaranteed an fa_quarterly row — 24 of 118 property developers
+    # had none on 2026-09-14 — so their rows join the work list directly.
+    re_rows = paged_select(
+        lambda off, n: client.table("fa_re_scores").select("symbol,as_of_period")
+        .order("symbol").order("as_of_period").range(off, off + n - 1),
+        label="fa_re_scores periods")
+    filed |= {(r["symbol"], r["as_of_period"]) for r in re_rows}
+    latest = safe_execute(client.table("fa_securities_scores").select("as_of_date")
+                          .order("as_of_date", desc=True).limit(1), label="securities session").data
+    if latest:
+        sec_rows = paged_select(
+            lambda off, n: client.table("fa_securities_scores").select("symbol,quality_period,model_version")
+            .eq("as_of_date", latest[0]["as_of_date"]).order("symbol").order("model_version")
+            .range(off, off + n - 1),
+            label="fa_securities_scores periods")
+        filed |= {(r["symbol"], r["quality_period"]) for r in sec_rows if r.get("quality_period")}
+    quarters = sorted({p for _, p in filed}, reverse=True)
     # Funds and ETFs (com_type_code 'QU') file no KBS statement: all 22 in
     # fa_quarterly failed every call on the first full pass (2026-09-14). Left in,
     # the missing-only default would retry them — and warn — every single day.

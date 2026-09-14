@@ -1,6 +1,6 @@
 import type { SecScore } from "@/lib/fa-securities";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
-import { getSecDates, getSecRows, getUniverseLiquidity } from "@/lib/cached-data";
+import { getFaReleaseDates, getSecDates, getSecRows, getUniverseLiquidity } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
 import { SecScannerClient } from "./sec-scanner-client";
 import { DataError } from "@/components/data-error";
@@ -20,6 +20,10 @@ export default async function FaScannerSecuritiesPage({
   let selected: string | undefined;
   let rows: SecScore[] = [];
   let universe: UniverseLiquidityRow[] = [];
+  // symbol -> publication date of the statements each row is scored on. Keyed
+  // by the row's OWN quality_period, not one global quarter: brokers on a
+  // session need not share a filing.
+  let releaseDates: Record<string, string> = {};
   // The error itself, not its message: a failed count query comes back with an
   // empty message, and a truthy check on a string reports "no data" during an
   // outage. Same shape as the other two tabs, for the same reason.
@@ -34,6 +38,15 @@ export default async function FaScannerSecuritiesPage({
       const [scores, uni] = await Promise.all([getSecRows(selected), getUniverseLiquidity()]);
       rows = scores;
       universe = uni;
+      const periods = [...new Set(scores.map((r) => r.quality_period).filter((p): p is string => !!p))];
+      const perPeriod = await Promise.all(periods.map((p) => getFaReleaseDates(p)));
+      const byPeriod = new Map(periods.map((p, i) => [p, perPeriod[i]]));
+      releaseDates = Object.fromEntries(
+        scores.flatMap((r) => {
+          const d = r.quality_period ? byPeriod.get(r.quality_period)?.[r.symbol] : undefined;
+          return d ? [[r.symbol, d]] : [];
+        }),
+      );
     }
   } catch (e) {
     loadError = e ?? new Error("unknown error");
@@ -86,6 +99,7 @@ export default async function FaScannerSecuritiesPage({
         selectedDate={selected}
         internal={internal}
         labelsDisabled={labelsDisabled}
+        releaseDates={releaseDates}
       />
     </div>
   );

@@ -66,6 +66,16 @@ def calendar_quarter(h: dict) -> tuple[int, int] | None:
     return y, m // 3
 
 
+def fiscal_label(h: dict) -> tuple[int, int] | None:
+    """(year, quarter) as KBS LABELS the period — fiscal, not calendar."""
+    q = QUARTER_TERMS.get(str(h.get("TermCode") or ""))
+    try:
+        year = int(h.get("YearPeriod"))
+    except (TypeError, ValueError):
+        return None
+    return (year, q) if q else None
+
+
 def parse_heads(symbol: str, heads, today: dt.date) -> tuple[list[dict], int]:
     """Header entries -> one row per calendar quarter, plus how many were rejected.
 
@@ -76,12 +86,20 @@ def parse_heads(symbol: str, heads, today: dt.date) -> tuple[list[dict], int]:
     """
     rows: dict[str, dict] = {}
     rejected = 0
-    for h in heads or []:
-        if not isinstance(h, dict):
-            continue
-        if str(h.get("TermCode") or "") not in QUARTER_TERMS:
-            continue
+    quarterly = [h for h in heads or []
+                 if isinstance(h, dict) and str(h.get("TermCode") or "") in QUARTER_TERMS]
+    # Some headers carry PeriodBegin/PeriodEnd = "0" (BVS and DSE's Q2/2026,
+    # seen 2026-09-14) while the date itself is present. The fiscal label may
+    # stand in ONLY when every header that does carry months shows the label IS
+    # the calendar quarter — a July-June filer never qualifies, so it can never
+    # be misfiled through this door.
+    pairs = [(fiscal_label(h), calendar_quarter(h)) for h in quarterly]
+    checked = [(lab, cal) for lab, cal in pairs if lab is not None and cal is not None]
+    calendar_aligned = bool(checked) and all(lab == cal for lab, cal in checked)
+    for h in quarterly:
         cq = calendar_quarter(h)
+        if cq is None and calendar_aligned:
+            cq = fiscal_label(h)
         if cq is None:
             rejected += 1
             continue
