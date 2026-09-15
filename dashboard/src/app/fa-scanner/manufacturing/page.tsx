@@ -1,11 +1,13 @@
 import type { FaScore, QuarterlyFacts } from "@/lib/fa";
-import { yearAgoPeriod } from "@/lib/fa";
+import { faNormalizedScore, yearAgoPeriod } from "@/lib/fa";
+import { priorQuarter } from "@/lib/fa-qoq";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import {
   getFaQuarters,
   getFaRows,
   getFaQuarterlyFacts,
   getFaReleaseDates,
+  getFaScoreMap,
   getUniverseLiquidity,
   getRealEstateSymbols,
   getSecuritiesSymbols,
@@ -40,6 +42,10 @@ export default async function FaScannerManufacturingPage({
   // symbol -> publication date of the selected quarter's statements, trimmed to
   // the rows actually shown.
   let releaseDates: Record<string, string> = {};
+  // symbol -> the previous quarter's score, through the SAME rounding rule the
+  // Score column prints, so the comparison is between two numbers on screen.
+  let prevScores: Record<string, number> = {};
+  let prevQuarter: string | null = null;
   // Hold the ERROR ITSELF, not its message: a failed head:true count query
   // comes back with an empty message, and the old `string | null` + truthy
   // check swallowed it — during the 2026-07-27 Supabase outage this page
@@ -50,16 +56,21 @@ export default async function FaScannerManufacturingPage({
     quarters = await getFaQuarters();
     selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
     if (selected) {
+      // By label, and only if that quarter was ever scored — a quarter absent
+      // from the dropdown has no scores to compare against.
+      const prevQ = priorQuarter(selected);
+      prevQuarter = quarters.includes(prevQ) ? prevQ : null;
       // Score rows for the quarter + the 20-session avg volume for the
       // liquidity filter (same source as the TA scanner) — independent, so
       // fetched in parallel (both served from the data cache when warm).
-      const [allRows, uni, facts, realEstate, securities, dates] = await Promise.all([
+      const [allRows, uni, facts, realEstate, securities, dates, prevMap] = await Promise.all([
         getFaRows(selected),
         getUniverseLiquidity(),
         getFaQuarterlyFacts(selected),
         getRealEstateSymbols(),
         getSecuritiesSymbols(),
         getFaReleaseDates(selected),
+        prevQuarter ? getFaScoreMap(prevQuarter) : Promise.resolve({}),
       ]);
       // Property developers and brokers live on their own sub-pages, each
       // scored by a rubric that can see what this one cannot — land bank and
@@ -73,6 +84,12 @@ export default async function FaScannerManufacturingPage({
       quarterly = facts;
       releaseDates = Object.fromEntries(
         rows.flatMap((r) => (dates[r.symbol] ? [[r.symbol, dates[r.symbol]]] : [])),
+      );
+      const prev: Record<string, { total_score: number; normalized_score: number | null }> = prevMap;
+      prevScores = Object.fromEntries(
+        rows.flatMap((r) =>
+          prev[r.symbol] ? [[r.symbol, faNormalizedScore(prev[r.symbol] as FaScore)]] : [],
+        ),
       );
     }
   } catch (e) {
@@ -116,6 +133,8 @@ export default async function FaScannerManufacturingPage({
         quarterly={Array.from(quarterly)}
         priorQuarter={yearAgoPeriod(selected)}
         releaseDates={releaseDates}
+        prevScores={prevScores}
+        prevQuarter={prevQuarter}
       />
     </div>
   );

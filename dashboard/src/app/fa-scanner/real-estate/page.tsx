@@ -1,6 +1,7 @@
 import type { ReScore } from "@/lib/fa-re";
 import type { QuarterlyFacts } from "@/lib/fa";
 import { yearAgoPeriod } from "@/lib/fa";
+import { priorQuarter } from "@/lib/fa-qoq";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
 import {
   getReQuarters,
@@ -9,6 +10,7 @@ import {
   getUniverseLiquidity,
   getFaQuarterlyFacts,
   getFaReleaseDates,
+  getReScoreMap,
   type RePb,
 } from "@/lib/cached-data";
 import { getLocale, t } from "@/lib/i18n";
@@ -42,6 +44,11 @@ export default async function FaScannerRealEstatePage({
   // symbol -> publication date of the selected quarter's statements, trimmed
   // to the rows on this tab.
   let releaseDates: Record<string, string> = {};
+  // symbol -> the previous quarter's total score. EMPTY until a second quarter
+  // is imported: fa_re_scores holds only 2026-Q2, and the Q2 export cannot
+  // rebuild a Q1 score — its P/B and P/E are the export date's, not Q1-end's.
+  let prevScores: Record<string, number> = {};
+  let prevQuarter: string | null = null;
   // Hold the ERROR ITSELF, not its message — a failed count query comes back
   // with an empty message, and a truthy check on a string swallows it, which is
   // how this shape once reported "no data" during a Supabase outage.
@@ -50,12 +57,15 @@ export default async function FaScannerRealEstatePage({
     quarters = await getReQuarters();
     selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
     if (selected) {
-      const [re, uni, facts, pbRows, dates] = await Promise.all([
+      const prevQ = priorQuarter(selected);
+      prevQuarter = quarters.includes(prevQ) ? prevQ : null;
+      const [re, uni, facts, pbRows, dates, prevMap] = await Promise.all([
         getReRows(selected),
         getUniverseLiquidity(),
         getFaQuarterlyFacts(selected),
         getRePbMetrics(selected),
         getFaReleaseDates(selected),
+        prevQuarter ? getReScoreMap(prevQuarter) : Promise.resolve({} as Record<string, number>),
       ]);
       rows = re;
       universe = uni;
@@ -63,6 +73,9 @@ export default async function FaScannerRealEstatePage({
       pb = pbRows;
       releaseDates = Object.fromEntries(
         re.flatMap((r) => (dates[r.symbol] ? [[r.symbol, dates[r.symbol]]] : [])),
+      );
+      prevScores = Object.fromEntries(
+        re.flatMap((r) => (prevMap[r.symbol] !== undefined ? [[r.symbol, prevMap[r.symbol]]] : [])),
       );
     }
   } catch (e) {
@@ -111,6 +124,8 @@ export default async function FaScannerRealEstatePage({
         quarterly={Array.from(quarterly)}
         pb={pb}
         releaseDates={releaseDates}
+        prevScores={prevScores}
+        prevQuarter={prevQuarter}
       />
     </div>
   );

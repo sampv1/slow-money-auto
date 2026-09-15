@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useRef, useState } from "react";
+import { qoqChange, qoqView } from "@/lib/fa-qoq";
 import Link from "next/link";
 import { type Locale, t } from "@/lib/i18n";
 import {
@@ -83,6 +84,10 @@ const COL_WIDTHS = [
   "96px",  // Ngày công bố BCTC
   "108px", // Mã CK
   "7.5%",  // Điểm cơ bản CTCK
+  // Added by request beside the score, as a px width for the same reason as the
+  // release date: the floor grows by exactly this much (1596 -> 1684), so the
+  // percentage columns keep the widths their phrase breaks were verified at.
+  "88px",  // So với quý trước
   "8.9%",  // Mô hình chính
   "9.3%",  // Thị phần môi giới HOSE
   "9.2%",  // Tăng trưởng cho vay ký quỹ — "CHO VAY KÝ QUỸ" / "MARGIN LENDING" on one line
@@ -172,12 +177,18 @@ function valPart(cell: SecCriterionCell | undefined, locale: Locale): string {
 type OpenState = { sym: string; target: SecPanelTarget; n: number } | null;
 
 export function SecSummaryTable({
-  rows, locale, releaseDates,
+  rows, locale, releaseDates, prevScores, prevDate, curDate,
 }: {
   rows: SecScore[];
   locale: Locale;
   /** symbol -> publication date (YYYY-MM-DD) of the row's own `quality_period` statements. Sparse. */
   releaseDates: Record<string, string>;
+  /** symbol -> official score at the previous quarter's last session. */
+  prevScores: Record<string, number | null>;
+  /** That session; null when none was scored in the previous quarter. */
+  prevDate: string | null;
+  /** The session this table shows. */
+  curDate: string;
 }) {
   const { pinned, toggle } = usePinnedSymbols();
   // ONE panel at a time (§9) — the table stays scannable, and a second open
@@ -220,7 +231,7 @@ export function SecSummaryTable({
   return (
     <>
       <SecScrollBox className={TABLE_FREEZE} hint={t(locale, "secScrollHint")}>
-        <table ref={tableRef} className={`${TABLE} table-fixed min-w-[1596px]`} data-sec-summary="">
+        <table ref={tableRef} className={`${TABLE} table-fixed min-w-[1684px]`} data-sec-summary="">
           <colgroup>
             {COL_WIDTHS.map((w, i) => <col key={i} style={{ width: w }} />)}
           </colgroup>
@@ -241,6 +252,9 @@ export function SecSummaryTable({
               </th>
               <th className={`${TH_NAME} ${SEC_FROZEN_HEAD_2}`} rowSpan={2} title={t(locale, "secScoreHeadTip")}>
                 <HeadName label={t(locale, "secHdScore")} />
+              </th>
+              <th className={TH_NAME} rowSpan={2} title={t(locale, "secQoqTip")} data-qoq-head="">
+                <HeadName label={t(locale, "faQoqCol")} />
               </th>
               <th data-group="quality" colSpan={7} title={t(locale, "secGrpQualitySub")}
                   className={`${TH_GROUP} ${TINT.quality} border-l-2 border-emerald-200`}>
@@ -348,6 +362,19 @@ export function SecSummaryTable({
                       ) : null}
                       {!status.pass ? <div className={NOTE}>{t(locale, "secScoreWithheldShort")}</div> : null}
                     </td>
+                    {(() => {
+                      // The SAME number the score cell prints (one decimal), so
+                      // the hover text reconciles with the column beside it.
+                      const v = qoqView(
+                        qoqChange(uc?.final_composite_score ?? null, prevScores[r.symbol] ?? null, 1),
+                        locale, 1, { prev: prevDate, cur: curDate },
+                      );
+                      return (
+                        <td className={`${TD} text-right tnum whitespace-nowrap ${v.className}`} title={v.title} data-qoq={r.symbol}>
+                          <span className="sec-score font-semibold">{v.text}</span>
+                        </td>
+                      );
+                    })()}
 
                     {/* §6.3: the short name only; the basis is in the panel. */}
                     <td className={`${TD} border-l-2 border-emerald-200`}>

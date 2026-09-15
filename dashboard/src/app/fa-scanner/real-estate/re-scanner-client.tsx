@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { qoqChange, qoqSortValue, qoqView } from "@/lib/fa-qoq";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
@@ -96,6 +97,8 @@ export function ReScannerClient({
   quarterly,
   pb,
   releaseDates,
+  prevScores,
+  prevQuarter,
 }: {
   rows: ReScore[];
   universe: UniverseLiquidityRow[];
@@ -108,6 +111,9 @@ export function ReScannerClient({
   pb: [string, RePb][];
   /** symbol -> publication date (YYYY-MM-DD) of the selected quarter's statements. Sparse. */
   releaseDates: Record<string, string>;
+  /** symbol -> previous quarter's total score; empty until a second quarter exists. */
+  prevScores: Record<string, number>;
+  prevQuarter: string | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -125,6 +131,12 @@ export function ReScannerClient({
   const pbBySymbol = useMemo(() => new Map(pb), [pb]);
 
   const { pinned, toggle: togglePin } = usePinnedSymbols();
+
+  // One change per row, on the score the table prints (whole points).
+  const qoqBySymbol = useMemo(
+    () => new Map(rows.map((r) => [r.symbol, qoqChange(r.total_score, prevScores[r.symbol], 0)])),
+    [rows, prevScores],
+  );
 
   const filtered = useMemo(() => {
     const min = minScore === "" ? null : Number(minScore);
@@ -154,6 +166,8 @@ export function ReScannerClient({
       switch (sortKey) {
         case "total_score":
           return r.total_score;
+        case "qoq":
+          return qoqSortValue(qoqBySymbol.get(r.symbol));
         case "pb":
           return pbBySymbol.get(r.symbol)?.now ?? null;
         case "pb_5y_avg":
@@ -208,7 +222,7 @@ export function ReScannerClient({
     });
     // Pinned rows ride on top of the sort, keeping their own relative order.
     return floatPinned(out, pinned, (r) => r.symbol);
-  }, [rows, minScore, minAvgVolume, minNpatBn, volBySymbol, releaseDates,
+  }, [rows, minScore, minAvgVolume, minNpatBn, volBySymbol, releaseDates, qoqBySymbol,
       quarterlyBySymbol, pbBySymbol, search, sortKey, sortAsc, pinned]);
 
   function toggleSort(key: SortKey) {
@@ -351,11 +365,22 @@ export function ReScannerClient({
                 </th>
                 <th
                   rowSpan={2}
-                  className={`${TH_NUM} align-bottom border-r border-line`}
+                  className={`${TH_NUM} align-bottom`}
                   title={t(locale, "faReScoreTip")}
                 >
                   <button type="button" onClick={() => toggleSort("total_score")}>
                     {t(locale, "faTotalScore")}{arrow("total_score")}
+                  </button>
+                </th>
+                {/* Beside the score it compares; it takes the block edge. */}
+                <th
+                  rowSpan={2}
+                  className={`${TH_NUM_WRAP} border-r border-line`}
+                  title={t(locale, "faQoqTip")}
+                  data-qoq-head=""
+                >
+                  <button type="button" onClick={() => toggleSort("qoq")} className="text-right">
+                    {t(locale, "faQoqCol")}{arrow("qoq")}
                   </button>
                 </th>
                 <th colSpan={RE_COMPONENTS.length} className="label row-h px-2 text-center">
@@ -450,10 +475,22 @@ export function ReScannerClient({
                         </Link>
                       </span>
                     </td>
-                    <td className={`${TD_NUM} font-semibold border-r border-line-faint`}>
+                    <td className={`${TD_NUM} font-semibold`}>
                       {formatNumber(r.total_score, 0)}
                       <span className="text-fg-label font-normal"> / {RE_MAX_SCORE}</span>
                     </td>
+                    {(() => {
+                      const v = qoqView(qoqBySymbol.get(r.symbol), locale, 0);
+                      return (
+                        <td
+                          className={`${TD_NUM} whitespace-nowrap border-r border-line-faint ${v.className}`}
+                          title={prevQuarter ? `${v.title} (${prevQuarter} → ${selectedQuarter})` : v.title}
+                          data-qoq={r.symbol}
+                        >
+                          {v.text}
+                        </td>
+                      );
+                    })()}
                     {RE_COMPONENTS.map((c) => {
                       const b = r.breakdown?.[c.key];
                       return (

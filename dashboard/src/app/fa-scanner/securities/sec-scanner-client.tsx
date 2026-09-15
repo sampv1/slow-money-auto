@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { qoqChange, qoqSortValue, qoqView } from "@/lib/fa-qoq";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
@@ -81,6 +82,8 @@ const CRIT_W = "w-[112px] min-w-[112px] max-w-[112px]";
 const CRIT_W_C14 = "w-[136px] min-w-[136px] max-w-[136px]";
 const GROUP_W = "w-[160px] min-w-[160px] max-w-[160px]";
 const SCORE_W = "w-[124px] min-w-[124px]";
+/** "So với quý trước", beside the score. Not frozen: the ticker and score pin. */
+const QOQ_W = "w-[96px] min-w-[96px]";
 
 const TH_BASE = "sec-note uppercase tracking-wide px-2 py-1 font-semibold whitespace-normal leading-tight text-fg-label";
 /** The columns spanning all three header rows sit mid-height, as in the mockup. */
@@ -121,6 +124,8 @@ export function SecScannerClient({
   internal = false,
   labelsDisabled = false,
   releaseDates,
+  prevScores,
+  prevDate,
 }: {
   rows: SecScore[];
   universe: UniverseLiquidityRow[];
@@ -133,6 +138,9 @@ export function SecScannerClient({
   labelsDisabled?: boolean;
   /** symbol -> publication date (YYYY-MM-DD) of the row's own `quality_period` statements. Sparse. */
   releaseDates: Record<string, string>;
+  /** symbol -> official score at the previous quarter's last session. */
+  prevScores: Record<string, number | null>;
+  prevDate: string | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -153,6 +161,18 @@ export function SecScannerClient({
   const volBySymbol = useMemo(
     () => new Map(universe.map((u) => [u.symbol, u.avg_volume_20d ?? 0])),
     [universe],
+  );
+
+  // One change per broker, on the score as printed (one decimal).
+  const qoqBySymbol = useMemo(
+    () =>
+      new Map(
+        rows.map((r) => [
+          r.symbol,
+          qoqChange(r.ui_contract?.final_composite_score ?? null, prevScores[r.symbol] ?? null, 1),
+        ]),
+      ),
+    [rows, prevScores],
   );
 
   const filtered = useMemo(() => {
@@ -176,6 +196,15 @@ export function SecScannerClient({
     const dir = sortAsc ? 1 : -1;
     out.sort((a, b) => {
       if (sortKey === "symbol") return dir * a.symbol.localeCompare(b.symbol);
+      if (sortKey === "__qoq") {
+        // No comparison (withheld now or then) sorts last in both directions.
+        const av = qoqSortValue(qoqBySymbol.get(a.symbol));
+        const bv = qoqSortValue(qoqBySymbol.get(b.symbol));
+        if (av === null && bv === null) return a.symbol.localeCompare(b.symbol);
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return dir * (av - bv);
+      }
       if (sortKey === "__release") {
         // ISO dates order correctly as text; undated rows last in both directions.
         const ad = releaseDates[a.symbol] ?? "";
@@ -194,7 +223,7 @@ export function SecScannerClient({
       return dir * (av - bv);
     });
     return floatPinned(out, pinned, (r) => r.symbol);
-  }, [rows, search, publishableOnly, minAvgVolume, volBySymbol, releaseDates, sortKey, sortAsc, pinned]);
+  }, [rows, search, publishableOnly, minAvgVolume, volBySymbol, releaseDates, qoqBySymbol, sortKey, sortAsc, pinned]);
 
   function sortBy(key: SortKey) {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -361,6 +390,11 @@ export function SecScannerClient({
                 <div className="font-normal">{t(locale, "secScoreSubtitle")}{arrow("__ct")}</div>
               </button>
             </th>
+            <th className={`${TH_LEAD_NUM} ${QOQ_W}`} rowSpan={3} title={t(locale, "secQoqTip")} data-qoq-head="">
+              <button onClick={() => sortBy("__qoq")} className="hover:underline text-right">
+                {t(locale, "faQoqCol")}{arrow("__qoq")}
+              </button>
+            </th>
             {/* The quality group's OWN total, identified as such for a reader
                 who hovers or taps it: it is not the total of all 20 (§8.1). */}
             <th
@@ -462,6 +496,14 @@ export function SecScannerClient({
                     {uc ? `${fmtPts(uc.final_earned)}/${fmtPts(uc.final_available)}` : "N/A"}
                   </div>
                 </td>
+                {(() => {
+                  const v = qoqView(qoqBySymbol.get(r.symbol), locale, 1, { prev: prevDate, cur: selectedDate });
+                  return (
+                    <td className={`${TD_SEC_NUM} ${QOQ_W} whitespace-nowrap ${v.className}`} title={v.title} data-qoq={r.symbol}>
+                      <span className="sec-score font-semibold">{v.text}</span>
+                    </td>
+                  );
+                })()}
                 {groupTotalCell(r, "quality")}
                 {QUALITY.map((c, i) => critCell(r, c, i === 0 ? SPLIT : READ_START.has(c.key) ? READ_SPLIT : ""))}
                 {groupTotalCell(r, "cycle")}
@@ -621,7 +663,14 @@ export function SecScannerClient({
               {t(locale, "secNoMatch")}
             </div>
           ) : tab === "summary" ? (
-            <SecSummaryTable rows={filtered} locale={locale} releaseDates={releaseDates} />
+            <SecSummaryTable
+              rows={filtered}
+              locale={locale}
+              releaseDates={releaseDates}
+              prevScores={prevScores}
+              prevDate={prevDate}
+              curDate={selectedDate}
+            />
           ) : (
             detailTable
           )}

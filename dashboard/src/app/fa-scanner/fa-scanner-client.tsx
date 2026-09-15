@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { qoqChange, qoqSortValue, qoqView } from "@/lib/fa-qoq";
 import { industryOptions } from "@/lib/symbol-meta";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -32,7 +33,7 @@ import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
 // bilingual. This set is the manufacturing rubric; real estate / banks rubrics
 // will add their own component sets later, so keep it a data-driven list.
 type PtsKey = (typeof FA_COMPONENTS)[number]["pts"];
-type SortKey = "total_score" | "symbol" | "industry" | "release_date" | PtsKey | FaExtraKey;
+type SortKey = "total_score" | "qoq" | "symbol" | "industry" | "release_date" | PtsKey | FaExtraKey;
 
 const N_QUARTERLY = FA_EXTRA.filter((c) => c.group === "q").length;
 const N_DAILY = FA_EXTRA.filter((c) => c.group === "d").length;
@@ -77,6 +78,8 @@ export function FaScannerClient({
   quarterly,
   priorQuarter,
   releaseDates,
+  prevScores,
+  prevQuarter,
 }: {
   rows: FaScore[];
   universe: UniverseLiquidityRow[];
@@ -91,6 +94,10 @@ export function FaScannerClient({
   priorQuarter: string;
   /** symbol -> publication date (YYYY-MM-DD) of the selected quarter's statements. Sparse. */
   releaseDates: Record<string, string>;
+  /** symbol -> previous quarter's score, as the Score column would print it. */
+  prevScores: Record<string, number>;
+  /** The quarter those scores belong to; null when it was never scored. */
+  prevQuarter: string | null;
 }) {
   const router = useRouter();
   // Pending state for the quarter switch: router.push runs a server round-trip
@@ -180,6 +187,12 @@ export function FaScannerClient({
     [preIndustry, industry, locale],
   );
 
+  // One change per row, computed on the two numbers the reader sees.
+  const qoqBySymbol = useMemo(
+    () => new Map(rows.map((r) => [r.symbol, qoqChange(faNormalizedScore(r), prevScores[r.symbol], 0)])),
+    [rows, prevScores],
+  );
+
   const filtered = useMemo(() => {
     // Industry narrows FIRST, then the sort runs over what is left — sorting is
     // always of the visible list, never of the whole universe.
@@ -207,10 +220,12 @@ export function FaScannerClient({
           return quarterlyBySymbol.get(r.symbol)?.npatBn ?? null;
         case "npat_yoy":
           return quarterlyBySymbol.get(r.symbol)?.npatYoy ?? null;
+        case "qoq":
+          return qoqSortValue(qoqBySymbol.get(r.symbol));
         default:
           // "symbol" and "industry" are compared as text in the sort itself and
           // never reach here; the rest are real FaScore numeric columns.
-          return r[sortKey as Exclude<SortKey, "symbol" | "industry" | "release_date" | FaExtraKey>];
+          return r[sortKey as Exclude<SortKey, "symbol" | "industry" | "release_date" | "qoq" | FaExtraKey>];
       }
     };
 
@@ -260,7 +275,7 @@ export function FaScannerClient({
     // After the filters too: a pinned symbol that fails a floor stays hidden,
     // or the row count above the table would stop describing what is in it.
     return floatPinned(out, pinned, (r) => r.symbol);
-  }, [preIndustry, industryFilter, industry, locale, releaseDates,
+  }, [preIndustry, industryFilter, industry, locale, releaseDates, qoqBySymbol,
       quarterlyBySymbol, sortKey, sortAsc, pinned]);
 
   function toggleSort(key: SortKey) {
@@ -464,8 +479,19 @@ export function FaScannerClient({
                 >
                   {t(locale, "industry")}{sortIndicator("industry")}
                 </th>
-                <th rowSpan={2} className="label row-h px-2 text-right align-bottom cursor-pointer select-none border-r border-line" onClick={() => toggleSort("total_score")}>
+                <th rowSpan={2} className="label row-h px-2 text-right align-bottom cursor-pointer select-none" onClick={() => toggleSort("total_score")}>
                   {t(locale, "faTotalScore")}{sortIndicator("total_score")}
+                </th>
+                {/* Beside the score it compares, and it carries the block's
+                    right edge the score used to carry: the two read as one. */}
+                <th
+                  rowSpan={2}
+                  className="label row-h px-2 text-right align-bottom cursor-pointer select-none whitespace-normal leading-tight border-r border-line"
+                  title={t(locale, "faQoqTip")}
+                  data-qoq-head=""
+                  onClick={() => toggleSort("qoq")}
+                >
+                  {t(locale, "faQoqCol")}{sortIndicator("qoq")}
                 </th>
                 <th colSpan={FA_COMPONENTS.length} className="label row-h px-2 text-center border-b border-line">
                   {t(locale, "faComponentsGroup")}
@@ -577,9 +603,21 @@ export function FaScannerClient({
                       <span className="text-fg-faint">—</span>
                     )}
                   </td>
-                  <td className="row-h px-2 text-data font-mono tnum text-right whitespace-nowrap border-r border-line-faint">
+                  <td className="row-h px-2 text-data font-mono tnum text-right whitespace-nowrap">
                     {faNormalizedScore(row)} / {FA_NORMALIZED_MAX}
                   </td>
+                  {(() => {
+                    const v = qoqView(qoqBySymbol.get(row.symbol), locale, 0);
+                    return (
+                      <td
+                        className={`row-h px-2 text-data font-mono tnum text-right whitespace-nowrap border-r border-line-faint ${v.className}`}
+                        title={prevQuarter ? `${v.title} (${prevQuarter} → ${selectedQuarter})` : v.title}
+                        data-qoq={row.symbol}
+                      >
+                        {v.text}
+                      </td>
+                    );
+                  })()}
                   {FA_COMPONENTS.map((c) => {
                     const pts = row[c.pts];
                     return (

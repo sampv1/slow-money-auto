@@ -1,6 +1,7 @@
 import type { SecScore } from "@/lib/fa-securities";
 import type { UniverseLiquidityRow } from "@/lib/cached-data";
-import { getFaReleaseDates, getSecDates, getSecRows, getUniverseLiquidity } from "@/lib/cached-data";
+import { getFaReleaseDates, getSecDates, getSecRows, getSecScoreMapAt, getUniverseLiquidity } from "@/lib/cached-data";
+import { priorQuarterEndSession } from "@/lib/fa-qoq";
 import { getLocale, t } from "@/lib/i18n";
 import { SecScannerClient } from "./sec-scanner-client";
 import { DataError } from "@/components/data-error";
@@ -24,6 +25,12 @@ export default async function FaScannerSecuritiesPage({
   // by the row's OWN quality_period, not one global quarter: brokers on a
   // session need not share a filing.
   let releaseDates: Record<string, string> = {};
+  // "So với quý trước": each broker's OFFICIAL score at the last session of the
+  // previous quarter. A broker is rescored every session, so there is no single
+  // quarterly score to look up — the quarter's closing session is the one a
+  // reader would have seen at that quarter's end.
+  let prevScores: Record<string, number | null> = {};
+  let prevDate: string | null = null;
   // The error itself, not its message: a failed count query comes back with an
   // empty message, and a truthy check on a string reports "no data" during an
   // outage. Same shape as the other two tabs, for the same reason.
@@ -35,7 +42,13 @@ export default async function FaScannerSecuritiesPage({
     // bookmarked URL silently select nothing.
     selected = params.d && dates.includes(params.d) ? params.d : dates[0];
     if (selected) {
-      const [scores, uni] = await Promise.all([getSecRows(selected), getUniverseLiquidity()]);
+      prevDate = priorQuarterEndSession(selected, dates);
+      const [scores, uni, prevMap] = await Promise.all([
+        getSecRows(selected),
+        getUniverseLiquidity(),
+        prevDate ? getSecScoreMapAt(prevDate) : Promise.resolve({} as Record<string, number | null>),
+      ]);
+      prevScores = prevMap;
       rows = scores;
       universe = uni;
       const periods = [...new Set(scores.map((r) => r.quality_period).filter((p): p is string => !!p))];
@@ -100,6 +113,8 @@ export default async function FaScannerSecuritiesPage({
         internal={internal}
         labelsDisabled={labelsDisabled}
         releaseDates={releaseDates}
+        prevScores={prevScores}
+        prevDate={prevDate}
       />
     </div>
   );

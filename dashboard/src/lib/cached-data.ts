@@ -142,6 +142,35 @@ export const getFaRows = unstable_cache(
 );
 
 /**
+ * The two score columns of one quarter, per symbol — the "So với quý trước"
+ * column's previous-quarter side.
+ *
+ * A separate read rather than `getFaRows(previous)`: that is ~0.79 MB of 34
+ * columns per quarter, of which this needs two. The caller applies
+ * `faNormalizedScore`, so the previous score goes through exactly the rule that
+ * prints the current one.
+ */
+export const getFaScoreMap = unstable_cache(
+  async (quarter: string): Promise<Record<string, { total_score: number; normalized_score: number | null }>> => {
+    type Row = { symbol: string; total_score: number; normalized_score: number | null };
+    const rows = await fetchAllPaged<Row>(
+      (from, to, withCount) =>
+        supabase
+          .from("fa_scores")
+          .select("symbol,total_score,normalized_score", withCount ? { count: "exact" } : undefined)
+          .eq("as_of_period", quarter)
+          .order("symbol", { ascending: true })
+          .range(from, to) as unknown as PromiseLike<PagedResult<Row>>,
+    );
+    return Object.fromEntries(
+      rows.map((r) => [r.symbol, { total_score: r.total_score, normalized_score: r.normalized_score }]),
+    );
+  },
+  ["fa-score-map"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/**
  * Latest row per symbol in ONE read, via the DISTINCT ON function from
  * migration 047. Falls back to the per-quarter fan-out below if the function
  * isn't there yet, so this can deploy before the migration is applied.
@@ -833,6 +862,39 @@ export const getSecDates = unstable_cache(
 );
 
 /**
+ * The OFFICIAL securities score per broker at one session — the previous-quarter
+ * side of "So với quý trước".
+ *
+ * Reads one jsonb path, not the row: `getSecRows` carries two contract blobs per
+ * broker, and this needs one number from each. The value is the same field the
+ * Score column prints (`ui_contract.final_composite_score`), null where the
+ * publish gate failed, so a withheld score can never be compared.
+ */
+export const getSecScoreMapAt = unstable_cache(
+  async (date: string): Promise<Record<string, number | null>> => {
+    type Row = { symbol: string; score: number | null };
+    try {
+      const rows = await fetchAllPaged<Row>(
+        (from, to, withCount) =>
+          supabase
+            .from("fa_securities_scores")
+            .select("symbol,score:ui_contract->final_composite_score", withCount ? { count: "exact" } : undefined)
+            .eq("as_of_date", date)
+            .eq("model_version", SEC_ACTIVE_MODEL)
+            .eq("score_status", "OFFICIAL")
+            .order("symbol", { ascending: true })
+            .range(from, to) as unknown as PromiseLike<PagedResult<Row>>,
+      );
+      return Object.fromEntries(rows.map((r) => [r.symbol, typeof r.score === "number" ? r.score : null]));
+    } catch {
+      return {};
+    }
+  },
+  ["fa-sec-score-map"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/**
  * Securities score rows for one session.
  *
  * ~42 rows carrying two small jsonb blobs each — nowhere near Vercel's 2 MB
@@ -878,6 +940,26 @@ export const getReQuarters = unstable_cache(
     return Array.from(new Set(rows.map((r) => r.as_of_period)));
   },
   ["fa-re-quarters"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/** Real-estate total score per symbol for one quarter — the previous-quarter
+ *  side of "So với quý trước". Empty when that quarter was never imported. */
+export const getReScoreMap = unstable_cache(
+  async (quarter: string): Promise<Record<string, number>> => {
+    type Row = { symbol: string; total_score: number };
+    const rows = await fetchAllPaged<Row>(
+      (from, to, withCount) =>
+        supabase
+          .from("fa_re_scores")
+          .select("symbol,total_score", withCount ? { count: "exact" } : undefined)
+          .eq("as_of_period", quarter)
+          .order("symbol", { ascending: true })
+          .range(from, to) as unknown as PromiseLike<PagedResult<Row>>,
+    );
+    return Object.fromEntries(rows.map((r) => [r.symbol, r.total_score]));
+  },
+  ["fa-re-score-map"],
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
 );
 
