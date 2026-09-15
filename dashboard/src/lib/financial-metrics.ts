@@ -1,28 +1,40 @@
 /**
- * The nine financial charts on the Analysis page: what each one plots, and how
+ * The ten financial charts on the Analysis page: what each one plots, and how
  * every figure on it is derived.
  *
- * ONE `ChartSpec` PER CARD, not one metric id per card. The earlier model
- * pointed each card at a single key inside `fa_vnstock_statements.items`, which
- * cannot express any of what the specification actually asks for: a profit-
- * before-tax DECOMPOSITION that must sum back to its own total, a TTM layer
+ * SPECIFIED BY BA in "Hồ sơ Kỹ thuật Hệ thống 10 Biểu đồ Phân tích Tài chính
+ * (CFA Standard) V2", with the open points settled in "Phản hồi IT-1409-V1" and
+ * "Phản hồi IT-V2-1509". This replaces the earlier nine-chart set; the two
+ * charts that have no successor (the three-part cash-flow chart, and EPS on the
+ * valuation card) were withdrawn there by name.
+ *
+ * ONE `ChartSpec` PER CARD, not one metric id per card. A card has to express a
+ * profit-before-tax DECOMPOSITION that sums back to its own total, a TTM layer
  * that sums four quarters of a flow while leaving balances point-in-time, a
- * cash-flow line the provider does not ship at all, or a P/E whose newest point
- * is marked to today's price. All of those are ordinary series functions here.
+ * five-point balance-sheet average, a cash-flow line the provider does not ship
+ * at all, and a P/E whose newest point is marked to today's price. All of those
+ * are ordinary series functions here.
  *
  * SIGNS COME FROM THE DATA, SO ADD — NEVER SUBTRACT. The provider stores
  * expenses negative (`IS_SELLING_EXPENSES` = -1,149.1e9). Verified on FPT
  * 2026-Q2: gross 4,279.7 + selling -1,149.1 + G&A -1,282.7 + financial income
  * 582.7 + financial expense -301.6 + JV 756.6 + other 24.7 = 2,910.3 against a
- * reported profit before tax of 2,910.4. Writing that decomposition with
- * minus signs double-counts every expense and was off by 8,000 tỷ a quarter.
+ * reported profit before tax of 2,910.4. Writing that decomposition with minus
+ * signs double-counts every expense and was off by 8,000 tỷ a quarter.
  *
- * EPS IS COMPUTED HERE, NOT READ. `IS_BASIC_EARNINGS_PER_SHARE` is a literal
- * 0.0 in every quarter the provider returns for FPT.
+ * ONE EBIT FOR THE WHOLE SYSTEM, AND IT IS THE CORE ONE (reply §1). Core EBIT =
+ * gross profit − selling − admin, used by the EBITDA margin, ROIC, EV/EBITDA,
+ * interest cover and net debt / EBITDA alike. The alternative reading, profit
+ * before tax + interest, is 35% higher on FPT (13,425 against 9,957 tỷ TTM)
+ * because it folds in financial and joint-venture income — which is exactly
+ * what BA excluded, so that a holding company's operating engine is what these
+ * ratios measure. Verified over five quarters on six symbols: core EBIT + D&A
+ * reproduces the provider's own EBITDA to 0.0% (one DGC quarter at 1.2%).
  */
 
 import { CHART_LITERAL, SERIES_FIN as C, SERIES_RESIDUAL } from "@/lib/chart-theme";
 import type { VnstockStatementRow } from "@/lib/cached-data";
+import type { TranslationKey } from "@/lib/i18n";
 
 export type StatementKind = "income" | "balance" | "cashflow" | "ratio";
 
@@ -30,7 +42,7 @@ export type StatementKind = "income" | "balance" | "cashflow" | "ratio";
 export type Layer = "quarter" | "ttm" | "year";
 
 /** How a figure is written. `x` is a multiple (P/E 12,4×). */
-export type Unit = "vnd" | "percent" | "x" | "perShare";
+export type Unit = "vnd" | "percent" | "x" | "days" | "years";
 
 // --- Frames -----------------------------------------------------------------
 
@@ -46,8 +58,8 @@ export type Frame = {
 /**
  * Collapse the row-per-(period, statement) shape the table stores into one
  * frame per period, because every derived figure here crosses statements —
- * EBITDA needs profit before tax from the income statement AND depreciation
- * from the cash-flow statement; ROA needs profit over total assets.
+ * EBITDA needs the income statement AND depreciation from the cash-flow
+ * statement; ROA needs profit over total assets.
  */
 export function buildFrames(
   rows: VnstockStatementRow[],
@@ -75,9 +87,19 @@ export function buildFrames(
 /**
  * What one series function gets to see at one x-position.
  *
- * `window` is THE FOUR QUARTERS ENDING HERE on the quarter and ttm layers, and
- * `[cur]` on the annual layer — which is what makes `flow()` below a single
- * expression rather than a branch inside every series.
+ * FOUR WINDOWS, BECAUSE THE SPECIFICATION ASKS FOUR DIFFERENT QUESTIONS of the
+ * same grid, and collapsing them is how a figure ends up silently mixing bases:
+ *
+ *  - `window` is the layer's own flow window: `[cur]` on the quarter and year
+ *    layers, the four quarters ending here on TTM. This is what the BARS show.
+ *  - `trailing4` is ALWAYS the twelve months ending here, whatever the layer.
+ *    Interest cover, net debt / EBITDA and the backlog ratio are defined TTM
+ *    even on the quarterly tab, where `window` is a single quarter.
+ *  - `avgWindow` carries the balance-sheet averaging points (reply §3): five
+ *    consecutive quarters on TTM, start and end of year on the annual layer,
+ *    the period itself on the quarter layer. EMPTY where they are not all
+ *    available, so an average never quietly runs on fewer points.
+ *  - `yearAgoWindow` is the flow window one year back, for growth.
  */
 export type Ctx = {
   layer: Layer;
@@ -86,10 +108,14 @@ export type Ctx = {
   prev: Frame | null;
   /** The frame one YEAR back, matched by LABEL, for growth. */
   yearAgo: Frame | null;
-  /** Trailing window ending at `cur`; length 4 on quarterly grids when available. */
+  /** Trailing flow window for THIS layer; length 4 on the TTM grid. */
   window: Frame[];
   /** The same window one year earlier, for TTM growth. */
   yearAgoWindow: Frame[];
+  /** The twelve months ending here, on every layer. Empty when incomplete. */
+  trailing4: Frame[];
+  /** Balance-sheet averaging points. Empty when incomplete. */
+  avgWindow: Frame[];
   /** On the ANNUAL layer, the Q4 quarterly frame of the same year. The
    *  provider's own annual ratio row is not usable — see `liveOr`. */
   q4: Frame | null;
@@ -121,41 +147,60 @@ function at(f: Frame | null, st: StatementKind, ids: string[]): number | null {
   return seen ? sum : null;
 }
 
+/** One figure read off one period — the unit every window helper below sums. */
+type Pick = (f: Frame) => number | null;
+
+const items = (st: StatementKind, ids: string[]): Pick => (f) => at(f, st, ids);
+
 /**
- * A FLOW at this x-position: the period's own figure on the quarter and year
- * layers, the trailing four quarters summed on the ttm layer.
+ * Sum a pick across exactly `need` frames, or nothing.
  *
- * The TTM sum requires all four quarters. A three-quarter "TTM" is not a
- * twelve-month figure and would draw a step down at the left edge of every
- * chart that a reader would take for a collapse in the business.
+ * ALL-OR-NOTHING ON PURPOSE. A three-quarter "TTM" is not a twelve-month
+ * figure, and it would draw a step down at the left edge of every chart that a
+ * reader would take for a collapse in the business.
  */
-function flow(ctx: Ctx, st: StatementKind, ids: string[]): number | null {
-  if (ctx.layer !== "ttm") return at(ctx.cur, st, ids);
-  if (ctx.window.length < 4) return null;
+function sumFrames(frames: Frame[], pick: Pick, need: number): number | null {
+  if (frames.length !== need) return null;
   let sum = 0;
-  for (const f of ctx.window) {
-    const v = at(f, st, ids);
+  for (const f of frames) {
+    const v = pick(f);
     if (v === null) return null;
     sum += v;
   }
   return sum;
 }
 
-/** Same, one year back — the denominator for every growth series. */
-function flowYearAgo(ctx: Ctx, st: StatementKind, ids: string[]): number | null {
-  if (ctx.layer !== "ttm") return at(ctx.yearAgo, st, ids);
-  if (ctx.yearAgoWindow.length < 4) return null;
-  let sum = 0;
-  for (const f of ctx.yearAgoWindow) {
-    const v = at(f, st, ids);
-    if (v === null) return null;
-    sum += v;
-  }
-  return sum;
+/** A FLOW at this x-position, on the layer's own basis. */
+const flow = (ctx: Ctx, pick: Pick): number | null =>
+  ctx.layer === "ttm" ? sumFrames(ctx.window, pick, 4) : pick(ctx.cur);
+
+/** The same, one year back — the denominator for every growth series. */
+const flowYearAgo = (ctx: Ctx, pick: Pick): number | null =>
+  ctx.layer === "ttm"
+    ? sumFrames(ctx.yearAgoWindow, pick, 4)
+    : ctx.yearAgo
+      ? pick(ctx.yearAgo)
+      : null;
+
+/** The TWELVE MONTHS ending here, whatever the layer is showing. */
+const ttm = (ctx: Ctx, pick: Pick): number | null =>
+  sumFrames(ctx.trailing4, pick, ctx.layer === "year" ? 1 : 4);
+
+/**
+ * A BALANCE, averaged per reply §3 — five quarterly points on TTM, start and
+ * end of year on the annual layer, the period's own figure on the quarter
+ * layer. Used by ROE, ROA, ROIC, DSO, DIO and DPO, and by nothing else: D/E,
+ * the backlog, CIP and both structure charts are point-in-time by the same
+ * ruling.
+ */
+function avg(ctx: Ctx, pick: Pick): number | null {
+  const n = ctx.avgWindow.length;
+  if (n === 0) return null;
+  const sum = sumFrames(ctx.avgWindow, pick, n);
+  return sum === null ? null : sum / n;
 }
 
-/** A STOCK (balance sheet) is always point-in-time — "vốn chủ sở hữu quý hiện
- *  tính", per the specification, never a sum across the window. */
+/** A STOCK at the period end — never summed, never averaged. */
 const stock = (ctx: Ctx, ids: string[]): number | null => at(ctx.cur, "balance", ids);
 
 /**
@@ -178,10 +223,20 @@ function ratio(a: number | null, b: number | null): number | null {
   return Number.isFinite(r) ? r : null;
 }
 
+/** A margin, expressed in PERCENT (25.09), not as a fraction. */
+function pct(a: number | null, b: number | null): number | null {
+  const r = ratio(a, b);
+  return r === null ? null : r * 100;
+}
+
+const minus = (a: number | null, b: number | null): number | null =>
+  a === null || b === null ? null : a - b;
+
 // --- Metric ids -------------------------------------------------------------
 
 const IS = {
   revenue: "IS_NET_REVENUE",
+  cogs: "IS_COST_OF_GOODS_SOLD",
   gross: "IS_GROSS_PROFIT",
   selling: "IS_SELLING_EXPENSES",
   admin: "IS_GENERAL_AND_ADMINISTRATIVE_EXPENSES",
@@ -192,6 +247,7 @@ const IS = {
   jv2: "IS_SHARE_OF_PROFIT_IN_ASSOCIATES_AND_JOINT_VENTURES",
   other: "IS_OTHER_PROFIT",
   pbt: "IS_PROFIT_BEFORE_TAX",
+  tax: "IS_CORPORATE_INCOME_TAX_EXPENSES",
   npat: "IS_NET_PROFIT_AFTER_TAX",
   npatParent: "IS_PROFIT_AFTER_TAX_FOR_SHAREHOLDERS_OF_PARENT_COMPANY",
 } as const;
@@ -199,30 +255,35 @@ const IS = {
 const BS = {
   cash: "BS_CASH_AND_PRECIOUS_METALS",
   stInvest: "BS_SHORT_TERM_INVESTMENTS",
-  ltInvest: "BS_LONG_TERM_INVESTMENTS",
   stRecv: "BS_SHORT_TERM_RECEIVABLES",
   ltRecv: "BS_LONG_TERM_RECEIVABLES",
+  tradeRecv: "BS_TRADE_RECEIVABLES",
+  ltTradeRecv: "BS_LONG_TERM_TRADE_RECEIVABLES",
   inventories: "BS_INVENTORIES",
   fixed: "BS_FIXED_ASSETS",
-  cip: "BS_CONSTRUCTION_IN_PROGRESS",
+  /** XDCB only, per reply §6 — NOT `BS_CONSTRUCTION_IN_PROGRESS`, which also
+   *  carries long-term production in progress (HPG: 14,621 = 13,987 + 634). */
+  cip: "BS_CAPITAL_CONSTRUCTION_IN_PROGRESS",
+  /** A developer's land bank. Its own segment, so it is not filed under
+   *  "other": it is 86% of SLD's total assets, 68% of QCG's, 67% of DTA's. */
+  landBank: "BS_LONG_TERM_PRODUCTION_IN_PROGRESS",
+  investProp: "BS_INVESTMENT_PROPERTIES",
   totalAssets: "BS_TOTAL_ASSETS",
   stBorrow: "BS_SHORT_TERM_BORROWINGS",
+  ltBorrow: "BS_LONG_TERM_BORROWINGS",
   payables: "BS_TRADE_ACCOUNTS_PAYABLE",
   advancesST: "BS_ADVANCES_FROM_CUSTOMERS",
   advancesLT: "BS_LONG_TERM_ADVANCES_FROM_CUSTOMERS",
   unearnedST: "BS_SHORT_TERM_UNEARNED_REVENUE",
   unearnedLT: "BS_LONG_TERM_UNEARNED_REVENUE",
-  ltBorrow: "BS_LONG_TERM_BORROWINGS",
   equity: "BS_EQUITY",
   minority: "BS_MINORITY_INTEREST",
+  totalLiabilities: "BS_TOTAL_LIABILITIES",
   totalCapital: "BS_TOTAL_LIABILITIES_AND_EQUITY",
 } as const;
 
 const CF = {
   cfo: "CF_NET_CASH_FLOWS_FROM_OPERATING_ACTIVITIES",
-  cfi: "CF_NET_CASH_FLOWS_FROM_INVESTING_ACTIVITIES",
-  cff: "CF_NET_CASH_FLOWS_FROM_FINANCING_ACTIVITIES",
-  cashEnd: "CF_CASH_AND_CASH_EQUIVALENTS_AT_END_OF_PERIOD",
   capex: "CF_PAYMENTS_FOR_FIXED_ASSETS",
   depreciation: "CF_DEPRECIATION_AND_AMORTISATION",
 } as const;
@@ -231,76 +292,124 @@ const RT = {
   pe: "RT_VALUE_PE",
   pb: "RT_VALUE_PB",
   shares: "RT_VALUE_OUTSTANDING_SHARES",
+  marketCap: "RT_VALUE_MARKET_CAP",
 } as const;
 
-// --- Derived figures --------------------------------------------------------
+// --- Picks and derived figures ----------------------------------------------
+
+const P = {
+  revenue: items("income", [IS.revenue]),
+  cogs: items("income", [IS.cogs]),
+  gross: items("income", [IS.gross]),
+  sga: items("income", [IS.selling, IS.admin]),
+  /** Gross profit net of the two operating expense lines, which are stored
+   *  negative — so this ADDS them. BA's Core EBIT. */
+  coreEbit: items("income", [IS.gross, IS.selling, IS.admin]),
+  financial: items("income", [IS.finIncome, IS.finExpense]),
+  otherAndJv: items("income", [IS.other, IS.jv, IS.jv2]),
+  interest: items("income", [IS.interest]),
+  pbt: items("income", [IS.pbt]),
+  tax: items("income", [IS.tax]),
+  npat: items("income", [IS.npat]),
+  npatParent: items("income", [IS.npatParent]),
+  cfo: items("cashflow", [CF.cfo]),
+  depreciation: items("cashflow", [CF.depreciation]),
+  /** Capex is stored NEGATIVE, so this IS operating cash flow less capex. */
+  fcf: items("cashflow", [CF.cfo, CF.capex]),
+  liquid: items("balance", [BS.cash, BS.stInvest]),
+  borrowings: items("balance", [BS.stBorrow, BS.ltBorrow]),
+  tradeRecv: items("balance", [BS.tradeRecv, BS.ltTradeRecv]),
+  inventories: items("balance", [BS.inventories]),
+  payables: items("balance", [BS.payables]),
+  totalAssets: items("balance", [BS.totalAssets]),
+  backlog: items("balance", [BS.advancesST, BS.advancesLT, BS.unearnedST, BS.unearnedLT]),
+  /** Equity attributable to the parent, which is what ROE and P/B measure. */
+  parentEquity: (f: Frame) => {
+    const eq = val(f, "balance", BS.equity);
+    return eq === null ? null : eq - (val(f, "balance", BS.minority) ?? 0);
+  },
+  investedCapital: (f: Frame) => {
+    const eq = val(f, "balance", BS.equity);
+    if (eq === null) return null;
+    return eq + (at(f, "balance", [BS.stBorrow, BS.ltBorrow]) ?? 0)
+      - (at(f, "balance", [BS.cash, BS.stInvest]) ?? 0);
+  },
+} as const;
+
+/** Positive interest expense; null where the company reported none, which is
+ *  what makes "no borrowings" distinguishable from "cover unknown". */
+function interestTtm(ctx: Ctx): number | null {
+  const v = ttm(ctx, P.interest);
+  if (v === null) return null;
+  const positive = -v;
+  return positive > 0 ? positive : null;
+}
+
+/** EBITDA = Core EBIT + depreciation (reply §1), on the layer's own basis. */
+const ebitda = (ctx: Ctx): number | null => {
+  const core = flow(ctx, P.coreEbit);
+  const dep = flow(ctx, P.depreciation);
+  return core === null ? null : core + (dep ?? 0);
+};
+
+/** The same, always over twelve months — for the ratios defined TTM. */
+const ebitdaTtm = (ctx: Ctx): number | null => {
+  const core = ttm(ctx, P.coreEbit);
+  const dep = ttm(ctx, P.depreciation);
+  return core === null ? null : core + (dep ?? 0);
+};
 
 /**
- * FINANCING CASH FLOW, DERIVED — the provider returns null in all 34 quarters
- * and all 8 years, so the alternative to this is an empty series.
- *
- * CFF = Δcash − CFO − CFI. The FX-translation line is also null, so whatever it
- * held is absorbed here; per the specification's own ruling, computing it one
- * period at a time keeps that error from compounding across the series.
- * Verified on FPT 2026-Q2: Δcash 850 − CFO 1,702 − CFI (−1,517) = 664 tỷ.
+ * Effective tax rate (reply §2): tax expense over profit before tax, both TTM.
+ * A loss-making or negative-rate period falls back to Vietnam's 20% statutory
+ * rate, because a rate read off a loss says nothing about the tax a profitable
+ * quarter would pay.
  */
-function cff(ctx: Ctx): number | null {
-  const direct = flow(ctx, "cashflow", [CF.cff]);
-  if (direct !== null) return direct;
-  const cfo = flow(ctx, "cashflow", [CF.cfo]);
-  const cfi = flow(ctx, "cashflow", [CF.cfi]);
-  const end = val(ctx.cur, "cashflow", CF.cashEnd);
-  const start = val(ctx.prev, "cashflow", CF.cashEnd);
-  if (cfo === null || cfi === null || end === null || start === null) return null;
-  return end - start - cfo - cfi;
+const STATUTORY_TAX = 0.2;
+
+function effectiveTax(ctx: Ctx): number {
+  const pbt = ttm(ctx, P.pbt);
+  const tax = ttm(ctx, P.tax);
+  if (pbt === null || pbt <= 0 || tax === null) return STATUTORY_TAX;
+  const t = -tax / pbt;
+  return Number.isFinite(t) && t >= 0 ? t : STATUTORY_TAX;
 }
 
-/** EBITDA = profit before tax + interest expense + depreciation.
- *  Interest is stored NEGATIVE, so it is subtracted to add it back. */
-function ebitda(ctx: Ctx): number | null {
-  const pbt = flow(ctx, "income", [IS.pbt]);
-  const int = flow(ctx, "income", [IS.interest]);
-  const dep = flow(ctx, "cashflow", [CF.depreciation]);
-  if (pbt === null) return null;
-  return pbt - (int ?? 0) + (dep ?? 0);
+/** ROIC = NOPAT ÷ average invested capital, invested capital being equity plus
+ *  interest-bearing debt less liquid assets (reply §2). */
+function roic(ctx: Ctx): number | null {
+  const core = flow(ctx, P.coreEbit);
+  const inv = avg(ctx, P.investedCapital);
+  if (core === null || inv === null || inv <= 0) return null;
+  return pct(core * (1 - effectiveTax(ctx)), inv);
 }
 
-/**
- * EPS on the TTM profit of the shareholders of the parent, over the share count
- * AS REPORTED for this quarter — "số cp lưu hành quý hiện tính", explicitly not
- * restated. The series therefore steps DOWN at a bonus issue, which is the
- * intended reading.
- *
- * Reproduces the provider's own denominator: 9,999 tỷ / 1,714.3m = 5,833 đ,
- * which prices FPT's latest close at P/E 12,45 against the provider's 12,3804.
- */
-function epsTtm(ctx: Ctx): number | null {
-  const profit = ctx.layer === "year"
-    ? at(ctx.cur, "income", [IS.npatParent])
-    : ttmParentProfit(ctx);
-  return ratio(profit, val(ctx.cur, "ratio", RT.shares));
+/** Days ratios, all on AVERAGED balances and TTM-consistent flows. Cost of
+ *  goods sold is stored negative, hence the magnitude. */
+const DAYS_IN_YEAR = 365;
+
+function days(numerator: number | null, denom: number | null): number | null {
+  if (numerator === null || denom === null) return null;
+  const d = Math.abs(denom);
+  return d === 0 ? null : (numerator / d) * DAYS_IN_YEAR;
 }
 
-function ttmParentProfit(ctx: Ctx): number | null {
-  if (ctx.window.length < 4) return null;
-  let sum = 0;
-  for (const f of ctx.window) {
-    const v = val(f, "income", IS.npatParent);
-    if (v === null) return null;
-    sum += v;
-  }
-  return sum;
+const dso = (ctx: Ctx) => days(avg(ctx, P.tradeRecv), flow(ctx, P.revenue));
+const dio = (ctx: Ctx) => days(avg(ctx, P.inventories), flow(ctx, P.cogs));
+const dpo = (ctx: Ctx) => days(avg(ctx, P.payables), flow(ctx, P.cogs));
+
+function ccc(ctx: Ctx): number | null {
+  const a = dso(ctx);
+  const b = dio(ctx);
+  const c = dpo(ctx);
+  if (a === null || b === null || c === null) return null;
+  return a + b - c;
 }
 
-/** Book value per share on PARENT equity — total equity less the minority
- *  interest. Reproduces the provider's P/B to 0.3% (3,12 vs 3,1146); including
- *  the minority misses by 2.3%. */
-function bvps(ctx: Ctx): number | null {
-  const eq = val(ctx.cur, "balance", BS.equity);
-  const mi = val(ctx.cur, "balance", BS.minority) ?? 0;
-  if (eq === null) return null;
-  return ratio(eq - mi, val(ctx.cur, "ratio", RT.shares));
-}
+/** Net debt = interest-bearing borrowings less liquid assets (reply §2).
+ *  Negative means net cash, which is a real and common state here. */
+const netDebt = (ctx: Ctx): number | null =>
+  minus(stock(ctx, [BS.stBorrow, BS.ltBorrow]), stock(ctx, [BS.cash, BS.stInvest]));
 
 /**
  * P/E AND P/B COME FROM THE PROVIDER, and only the newest point is recomputed.
@@ -310,9 +419,8 @@ function bvps(ctx: Ctx): number | null {
  * (bonus shares AND cash dividends), so pairing them with an as-reported share
  * count misprices history by -37% to +26%. The tell was that the P/E error and
  * the P/B error are IDENTICAL in every quarter — two different denominators,
- * one shared numerator, so the fault is entirely in the price. FPT's price
- * factor over the span is 1.59 against a share factor of 1.174; no pairing of
- * an adjusted series with any share count closes that gap.
+ * one shared numerator, so the fault is entirely in the price. BA reconfirmed
+ * this in reply §4: never recompute an adjusted historical price.
  *
  * The newest point is the exception, because at the right edge the adjusted
  * close IS the traded close. Reconstructing the provider's own denominators and
@@ -335,25 +443,99 @@ function liveOr(ctx: Ctx, providerId: string, denom: (c: Ctx) => number | null):
   return val(source, "ratio", providerId);
 }
 
+/** EPS on TTM parent profit over the share count AS REPORTED for this quarter.
+ *  Not drawn any more (reply §4 withdrew the EPS line) — it survives as the
+ *  denominator that reconstructs the provider's P/E for the live point. */
+const epsTtm = (ctx: Ctx): number | null =>
+  ratio(
+    ctx.layer === "year" ? at(ctx.cur, "income", [IS.npatParent]) : ttm(ctx, P.npatParent),
+    val(ctx.cur, "ratio", RT.shares),
+  );
+
+/** Book value per share on PARENT equity. Reproduces the provider's P/B to
+ *  0.3% (3,12 vs 3,1146); including the minority misses by 2.3%. */
+const bvps = (ctx: Ctx): number | null =>
+  ratio(P.parentEquity(ctx.cur), val(ctx.cur, "ratio", RT.shares));
+
+/**
+ * EV/EBITDA IS COMPUTED HERE, unlike P/E and P/B (reply §A).
+ *
+ * The provider ships `RT_VALUE_EV_EBITDA`, but its enterprise value uses a
+ * different net debt from the one BA defined — closer to borrowings less cash,
+ * with no short-term investments — so taking it would put two different "net
+ * debt"s on one page: DGC reads 8.24× from the provider against 2.72× on BA's
+ * definition, MWG 10.30 against 7.52. It also goes stale: at Q4/2025 the
+ * provider's implied net debt is identical to Q3 on all six symbols measured.
+ *
+ * Market capitalisation still comes from the provider, which is what keeps the
+ * adjusted-price problem out: it is the share count times the price that
+ * actually traded, not a back-adjusted series. Only the newest point is marked
+ * to today's close, exactly as P/E and P/B are.
+ */
+function evEbitda(ctx: Ctx): number | null {
+  const eb = ebitdaTtm(ctx);
+  if (eb === null || eb <= 0) return null;
+  const nd = netDebt(ctx);
+  if (nd === null) return null;
+  const shares = val(ctx.cur, "ratio", RT.shares);
+  const live =
+    ctx.isLatest && ctx.latestClose !== null && ctx.layer !== "year" && shares !== null
+      ? ctx.latestClose * shares
+      : null;
+  const source = ctx.layer === "year" ? (ctx.q4 ?? ctx.cur) : ctx.cur;
+  const cap = live ?? val(source, "ratio", RT.marketCap);
+  if (cap === null || cap <= 0) return null;
+  return (cap + nd) / eb;
+}
+
 // --- Series and chart specs -------------------------------------------------
 
 export type SeriesSpec = {
   key: string;
   label_en: string;
   label_vi: string;
-  /** `bar` sits on the value axis; `line` may sit on either. */
-  kind: "bar" | "line";
-  /** `growth` is the right-hand percentage axis; everything else shares the left. */
+  /** `bar` and `area` sit on the value axis; `line` may sit on either. `band`
+   *  shades the region between two values — see `computeBand`. */
+  kind: "bar" | "line" | "band";
+  /** `growth` is the right-hand second axis; everything else shares the left. */
   axis: "value" | "growth";
   /** Bars sharing a stack id are stacked; bars without one are grouped. */
   stack?: string;
   /** Fixed palette slot, so a series keeps its colour when siblings are absent. */
   color: string;
-  /** Overrides the chart's unit for this series (chart 6 mixes three). */
+  /** Overrides the chart's unit for this series. */
   unit?: Unit;
   /** Dashed, for a series that contextualises rather than competes. */
   dashed?: boolean;
+  /** Drawn with a diagonal stripe — BA's "highlight" for CIP (reply §6). */
+  striped?: boolean;
+  /**
+   * Layers this series belongs to. Absent means every layer the chart offers.
+   *
+   * Charts 1 and 2 need it for the TTM overlay their tab layout asks for, and
+   * chart 6 for cash conversion, which BA restricted to the TTM and annual
+   * tabs — on the quarterly tab it reads 19,146% for MWG and goes negative
+   * every Q4 for FPT, from seasonal operating cash flow.
+   */
+  onLayers?: Layer[];
+  /**
+   * Computed and listed in the readout, never drawn and never in the legend.
+   *
+   * This is how chart 8 keeps interest cover and net debt / EBITDA (reply §B):
+   * both are unreadable beside D/E on one axis — D/E's median is 0.37 and 95%
+   * of companies sit under 2.3, while net debt / EBITDA spans -62.6 to 124.6
+   * between the 1st and 99th percentiles.
+   */
+  tooltipOnly?: boolean;
   compute: (ctx: Ctx) => number | null;
+  /** For `band`: the two values to shade between, low first. */
+  computeBand?: (ctx: Ctx) => [number, number] | null;
+  /**
+   * A phrase to print INSTEAD of the number, when a null or a negative would
+   * mislead. "Không vay nợ" is not the same fact as "cover unknown", and a
+   * net-cash company's "-0,9 years to repay" is not a repayment period at all.
+   */
+  note?: (ctx: Ctx) => TranslationKey | null;
 };
 
 export type ChartSpec = {
@@ -362,23 +544,17 @@ export type ChartSpec = {
   title_vi: string;
   /** Axis unit for every series that does not override it. */
   unit: Unit;
-  /**
-   * Overrides the unit caption above the plot. Card 6 needs it: its left axis
-   * carries P/E and P/B in multiples AND ROE in percent, so a caption reading
-   * "Lần" alone tells the reader that a 26 on that axis means 26×, which for
-   * the ROE line it does not.
-   */
+  /** Overrides the unit caption above the plot, where one axis carries two
+   *  units (chart 10 is multiples and percent). */
   caption_en?: string;
   caption_vi?: string;
   /** Offered layers, in the order the toggle shows them. */
   layers: Layer[];
   /**
-   * Which layer the card opens on. Defaults to the widest it offers, which is
-   * right for the trend cards and WRONG for valuation: annual's newest point is
-   * the last completed YEAR-END, so card 6 opened on FPT's 31/12/2025 P/E of
-   * 13,6× while the live figure was 12,4× — and the live one is only reachable
-   * by changing the layer, which is not where a reader looks for "what is it
-   * trading at". A valuation chart is a question about the present.
+   * Which layer the card opens on. TTM wherever a chart offers it (reply, final
+   * section): it is the basis that answers "how is the business doing" without
+   * the seasonality that makes a single Vietnamese quarter unreadable. The
+   * structure charts (7-9) open on quarters, where a balance sheet belongs.
    */
   defaultLayer?: Layer;
   /**
@@ -387,22 +563,13 @@ export type ChartSpec = {
    * implies a 30/06 price when the number is marked to 26/08.
    */
   livePriced?: boolean;
-  /**
-   * Which series the card states in full above the plot. Defaults to the first,
-   * which is wrong wherever the first series is not what the title names: card 2
-   * is "Lợi nhuận sau thuế" and led with GROSS profit, cards 7 and 8 are "Tài
-   * sản" / "Nguồn vốn" and led with cash and short-term borrowings. A card whose
-   * headline contradicts its own title is worse than one with no headline.
-   * A spec carrying a `total` headlines that instead.
-   */
+  /** Which series the card states in full above the plot. Defaults to the
+   *  first, which is wrong wherever the first series is not what the title
+   *  names. */
   headline?: string;
-  /**
-   * Periods the card opens on, in years — an override for the section-wide
-   * five (see DEFAULT_SPAN_YEARS in financial-chart.tsx). Nothing sets it
-   * today: two charts did, both to 5, which is now what every chart does.
-   * Kept because "this one needs a different window" is a real thing to want,
-   * and the alternative is a magic number inside one spec's series.
-   */
+  /** A reference level on the SECOND axis — chart 6's 100% cash conversion. */
+  growthReference?: number;
+  /** Periods the card opens on, in years; overrides the section-wide five. */
   defaultSpanYears?: number;
   series: SeriesSpec[];
   /** Reconciliation total: drawn as the residual's base and shown in the
@@ -412,16 +579,19 @@ export type ChartSpec = {
    * The balancing segment's key, if this chart has one.
    *
    * Its SHARE OF THE TOTAL is how the card tells whether its decomposition
-   * describes this company at all. These specs encode a non-financial balance
-   * sheet; a bank does not report short-term investments, inventories or trade
-   * payables, so on TCB the residual is 98% of total assets and 85% of total
-   * capital, and on VND 90% of total assets. Drawn, that is a bar of almost
-   * pure grey which reads as "this company holds unclassified assets" — a claim
-   * about the company rather than about the rubric. Above `residualLimit` the
-   * card says so instead of drawing it.
+   * describes this company at all — but only for a FINANCIAL filer now. BA
+   * removed the guard for the companies this specification covers (reply §C):
+   * a large "other" is then a true reading of the balance sheet, and it is the
+   * honest one for the 35 non-financial companies and 17 developers above 50%.
+   * Banks and brokers are a different case and keep the refusal: their six
+   * segments explain almost nothing (TCB, VCB and CTG all 99% other, SSI 98%),
+   * so the chart would be a bar of pure grey — a claim about the company rather
+   * than about the line items. They are also out of this specification's scope,
+   * which is non-financial and real-estate filers.
    */
   residualKey?: string;
-  /** Share of the total above which the decomposition is declared unfit. */
+  /** Share of the total above which a financial filer's decomposition is
+   *  declared unfit. */
   residualLimit?: number;
 };
 
@@ -436,11 +606,10 @@ export type ChartSpec = {
 const SECOND_AXIS_COLOR = CHART_LITERAL.reference;
 
 const growthSeries = (
-  key: string,
-  st: StatementKind,
-  ids: string[],
+  pick: Pick,
   label_en: string,
   label_vi: string,
+  key = "growth",
 ): SeriesSpec => ({
   key,
   label_en,
@@ -450,28 +619,44 @@ const growthSeries = (
   color: SECOND_AXIS_COLOR,
   dashed: true,
   unit: "percent",
-  compute: (ctx) => growth(flow(ctx, st, ids), flowYearAgo(ctx, st, ids)),
+  compute: (ctx) => growth(flow(ctx, pick), flowYearAgo(ctx, pick)),
 });
 
-/** Core operating profit: gross profit net of the two operating expense lines,
- *  which are stored negative — so this ADDS them. */
-const coreProfit = (ctx: Ctx) =>
-  flow(ctx, "income", [IS.gross, IS.selling, IS.admin]);
+const bsStack = (
+  key: string,
+  label_en: string,
+  label_vi: string,
+  pick: Pick,
+  color: string,
+  striped = false,
+): SeriesSpec => ({
+  key,
+  label_en,
+  label_vi,
+  kind: "bar",
+  axis: "value",
+  stack: "bs",
+  color,
+  striped,
+  compute: (ctx) => pick(ctx.cur),
+});
 
 /**
- * Above this share of the total, a residual is not "everything else" — it is the
- * chart admitting the line items it names are not the ones this company files.
- * FPT sits at ~7% and VND's capital at ~10%; the unfit cases are 85-98%.
+ * Above this share of the total, a FINANCIAL filer's residual is not
+ * "everything else" — it is the chart admitting the line items it names are not
+ * the ones this company files.
  */
 export const DEFAULT_RESIDUAL_LIMIT = 0.5;
 
 export const FINANCIAL_CHARTS: ChartSpec[] = [
   {
+    // BA 1 — scale and growth of net revenue.
     id: "revenue",
-    title_en: "Revenue",
-    title_vi: "Doanh thu",
+    title_en: "Revenue & growth",
+    title_vi: "Doanh thu & tăng trưởng",
     unit: "vnd",
     layers: ["quarter", "ttm", "year"],
+    defaultLayer: "ttm",
     series: [
       {
         key: "revenue",
@@ -480,18 +665,37 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         kind: "bar",
         axis: "value",
         color: C[0],
-        compute: (ctx) => flow(ctx, "income", [IS.revenue]),
+        // THE BARS ARE ALWAYS THE PERIOD'S OWN FIGURE, on every tab. On the TTM
+        // tab BA's layout keeps quarterly bars and adds the TTM line over them,
+        // which is what makes the smoothing visible rather than hiding the
+        // quarters it smooths.
+        compute: (ctx) => P.revenue(ctx.cur),
       },
-      growthSeries("growth", "income", [IS.revenue], "YoY growth", "Tăng trưởng YoY"),
+      {
+        key: "revenueTtm",
+        label_en: "Net revenue TTM",
+        label_vi: "Doanh thu thuần TTM",
+        kind: "line",
+        axis: "value",
+        // THE SAME COLOUR AS THE BARS, because it is the same series on another
+        // basis; the mark (a line over bars) is what separates them, and a
+        // second hue would claim a second metric.
+        color: C[0],
+        onLayers: ["ttm"],
+        compute: (ctx) => sumFrames(ctx.window, P.revenue, 4),
+      },
+      growthSeries(P.revenue, "YoY growth", "Tăng trưởng YoY"),
     ],
   },
   {
+    // BA 2 — gross profit, consolidated profit and the parent's share.
     id: "profit",
-    title_en: "Profit after tax",
-    title_vi: "Lợi nhuận sau thuế",
+    title_en: "Profit & growth",
+    title_vi: "Lợi nhuận & tăng trưởng",
     unit: "vnd",
     layers: ["quarter", "ttm", "year"],
-    headline: "npat",
+    defaultLayer: "ttm",
+    headline: "npatParent",
     // GROUPED, NOT STACKED. Gross profit contains profit after tax contains the
     // parent's share — stacking three nested figures would draw a bar roughly
     // twice the height of anything the company reported.
@@ -502,138 +706,179 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         label_vi: "Lợi nhuận gộp",
         kind: "bar",
         axis: "value",
-        color: C[0],
-        compute: (ctx) => flow(ctx, "income", [IS.gross]),
+        color: C[3],
+        compute: (ctx) => P.gross(ctx.cur),
       },
       {
         key: "npat",
         label_en: "Profit after tax",
-        label_vi: "Lợi nhuận sau thuế",
+        label_vi: "LNST hợp nhất",
         kind: "bar",
         axis: "value",
-        color: C[1],
-        compute: (ctx) => flow(ctx, "income", [IS.npat]),
+        color: C[0],
+        compute: (ctx) => P.npat(ctx.cur),
       },
       {
         key: "npatParent",
         label_en: "Attributable to parent",
-        label_vi: "LNST cổ đông công ty mẹ",
+        label_vi: "LNST công ty mẹ",
         kind: "bar",
         axis: "value",
         color: C[2],
-        compute: (ctx) => flow(ctx, "income", [IS.npatParent]),
+        compute: (ctx) => P.npatParent(ctx.cur),
       },
-      growthSeries("growth", "income", [IS.npat], "PAT growth YoY", "Tăng trưởng LNST"),
+      {
+        key: "npatParentTtm",
+        label_en: "Parent PAT TTM",
+        label_vi: "LNST công ty mẹ TTM",
+        kind: "line",
+        axis: "value",
+        // Same colour as the parent bars it smooths, as on chart 1.
+        color: C[2],
+        onLayers: ["ttm"],
+        compute: (ctx) => sumFrames(ctx.window, P.npatParent, 4),
+      },
+      // THE PARENT'S PROFIT DRIVES THE GROWTH LINE, on every tab — BA's closing
+      // instruction, and the reason the TTM line reads the same series.
+      growthSeries(P.npatParent, "Parent PAT growth YoY", "Tăng trưởng LNST công ty mẹ"),
     ],
   },
   {
+    // BA 3 — Penman's separation of operating from financing results.
     id: "pbt-mix",
-    title_en: "Pre-tax profit mix",
-    title_vi: "Cơ cấu lợi nhuận trước thuế",
+    title_en: "Profit mix (Penman)",
+    title_vi: "Cơ cấu lợi nhuận (Penman)",
     unit: "vnd",
     layers: ["quarter", "ttm", "year"],
-    // STACKED, and it reconciles: the four segments sum to reported profit
+    defaultLayer: "ttm",
+    headline: "core",
+    // STACKED, and it reconciles: the three segments sum to reported profit
     // before tax to within rounding on every quarter tested.
     series: [
       {
         key: "core",
-        label_en: "Core operations",
-        label_vi: "HĐ kinh doanh chính",
+        label_en: "Core operating profit",
+        label_vi: "LNKD cốt lõi",
         kind: "bar",
         axis: "value",
         stack: "pbt",
         color: C[0],
-        compute: coreProfit,
+        compute: (ctx) => flow(ctx, P.coreEbit),
       },
       {
         key: "financial",
-        label_en: "Financial activities",
-        label_vi: "HĐ tài chính",
+        label_en: "Financial result",
+        label_vi: "LN tài chính",
         kind: "bar",
         axis: "value",
         stack: "pbt",
         color: C[1],
-        compute: (ctx) => flow(ctx, "income", [IS.finIncome, IS.finExpense]),
+        compute: (ctx) => flow(ctx, P.financial),
       },
       {
-        key: "jv",
-        label_en: "Associates & JVs",
-        label_vi: "Công ty liên doanh, liên kết",
+        key: "otherJv",
+        label_en: "Other, associates & JVs",
+        label_vi: "LN khác & liên kết",
         kind: "bar",
         axis: "value",
         stack: "pbt",
         color: C[2],
-        compute: (ctx) => flow(ctx, "income", [IS.jv, IS.jv2]),
+        compute: (ctx) => flow(ctx, P.otherAndJv),
       },
-      {
-        key: "other",
-        label_en: "Other profit",
-        label_vi: "Lợi nhuận khác",
-        kind: "bar",
-        axis: "value",
-        stack: "pbt",
-        color: C[3],
-        compute: (ctx) => flow(ctx, "income", [IS.other]),
-      },
-      {
-        key: "growth",
-        label_en: "Core growth YoY",
-        label_vi: "Tăng trưởng HĐKD chính",
-        kind: "line",
-        axis: "growth",
-        color: SECOND_AXIS_COLOR,
-        dashed: true,
-        unit: "percent",
-        compute: (ctx) =>
-          growth(
-            coreProfit(ctx),
-            ctx.layer === "ttm"
-              ? sumWindow(ctx.yearAgoWindow, "income", [IS.gross, IS.selling, IS.admin])
-              : at(ctx.yearAgo, "income", [IS.gross, IS.selling, IS.admin]),
-          ),
-      },
+      growthSeries(P.coreEbit, "Core profit growth YoY", "Tăng trưởng LNKD cốt lõi"),
     ],
     total: {
       label_en: "Profit before tax",
       label_vi: "Tổng LNTT",
-      compute: (ctx) => flow(ctx, "income", [IS.pbt]),
+      compute: (ctx) => flow(ctx, P.pbt),
     },
   },
   {
+    // BA 4 — margins and the operating cost structure.
     id: "margins",
-    title_en: "Margins & returns",
-    title_vi: "Biên lãi",
+    title_en: "Margins & cost structure",
+    title_vi: "Biên lợi nhuận & cơ cấu chi phí",
     unit: "percent",
     layers: ["quarter", "ttm", "year"],
-    // FIVE LINES, ONE AXIS. Every series here is a percentage, so they share a
-    // scale honestly and the chart needs no second axis at all.
+    defaultLayer: "ttm",
+    // FIVE LINES, ONE AXIS. Every series here is a percentage of revenue, so
+    // they share a scale honestly and the chart needs no second axis at all.
     series: [
       {
         key: "gross",
         label_en: "Gross margin",
-        label_vi: "Biên lãi gộp",
+        label_vi: "Biên LN gộp",
         kind: "line",
         axis: "value",
-        color: C[0],
-        compute: (ctx) => pct(flow(ctx, "income", [IS.gross]), flow(ctx, "income", [IS.revenue])),
-      },
-      {
-        key: "net",
-        label_en: "Net margin",
-        label_vi: "Biên lãi sau thuế",
-        kind: "line",
-        axis: "value",
-        color: C[1],
-        compute: (ctx) => pct(flow(ctx, "income", [IS.npat]), flow(ctx, "income", [IS.revenue])),
+        color: C[2],
+        compute: (ctx) => pct(flow(ctx, P.gross), flow(ctx, P.revenue)),
       },
       {
         key: "ebitda",
         label_en: "EBITDA margin",
-        label_vi: "Biên lãi EBITDA",
+        label_vi: "Biên EBITDA",
         kind: "line",
         axis: "value",
-        color: C[2],
-        compute: (ctx) => pct(ebitda(ctx), flow(ctx, "income", [IS.revenue])),
+        color: C[3],
+        compute: (ctx) => pct(ebitda(ctx), flow(ctx, P.revenue)),
+      },
+      {
+        key: "core",
+        label_en: "Core EBIT margin",
+        label_vi: "Biên LNKD cốt lõi",
+        kind: "line",
+        axis: "value",
+        color: C[0],
+        compute: (ctx) => pct(flow(ctx, P.coreEbit), flow(ctx, P.revenue)),
+      },
+      {
+        key: "net",
+        label_en: "Net margin",
+        label_vi: "Biên LNST",
+        kind: "line",
+        axis: "value",
+        color: C[7],
+        compute: (ctx) => pct(flow(ctx, P.npat), flow(ctx, P.revenue)),
+      },
+      {
+        key: "sga",
+        label_en: "Selling & admin / revenue",
+        label_vi: "CP bán hàng & QLDN / DTT",
+        kind: "line",
+        axis: "value",
+        color: C[4],
+        dashed: true,
+        // A COST, DRAWN POSITIVE. Both expense lines are stored negative, so
+        // the ratio is negated: a cost ratio that falls as costs rise would
+        // invert the one reading this series exists for.
+        compute: (ctx) => {
+          const r = pct(flow(ctx, P.sga), flow(ctx, P.revenue));
+          return r === null ? null : -r;
+        },
+      },
+    ],
+  },
+  {
+    // BA 5 — returns on capital, and the cash conversion cycle.
+    id: "returns",
+    title_en: "Returns & cash cycle",
+    title_vi: "Hiệu suất vốn & chu kỳ tiền",
+    unit: "percent",
+    caption_en: "% · days",
+    caption_vi: "% · ngày",
+    // NO QUARTERLY LAYER: a single quarter's return on capital is not an annual
+    // rate, and BA's data layers for this chart are TTM and annual.
+    layers: ["ttm", "year"],
+    defaultLayer: "ttm",
+    series: [
+      {
+        key: "roic",
+        label_en: "ROIC",
+        label_vi: "ROIC",
+        kind: "line",
+        axis: "value",
+        color: C[4],
+        compute: roic,
       },
       {
         key: "roe",
@@ -641,8 +886,11 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         label_vi: "ROE",
         kind: "line",
         axis: "value",
-        color: C[3],
-        compute: (ctx) => pct(flow(ctx, "income", [IS.npat]), stock(ctx, [BS.equity])),
+        color: C[0],
+        // PARENT OVER PARENT (reply §3): the profit the parent's shareholders
+        // own, over the equity they own. Mixing consolidated profit with total
+        // equity credits the parent with the minority's capital.
+        compute: (ctx) => pct(flow(ctx, P.npatParent), avg(ctx, P.parentEquity)),
       },
       {
         key: "roa",
@@ -650,46 +898,118 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         label_vi: "ROA",
         kind: "line",
         axis: "value",
-        color: C[4],
-        compute: (ctx) => pct(flow(ctx, "income", [IS.npat]), stock(ctx, [BS.totalAssets])),
+        color: C[2],
+        // CONSOLIDATED over consolidated: total assets include the subsidiaries
+        // whose profit the consolidated figure carries.
+        compute: (ctx) => pct(flow(ctx, P.npat), avg(ctx, P.totalAssets)),
+      },
+      {
+        key: "ccc",
+        label_en: "Cash conversion cycle (days)",
+        label_vi: "Chu kỳ chuyển đổi tiền (ngày)",
+        // BARS ON THE SECOND AXIS, in days — the one series here that is not a
+        // rate, and the only card where a second-axis series is a bar. It keeps
+        // a categorical hue rather than the reserved reference colour because a
+        // bar cannot be dashed, so the axis is all that separates it.
+        kind: "bar",
+        axis: "growth",
+        color: C[3],
+        unit: "days",
+        compute: ccc,
+      },
+      {
+        key: "dso",
+        label_en: "Days sales outstanding",
+        label_vi: "Số ngày phải thu (DSO)",
+        kind: "line",
+        axis: "growth",
+        color: C[3],
+        unit: "days",
+        tooltipOnly: true,
+        compute: dso,
+      },
+      {
+        key: "dio",
+        label_en: "Days inventory",
+        label_vi: "Số ngày tồn kho (DIO)",
+        kind: "line",
+        axis: "growth",
+        color: C[3],
+        unit: "days",
+        tooltipOnly: true,
+        compute: dio,
+      },
+      {
+        key: "dpo",
+        label_en: "Days payable",
+        label_vi: "Số ngày phải trả (DPO)",
+        kind: "line",
+        axis: "growth",
+        color: C[3],
+        unit: "days",
+        tooltipOnly: true,
+        compute: dpo,
       },
     ],
   },
   {
-    id: "cashflow",
-    title_en: "Cash flow",
-    title_vi: "Lưu chuyển tiền",
+    // BA 6 — earnings quality: accruals, operating cash flow and free cash flow.
+    id: "cash-quality",
+    title_en: "Earnings quality & cash",
+    title_vi: "Chất lượng lợi nhuận & dòng tiền",
     unit: "vnd",
-    // NO TTM LAYER — removed from the specification at revision 1.
-    layers: ["quarter", "year"],
+    layers: ["quarter", "ttm", "year"],
+    defaultLayer: "ttm",
     headline: "cfo",
+    growthReference: 100,
     series: [
       {
-        key: "cfo",
-        label_en: "Operating",
-        label_vi: "HĐ kinh doanh",
-        kind: "bar",
+        // THE SHADED REGION IS THE ACCRUAL, and it is drawn first so the four
+        // lines sit on top of it. Only where profit EXCEEDS cash flow: that is
+        // the direction Dechow & Sloan's anomaly runs, and shading the other
+        // direction too would turn a warning into decoration.
+        key: "accrualBand",
+        label_en: "Accruals",
+        label_vi: "Accruals",
+        kind: "band",
         axis: "value",
-        color: C[0],
-        compute: (ctx) => flow(ctx, "cashflow", [CF.cfo]),
+        // Red at low opacity, which reads as BA's pale pink and says "warning"
+        // where it matters: profit the period did not collect in cash.
+        color: C[7],
+        compute: () => null,
+        computeBand: (ctx) => {
+          const profit = flow(ctx, P.npat);
+          const cash = flow(ctx, P.cfo);
+          if (profit === null || cash === null || profit <= cash) return null;
+          return [cash, profit];
+        },
       },
       {
-        key: "cfi",
-        label_en: "Investing",
-        label_vi: "HĐ đầu tư",
-        kind: "bar",
-        axis: "value",
-        color: C[1],
-        compute: (ctx) => flow(ctx, "cashflow", [CF.cfi]),
-      },
-      {
-        key: "cff",
-        label_en: "Financing (derived)",
-        label_vi: "HĐ tài chính (suy ra)",
-        kind: "bar",
+        key: "ebitda",
+        label_en: "EBITDA",
+        label_vi: "EBITDA",
+        kind: "line",
         axis: "value",
         color: C[2],
-        compute: cff,
+        compute: ebitda,
+      },
+      {
+        key: "npat",
+        label_en: "Profit after tax",
+        label_vi: "LNST",
+        kind: "line",
+        axis: "value",
+        color: C[0],
+        compute: (ctx) => flow(ctx, P.npat),
+      },
+      {
+        key: "cfo",
+        label_en: "Operating cash flow",
+        label_vi: "Dòng tiền HĐKD (OCF)",
+        kind: "line",
+        axis: "value",
+        color: C[3],
+        compute: (ctx) => flow(ctx, P.cfo),
       },
       {
         key: "fcf",
@@ -697,24 +1017,258 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         label_vi: "Dòng tiền tự do (FCF)",
         kind: "line",
         axis: "value",
-        color: C[3],
-        // Capex is stored NEGATIVE, so CFO + capex is CFO less capex.
-        compute: (ctx) => flow(ctx, "cashflow", [CF.cfo, CF.capex]),
+        color: C[4],
+        // FCF, NOT FCFF (reply §7). Operating cash flow less capex is the
+        // simple free cash flow; CFA's FCFF would add back after-tax interest,
+        // and BA renamed the series rather than change the formula.
+        compute: (ctx) => flow(ctx, P.fcf),
       },
       {
-        key: "cashEnd",
-        label_en: "Closing cash",
-        label_vi: "Tiền cuối kỳ",
+        key: "cashConversion",
+        label_en: "Cash conversion (OCF / PAT)",
+        label_vi: "Tỷ lệ chuyển đổi tiền (OCF / LNST)",
+        kind: "line",
+        axis: "growth",
+        color: SECOND_AXIS_COLOR,
+        dashed: true,
+        unit: "percent",
+        onLayers: ["ttm", "year"],
+        compute: (ctx) => {
+          const profit = flow(ctx, P.npat);
+          // A LOSS HAS NO CONVERSION RATE (reply §7): dividing cash flow by a
+          // negative profit returns a number whose sign says the opposite of
+          // what it appears to.
+          if (profit === null || profit <= 0) return null;
+          return pct(flow(ctx, P.cfo), profit);
+        },
+      },
+      {
+        key: "accruals",
+        label_en: "Accruals (PAT − OCF)",
+        label_vi: "Accruals (LNST − OCF)",
         kind: "line",
         axis: "value",
-        color: C[4],
-        dashed: true,
-        // A BALANCE, not a flow: never summed across the window.
-        compute: (ctx) => val(ctx.cur, "cashflow", CF.cashEnd),
+        color: C[7],
+        tooltipOnly: true,
+        compute: (ctx) => minus(flow(ctx, P.npat), flow(ctx, P.cfo)),
       },
     ],
   },
   {
+    // BA 7 — asset structure, liquidity and the work-in-progress signal.
+    id: "assets",
+    title_en: "Asset structure",
+    title_vi: "Cơ cấu tài sản",
+    unit: "vnd",
+    // BALANCE-SHEET CHARTS ARE QUARTERLY AND ANNUAL, per the specification.
+    layers: ["quarter", "year"],
+    defaultLayer: "quarter",
+    series: [
+      bsStack("liquid", "Liquid assets", "Tài sản thanh khoản cao", P.liquid, C[0]),
+      bsStack("receivables", "Receivables", "Các khoản phải thu",
+        items("balance", [BS.stRecv, BS.ltRecv]), C[4]),
+      bsStack("inventories", "Inventories", "Hàng tồn kho", P.inventories, C[2]),
+      bsStack("landBank", "Long-term work in progress", "CP SXKD dở dang dài hạn",
+        items("balance", [BS.landBank]), C[1]),
+      bsStack("fixed", "Fixed assets", "Tài sản cố định", items("balance", [BS.fixed]), C[5]),
+      bsStack("investProp", "Investment property", "Bất động sản đầu tư",
+        items("balance", [BS.investProp]), C[3]),
+      // STRIPED, which is BA's highlight for the work-in-progress signal: it is
+      // the one segment on this chart that is read as an early indicator rather
+      // than as a share of the balance sheet.
+      bsStack("cip", "Construction in progress", "CP xây dựng cơ bản dở dang",
+        items("balance", [BS.cip]), C[7], true),
+      {
+        key: "otherAssets",
+        label_en: "Other assets",
+        label_vi: "Tài sản khác",
+        kind: "bar",
+        axis: "value",
+        stack: "bs",
+        color: SERIES_RESIDUAL,
+        // The RESIDUAL, so the stack reaches reported total assets rather than
+        // stopping short of it and reading as a broken chart.
+        compute: (ctx) =>
+          residual(stock(ctx, [BS.totalAssets]), [
+            P.liquid(ctx.cur),
+            at(ctx.cur, "balance", [BS.stRecv, BS.ltRecv]),
+            P.inventories(ctx.cur),
+            at(ctx.cur, "balance", [BS.landBank]),
+            at(ctx.cur, "balance", [BS.fixed]),
+            at(ctx.cur, "balance", [BS.investProp]),
+            at(ctx.cur, "balance", [BS.cip]),
+          ]),
+      },
+      {
+        key: "recvShare",
+        label_en: "Receivables / total assets",
+        label_vi: "Phải thu / tổng tài sản",
+        kind: "line",
+        axis: "growth",
+        color: SECOND_AXIS_COLOR,
+        dashed: true,
+        unit: "percent",
+        compute: (ctx) =>
+          pct(at(ctx.cur, "balance", [BS.stRecv, BS.ltRecv]), stock(ctx, [BS.totalAssets])),
+      },
+    ],
+    residualKey: "otherAssets",
+    total: {
+      label_en: "Total assets",
+      label_vi: "Tổng tài sản",
+      compute: (ctx) => stock(ctx, [BS.totalAssets]),
+    },
+  },
+  {
+    // BA 8 — funding structure and debt health (Altman's base inputs).
+    id: "capital",
+    title_en: "Funding & debt health",
+    title_vi: "Nguồn vốn & sức khỏe nợ vay",
+    unit: "vnd",
+    caption_en: "VND bn · times",
+    caption_vi: "Tỷ đồng · lần",
+    layers: ["quarter", "year"],
+    defaultLayer: "quarter",
+    headline: "equity",
+    series: [
+      bsStack("equity", "Equity", "Vốn chủ sở hữu", items("balance", [BS.equity]), C[0]),
+      {
+        key: "tradeCredit",
+        label_en: "Non-debt liabilities",
+        label_vi: "Nợ chiếm dụng",
+        kind: "bar",
+        axis: "value",
+        stack: "bs",
+        // GREY, per BA, and it is genuinely a balancing figure: total
+        // liabilities less interest-bearing borrowings, so it carries trade
+        // credit along with taxes, accruals and provisions.
+        color: SERIES_RESIDUAL,
+        // A MISSING BORROWINGS LINE MEANS NONE OF IT IS DEBT, not that this
+        // segment is unknown. Treating it as unknown left TCB's stack drawing
+        // equity alone — 189k tỷ against a 1.27M tỷ total, with the balancing
+        // segment absent and the guard below therefore never firing, because
+        // the guard reads this segment's share. A bank's deposits are not in
+        // `BS_SHORT_TERM_BORROWINGS`, so this is exactly the case that matters.
+        // Zero non-financial filers report total liabilities without a
+        // borrowings line, so nothing in scope changes.
+        compute: (ctx) => {
+          const liabilities = stock(ctx, [BS.totalLiabilities]);
+          if (liabilities === null) return null;
+          return liabilities - (stock(ctx, [BS.stBorrow, BS.ltBorrow]) ?? 0);
+        },
+      },
+      bsStack("borrowings", "Interest-bearing debt", "Nợ vay tài chính", P.borrowings, C[7]),
+      {
+        key: "de",
+        label_en: "D/E (debt / equity)",
+        label_vi: "D/E (nợ vay / VCSH)",
+        // THE ONLY LINE ON THE SECOND AXIS (reply §B). BA's first layout put
+        // net debt / EBITDA here too; on one axis it flattens D/E onto the
+        // floor for roughly a third of the market, so it moved to the readout.
+        kind: "line",
+        axis: "growth",
+        color: SECOND_AXIS_COLOR,
+        unit: "x",
+        compute: (ctx) => ratio(stock(ctx, [BS.stBorrow, BS.ltBorrow]), stock(ctx, [BS.equity])),
+      },
+      {
+        key: "netDebt",
+        label_en: "Net debt",
+        label_vi: "Nợ ròng",
+        kind: "line",
+        axis: "value",
+        color: C[7],
+        tooltipOnly: true,
+        // NEGATIVE IS NET CASH, and it is left signed here on purpose: this is
+        // the "specific figure" BA asked to keep for a net-cash company, and
+        // -10.522 tỷ says more than the word does.
+        compute: netDebt,
+      },
+      {
+        key: "netDebtEbitda",
+        label_en: "Net debt / EBITDA (years)",
+        label_vi: "Nợ ròng / EBITDA (số năm)",
+        kind: "line",
+        axis: "value",
+        color: C[7],
+        unit: "years",
+        tooltipOnly: true,
+        compute: (ctx) => {
+          const nd = netDebt(ctx);
+          if (nd === null || nd < 0) return null;
+          const eb = ebitdaTtm(ctx);
+          return eb === null || eb <= 0 ? null : nd / eb;
+        },
+        // "Years to repay" is not a thing a net-cash company has.
+        note: (ctx) => {
+          const nd = netDebt(ctx);
+          return nd !== null && nd < 0 ? "finNetCash" : null;
+        },
+      },
+      {
+        key: "icr",
+        label_en: "Interest cover (Core EBIT / interest)",
+        label_vi: "Khả năng trả lãi (LNKD cốt lõi / lãi vay)",
+        kind: "line",
+        axis: "value",
+        color: C[6],
+        unit: "x",
+        tooltipOnly: true,
+        compute: (ctx) => ratio(ttm(ctx, P.coreEbit), interestTtm(ctx)),
+        // NO INTEREST IS NOT UNKNOWN COVER. 238 of 1,139 filers reported no
+        // interest expense at all in Q2/2026; an em dash there reads as missing
+        // data about a company that simply has no borrowings to cover.
+        note: (ctx) => (interestTtm(ctx) === null ? "finNoDebt" : null),
+      },
+    ],
+    // For a financial filer this segment is deposits, not trade credit, so the
+    // same guard applies to it as to chart 7's residual.
+    residualKey: "tradeCredit",
+    total: {
+      label_en: "Total capital",
+      label_vi: "Tổng nguồn vốn",
+      compute: (ctx) => stock(ctx, [BS.totalCapital]),
+    },
+  },
+  {
+    // BA 9 — revenue already contracted but not yet recognised.
+    id: "backlog",
+    title_en: "Revenue backlog",
+    title_vi: "Doanh thu chờ ghi nhận",
+    unit: "vnd",
+    layers: ["quarter", "year"],
+    defaultLayer: "quarter",
+    series: [
+      bsStack("advST", "Customer advances, short-term", "Người mua trả trước ngắn hạn",
+        items("balance", [BS.advancesST]), C[2]),
+      bsStack("advLT", "Customer advances, long-term", "Người mua trả trước dài hạn",
+        items("balance", [BS.advancesLT]), C[0]),
+      bsStack("unST", "Unearned revenue, short-term", "DT chưa thực hiện ngắn hạn",
+        items("balance", [BS.unearnedST]), C[3]),
+      bsStack("unLT", "Unearned revenue, long-term", "DT chưa thực hiện dài hạn",
+        items("balance", [BS.unearnedLT]), C[4]),
+      {
+        key: "backlogShare",
+        label_en: "Backlog / revenue TTM",
+        label_vi: "Backlog / DTT TTM",
+        kind: "line",
+        axis: "growth",
+        color: SECOND_AXIS_COLOR,
+        dashed: true,
+        unit: "percent",
+        // THE DENOMINATOR IS TWELVE MONTHS on both tabs — a backlog measured
+        // against one quarter's revenue reads four times larger than it is.
+        compute: (ctx) => pct(P.backlog(ctx.cur), ttm(ctx, P.revenue)),
+      },
+    ],
+    total: {
+      label_en: "Total backlog",
+      label_vi: "Tổng backlog",
+      compute: (ctx) => P.backlog(ctx.cur),
+    },
+  },
+  {
+    // BA 10 — relative valuation against the return it is paying for.
     id: "valuation",
     title_en: "Valuation",
     title_vi: "Định giá",
@@ -746,150 +1300,32 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         compute: (ctx) => liveOr(ctx, RT.pb, bvps),
       },
       {
-        key: "roe",
-        label_en: "ROE (%)",
-        label_vi: "ROE (%)",
+        key: "evEbitda",
+        label_en: "EV/EBITDA",
+        label_vi: "EV/EBITDA",
         kind: "line",
         axis: "value",
         color: C[2],
-        unit: "percent",
-        // Deliberately duplicated from chart 4, at the customer's request.
-        compute: (ctx) => pct(flow(ctx, "income", [IS.npat]), stock(ctx, [BS.equity])),
+        unit: "x",
+        compute: evEbitda,
       },
       {
-        key: "eps",
-        label_en: "EPS (đ)",
-        label_vi: "EPS (đồng)",
-        // A LINE, NOT BARS. As bars on the right axis it filled the plot and
-        // buried the three ratio lines this card exists to show — EPS is the
-        // context here, the multiples are the subject. Dashed, because it is
-        // the only series not on the left axis and must not read as a fourth
-        // multiple.
+        key: "roe",
+        label_en: "ROE",
+        label_vi: "ROE",
         kind: "line",
-        dashed: true,
-        axis: "growth", // the right-hand axis, in đồng per share
+        axis: "growth",
         color: SECOND_AXIS_COLOR,
-        unit: "perShare",
-        compute: epsTtm,
+        dashed: true,
+        unit: "percent",
+        // The same parent-over-parent ROE as chart 5, duplicated here at the
+        // customer's explicit request: a multiple is read against the return
+        // that justifies it.
+        compute: (ctx) => pct(flow(ctx, P.npatParent), avg(ctx, P.parentEquity)),
       },
-    ],
-  },
-  {
-    id: "assets",
-    title_en: "Assets",
-    title_vi: "Tài sản",
-    unit: "vnd",
-    // BALANCE-SHEET CHARTS ARE QUARTERLY ONLY, per the specification.
-    layers: ["quarter"],
-    series: [
-      bsStack("cash", "Cash & equivalents", "Tiền và tương đương", [BS.cash], C[0]),
-      bsStack("stInvest", "Short-term investments", "Đầu tư TC ngắn hạn", [BS.stInvest], C[1]),
-      bsStack("ltInvest", "Long-term investments", "Đầu tư TC dài hạn", [BS.ltInvest], C[2]),
-      bsStack("receivables", "Receivables", "Các khoản phải thu", [BS.stRecv, BS.ltRecv], C[3]),
-      bsStack("inventories", "Inventories", "Tồn kho", [BS.inventories], C[4]),
-      bsStack("fixed", "Fixed assets", "Tài sản cố định", [BS.fixed], C[5]),
-      bsStack("cip", "Construction in progress", "TS dở dang dài hạn", [BS.cip], C[6]),
-      {
-        key: "otherAssets",
-        label_en: "Other",
-        label_vi: "Khác",
-        kind: "bar",
-        axis: "value",
-        stack: "bs",
-        color: SERIES_RESIDUAL,
-        // The RESIDUAL, so the stack reaches reported total assets rather than
-        // stopping short of it and reading as a broken chart.
-        compute: (ctx) =>
-          residual(stock(ctx, [BS.totalAssets]), [
-            stock(ctx, [BS.cash]),
-            stock(ctx, [BS.stInvest]),
-            stock(ctx, [BS.ltInvest]),
-            stock(ctx, [BS.stRecv, BS.ltRecv]),
-            stock(ctx, [BS.inventories]),
-            stock(ctx, [BS.fixed]),
-            stock(ctx, [BS.cip]),
-          ]),
-      },
-    ],
-    residualKey: "otherAssets",
-    total: {
-      label_en: "Total assets",
-      label_vi: "Tổng tài sản",
-      compute: (ctx) => stock(ctx, [BS.totalAssets]),
-    },
-  },
-  {
-    id: "capital",
-    title_en: "Capital & liabilities",
-    title_vi: "Nguồn vốn",
-    unit: "vnd",
-    layers: ["quarter"],
-    series: [
-      bsStack("stBorrow", "Short-term borrowings", "Vay ngắn hạn", [BS.stBorrow], C[0]),
-      bsStack("payables", "Trade payables", "Phải trả người bán", [BS.payables], C[1]),
-      bsStack("advances", "Customer advances", "Người mua trả trước", [BS.advancesST, BS.advancesLT], C[2]),
-      bsStack("unearned", "Unearned revenue", "DT chưa thực hiện", [BS.unearnedST, BS.unearnedLT], C[3]),
-      bsStack("ltBorrow", "Long-term borrowings", "Vay dài hạn", [BS.ltBorrow], C[4]),
-      bsStack("equity", "Equity", "Vốn chủ sở hữu", [BS.equity], C[5]),
-      {
-        key: "otherCapital",
-        label_en: "Other liabilities",
-        label_vi: "Nợ khác",
-        kind: "bar",
-        axis: "value",
-        stack: "bs",
-        color: SERIES_RESIDUAL,
-        compute: (ctx) =>
-          residual(stock(ctx, [BS.totalCapital]), [
-            stock(ctx, [BS.stBorrow]),
-            stock(ctx, [BS.payables]),
-            stock(ctx, [BS.advancesST, BS.advancesLT]),
-            stock(ctx, [BS.unearnedST, BS.unearnedLT]),
-            stock(ctx, [BS.ltBorrow]),
-            stock(ctx, [BS.equity]),
-          ]),
-      },
-    ],
-    residualKey: "otherCapital",
-    total: {
-      label_en: "Total capital",
-      label_vi: "Tổng nguồn vốn",
-      compute: (ctx) => stock(ctx, [BS.totalCapital]),
-    },
-  },
-  {
-    id: "advances",
-    title_en: "Customer advances",
-    title_vi: "Người mua trả trước",
-    unit: "vnd",
-    layers: ["quarter"],
-    series: [
-      bsStack("advST", "Advances, short-term", "Trả trước ngắn hạn", [BS.advancesST], C[0]),
-      bsStack("advLT", "Advances, long-term", "Trả trước dài hạn", [BS.advancesLT], C[1]),
-      bsStack("unST", "Unearned revenue, short-term", "DT chưa thực hiện NH", [BS.unearnedST], C[2]),
-      bsStack("unLT", "Unearned revenue, long-term", "DT chưa thực hiện DH", [BS.unearnedLT], C[3]),
     ],
   },
 ];
-
-function bsStack(
-  key: string,
-  label_en: string,
-  label_vi: string,
-  ids: string[],
-  color: string,
-): SeriesSpec {
-  return {
-    key,
-    label_en,
-    label_vi,
-    kind: "bar",
-    axis: "value",
-    stack: "bs",
-    color,
-    compute: (ctx) => stock(ctx, ids),
-  };
-}
 
 /** What the listed components leave unexplained. Clamped at zero: a negative
  *  residual means a component overlaps the total, and drawing it below the axis
@@ -901,29 +1337,15 @@ function residual(total: number | null, parts: (number | null)[]): number | null
   return Math.max(0, total - sum);
 }
 
-function sumWindow(w: Frame[], st: StatementKind, ids: string[]): number | null {
-  if (w.length < 4) return null;
-  let sum = 0;
-  for (const f of w) {
-    const v = at(f, st, ids);
-    if (v === null) return null;
-    sum += v;
-  }
-  return sum;
-}
-
-/** A margin, expressed in PERCENT (25.09), not as a fraction. */
-function pct(a: number | null, b: number | null): number | null {
-  const r = ratio(a, b);
-  return r === null ? null : r * 100;
-}
-
 // --- Evaluation -------------------------------------------------------------
 
-/** One x-position: every series' value, plus the reconciliation total. */
+/** One x-position: every series' value, the shaded band, any readout note, and
+ *  the reconciliation total. */
 export type ChartPoint = {
   period: string;
   values: Record<string, number | null>;
+  bands: Record<string, [number, number] | null>;
+  notes: Record<string, TranslationKey>;
   total: number | null;
 };
 
@@ -946,32 +1368,48 @@ export function evaluate(
   const byQuarter = new Map(quarterFrames.map((f) => [f.period, f]));
 
   return frames.map((cur, i) => {
-    const window = layer === "ttm" ? frames.slice(Math.max(0, i - 3), i + 1) : [cur];
     const yearAgo = byPeriod.get(priorYearPeriod(cur.period, layer)) ?? null;
-    const yearAgoWindow =
-      layer === "ttm" && i >= 4 ? frames.slice(Math.max(0, i - 7), i - 3) : [];
 
     const ctx: Ctx = {
       layer,
       cur,
       prev: i > 0 ? frames[i - 1] : null,
       yearAgo,
-      window,
-      yearAgoWindow,
+      window: layer === "ttm" ? frames.slice(Math.max(0, i - 3), i + 1) : [cur],
+      yearAgoWindow: layer === "ttm" && i >= 4 ? frames.slice(Math.max(0, i - 7), i - 3) : [],
+      // TTM IS TTM ON EVERY TAB, so these do not follow `window`.
+      trailing4: layer === "year" ? [cur] : i >= 3 ? frames.slice(i - 3, i + 1) : [],
+      // Five quarterly points on TTM, start and end of year on annual, the
+      // period itself on quarters. EMPTY where they are not all present.
+      avgWindow:
+        layer === "ttm"
+          ? i >= 4
+            ? frames.slice(i - 4, i + 1)
+            : []
+          : layer === "year"
+            ? i >= 1
+              ? [frames[i - 1], cur]
+              : []
+            : [cur],
       q4: layer === "year" ? (byQuarter.get(`${cur.period}-Q4`) ?? null) : null,
       latestClose,
       isLatest: i === frames.length - 1,
     };
 
     const values: Record<string, number | null> = {};
+    const bands: Record<string, [number, number] | null> = {};
+    const notes: Record<string, TranslationKey> = {};
     for (const s of spec.series) {
       try {
         values[s.key] = s.compute(ctx);
+        if (s.computeBand) bands[s.key] = s.computeBand(ctx);
+        const note = s.note?.(ctx) ?? null;
+        if (note) notes[s.key] = note;
       } catch {
         values[s.key] = null;
       }
     }
-    return { period: cur.period, values, total: spec.total?.compute(ctx) ?? null };
+    return { period: cur.period, values, bands, notes, total: spec.total?.compute(ctx) ?? null };
   });
 }
 
@@ -998,7 +1436,7 @@ export function shortPeriod(period: string): string {
  *
  * The controls used to read "8 / 20 / Tất cả" — a count of periods, which means
  * something different on the quarterly and annual tabs and nothing at all to a
- * reader. Five years is five years on both.
+ * reader. Five years is five years on both, and covers BA's seventeen quarters.
  */
 export const SPAN_YEARS = [5, 10, 0] as const;
 

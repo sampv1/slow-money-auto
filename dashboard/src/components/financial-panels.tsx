@@ -2,7 +2,7 @@
 
 /**
  * The financial-statement section: a large panel showing one chart, above a
- * grid of all nine.
+ * grid of all ten.
  *
  * WHY BOTH AT ONCE. The grid alone makes every chart visible but none of them
  * readable — at 1280 a card is 220px wide, which is enough to see a shape and
@@ -19,10 +19,17 @@
  * reader refers to a chart. The grid slot is outlined instead, so the repeat
  * reads as "this is the one above" rather than as an accident.
  *
- * NINE EQUALS, NO HERO. Revenue briefly ran full width, which made it the
- * subject and the other eight its footnotes. The large panel is not that: it
+ * TEN EQUALS, NO HERO. Revenue briefly ran full width, which made it the
+ * subject and the other nine its footnotes. The large panel is not that: it
  * holds whichever chart the reader picked, and the grid underneath keeps all
- * nine the same size, so the hierarchy is the reader's and not the layout's.
+ * ten the same size, so the hierarchy is the reader's and not the layout's.
+ *
+ * AN EVEN GRID, BECAUSE TEN IS NOT DIVISIBLE BY THREE. Two columns at @md and
+ * @2xl, three only from @4xl (896px) — so the ten cards fill 5 rows of 2 or, in
+ * the widest column, 4 rows ending in a row of one. Three columns from @2xl (as
+ * the nine-chart grid had) would have left a single card alone on the fourth row
+ * at the width most readers use, which reads as a missing card rather than as
+ * the last one.
  *
  * NO ESCAPE HATCH, BECAUSE THERE IS NO MODE. The large panel always holds a
  * chart and the grid is never hidden, so there is nothing to back out of —
@@ -30,8 +37,10 @@
  * on a page that carries a symbol search box, where Esc means "dismiss what I
  * am typing in", not "throw away the chart I chose".
  *
- * CARDS ARE NUMBERED. Nine untitled frames in a grid have no reading order, and
- * "chart 6" is how a reader refers to one in a conversation about the page.
+ * CARDS ARE NUMBERED, AND THE NUMBERS ARE BA'S. Ten untitled frames in a grid
+ * have no reading order, and "biểu đồ 6" is how the specification and every
+ * conversation about it refer to one — so the order here is the specification's
+ * order, and must stay that way.
  */
 
 import { useCallback, useRef, useState } from "react";
@@ -82,6 +91,7 @@ function Card({
 }) {
   return (
     <div
+      data-fin-card={index}
       className={`bg-panel rounded-lg border p-3 flex flex-col min-w-0 transition-colors ${
         featured ? "border-accent" : "border-line"
       }`}
@@ -124,13 +134,16 @@ export function FinancialPanels({
   locale,
   latestClose = null,
   latestCloseDate = null,
+  financialFiler = false,
 }: {
   rows: VnstockStatementRow[];
   locale: Locale;
-  /** Newest traded close, for the live P/E and P/B on chart 6. */
+  /** Newest traded close, for the live P/E, P/B and EV/EBITDA on chart 10. */
   latestClose?: number | null;
   /** Its date, so the live point can name the price behind it. */
   latestCloseDate?: string | null;
+  /** A bank, broker or insurer — see the note on FinancialChart's own prop. */
+  financialFiler?: boolean;
 }) {
   const [featuredId, setFeaturedId] = useState<string>(DEFAULT_FEATURED);
   const featuredRef = useRef<HTMLDivElement>(null);
@@ -196,12 +209,13 @@ export function FinancialPanels({
             locale={locale}
             latestClose={latestClose}
             latestCloseDate={latestCloseDate}
+            financialFiler={financialFiler}
             zoomed
           />
         </div>
       )}
 
-      <div className="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 @md:grid-cols-2 @4xl:grid-cols-3 gap-3">
         {FINANCIAL_CHARTS.map((spec, i) => {
           const isFeatured = featuredId === spec.id;
           return (
@@ -219,6 +233,7 @@ export function FinancialPanels({
                 locale={locale}
                 latestClose={latestClose}
                 latestCloseDate={latestCloseDate}
+                financialFiler={financialFiler}
               />
             </Card>
           );

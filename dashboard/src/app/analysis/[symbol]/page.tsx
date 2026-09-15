@@ -22,6 +22,11 @@ import { SymbolLogo } from "@/components/symbol-logo";
 
 export const revalidate = 0;
 
+/** `symbol_profile.com_type_code` for the filers whose balance sheet the
+ *  financial charts' line items do not describe: ngân hàng, chứng khoán,
+ *  bảo hiểm. */
+const FINANCIAL_COM_TYPES = new Set(["NH", "CK", "BH"]);
+
 // Re-exported for the handful of modules that imported these from the page
 // before the fetch moved to lib/chart-payload.
 export type { Candle, RsHist } from "@/lib/chart-payload";
@@ -277,11 +282,17 @@ export default async function SymbolDrillDown({
               <FinancialPanels
                 rows={vnstockStatements}
                 locale={locale}
-                /* The newest traded close, so chart 6's current quarter
+                /* The newest traded close, so chart 10's current quarter
                    prices itself off today rather than off whatever price
                    the provider last stamped onto the statement. */
                 latestClose={candles.at(-1)?.close ?? null}
                 latestCloseDate={candles.at(-1)?.date ?? null}
+                /* Banks, brokers and insurers file a different balance sheet,
+                   so the two structure charts refuse to decompose theirs. The
+                   flag comes from the company TYPE rather than from the
+                   residual alone, because BA withdrew that guard for the
+                   filers this chart set is specified for. */
+                financialFiler={FINANCIAL_COM_TYPES.has(profile?.com_type_code ?? "")}
               />
             </section>
           )}

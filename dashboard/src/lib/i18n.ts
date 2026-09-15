@@ -310,6 +310,7 @@ export const translations = {
     finSpanAll: "All",
     finYoy: "YoY",
     finNoData: "No financial statements for this symbol yet.",
+    finNoSeries: "This company reports nothing on these lines.",
     finRubricMismatch:
       "These line items do not fit this company's statements — banks and securities firms report a different balance sheet.",
     finSource: "Source: vnstock",
@@ -318,7 +319,13 @@ export const translations = {
     finSlotEmpty: "Chart not yet defined",
     finUnitBn: "VND bn",
     finUnitTimes: "times",
-    finUnitPerShare: "VND / share",
+    finUnitDays: "days",
+    finUnitYears: "years",
+    // Readout phrases that stand in for a number, because the number would say
+    // something the data does not: an em dash claims the figure could not be
+    // measured, and a net-cash company has no repayment period at all.
+    finNoDebt: "No borrowings",
+    finNetCash: "Net cash",
     finMore: "More charts are being added.",
     finSpanYearSuffix: "y",
     finSlotTodo: "To be defined",
@@ -1774,6 +1781,7 @@ export const translations = {
     finSpanAll: "Tất cả",
     finYoy: "Tăng trưởng YoY",
     finNoData: "Chưa có báo cáo tài chính cho mã này.",
+    finNoSeries: "Doanh nghiệp không có số liệu ở các chỉ tiêu này.",
     finRubricMismatch:
       "Các chỉ tiêu này không phù hợp với báo cáo của doanh nghiệp — ngân hàng và công ty chứng khoán có cấu trúc bảng cân đối khác.",
     finSource: "Nguồn: vnstock",
@@ -1782,7 +1790,10 @@ export const translations = {
     finSlotEmpty: "Biểu đồ chưa được định nghĩa",
     finUnitBn: "Tỷ đồng",
     finUnitTimes: "lần",
-    finUnitPerShare: "Đồng / cổ phiếu",
+    finUnitDays: "ngày",
+    finUnitYears: "năm",
+    finNoDebt: "Không vay nợ",
+    finNetCash: "Tiền ròng dương",
     finMore: "Các biểu đồ khác đang được bổ sung.",
     finSpanYearSuffix: "N",
     finSlotTodo: "Chưa định nghĩa",

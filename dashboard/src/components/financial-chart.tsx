@@ -24,8 +24,9 @@
  * symbol does not repaint its siblings.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useId, useMemo, useRef, useState } from "react";
 import {
+  Area,
   Bar,
   CartesianGrid,
   ComposedChart,
@@ -50,7 +51,7 @@ import {
   type Unit,
 } from "@/lib/financial-metrics";
 import type { VnstockStatementRow } from "@/lib/cached-data";
-import { t, type Locale } from "@/lib/i18n";
+import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 /**
  * OPENS ON QUARTERS, FIVE YEARS DEEP — every chart, the same way.
@@ -111,8 +112,12 @@ function formatUnit(v: number, unit: Unit, digits?: number): string {
       const d = digits ?? 1;
       return `${v.toLocaleString("vi-VN", { minimumFractionDigits: d, maximumFractionDigits: d })}×`;
     }
-    case "perShare":
+    case "days":
       return v.toLocaleString("vi-VN", { maximumFractionDigits: digits ?? 0 });
+    case "years": {
+      const d = digits ?? 1;
+      return v.toLocaleString("vi-VN", { minimumFractionDigits: d, maximumFractionDigits: d });
+    }
     default:
       return formatVnd(v, digits);
   }
@@ -125,7 +130,8 @@ function formatUnit(v: number, unit: Unit, digits?: number): string {
  */
 function axisDecimals(unit: Unit, span: number): number | undefined {
   if (unit === "vnd") return span >= 100 ? 0 : span >= 10 ? 1 : 2;
-  if (unit === "x" || unit === "percent") return span >= 10 ? 0 : 1;
+  if (unit === "x" || unit === "percent" || unit === "years") return span >= 10 ? 0 : 1;
+  if (unit === "days") return 0;
   return undefined;
 }
 
@@ -175,7 +181,18 @@ type Cross = {
 } | null;
 
 /** One x-position, flattened for recharts. */
-type ChartRow = { period: string; total: number | null } & Record<string, number | string | null>;
+type ChartRow = { period: string; total: number | null } & Record<
+  string,
+  number | string | null | [number, number]
+>;
+
+/** Row key carrying a series' readout phrase, kept away from the series' own
+ *  key so nothing downstream mistakes a phrase for a value. */
+const NOTE_PREFIX = "__note__";
+
+/** Does this cell hold something drawable — a number, or a band's pair? */
+const hasValue = (v: unknown): boolean =>
+  typeof v === "number" ? Number.isFinite(v) : Array.isArray(v) && v.length === 2;
 
 const layerKey = (l: Layer) =>
   l === "quarter" ? "finQuarterly" : l === "ttm" ? "finTtm" : "finAnnual";
@@ -187,6 +204,7 @@ export function FinancialChart({
   latestClose,
   latestCloseDate = null,
   zoomed = false,
+  financialFiler = false,
 }: {
   spec: ChartSpec;
   rows: VnstockStatementRow[];
@@ -194,8 +212,17 @@ export function FinancialChart({
   latestClose: number | null;
   /** Date of `latestClose`, shown on the live point so the price is not a guess. */
   latestCloseDate?: string | null;
-  /** Filling the section on its own, rather than one of nine in the grid. */
+  /** Filling the section on its own, rather than one of ten in the grid. */
   zoomed?: boolean;
+  /**
+   * A bank, securities firm or insurer. It gates the structure charts' refusal
+   * and nothing else: BA withdrew that guard for the filers this specification
+   * covers (non-financial and real estate), where a large "other" segment is a
+   * true reading of the balance sheet. For a financial filer the named line
+   * items explain almost nothing — TCB, VCB and CTG all sit at 99% other — so
+   * the card says so instead of drawing a bar of solid grey.
+   */
+  financialFiler?: boolean;
 }) {
   // Quarters where the chart has them, then TTM (smoother than raw quarters),
   // then annual — the reverse of the old preference, see the note on
@@ -243,15 +270,40 @@ export function FinancialChart({
   const data = useMemo<ChartRow[]>(() => {
     const n = spanPeriods(spanY, layer);
     const scoped = Number.isFinite(n) ? points.slice(-n) : points;
-    return scoped.map((p) => ({ period: p.period, total: p.total, ...p.values }));
+    return scoped.map((p) => {
+      const row: ChartRow = { period: p.period, total: p.total, ...p.values };
+      // A shaded band is TWO values at one x-position, which is how recharts
+      // reads a ranged area: the pair travels in the row like any other key.
+      for (const [k, band] of Object.entries(p.bands)) row[k] = band;
+      // A readout phrase that stands in for a number ("Không vay nợ") travels
+      // beside its series rather than inside it, so the value stays numeric.
+      for (const [k, note] of Object.entries(p.notes)) row[`${NOTE_PREFIX}${k}`] = note;
+      return row;
+    });
   }, [points, spanY, layer]);
+
+  // Series belonging to THIS tab. Charts 1 and 2 add a TTM overlay only on the
+  // TTM tab, and chart 6's cash conversion is withheld from the quarterly tab —
+  // computing them anyway and hiding them here keeps that a property of the
+  // spec rather than of the renderer.
+  const onLayer = useMemo(
+    () => spec.series.filter((s) => !s.onLayers || s.onLayers.includes(layer)),
+    [spec.series, layer],
+  );
 
   // A series with nothing to show is dropped from the axes AND the legend —
   // a legend entry for an empty series tells the reader to look for a mark
   // that is not there.
+  // A NOTE COUNTS AS CONTENT. Net debt / EBITDA is null for every period of a
+  // company that has never had net debt — which is exactly when its readout
+  // should say "Tiền ròng dương", so dropping the series for want of a number
+  // dropped the one thing it had to say.
   const live = useMemo(
-    () => spec.series.filter((s) => data.some((d) => typeof d[s.key] === "number")),
-    [spec.series, data],
+    () =>
+      onLayer.filter((s) =>
+        data.some((d) => hasValue(d[s.key]) || typeof d[`${NOTE_PREFIX}${s.key}`] === "string"),
+      ),
+    [onLayer, data],
   );
 
   // What is actually drawn. Everything downstream — axes, domains, marks and
@@ -279,9 +331,28 @@ export function FinancialChart({
     [live],
   );
 
-  const valueSeries = visible.filter((s) => s.axis === "value");
-  const growthSeries = visible.filter((s) => s.axis === "growth");
+  // What is DRAWN. A tooltip-only series is computed and read out, never
+  // plotted: chart 8 keeps interest cover and net debt / EBITDA that way,
+  // because neither can share an axis with D/E.
+  const plotted = useMemo(() => visible.filter((s) => !s.tooltipOnly), [visible]);
+  const readoutOnly = useMemo(() => live.filter((s) => s.tooltipOnly), [live]);
+  // THE LEGEND IS A SET OF SWITCHES, so it lists only what can be switched: a
+  // readout-only entry has no mark to hide, and clicking it would do nothing.
+  const legendSeries = useMemo(() => live.filter((s) => !s.tooltipOnly), [live]);
+
+  const valueSeries = plotted.filter((s) => s.axis === "value");
+  const growthSeries = plotted.filter((s) => s.axis === "growth");
   const hasGrowthAxis = growthSeries.length > 0;
+  const bandSeries = plotted.filter((s) => s.kind === "band");
+  // One pattern per card instance, for BA's highlighted work-in-progress
+  // segment. `useId` because two cards on the page would otherwise share an
+  // SVG id and the second would paint with the first card's colour.
+  const patternId = useId().replace(/:/g, "");
+  // At most one segment per card is highlighted, so one pattern covers it.
+  const stripeColor = useMemo(
+    () => onLayer.find((s) => s.striped)?.color ?? CHART_LITERAL.accent,
+    [onLayer],
+  );
 
   // Stacked bars are summed for the domain; grouped bars and lines are not.
   const domain = useMemo<[number, number]>(
@@ -326,7 +397,7 @@ export function FinancialChart({
    * that is fine everywhere else.
    */
   const residualShare = useMemo(() => {
-    if (!spec.residualKey || !spec.total) return null;
+    if (!financialFiler || !spec.residualKey || !spec.total) return null;
     const shares: number[] = [];
     for (const row of data) {
       const r = row[spec.residualKey];
@@ -336,7 +407,7 @@ export function FinancialChart({
     if (shares.length === 0) return null;
     shares.sort((a, b) => a - b);
     return shares[Math.floor(shares.length / 2)];
-  }, [data, spec.residualKey, spec.total]);
+  }, [data, spec.residualKey, spec.total, financialFiler]);
 
   const dataLen = data.length;
 
@@ -382,8 +453,17 @@ export function FinancialChart({
     plotRef.current = null; // re-measure next hover, in case the card resized
   }, []);
 
-  if (data.length === 0 || live.length === 0) {
+  if (data.length === 0) {
     return <p className="text-body text-fg-muted py-10 text-center">{t(locale, "finNoData")}</p>;
+  }
+
+  // PERIODS BUT NO VALUES IS A DIFFERENT FACT from no statements, and saying
+  // "no financial statements for this symbol yet" there is simply false: TCB
+  // files 34 quarters and reports nothing on four of these ten charts, because
+  // a bank has no net revenue, gross profit or customer-advance lines. The same
+  // message covers an ordinary company that happens to carry no backlog.
+  if (live.length === 0) {
+    return <p className="text-body text-fg-muted py-10 text-center">{t(locale, "finNoSeries")}</p>;
   }
 
   // A decomposition whose balancing segment swamps the named ones is not
@@ -427,7 +507,7 @@ export function FinancialChart({
           {(locale === "vi" ? spec.caption_vi : spec.caption_en) ?? unitCaption(spec.unit, locale)}
         </span>
         {headlineValue !== null && (
-          <span className="flex items-baseline gap-1.5 min-w-0 truncate">
+          <span data-fin-headline className="flex items-baseline gap-1.5 min-w-0 truncate">
             <span className="font-mono tabular-nums text-body font-semibold text-fg">
               {formatUnit(headlineValue, headlineUnit)}
             </span>
@@ -446,6 +526,7 @@ export function FinancialChart({
       <div className="flex items-center gap-1.5 mb-2">
         {spec.layers.length > 1 && (
           <select
+            data-fin-layer
             value={layer}
             onChange={(e) => setLayer(e.target.value as Layer)}
             aria-label={t(locale, "finLayer")}
@@ -492,6 +573,21 @@ export function FinancialChart({
               // reader see individual periods rather than a solid block.
               barCategoryGap="22%"
             >
+            {/* BA's highlight for the work-in-progress segment (reply §6): a
+                diagonal stripe, so it is marked by TEXTURE as well as by hue
+                and survives both themes and a colourblind reader. */}
+            <defs>
+              <pattern
+                id={`finStripe-${patternId}`}
+                width="6"
+                height="6"
+                patternTransform="rotate(45)"
+                patternUnits="userSpaceOnUse"
+              >
+                <rect width="6" height="6" fill={stripeColor} />
+                <line x1="0" y1="0" x2="0" y2="6" stroke={CHART_LITERAL.panel} strokeWidth="2.2" />
+              </pattern>
+            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_LITERAL.grid} vertical={false} />
             <XAxis
               dataKey="period"
@@ -523,6 +619,17 @@ export function FinancialChart({
             {/* Profit, cash flow and growth all go negative, and a growth line
                 is read against zero rather than against its own minimum. */}
             <ReferenceLine yAxisId="value" y={0} stroke={CHART_LITERAL.axis} />
+            {/* A LEVEL THE SECOND AXIS IS READ AGAINST — chart 6's 100%, where
+                a company converts exactly its reported profit into cash. The
+                line is what makes "above or below" readable without arithmetic. */}
+            {hasGrowthAxis && spec.growthReference !== undefined && (
+              <ReferenceLine
+                yAxisId="growth"
+                y={spec.growthReference}
+                stroke={CHART_LITERAL.axis}
+                strokeDasharray="2 3"
+              />
+            )}
             <Tooltip
               // The vertical half of the crosshair: recharts already snaps this
               // to the hovered category, which is more useful on a bar chart
@@ -540,7 +647,8 @@ export function FinancialChart({
                 <FinTooltip
                   rows={data}
                   spec={spec}
-                  series={visible}
+                  series={plotted}
+                  extras={readoutOnly}
                   layer={layer}
                   locale={locale}
                   focusValue={cross?.value ?? null}
@@ -553,6 +661,22 @@ export function FinancialChart({
               }
             />
 
+            {/* THE SHADED BAND IS BEHIND EVERYTHING. It is the region between
+                two of the lines drawn over it, so anything it covered would be
+                the very thing it is annotating. */}
+            {bandSeries.map((s) => (
+              <Area
+                key={s.key}
+                yAxisId="value"
+                dataKey={s.key}
+                stroke="none"
+                fill={s.color}
+                fillOpacity={0.22}
+                activeDot={false}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            ))}
             {/* Bars before lines, so a line is never hidden behind a bar. */}
             {valueSeries
               .filter((s) => s.kind === "bar")
@@ -562,7 +686,7 @@ export function FinancialChart({
                   yAxisId="value"
                   dataKey={s.key}
                   stackId={s.stack}
-                  fill={s.color}
+                  fill={s.striped ? `url(#finStripe-${patternId})` : s.color}
                   maxBarSize={zoomed ? 34 : 18}
                   // A 1px surface-coloured rule between stacked segments, so
                   // adjacent fills read as two marks rather than one gradient.
@@ -583,7 +707,7 @@ export function FinancialChart({
                   isAnimationActive={false}
                 />
               ))}
-            {visible
+            {plotted
               .filter((s) => s.kind === "line")
               .map((s) => (
                 <Line
@@ -680,9 +804,12 @@ export function FinancialChart({
           x-heights of the very glyphs you need to read to find the one to
           switch on again. The hollow swatch and the lighter ink already say
           "off" twice over. */}
-      {live.length > 1 && (
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1.5 text-label text-fg-label">
-          {live.map((s) => {
+      {legendSeries.length > 1 && (
+        <div
+          data-fin-legend
+          className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1.5 text-label text-fg-label"
+        >
+          {legendSeries.map((s) => {
             const off = hidden.has(s.key);
             const last = !off && visible.length <= 1;
             return (
@@ -699,7 +826,7 @@ export function FinancialChart({
               >
                 <span
                   className={`inline-block shrink-0 ${
-                    s.kind === "bar" ? "w-2 h-2 rounded-[1px]" : "w-2.5 h-0.5"
+                    s.kind === "line" ? "w-2.5 h-0.5" : "w-2 h-2 rounded-[1px]"
                   }`}
                   style={
                     off
@@ -713,7 +840,7 @@ export function FinancialChart({
           })}
         </div>
       )}
-      {live.length <= 1 && <div className="mt-1.5 h-[14px]" aria-hidden />}
+      {legendSeries.length <= 1 && <div className="mt-1.5 h-[14px]" aria-hidden />}
     </div>
   );
 }
@@ -739,6 +866,17 @@ function domainFor(
     const stackNeg = new Map<string, number>();
     for (const s of series) {
       const v = row[s.key];
+      // A BAND OCCUPIES BOTH ITS BOUNDS. Ignoring the pair here let the shaded
+      // accrual region run off the top of chart 6 on a quarter where profit
+      // exceeded every plotted line.
+      if (Array.isArray(v)) {
+        for (const edge of v) {
+          if (typeof edge !== "number" || !Number.isFinite(edge)) continue;
+          if (edge > max) max = edge;
+          if (edge < min) min = edge;
+        }
+        continue;
+      }
       if (typeof v !== "number" || !Number.isFinite(v)) continue;
       if (s.stack) {
         const m = v >= 0 ? stackPos : stackNeg;
@@ -760,8 +898,10 @@ function unitCaption(unit: Unit, locale: Locale): string {
       return "%";
     case "x":
       return t(locale, "finUnitTimes");
-    case "perShare":
-      return t(locale, "finUnitPerShare");
+    case "days":
+      return t(locale, "finUnitDays");
+    case "years":
+      return t(locale, "finUnitYears");
     default:
       return t(locale, "finUnitBn");
   }
@@ -810,6 +950,7 @@ function FinTooltip({
   rows,
   spec,
   series,
+  extras = [],
   layer,
   locale,
   focusValue,
@@ -822,7 +963,11 @@ function FinTooltip({
   label?: string | number;
   rows: ChartRow[];
   spec: ChartSpec;
+  /** The series actually drawn — what the pointer can be over. */
   series: SeriesSpec[];
+  /** Computed but never plotted; always listed, since the reader cannot point
+   *  at them. Interest cover and net debt / EBITDA reach chart 8 this way. */
+  extras?: SeriesSpec[];
   layer: Layer;
   locale: Locale;
   /** Value under the pointer on the left axis; null when it is not over the plot. */
@@ -838,7 +983,13 @@ function FinTooltip({
   const total = typeof row.total === "number" ? row.total : null;
 
   const num = (k: string) => (typeof row[k] === "number" ? (row[k] as number) : null);
-  const onValueAxis = series.filter((sr) => sr.axis === "value");
+  const noteOf = (k: string) => {
+    const n = row[`${NOTE_PREFIX}${k}`];
+    return typeof n === "string" ? (n as TranslationKey) : null;
+  };
+  // A BAND IS NOT POINTABLE — it is the region between two lines that are
+  // themselves rows here, so including it would name the same fact twice.
+  const onValueAxis = series.filter((sr) => sr.axis === "value" && sr.kind !== "band");
   const secondAxis = series.filter((sr) => sr.axis !== "value");
 
   const { series: focused, outsideStack } = pickFocused(onValueAxis, num, focusValue);
@@ -846,11 +997,10 @@ function FinTooltip({
   // the total is the only honest reading there, and it is already its own row
   // below. Highlighting the largest segment instead (the old nearest-by-value
   // fallback) put a dot beside a bar the pointer was nowhere near.
-  const shown = outsideStack
-    ? secondAxis
-    : focused
-      ? [focused, ...secondAxis]
-      : [...onValueAxis, ...secondAxis];
+  const shown = [
+    ...(outsideStack ? secondAxis : focused ? [focused, ...secondAxis] : [...onValueAxis, ...secondAxis]),
+    ...extras,
+  ];
 
   return (
     <div
@@ -877,6 +1027,7 @@ function FinTooltip({
       </div>
       {shown.map((sr) => {
         const v = num(sr.key);
+        const note = noteOf(sr.key);
         return (
           <div key={sr.key} className="flex items-start gap-1.5">
             <span
@@ -887,7 +1038,11 @@ function FinTooltip({
               {locale === "vi" ? sr.label_vi : sr.label_en}
             </span>
             <span className="ml-auto pl-1.5 font-semibold whitespace-nowrap">
-              {v !== null ? formatUnit(v, sr.unit ?? spec.unit) : "—"}
+              {/* A PHRASE WHERE A NUMBER WOULD MISLEAD. "Không vay nợ" is a
+                  different fact from an em dash, which says the cover could not
+                  be measured; a net-cash company has no repayment period at
+                  all, and the net-debt row above carries its actual figure. */}
+              {note ? t(locale, note) : v !== null ? formatUnit(v, sr.unit ?? spec.unit) : "—"}
             </span>
           </div>
         );
