@@ -326,6 +326,9 @@ export const translations = {
     // measured, and a net-cash company has no repayment period at all.
     finNoDebt: "No borrowings",
     finNetCash: "Net cash",
+    // BA's display cap on the cash conversion cycle (chart 5).
+    finOutlier: "outlier, not drawn",
+    finOutlierNote: "Outlier warning: {n} period(s) above {max} days, not drawn",
     finMore: "More charts are being added.",
     finSpanYearSuffix: "y",
     finSlotTodo: "To be defined",
@@ -1809,6 +1812,8 @@ export const translations = {
     finUnitYears: "năm",
     finNoDebt: "Không vay nợ",
     finNetCash: "Tiền ròng dương",
+    finOutlier: "ngoại lai, không vẽ",
+    finOutlierNote: "Cảnh báo ngoại lai: {n} kỳ vượt {max} ngày, không vẽ",
     finMore: "Các biểu đồ khác đang được bổ sung.",
     finSpanYearSuffix: "N",
     finSlotTodo: "Chưa định nghĩa",

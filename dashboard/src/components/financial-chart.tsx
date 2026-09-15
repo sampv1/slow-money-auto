@@ -190,6 +190,11 @@ type ChartRow = { period: string; total: number | null } & Record<
  *  key so nothing downstream mistakes a phrase for a value. */
 const NOTE_PREFIX = "__note__";
 
+/** Row key carrying a value held back by its series' display cap (`visualMax`).
+ *  The series' own key is nulled, so the plot and the axis never see it; this
+ *  keeps the true figure for the readout. */
+const OUTLIER_PREFIX = "__outlier__";
+
 /** Does this cell hold something drawable — a number, or a band's pair? */
 const hasValue = (v: unknown): boolean =>
   typeof v === "number" ? Number.isFinite(v) : Array.isArray(v) && v.length === 2;
@@ -278,9 +283,19 @@ export function FinancialChart({
       // A readout phrase that stands in for a number ("Không vay nợ") travels
       // beside its series rather than inside it, so the value stays numeric.
       for (const [k, note] of Object.entries(p.notes)) row[`${NOTE_PREFIX}${k}`] = note;
+      // BA'S DISPLAY CAP. Nulling the drawn value is what keeps one 93,577-day
+      // cycle from setting the axis for five years of 400-day ones; moving it
+      // to its own key is what keeps it honest — the readout still prints it.
+      for (const sr of spec.series) {
+        const v = row[sr.key];
+        if (sr.visualMax !== undefined && typeof v === "number" && v > sr.visualMax) {
+          row[`${OUTLIER_PREFIX}${sr.key}`] = v;
+          row[sr.key] = null;
+        }
+      }
       return row;
     });
-  }, [points, spanY, layer]);
+  }, [points, spanY, layer, spec.series]);
 
   // Series belonging to THIS tab. Charts 1 and 2 add a TTM overlay only on the
   // TTM tab, and chart 6's cash conversion is withheld from the quarterly tab —
@@ -301,7 +316,14 @@ export function FinancialChart({
   const live = useMemo(
     () =>
       onLayer.filter((s) =>
-        data.some((d) => hasValue(d[s.key]) || typeof d[`${NOTE_PREFIX}${s.key}`] === "string"),
+        data.some(
+          (d) =>
+            hasValue(d[s.key]) ||
+            typeof d[`${NOTE_PREFIX}${s.key}`] === "string" ||
+            // A series whose every value is past its cap still has something
+            // to say — that it was held back — so it stays in the legend.
+            typeof d[`${OUTLIER_PREFIX}${s.key}`] === "number",
+        ),
       ),
     [onLayer, data],
   );
@@ -336,6 +358,20 @@ export function FinancialChart({
   // because neither can share an axis with D/E.
   const plotted = useMemo(() => visible.filter((s) => !s.tooltipOnly), [visible]);
   const readoutOnly = useMemo(() => live.filter((s) => s.tooltipOnly), [live]);
+
+  // How many shown periods a display cap held back, for the card's warning.
+  // Counted over what is PLOTTED, so switching the capped series off in the
+  // legend also retires its warning.
+  const heldBack = useMemo(() => {
+    let n = 0;
+    let cap: number | undefined;
+    for (const sr of plotted) {
+      if (sr.visualMax === undefined) continue;
+      cap = sr.visualMax;
+      for (const d of data) if (typeof d[`${OUTLIER_PREFIX}${sr.key}`] === "number") n++;
+    }
+    return { n, cap };
+  }, [plotted, data]);
   // THE LEGEND IS A SET OF SWITCHES, so it lists only what can be switched: a
   // readout-only entry has no mark to hide, and clicking it would do nothing.
   const legendSeries = useMemo(() => live.filter((s) => !s.tooltipOnly), [live]);
@@ -841,6 +877,15 @@ export function FinancialChart({
         </div>
       )}
       {legendSeries.length <= 1 && <div className="mt-1.5 h-[14px]" aria-hidden />}
+      {/* BA's outlier warning: said once on the card, so a reader learns that
+          bars are missing without having to hover the gaps to find out why. */}
+      {heldBack.n > 0 && heldBack.cap !== undefined && (
+        <p data-fin-outlier-note="" className="mt-1 text-label text-reference leading-tight">
+          {t(locale, "finOutlierNote")
+            .replace("{n}", String(heldBack.n))
+            .replace("{max}", formatUnit(heldBack.cap, "days"))}
+        </p>
+      )}
     </div>
   );
 }
@@ -983,6 +1028,10 @@ function FinTooltip({
   const total = typeof row.total === "number" ? row.total : null;
 
   const num = (k: string) => (typeof row[k] === "number" ? (row[k] as number) : null);
+  const outlierOf = (k: string) => {
+    const v = row[`${OUTLIER_PREFIX}${k}`];
+    return typeof v === "number" ? v : null;
+  };
   const noteOf = (k: string) => {
     const n = row[`${NOTE_PREFIX}${k}`];
     return typeof n === "string" ? (n as TranslationKey) : null;
@@ -1028,6 +1077,7 @@ function FinTooltip({
       {shown.map((sr) => {
         const v = num(sr.key);
         const note = noteOf(sr.key);
+        const outlier = outlierOf(sr.key);
         return (
           <div key={sr.key} className="flex items-start gap-1.5">
             <span
@@ -1042,7 +1092,19 @@ function FinTooltip({
                   different fact from an em dash, which says the cover could not
                   be measured; a net-cash company has no repayment period at
                   all, and the net-debt row above carries its actual figure. */}
-              {note ? t(locale, note) : v !== null ? formatUnit(v, sr.unit ?? spec.unit) : "—"}
+              {note ? (
+                t(locale, note)
+              ) : outlier !== null ? (
+                // The true figure, in the warning colour, with what happened
+                // to it: held back from the plot, not missing from the data.
+                <span style={{ color: CHART_LITERAL.reference }}>
+                  {formatUnit(outlier, sr.unit ?? spec.unit)} · {t(locale, "finOutlier")}
+                </span>
+              ) : v !== null ? (
+                formatUnit(v, sr.unit ?? spec.unit)
+              ) : (
+                "—"
+              )}
             </span>
           </div>
         );
