@@ -388,15 +388,46 @@ function roic(ctx: Ctx): number | null {
  *  goods sold is stored negative, hence the magnitude. */
 const DAYS_IN_YEAR = 365;
 
-function days(numerator: number | null, denom: number | null): number | null {
-  if (numerator === null || denom === null) return null;
-  const d = Math.abs(denom);
-  return d === 0 ? null : (numerator / d) * DAYS_IN_YEAR;
+/**
+ * BA'S SCALE FLOOR ON THE DENOMINATOR (2026-09-15): one tỷ of twelve-month
+ * throughput, checked BEFORE the division.
+ *
+ * Below it the ratio is arithmetically true and says nothing — a dormant shell
+ * with a few million đồng of revenue reports a receivables cycle of QBS's
+ * 1,277,522 days (3,500 years) or SLD's 109,817, and one such point sets the
+ * axis for the whole card. 17 of 1,067 filers exceeded five years. The floor
+ * applies to each ratio's OWN denominator: net revenue for DSO, cost of goods
+ * sold for DIO and DPO, so a company that sells without inventory keeps its
+ * DSO and loses only the two it cannot measure.
+ *
+ * NULL, NEVER ZERO, and `ccc` propagates it — "we could not measure this
+ * company's cycle" is not "its cycle is nothing".
+ *
+ * THE COMPARISON IS SIGNED, WHICH IS WHY THE COST SIGN IS NORMALISED FIRST.
+ * "Below one tỷ" includes below zero, and negative twelve-month revenue is a
+ * real state here — AGM reports -2.3 tỷ and NBB -7.3 tỷ after restatements —
+ * which a magnitude test would wave through as 2.3 tỷ of throughput and price
+ * at 30,405 days. The provider stores cost of goods sold NEGATIVE, so its sign
+ * is flipped into the cost sense before the test rather than absorbed by an
+ * `Math.abs` that would hide the same case on the inventory side.
+ */
+const MIN_FLOW_FOR_DAYS = 1e9;
+
+function days(balance: number | null, throughput: number | null): number | null {
+  if (balance === null || throughput === null) return null;
+  if (throughput < MIN_FLOW_FOR_DAYS) return null;
+  return (balance / throughput) * DAYS_IN_YEAR;
 }
 
+/** Cost of goods sold in the COST sense: the provider stores it negative. */
+const costOfSales = (ctx: Ctx): number | null => {
+  const v = flow(ctx, P.cogs);
+  return v === null ? null : -v;
+};
+
 const dso = (ctx: Ctx) => days(avg(ctx, P.tradeRecv), flow(ctx, P.revenue));
-const dio = (ctx: Ctx) => days(avg(ctx, P.inventories), flow(ctx, P.cogs));
-const dpo = (ctx: Ctx) => days(avg(ctx, P.payables), flow(ctx, P.cogs));
+const dio = (ctx: Ctx) => days(avg(ctx, P.inventories), costOfSales(ctx));
+const dpo = (ctx: Ctx) => days(avg(ctx, P.payables), costOfSales(ctx));
 
 function ccc(ctx: Ctx): number | null {
   const a = dso(ctx);
