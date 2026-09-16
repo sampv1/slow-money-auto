@@ -397,11 +397,13 @@ export function FinancialChart({
     () => domainFor(data, valueSeries),
     [data, valueSeries],
   );
-  // A FIXED range wins over the data-driven one: chart 5's second axis is
-  // pinned to BA's -365…1,825 days so no single period can rescale it.
+  // SIZED TO THE CLAMPED DATA (BA, 2026-09-16 closing decision). Clamping is
+  // what makes this safe: a series with a `visualRange` cannot hand the domain
+  // anything beyond its own bound, so an ordinary 55-day cycle keeps a readable
+  // bar instead of 3px on a scale reserved for a 40,000-day outlier.
   const growthDomain = useMemo<[number, number]>(
-    () => spec.growthDomain ?? domainFor(data, growthSeries),
-    [data, growthSeries, spec.growthDomain],
+    () => domainFor(data, growthSeries),
+    [data, growthSeries],
   );
 
   const axisDigits = useMemo(() => {

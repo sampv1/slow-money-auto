@@ -414,20 +414,22 @@ const DAYS_IN_YEAR = 365;
 const MIN_FLOW_FOR_DAYS = 1e9;
 
 /**
- * BA's display bounds for the cash conversion cycle (2026-09-16, revised).
+ * BA's display bound for the cash conversion cycle: ±1,825 days, five years
+ * (2026-09-16, as finally settled).
  *
- * `OUTLIER` is the symmetric threshold BA flags at: ±1,825 days (five years).
  * A cycle past it is not a cycle — it is a land bank, or payables, measured
- * against barely one tỷ of throughput.
+ * against barely one tỷ of throughput. Such a period is drawn AT the bound and
+ * flagged, never dropped.
  *
- * `AXIS` is the FIXED range BA fixes chart 5's second axis to, so that no
- * single period can stretch the whole scale: -365 to +1,825. It is deliberately
- * NOT symmetric, which is why a bar is clamped to the AXIS rather than to the
- * flag threshold — a value of -1,825 drawn on an axis that stops at -365 would
- * hang below the plot, which is the stretching the fixed range exists to stop.
+ * THE AXIS THEN SIZES ITSELF TO THE CLAMPED DATA, which is BA's closing
+ * decision: "thang đo dễ đọc đối với các công ty thông thường … trục tự điều
+ * chỉnh theo dữ liệu sau khi đã clamp". A fixed -365…1,825 range did stop one
+ * period rescaling the axis, but it cost every ordinary company its bars —
+ * measured on 1,017 filers, the median 91-day cycle occupied 4.2% of the plot
+ * height and 557 of them under 5%. Clamping first is what makes the
+ * data-driven axis safe: the widest it can now open is ±1,825.
  */
 export const CCC_OUTLIER_DAYS = 1825;
-export const CCC_AXIS_DAYS = { min: -365, max: 1825 } as const;
 
 function days(balance: number | null, throughput: number | null): number | null {
   if (balance === null || throughput === null) return null;
@@ -629,14 +631,6 @@ export type ChartSpec = {
   headline?: string;
   /** A reference level on the SECOND axis — chart 6's 100% cash conversion. */
   growthReference?: number;
-  /**
-   * A FIXED range for the second axis, overriding the data-driven domain.
-   *
-   * Chart 5 takes BA's -365…1,825 days (2026-09-16): with a computed domain one
-   * extreme period rescales the whole axis, which is the complaint the bound
-   * exists to answer. Every other chart still sizes its axis to its data.
-   */
-  growthDomain?: [number, number];
   /** Periods the card opens on, in years; overrides the section-wide five. */
   defaultSpanYears?: number;
   series: SeriesSpec[];
@@ -934,7 +928,6 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
     unit: "percent",
     caption_en: "% · days",
     caption_vi: "% · ngày",
-    growthDomain: [CCC_AXIS_DAYS.min, CCC_AXIS_DAYS.max],
     // NO QUARTERLY LAYER: a single quarter's return on capital is not an annual
     // rate, and BA's data layers for this chart are TTM and annual.
     layers: ["ttm", "year"],
@@ -984,11 +977,11 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         axis: "growth",
         color: C[3],
         unit: "days",
-        // Drawn inside BA's fixed axis; anything outside it lands on the bound
-        // and is flagged. Above: UNI's 93,577 days, DDG's 16,301 — a land bank
-        // against almost no cost of sales (47 of 1,017 current cycles). Below:
-        // PXM's -22,700, payables against the same thin throughput.
-        visualRange: CCC_AXIS_DAYS,
+        // Clamped to BA's ±1,825; the axis then fits what is left. Above:
+        // UNI's 93,577 days, DDG's 16,301 — a land bank against almost no cost
+        // of sales (47 of 1,017 current cycles). Below: PXM's -22,700,
+        // payables against the same thin throughput (5 filers).
+        visualRange: { min: -CCC_OUTLIER_DAYS, max: CCC_OUTLIER_DAYS },
         compute: ccc,
       },
       {
