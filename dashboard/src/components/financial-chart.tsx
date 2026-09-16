@@ -190,9 +190,9 @@ type ChartRow = { period: string; total: number | null } & Record<
  *  key so nothing downstream mistakes a phrase for a value. */
 const NOTE_PREFIX = "__note__";
 
-/** Row key carrying a value held back by its series' display cap (`visualMax`).
- *  The series' own key is nulled, so the plot and the axis never see it; this
- *  keeps the true figure for the readout. */
+/** Row key carrying the TRUE value of a mark that was clamped to its series'
+ *  display range (`visualRange`). The series' own key holds the clamped value,
+ *  which is what gets drawn; this keeps the real figure for the readout. */
 const OUTLIER_PREFIX = "__outlier__";
 
 /** Does this cell hold something drawable — a number, or a band's pair? */
@@ -283,14 +283,16 @@ export function FinancialChart({
       // A readout phrase that stands in for a number ("Không vay nợ") travels
       // beside its series rather than inside it, so the value stays numeric.
       for (const [k, note] of Object.entries(p.notes)) row[`${NOTE_PREFIX}${k}`] = note;
-      // BA'S DISPLAY CAP. Nulling the drawn value is what keeps one 93,577-day
-      // cycle from setting the axis for five years of 400-day ones; moving it
-      // to its own key is what keeps it honest — the readout still prints it.
+      // BA'S DISPLAY RANGE: a mark outside it is drawn AT THE BOUND, not
+      // dropped — a bar sitting on the limit says "at least this far", where a
+      // gap said only "nothing here" (BA's revision, 2026-09-16). The true
+      // figure moves to its own key so the readout can still print it.
       for (const sr of spec.series) {
+        const range = sr.visualRange;
         const v = row[sr.key];
-        if (sr.visualMax !== undefined && typeof v === "number" && v > sr.visualMax) {
+        if (range && typeof v === "number" && (v > range.max || v < range.min)) {
           row[`${OUTLIER_PREFIX}${sr.key}`] = v;
-          row[sr.key] = null;
+          row[sr.key] = Math.min(range.max, Math.max(range.min, v));
         }
       }
       return row;
@@ -359,18 +361,18 @@ export function FinancialChart({
   const plotted = useMemo(() => visible.filter((s) => !s.tooltipOnly), [visible]);
   const readoutOnly = useMemo(() => live.filter((s) => s.tooltipOnly), [live]);
 
-  // How many shown periods a display cap held back, for the card's warning.
-  // Counted over what is PLOTTED, so switching the capped series off in the
-  // legend also retires its warning.
+  // How many shown periods were clamped to a display bound, for the card's
+  // warning. Counted over what is PLOTTED, so switching the clamped series off
+  // in the legend also retires its warning.
   const heldBack = useMemo(() => {
     let n = 0;
-    let cap: number | undefined;
+    let range: { min: number; max: number } | undefined;
     for (const sr of plotted) {
-      if (sr.visualMax === undefined) continue;
-      cap = sr.visualMax;
+      if (!sr.visualRange) continue;
+      range = sr.visualRange;
       for (const d of data) if (typeof d[`${OUTLIER_PREFIX}${sr.key}`] === "number") n++;
     }
-    return { n, cap };
+    return { n, range };
   }, [plotted, data]);
   // THE LEGEND IS A SET OF SWITCHES, so it lists only what can be switched: a
   // readout-only entry has no mark to hide, and clicking it would do nothing.
@@ -395,9 +397,11 @@ export function FinancialChart({
     () => domainFor(data, valueSeries),
     [data, valueSeries],
   );
+  // A FIXED range wins over the data-driven one: chart 5's second axis is
+  // pinned to BA's -365…1,825 days so no single period can rescale it.
   const growthDomain = useMemo<[number, number]>(
-    () => domainFor(data, growthSeries),
-    [data, growthSeries],
+    () => spec.growthDomain ?? domainFor(data, growthSeries),
+    [data, growthSeries, spec.growthDomain],
   );
 
   const axisDigits = useMemo(() => {
@@ -877,13 +881,14 @@ export function FinancialChart({
         </div>
       )}
       {legendSeries.length <= 1 && <div className="mt-1.5 h-[14px]" aria-hidden />}
-      {/* BA's outlier warning: said once on the card, so a reader learns that
-          bars are missing without having to hover the gaps to find out why. */}
-      {heldBack.n > 0 && heldBack.cap !== undefined && (
+      {/* BA's outlier warning: said once on the card, so a reader learns which
+          bars stop at the boundary rather than reaching their own height. */}
+      {heldBack.n > 0 && heldBack.range !== undefined && (
         <p data-fin-outlier-note="" className="mt-1 text-label text-reference leading-tight">
           {t(locale, "finOutlierNote")
             .replace("{n}", String(heldBack.n))
-            .replace("{max}", formatUnit(heldBack.cap, "days"))}
+            .replace("{min}", formatUnit(heldBack.range.min, "days"))
+            .replace("{max}", formatUnit(heldBack.range.max, "days"))}
         </p>
       )}
     </div>
@@ -1096,7 +1101,7 @@ function FinTooltip({
                 t(locale, note)
               ) : outlier !== null ? (
                 // The true figure, in the warning colour, with what happened
-                // to it: held back from the plot, not missing from the data.
+                // to it: drawn at the boundary, not missing from the data.
                 <span style={{ color: CHART_LITERAL.reference }}>
                   {formatUnit(outlier, sr.unit ?? spec.unit)} · {t(locale, "finOutlier")}
                 </span>

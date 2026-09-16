@@ -413,9 +413,21 @@ const DAYS_IN_YEAR = 365;
  */
 const MIN_FLOW_FOR_DAYS = 1e9;
 
-/** BA's display ceiling for the cash conversion cycle: five years. See the
- *  `ccc` series on chart 5. An upper bound only, as specified. */
-export const CCC_VISUAL_MAX_DAYS = 1825;
+/**
+ * BA's display bounds for the cash conversion cycle (2026-09-16, revised).
+ *
+ * `OUTLIER` is the symmetric threshold BA flags at: ±1,825 days (five years).
+ * A cycle past it is not a cycle — it is a land bank, or payables, measured
+ * against barely one tỷ of throughput.
+ *
+ * `AXIS` is the FIXED range BA fixes chart 5's second axis to, so that no
+ * single period can stretch the whole scale: -365 to +1,825. It is deliberately
+ * NOT symmetric, which is why a bar is clamped to the AXIS rather than to the
+ * flag threshold — a value of -1,825 drawn on an axis that stops at -365 would
+ * hang below the plot, which is the stretching the fixed range exists to stop.
+ */
+export const CCC_OUTLIER_DAYS = 1825;
+export const CCC_AXIS_DAYS = { min: -365, max: 1825 } as const;
 
 function days(balance: number | null, throughput: number | null): number | null {
   if (balance === null || throughput === null) return null;
@@ -563,16 +575,18 @@ export type SeriesSpec = {
    */
   tooltipOnly?: boolean;
   /**
-   * A DISPLAY cap, not a data rule: a value above it is not drawn and does not
-   * set the axis, but its true figure still reaches the readout, marked as an
-   * outlier, and the card says how many periods it held back.
+   * A DISPLAY range, not a data rule: a value outside it is DRAWN AT THE
+   * NEAREST BOUND and flagged, while its true figure still reaches the readout
+   * and the card says how many periods were clamped.
    *
-   * Only the cash conversion cycle carries one (BA, 2026-09-16). The value is
-   * kept rather than nulled in `compute` because "we did not draw this" and "we
-   * could not measure this" are different facts — the first has a number a
-   * reader is entitled to see.
+   * Only the cash conversion cycle carries one (BA, 2026-09-16). Clamping
+   * rather than dropping is BA's revision: "gán giá trị vẽ đồ thị tại mốc trần"
+   * — a bar at the boundary says "at least this far", where a gap said only
+   * "nothing here". The value is never changed in `compute`, because "we drew
+   * this at the limit" and "we could not measure this" are different facts and
+   * the first has a number a reader is entitled to see.
    */
-  visualMax?: number;
+  visualRange?: { min: number; max: number };
   compute: (ctx: Ctx) => number | null;
   /** For `band`: the two values to shade between, low first. */
   computeBand?: (ctx: Ctx) => [number, number] | null;
@@ -615,6 +629,14 @@ export type ChartSpec = {
   headline?: string;
   /** A reference level on the SECOND axis — chart 6's 100% cash conversion. */
   growthReference?: number;
+  /**
+   * A FIXED range for the second axis, overriding the data-driven domain.
+   *
+   * Chart 5 takes BA's -365…1,825 days (2026-09-16): with a computed domain one
+   * extreme period rescales the whole axis, which is the complaint the bound
+   * exists to answer. Every other chart still sizes its axis to its data.
+   */
+  growthDomain?: [number, number];
   /** Periods the card opens on, in years; overrides the section-wide five. */
   defaultSpanYears?: number;
   series: SeriesSpec[];
@@ -912,6 +934,7 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
     unit: "percent",
     caption_en: "% · days",
     caption_vi: "% · ngày",
+    growthDomain: [CCC_AXIS_DAYS.min, CCC_AXIS_DAYS.max],
     // NO QUARTERLY LAYER: a single quarter's return on capital is not an annual
     // rate, and BA's data layers for this chart are TTM and annual.
     layers: ["ttm", "year"],
@@ -961,12 +984,11 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         axis: "growth",
         color: C[3],
         unit: "days",
-        // BA's visual ceiling (2026-09-16): five years. Below it the ratio is
-        // a cycle; above it — UNI's 93,577 days, DDG's 16,301 — it is a
-        // developer's land bank against almost no cost of sales, and one such
-        // bar flattens every other year on the axis. 47 of 1,017 current
-        // twelve-month cycles sit above it.
-        visualMax: CCC_VISUAL_MAX_DAYS,
+        // Drawn inside BA's fixed axis; anything outside it lands on the bound
+        // and is flagged. Above: UNI's 93,577 days, DDG's 16,301 — a land bank
+        // against almost no cost of sales (47 of 1,017 current cycles). Below:
+        // PXM's -22,700, payables against the same thin throughput.
+        visualRange: CCC_AXIS_DAYS,
         compute: ccc,
       },
       {
