@@ -29,6 +29,7 @@ import {
   Area,
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Line,
   ReferenceLine,
@@ -46,11 +47,13 @@ import {
   SPAN_YEARS,
   spanPeriods,
   type ChartSpec,
+  type FinCard,
   type Layer,
   type SeriesSpec,
   type Unit,
 } from "@/lib/financial-metrics";
-import type { VnstockStatementRow } from "@/lib/cached-data";
+import type { ShareAdjustmentRow, VnstockStatementRow } from "@/lib/cached-data";
+import { formatNumber } from "@/lib/format";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 /**
@@ -186,6 +189,10 @@ type ChartRow = { period: string; total: number | null } & Record<
   number | string | null | [number, number]
 >;
 
+/** Row key carrying a bar's own colour, for a series with `colorBy`. Kept out
+ *  of the series' own key so the value stays numeric for the axes. */
+const CELL_PREFIX = "__cell__";
+
 /** Row key carrying a series' readout phrase, kept away from the series' own
  *  key so nothing downstream mistakes a phrase for a value. */
 const NOTE_PREFIX = "__note__";
@@ -210,11 +217,20 @@ export function FinancialChart({
   latestCloseDate = null,
   zoomed = false,
   financialFiler = false,
+  shareAdjustments = [],
 }: {
   spec: ChartSpec;
   rows: VnstockStatementRow[];
   locale: Locale;
   latestClose: number | null;
+  /**
+   * Per-quarter IAS 33 share factors, for chart 11's EPS_adj (migration 069).
+   *
+   * An empty array is the fail-closed state: `windowFactor` refuses a window
+   * with no rows, so a symbol that has not been ingested is drawn on raw EPS
+   * and flagged, never presented as restated. Every other chart ignores it.
+   */
+  shareAdjustments?: ShareAdjustmentRow[];
   /** Date of `latestClose`, shown on the live point so the price is not a guess. */
   latestCloseDate?: string | null;
   /** Filling the section on its own, rather than one of ten in the grid. */
@@ -265,15 +281,19 @@ export function FinancialChart({
   const yearFrames = useMemo(() => buildFrames(rows, "year"), [rows]);
 
   const points = useMemo(
-    () => evaluate(spec, quarterFrames, yearFrames, layer, latestClose),
-    [spec, quarterFrames, yearFrames, layer, latestClose],
+    () => evaluate(spec, quarterFrames, yearFrames, layer, latestClose, shareAdjustments),
+    [spec, quarterFrames, yearFrames, layer, latestClose, shareAdjustments],
   );
 
   // Flatten to the row shape recharts wants, one key per series. Typed as an
   // open record because the keys are the SPEC's series keys, known only at
   // runtime — recharts reads them by string anyway.
   const data = useMemo<ChartRow[]>(() => {
-    const n = spanPeriods(spanY, layer);
+    // A FIXED QUARTER WINDOW WINS OVER THE YEAR SPAN. Chart 11 is specified as
+    // exactly seven quarters, because that is the range its three YoY
+    // comparisons and its one-year dilution rate describe — a reader who could
+    // widen it would be reading cards that no longer match the bars.
+    const n = spec.quarterWindow ?? spanPeriods(spanY, layer);
     const scoped = Number.isFinite(n) ? points.slice(-n) : points;
     return scoped.map((p) => {
       const row: ChartRow = { period: p.period, total: p.total, ...p.values };
@@ -283,6 +303,9 @@ export function FinancialChart({
       // A readout phrase that stands in for a number ("Không vay nợ") travels
       // beside its series rather than inside it, so the value stays numeric.
       for (const [k, note] of Object.entries(p.notes)) row[`${NOTE_PREFIX}${k}`] = note;
+      // A per-bar colour travels the same way, so the renderer never has to
+      // re-derive a rule the evaluator already applied.
+      for (const [k, color] of Object.entries(p.colors)) row[`${CELL_PREFIX}${k}`] = color;
       // BA'S DISPLAY RANGE: a mark outside it is drawn AT THE BOUND, not
       // dropped — a bar sitting on the limit says "at least this far", where a
       // gap said only "nothing here" (BA's revision, 2026-09-16). The true
@@ -297,7 +320,7 @@ export function FinancialChart({
       }
       return row;
     });
-  }, [points, spanY, layer, spec.series]);
+  }, [points, spanY, layer, spec.series, spec.quarterWindow]);
 
   // Series belonging to THIS tab. Charts 1 and 2 add a TTM overlay only on the
   // TTM tab, and chart 6's cash conversion is withheld from the quarterly tab —
@@ -364,6 +387,14 @@ export function FinancialChart({
   // How many shown periods were clamped to a display bound, for the card's
   // warning. Counted over what is PLOTTED, so switching the clamped series off
   // in the legend also retires its warning.
+  // BA's cards describe the WINDOW that is drawn, so they are computed from the
+  // scoped points rather than from every period the symbol has ever filed.
+  const cards = useMemo<FinCard[]>(() => {
+    if (!spec.cards) return [];
+    const n = spec.quarterWindow ?? spanPeriods(spanY, layer);
+    return spec.cards(Number.isFinite(n) ? points.slice(-n) : points);
+  }, [spec, points, spanY, layer]);
+
   const heldBack = useMemo(() => {
     let n = 0;
     let range: { min: number; max: number } | undefined;
@@ -581,6 +612,7 @@ export function FinancialChart({
             ))}
           </select>
         )}
+        {spec.quarterWindow === undefined && (
         <div className="inline-flex rounded-sm border border-line overflow-hidden ml-auto" role="group">
           {SPAN_YEARS.map((y) => (
             <button
@@ -596,6 +628,7 @@ export function FinancialChart({
             </button>
           ))}
         </div>
+        )}
       </div>
 
       {/* Clamped rather than a bare vh: on a short laptop 52vh is under 300px
@@ -709,7 +742,10 @@ export function FinancialChart({
             {bandSeries.map((s) => (
               <Area
                 key={s.key}
-                yAxisId="value"
+                // A band belongs to the axis its two values are measured on.
+                // Chart 6's accruals sit on the value axis; chart 11's dilution
+                // gap is the distance between two GROWTH lines.
+                yAxisId={s.axis === "growth" ? "growth" : "value"}
                 dataKey={s.key}
                 stroke="none"
                 fill={s.color}
@@ -735,7 +771,24 @@ export function FinancialChart({
                   stroke={s.stack ? CHART_LITERAL.panel : undefined}
                   strokeWidth={s.stack ? 0.5 : 0}
                   isAnimationActive={false}
-                />
+                >
+                  {/* A SERIES WHOSE COLOUR VARIES PER BAR needs one Cell per
+                      row; recharts applies `fill` to the whole series
+                      otherwise. Chart 11 is the only such series, and the
+                      colour it chooses encodes three states — cleared the
+                      bar, did not, and was never measured. */}
+                  {s.colorBy &&
+                    data.map((d) => (
+                      <Cell
+                        key={String(d.period)}
+                        fill={
+                          (typeof d[`${CELL_PREFIX}${s.key}`] === "string"
+                            ? (d[`${CELL_PREFIX}${s.key}`] as string)
+                            : null) ?? s.color
+                        }
+                      />
+                    ))}
+                </Bar>
               ))}
             {growthSeries
               .filter((s) => s.kind === "bar")
@@ -893,6 +946,81 @@ export function FinancialChart({
             .replace("{max}", formatUnit(heldBack.range.max, "days"))}
         </p>
       )}
+      {cards.length > 0 && <FinCards cards={cards} locale={locale} />}
+    </div>
+  );
+}
+
+/**
+ * BA's four summary cards for chart 11 (Thẻ 1-4).
+ *
+ * THE CARDS DERIVE NOTHING. Every value, tone and flag is decided in
+ * `chart11Cards` beside the thresholds it tests; this renders what it is given.
+ * That is the rule the securities tabs had to learn twice — a display rule
+ * implemented in two places is a display rule that will disagree with itself.
+ *
+ * Two cards read as counts rather than percentages, so `ofTotal` is what
+ * separates "3/3 quarters" from "18%" without a second formatter.
+ */
+function FinCards({ cards, locale }: { cards: FinCard[]; locale: Locale }) {
+  const label: Record<FinCard["key"], TranslationKey> = {
+    yoyQ0: "finCardYoyQ0",
+    avg3q: "finCardAvg3q",
+    streak: "finCardStreak",
+    sdr: "finCardSdr",
+  };
+  return (
+    <div
+      data-fin-kpis=""
+      // Two columns on a phone, four from `sm`: at 390px four cards would put
+      // each Vietnamese label on four lines.
+      className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-1.5"
+      aria-label={t(locale, "finCards")}
+    >
+      {cards.map((c) => {
+        const tone =
+          c.tone === "good"
+            ? "text-up"
+            : c.tone === "warn"
+              ? "text-down"
+              : "text-fg";
+        return (
+          <div
+            key={c.key}
+            data-fin-kpi={c.key}
+            className="min-w-0 rounded-sm border border-line-faint bg-panel-2 px-1.5 py-1"
+            title={c.flag === "alert" ? t(locale, "finCardSdrAlert") : undefined}
+          >
+            <div className="text-label text-fg-label leading-tight break-words">
+              {t(locale, label[c.key])}
+            </div>
+            <div className={`mt-0.5 flex items-baseline gap-1 text-data tabular-nums ${tone}`}>
+              {c.value === null ? (
+                // Absence is a sentence, never a zero — the same rule the rest
+                // of the section follows for a figure that was not measured.
+                <span className="text-fg-faint text-label">
+                  {c.absent ? t(locale, c.absent) : "—"}
+                </span>
+              ) : c.key === "streak" ? (
+                <span>
+                  {formatNumber(c.value, 0)}/{c.ofTotal}
+                </span>
+              ) : (
+                <span>{formatUnit(c.value, c.unit)}</span>
+              )}
+              {c.flag === "rocket" && <span aria-hidden>🚀</span>}
+              {c.flag === "alert" && <span aria-hidden>⚠</span>}
+            </div>
+            {/* Thẻ 2 states how many quarters it averaged, because BA's rule
+                lets Thẻ 3 read 3/3 beside an average over two. */}
+            {c.key === "avg3q" && c.value !== null && c.ofTotal !== undefined && c.ofTotal < 3 && (
+              <div className="text-label text-fg-faint leading-tight">
+                {t(locale, "finCardAvgOf").replace("{n}", String(c.ofTotal))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

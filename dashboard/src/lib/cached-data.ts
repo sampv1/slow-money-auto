@@ -1356,3 +1356,62 @@ export async function getVnstockStatements(symbol: string): Promise<VnstockState
     { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
   )();
 }
+
+/**
+ * One symbol's per-quarter IAS 33 share factors (migration 069).
+ *
+ * Chart 11 restates EPS for stock dividends and bonus issues while leaving real
+ * dilution alone, and the two cannot be told apart from the statements — see
+ * `scripts/fa/share_events.py`. These rows are that distinction.
+ *
+ * AN EMPTY RESULT IS NOT "NOTHING HAPPENED" — it is "we have not ingested this
+ * symbol", which must fail closed: the chart then draws raw EPS and says it is
+ * unadjusted, rather than quietly presenting an unrestated series as restated.
+ * `windowFactor` enforces that by refusing a window whose rows are absent, so
+ * the empty array here is safe BECAUSE of what consumes it.
+ *
+ * On a read ERROR this REJECTS rather than returning []. `unstable_cache` stores
+ * whatever the function returns, so swallowing the error caches an empty answer
+ * for an hour — which is how the Analysis page's report block stayed blank after
+ * the 2026-09-22 outage had ended. A throw leaves nothing cached and the caller
+ * decides.
+ */
+export type ShareAdjustmentRow = {
+  period: string;
+  shares: number | null;
+  shares_prev: number | null;
+  total_ratio: number | null;
+  k_technical: number;
+  announced_ratio: number | null;
+  data_ok: boolean;
+  reason: string;
+};
+
+export async function getShareAdjustments(symbol: string): Promise<ShareAdjustmentRow[]> {
+  return unstable_cache(
+    async (): Promise<ShareAdjustmentRow[]> => {
+      const { data, error } = await supabase
+        .from("fa_share_adjustments")
+        .select("period,shares,shares_prev,total_ratio,k_technical,announced_ratio,data_ok,reason")
+        .eq("symbol", symbol)
+        .order("period", { ascending: true });
+      if (error) {
+        // A missing table (migration 069 not yet applied) is a legitimate
+        // empty, not an outage: the chart ships before the table exists and
+        // simply draws unadjusted. Anything else is a real failure and must not
+        // be cached.
+        //
+        // BOTH CODES, and the one that actually fires is the PostgREST one.
+        // Postgres raises 42P01 for an unknown relation, but PostgREST answers
+        // from its schema cache first and returns PGRST205 — measured against
+        // the live project before 069 was applied. Checking only the Postgres
+        // code would have made a not-yet-applied migration look like an outage.
+        if (error.code === "PGRST205" || error.code === "42P01") return [];
+        throw new Error(`fa_share_adjustments(${symbol}): ${error.message}`);
+      }
+      return (data ?? []) as ShareAdjustmentRow[];
+    },
+    ["share-adjustments", symbol],
+    { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+  )();
+}

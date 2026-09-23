@@ -42,6 +42,13 @@ export type StatementKind = "income" | "balance" | "cashflow" | "ratio";
 export type Layer = "quarter" | "ttm" | "year";
 
 /** How a figure is written. `x` is a multiple (P/E 12,4×). */
+import {
+  epsAdjusted,
+  shareDilutionRate,
+  windowFactor,
+  type ShareAdjRow,
+} from "@/lib/eps-adjusted";
+
 export type Unit = "vnd" | "percent" | "x" | "days" | "years";
 
 // --- Frames -----------------------------------------------------------------
@@ -123,6 +130,21 @@ export type Ctx = {
   latestClose: number | null;
   /** True only for the newest x-position on the chart. */
   isLatest: boolean;
+  /** Distance from the newest x-position: 0 is newest, 1 the one before.
+   *  Chart 11 needs it because BA's growth lines cover the last three bars
+   *  only, and `isLatest` can only name one of them. */
+  fromEnd: number;
+  /**
+   * Per-quarter IAS 33 share factors, for chart 11's EPS_adj (migration 069).
+   *
+   * An EMPTY map is the fail-closed state, not "nothing happened": `adjWindow`
+   * refuses a window whose rows are absent, so a symbol that has not been
+   * ingested is drawn on raw EPS and flagged rather than presented as restated.
+   */
+  adj: Map<string, ShareAdjRow>;
+  /** The newest quarter on the chart — BA's Q0, the basis every bar is stated
+   *  on. Null outside the quarterly layer, where EPS_adj does not apply. */
+  q0: string | null;
 };
 
 const val = (f: Frame | null, st: StatementKind, id: string): number | null => {
@@ -269,6 +291,11 @@ const BS = {
   landBank: "BS_LONG_TERM_PRODUCTION_IN_PROGRESS",
   investProp: "BS_INVESTMENT_PROPERTIES",
   totalAssets: "BS_TOTAL_ASSETS",
+  /** Charter capital. / 10,000 par is the ISSUED share count, which BA
+   *  confirmed for chart 11 (reply lần 1 Q7) over the provider's own
+   *  outstanding-share field: 100% coverage against 3%, and treasury stock is
+   *  carried only as a VND cost so an outstanding count cannot be derived. */
+  charterCapital: "BS_CHARTER_CAPITAL",
   stBorrow: "BS_SHORT_TERM_BORROWINGS",
   ltBorrow: "BS_LONG_TERM_BORROWINGS",
   payables: "BS_TRADE_ACCOUNTS_PAYABLE",
@@ -559,6 +586,16 @@ export type SeriesSpec = {
   /** Drawn with a diagonal stripe — BA's "highlight" for CIP (reply §6). */
   striped?: boolean;
   /**
+   * A colour chosen PER BAR from that period's own data, overriding `color`.
+   *
+   * Chart 11 needs it and nothing else does: BA colours each EPS_adj bar by
+   * whether that quarter grew 25% or more. Returning null falls back to
+   * `color`, which is what the four bars with no year-ago quarter inside the
+   * window get — a third, neutral colour, because painting them "weak" would
+   * assert a measurement that was never made (BA's reply lần 1 Q3).
+   */
+  colorBy?: (ctx: Ctx) => string | null;
+  /**
    * Layers this series belongs to. Absent means every layer the chart offers.
    *
    * Charts 1 and 2 need it for the TTM overlay their tab layout asks for, and
@@ -600,6 +637,27 @@ export type SeriesSpec = {
   note?: (ctx: Ctx) => TranslationKey | null;
 };
 
+/**
+ * One of BA's four summary cards on chart 11 (Thẻ 1-4).
+ *
+ * Data only: the label comes from i18n by `key`, so the card cannot hold an
+ * untranslated string, and the tone rules stay here beside the thresholds they
+ * test rather than in the renderer.
+ */
+export type FinCard = {
+  key: "yoyQ0" | "avg3q" | "streak" | "sdr";
+  value: number | null;
+  unit: Unit;
+  tone: "good" | "warn" | "neutral";
+  /** Thẻ 2's rocket when the 3-quarter average clears the CANSLIM bar, and
+   *  Thẻ 4's alert when dilution is high while EPS growth is not. */
+  flag?: "rocket" | "alert";
+  /** Thẻ 3 prints a count out of a total ("3/3"), not a percentage. */
+  ofTotal?: number;
+  /** Why the value is absent, when it is. Rendered as a note, never as a zero. */
+  absent?: TranslationKey;
+};
+
 export type ChartSpec = {
   id: string;
   title_en: string;
@@ -633,6 +691,23 @@ export type ChartSpec = {
   growthReference?: number;
   /** Periods the card opens on, in years; overrides the section-wide five. */
   defaultSpanYears?: number;
+  /**
+   * A fixed number of QUARTERS to show, replacing the year-span control.
+   *
+   * Chart 11 is specified as exactly seven quarters (Q-6 .. Q0) because that is
+   * the window BA's three YoY comparisons and the SDR need; a year-based span
+   * cannot express it, and offering one would invite a reader to widen the
+   * chart past the range its cards describe.
+   */
+  quarterWindow?: number;
+  /**
+   * BA's four summary cards (Thẻ 1-4), computed from the drawn points.
+   *
+   * They read the EVALUATED series rather than a `Ctx`, because three of the
+   * four span several quarters — an average, a count, and a one-year dilution
+   * rate — and a single period's context cannot see them.
+   */
+  cards?: (points: ChartPoint[]) => FinCard[];
   series: SeriesSpec[];
   /** Reconciliation total: drawn as the residual's base and shown in the
    *  tooltip as a bold total row. */
@@ -709,6 +784,201 @@ const bsStack = (
  * the ones this company files.
  */
 export const DEFAULT_RESIDUAL_LIMIT = 0.5;
+
+
+// --- Chart 11: EPS_adj, its thresholds and its cards -------------------------
+//
+// Every number here is BA's, from the chart-11 specification and the two reply
+// documents. They are named rather than inlined because three of them appear in
+// more than one place — the bar colour and Thẻ 1 share the 25% bar, and Thẻ 4
+// reads both its own 15% floors.
+
+/** BA's window: Q-6 .. Q0. */
+const CHART11_QUARTERS = 7;
+/** Of those, the three with a year-ago quarter inside it: Q-2, Q-1, Q0. */
+const CHART11_YOY_QUARTERS = 3;
+/** The CANSLIM "C" bar. Colours a bar, greens Thẻ 1, and earns Thẻ 2's rocket. */
+const CHART11_STRONG_PCT = 25;
+/** Thẻ 4 fires only when dilution is high AND per-share growth is not. */
+const CHART11_SDR_PCT = 15;
+const CHART11_EPS_WEAK_PCT = 15;
+/** BA's dilution band: parent profit outgrowing EPS by more than ten POINTS
+ *  (reply lần 1 Q4 — percentage points, not a relative 10%). */
+const CHART11_DILUTION_PP = 10;
+/** Below this, BA's faint "EPS grew without much help from revenue" note. */
+const CHART11_REVENUE_WEAK_PCT = 10;
+
+/** BA's turquoise for a quarter that cleared the bar. */
+const CHART11_STRONG = C[2];
+/**
+ * BA's "xám xẫm" for a weak or negative quarter.
+ *
+ * Not `CHART_LITERAL.label`, the obvious grey: against the turquoise beside it
+ * that sits at OKLab ΔE 14.0, under the floor of 15 for two marks of the same
+ * type that a reader compares directly. This clears every pair on the card —
+ * 17.7 vs the bars' strong colour, 26.0 vs the neutral one, 18.0 vs the EPS
+ * line, 18.9 vs the profit line.
+ */
+const CHART11_WEAK = "#5a554d";
+/**
+ * The third colour BA asked for and left to us (reply lần 1 Q3), for the four
+ * bars with no year-ago quarter inside the window.
+ *
+ * It is the palette's existing "unclassified" grey, one lightness step above
+ * the weak colour — so the distinction a reader has to make is "measured vs
+ * not", encoded as lightness, rather than a fourth hue to learn.
+ */
+const CHART11_NEUTRAL = SERIES_RESIDUAL;
+
+const PAR_VALUE = 10_000;
+
+/** Only the last three bars carry a year-ago quarter inside BA's window. */
+const inYoyRange = (ctx: Ctx): boolean => ctx.layer === "quarter" && ctx.fromEnd <= 2;
+
+/**
+ * The share count at one frame: the ingested figure first, the filed balance
+ * sheet second.
+ *
+ * The fallback is what lets this chart draw before `fa_share_adjustments` has
+ * been populated — on raw EPS, flagged as unadjusted — instead of rendering
+ * empty. Both are charter capital over par; the stored one has already been
+ * divided and reconciled.
+ */
+function sharesAt(ctx: Ctx, f: Frame | null): number | null {
+  if (!f) return null;
+  const stored = ctx.adj.get(f.period)?.shares;
+  if (stored) return stored;
+  const cap = val(f, "balance", BS.charterCapital);
+  return cap ? cap / PAR_VALUE : null;
+}
+
+/** K(period → Q0), with the reconciliation verdict that governs it. */
+function adjWindow(ctx: Ctx, period: string) {
+  return windowFactor(ctx.adj, period, ctx.q0 ?? period);
+}
+
+/**
+ * EPS_adj at an arbitrary frame, stated on Q0's share basis.
+ *
+ * `windowFactor` returns k = 1 when it refuses the window, so a symbol with no
+ * ingested factors — or one whose announcements do not reconcile — yields raw
+ * EPS rather than nothing. That is BA's instruction ("vẽ biểu đồ không điều
+ * chỉnh và nói rõ điều đó"), and the series' `note` is what says so.
+ */
+function epsAdjAt(ctx: Ctx, f: Frame | null): number | null {
+  if (!f || ctx.layer !== "quarter") return null;
+  const wf = adjWindow(ctx, f.period);
+  return epsAdjusted(val(f, "income", IS.npatParent), sharesAt(ctx, f), wf.k);
+}
+
+const epsAdjHere = (ctx: Ctx): number | null => epsAdjAt(ctx, ctx.cur);
+
+/**
+ * A quarter that was loss-making a year ago and is profitable now.
+ *
+ * BA blanks the growth percentage there (reply lần 1 Q2 — a negative base makes
+ * it meaningless) but counts the quarter as growth in Thẻ 3 (reply lần 2 §2).
+ * Both halves of that ruling are conditioned on the CURRENT quarter being
+ * positive, which is why this is not simply "the base was negative".
+ */
+function isTurnaround(ctx: Ctx): boolean {
+  if (!inYoyRange(ctx)) return false;
+  const base = val(ctx.yearAgo, "income", IS.npatParent);
+  const now = val(ctx.cur, "income", IS.npatParent);
+  return base !== null && base <= 0 && now !== null && now > 0;
+}
+
+/**
+ * BA's YoY on EPS_adj, blank where the year-ago quarter lost money.
+ *
+ * Both sides are restated onto Q0's basis, so the ratio is of two comparable
+ * per-share figures — which is the whole reason the chart restates at all.
+ */
+function yoyEpsAdj(ctx: Ctx): number | null {
+  if (!inYoyRange(ctx)) return null;
+  const base = val(ctx.yearAgo, "income", IS.npatParent);
+  if (base === null || base <= 0) return null;
+  const now = epsAdjAt(ctx, ctx.cur);
+  const then = epsAdjAt(ctx, ctx.yearAgo);
+  if (now === null || then === null || then <= 0) return null;
+  return (now / then - 1) * 100;
+}
+
+/** BA's second line: the same growth before the share count is considered. */
+function yoyParentProfit(ctx: Ctx): number | null {
+  if (!inYoyRange(ctx)) return null;
+  const base = val(ctx.yearAgo, "income", IS.npatParent);
+  if (base === null || base <= 0) return null;
+  const now = val(ctx.cur, "income", IS.npatParent);
+  return now === null ? null : (now / base - 1) * 100;
+}
+
+/**
+ * BA's four cards (Thẻ 1-4), read off the evaluated points.
+ *
+ * Thẻ 2 AVERAGES THE QUARTERS THAT HAVE A VALUE, not always three. BA's formula
+ * divides by 3, but their own Answer 2 blanks a quarter whose year-ago period
+ * lost money, which leaves a hole in that numerator. Averaging what exists is
+ * what the FA rubric's C2 already does (`sum(g3)/len(g3)` in fa/metrics.py), so
+ * this keeps one behaviour across the site — and the card states how many
+ * quarters it used, because Thẻ 3 can read 3/3 beside it.
+ */
+function chart11Cards(points: ChartPoint[]): FinCard[] {
+  const last3 = points.slice(-CHART11_YOY_QUARTERS);
+  const growths = last3
+    .map((p) => p.values.yoyEpsAdj)
+    .filter((v): v is number => typeof v === "number");
+  const newest = points[points.length - 1];
+
+  const yoyQ0 = typeof newest?.values.yoyEpsAdj === "number" ? newest.values.yoyEpsAdj : null;
+  const avg = growths.length ? growths.reduce((a, b) => a + b, 0) / growths.length : null;
+  // BA: a turnaround from a loss counts as a growth quarter even though it has
+  // no percentage, so the count is over two different kinds of evidence.
+  const achieved = last3.filter((p) => {
+    const g = p.values.yoyEpsAdj;
+    if (typeof g === "number") return g >= CHART11_STRONG_PCT;
+    return p.values.epsTurnaround === 1;
+  }).length;
+  const sdrValue = typeof newest?.values.sdr === "number" ? newest.values.sdr : null;
+
+  const diluting =
+    sdrValue !== null && sdrValue > CHART11_SDR_PCT &&
+    yoyQ0 !== null && yoyQ0 < CHART11_EPS_WEAK_PCT;
+
+  return [
+    {
+      key: "yoyQ0",
+      value: yoyQ0,
+      unit: "percent",
+      tone: yoyQ0 === null ? "neutral" : yoyQ0 >= CHART11_STRONG_PCT ? "good" : "neutral",
+      absent: yoyQ0 === null ? "finEpsNoYoy" : undefined,
+    },
+    {
+      key: "avg3q",
+      value: avg,
+      unit: "percent",
+      tone: avg === null ? "neutral" : avg >= CHART11_STRONG_PCT ? "good" : "neutral",
+      flag: avg !== null && avg >= CHART11_STRONG_PCT ? "rocket" : undefined,
+      ofTotal: growths.length,
+      absent: avg === null ? "finEpsNoYoy" : undefined,
+    },
+    {
+      key: "streak",
+      value: achieved,
+      unit: "x",
+      tone: achieved === CHART11_YOY_QUARTERS ? "good" : "neutral",
+      ofTotal: CHART11_YOY_QUARTERS,
+    },
+    {
+      key: "sdr",
+      value: sdrValue,
+      unit: "percent",
+      tone: sdrValue === null ? "neutral" : diluting ? "warn" : "neutral",
+      flag: diluting ? "alert" : undefined,
+      absent: sdrValue === null ? "finEpsNoSdr" : undefined,
+    },
+  ];
+}
 
 export const FINANCIAL_CHARTS: ChartSpec[] = [
   {
@@ -1392,6 +1662,160 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
       },
     ],
   },
+
+  // ---------------------------------------------------------------- 11 ----
+  //
+  // BA's "bổ sung biểu đồ thứ 11": the CANSLIM "C" test — current quarterly
+  // earnings — answered in ten seconds, with the dilution trap that makes a raw
+  // EPS series lie.
+  //
+  // IT IS THE ONLY CHART THAT RESTATES ITS OWN HISTORY. Every other card reads
+  // the statements as filed; this one divides each earlier quarter's EPS by the
+  // stock dividends and bonus issues that have happened since (IAS 33 / VAS 30)
+  // while deliberately NOT restating placements, rights issues or ESOP — so a
+  // company that grew its profit by issuing shares shows exactly that. The
+  // factor comes from `fa_share_adjustments`; see `scripts/fa/share_events.py`
+  // for why it cannot be inferred from the statements alone.
+  //
+  // SEVEN QUARTERS, THREE COMPARISONS. Q-6..Q0 is the window, but only Q-2, Q-1
+  // and Q0 have a year-ago quarter inside it, so the two growth lines and the
+  // dilution band cover the last three bars only. The other four are not drawn
+  // as weak — they take a third, neutral colour, because "we did not measure
+  // this" is not "this was bad" (BA's reply lần 1 Q3).
+  {
+    id: "eps-canslim",
+    title_en: "EPS growth & dilution warning (CANSLIM)",
+    title_vi: "Tăng trưởng EPS & cảnh báo pha loãng (CANSLIM)",
+    unit: "vnd",
+    caption_en: "VND per share; growth in %",
+    caption_vi: "VNĐ/cổ phiếu; tăng trưởng theo %",
+    // Quarters only. EPS_adj is defined against a quarter's own share count,
+    // and a TTM or annual EPS would need its own restatement rule that BA has
+    // not specified.
+    layers: ["quarter"],
+    defaultLayer: "quarter",
+    quarterWindow: CHART11_QUARTERS,
+    headline: "epsAdj",
+    cards: chart11Cards,
+    series: [
+      {
+        key: "epsAdj",
+        label_en: "Adjusted EPS",
+        label_vi: "EPS điều chỉnh",
+        kind: "bar",
+        axis: "value",
+        color: CHART11_NEUTRAL,
+        unit: "vnd",
+        colorBy: (ctx) => {
+          const g = yoyEpsAdj(ctx);
+          if (g === null) return CHART11_NEUTRAL;
+          return g >= CHART11_STRONG_PCT ? CHART11_STRONG : CHART11_WEAK;
+        },
+        compute: epsAdjHere,
+        // BA asked that an unreconcilable window be DRAWN and SAID, not hidden.
+        // `windowFactor` hands back k=1 when it refuses, so the bar is raw EPS
+        // and this note is what stops a reader taking it for a restated one.
+        note: (ctx) =>
+          ctx.q0 && !adjWindow(ctx, ctx.cur.period).reconciled ? "finEpsUnadjusted" : null,
+      },
+      {
+        key: "yoyEpsAdj",
+        label_en: "Adjusted EPS YoY",
+        label_vi: "Tăng trưởng EPS điều chỉnh YoY",
+        kind: "line",
+        axis: "growth",
+        // NOT the dark green BA's sheet asks for, and the reason is measured:
+        // against the turquoise bars beside it, moss green sits at OKLab ΔE 9.0
+        // — under even the relieved floor of 11 for marks of different types.
+        // Blue clears every pair on this card (18.9 vs the bars, 29.3 vs the
+        // profit line, 18.0 and 23.5 vs the two greys).
+        color: C[0],
+        unit: "percent",
+        compute: yoyEpsAdj,
+      },
+      {
+        key: "yoyParent",
+        label_en: "Parent profit YoY",
+        label_vi: "Tăng trưởng LNST công ty mẹ YoY",
+        kind: "line",
+        axis: "growth",
+        color: C[7],
+        dashed: true,
+        unit: "percent",
+        compute: yoyParentProfit,
+      },
+      {
+        // BA's "Vùng Cảnh báo Pha loãng": where parent profit grew more than
+        // ten POINTS faster than per-share earnings, the gap between the two
+        // lines IS the dilution, and it is shaded rather than left to the
+        // reader to subtract.
+        key: "dilutionBand",
+        label_en: "Dilution gap",
+        label_vi: "Khoảng pha loãng",
+        kind: "band",
+        axis: "growth",
+        color: C[7],
+        unit: "percent",
+        compute: () => null,
+        computeBand: (ctx) => {
+          const eps = yoyEpsAdj(ctx);
+          const parent = yoyParentProfit(ctx);
+          if (eps === null || parent === null) return null;
+          if (parent - eps <= CHART11_DILUTION_PP) return null;
+          return [eps, parent];
+        },
+      },
+      {
+        // BA's Sales Confirmation Rule: EPS growth with no revenue behind it is
+        // the trap O'Neil warns about, so the revenue figure travels in the
+        // readout beside the growth it is meant to corroborate.
+        key: "revenueYoy",
+        label_en: "Net revenue YoY",
+        label_vi: "Tăng trưởng doanh thu thuần YoY",
+        kind: "line",
+        axis: "growth",
+        color: SECOND_AXIS_COLOR,
+        unit: "percent",
+        tooltipOnly: true,
+        compute: (ctx) =>
+          inYoyRange(ctx) ? growth(flow(ctx, P.revenue), flowYearAgo(ctx, P.revenue)) : null,
+        note: (ctx) => {
+          if (!inYoyRange(ctx)) return null;
+          const rev = growth(flow(ctx, P.revenue), flowYearAgo(ctx, P.revenue));
+          const eps = yoyEpsAdj(ctx);
+          if (rev === null || eps === null || eps <= 0) return null;
+          return rev < CHART11_REVENUE_WEAK_PCT ? "finEpsWeakSales" : null;
+        },
+      },
+      {
+        // Why Thẻ 3 can read 3/3 over a line with a gap in it. BA's ruling
+        // (reply lần 2 §2): a quarter whose year-ago period lost money and
+        // whose own is profitable COUNTS as growth, even though no percentage
+        // can be formed from a negative base. Without this in the readout the
+        // card and the chart look as though they disagree.
+        key: "epsTurnaround",
+        label_en: "Turned profitable vs year-ago",
+        label_vi: "Đảo chiều từ lỗ so với cùng kỳ",
+        kind: "line",
+        axis: "growth",
+        color: SECOND_AXIS_COLOR,
+        unit: "x",
+        tooltipOnly: true,
+        compute: (ctx) => (isTurnaround(ctx) ? 1 : null),
+      },
+      {
+        key: "sdr",
+        label_en: "Share dilution rate, 1Y",
+        label_vi: "Tỷ lệ pha loãng cổ phiếu, 1 năm",
+        kind: "line",
+        axis: "growth",
+        color: SECOND_AXIS_COLOR,
+        unit: "percent",
+        tooltipOnly: true,
+        compute: (ctx) => shareDilutionRate(ctx.adj, ctx.cur.period).value,
+      },
+    ],
+  },
 ];
 
 /** What the listed components leave unexplained. Clamped at zero: a negative
@@ -1413,6 +1837,10 @@ export type ChartPoint = {
   values: Record<string, number | null>;
   bands: Record<string, [number, number] | null>;
   notes: Record<string, TranslationKey>;
+  /** Per-bar colours, for a series whose spec sets `colorBy`. Resolved here
+   *  rather than in the renderer because the rule reads this period's own
+   *  context, which only the evaluator has. */
+  colors: Record<string, string>;
   total: number | null;
 };
 
@@ -1429,10 +1857,22 @@ export function evaluate(
   yearFrames: Frame[],
   layer: Layer,
   latestClose: number | null,
+  /** Per-quarter IAS 33 factors for chart 11. Absent means "not ingested",
+   *  which `windowFactor` treats as a refusal — so every other chart passing
+   *  nothing is unaffected, and chart 11 falls back to raw EPS and says so. */
+  shareAdjustments: ShareAdjRow[] = [],
 ): ChartPoint[] {
   const frames = layer === "year" ? yearFrames : quarterFrames;
   const byPeriod = new Map(frames.map((f) => [f.period, f]));
   const byQuarter = new Map(quarterFrames.map((f) => [f.period, f]));
+  const adj = new Map(shareAdjustments.map((r) => [r.period, r]));
+  // Q0 is the newest QUARTER the chart holds, which is the basis every EPS_adj
+  // bar is stated on. Null off the quarterly layer, where BA has specified no
+  // restatement rule.
+  const q0 =
+    layer === "quarter" && quarterFrames.length
+      ? quarterFrames[quarterFrames.length - 1].period
+      : null;
 
   return frames.map((cur, i) => {
     const yearAgo = byPeriod.get(priorYearPeriod(cur.period, layer)) ?? null;
@@ -1461,22 +1901,35 @@ export function evaluate(
       q4: layer === "year" ? (byQuarter.get(`${cur.period}-Q4`) ?? null) : null,
       latestClose,
       isLatest: i === frames.length - 1,
+      fromEnd: frames.length - 1 - i,
+      adj,
+      q0,
     };
 
     const values: Record<string, number | null> = {};
     const bands: Record<string, [number, number] | null> = {};
     const notes: Record<string, TranslationKey> = {};
+    const colors: Record<string, string> = {};
     for (const s of spec.series) {
       try {
         values[s.key] = s.compute(ctx);
         if (s.computeBand) bands[s.key] = s.computeBand(ctx);
         const note = s.note?.(ctx) ?? null;
         if (note) notes[s.key] = note;
+        const color = s.colorBy?.(ctx) ?? null;
+        if (color) colors[s.key] = color;
       } catch {
         values[s.key] = null;
       }
     }
-    return { period: cur.period, values, bands, notes, total: spec.total?.compute(ctx) ?? null };
+    return {
+      period: cur.period,
+      values,
+      bands,
+      notes,
+      colors,
+      total: spec.total?.compute(ctx) ?? null,
+    };
   });
 }
 

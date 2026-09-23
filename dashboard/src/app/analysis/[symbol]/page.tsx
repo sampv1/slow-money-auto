@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
-import type { RePb } from "@/lib/cached-data";
-import { getBusinessAnalyses, getFaQuarterlyFacts, getRePbMetrics, getSymbolMeta, getSymbolProfile, getVnstockStatements, getChartSymbols } from "@/lib/cached-data";
+import type { RePb, ShareAdjustmentRow } from "@/lib/cached-data";
+import { getBusinessAnalyses, getFaQuarterlyFacts, getRePbMetrics, getSymbolMeta, getShareAdjustments, getSymbolProfile, getVnstockStatements, getChartSymbols } from "@/lib/cached-data";
 import { FinancialPanels } from "@/components/financial-panels";
 import { BusinessPanel } from "@/components/business-panel";
 import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
@@ -52,7 +52,15 @@ export default async function SymbolDrillDown({
   //    picks BUY vs SELL in the header (same rule as Signal Pro). Deliberately
   //    UNCACHED so a trade shows up immediately on the router.refresh() that
   //    TradeActions fires after a successful BUY/SELL.
-  const [universe, hasOpenPosition, profile, symbolMeta, businessReports, vnstockStatements] = await Promise.all([
+  const [
+    universe,
+    hasOpenPosition,
+    profile,
+    symbolMeta,
+    businessReports,
+    vnstockStatements,
+    shareAdjustments,
+  ] = await Promise.all([
     getChartSymbols().catch((): string[] => []),
     (async (): Promise<boolean> => {
       if (!isAdmin) return false;
@@ -75,6 +83,10 @@ export default async function SymbolDrillDown({
     // Financial statements (migration 055). Returns [] if the migration has not
     // been applied, so this ships ahead of the table existing.
     getVnstockStatements(symbol),
+    // Chart 11's IAS 33 factors (migration 069). Empty is the fail-closed
+    // state — the chart then draws raw EPS and says it is unadjusted — so a
+    // read failure must not take the page down with it.
+    getShareAdjustments(symbol).catch((): ShareAdjustmentRow[] => []),
   ]);
 
   // NB `industry` further down is fa_industry.industry_group — which RUBRIC this
@@ -281,6 +293,7 @@ export default async function SymbolDrillDown({
               </h2>
               <FinancialPanels
                 rows={vnstockStatements}
+                shareAdjustments={shareAdjustments}
                 locale={locale}
                 /* The newest traded close, so chart 10's current quarter
                    prices itself off today rather than off whatever price

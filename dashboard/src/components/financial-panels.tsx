@@ -44,7 +44,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import type { VnstockStatementRow } from "@/lib/cached-data";
+import type { ShareAdjustmentRow, VnstockStatementRow } from "@/lib/cached-data";
 import { FINANCIAL_CHARTS, shortPeriod } from "@/lib/financial-metrics";
 import { FinancialChart } from "@/components/financial-chart";
 import { t, type Locale } from "@/lib/i18n";
@@ -135,6 +135,7 @@ export function FinancialPanels({
   latestClose = null,
   latestCloseDate = null,
   financialFiler = false,
+  shareAdjustments = [],
 }: {
   rows: VnstockStatementRow[];
   locale: Locale;
@@ -144,6 +145,8 @@ export function FinancialPanels({
   latestCloseDate?: string | null;
   /** A bank, broker or insurer — see the note on FinancialChart's own prop. */
   financialFiler?: boolean;
+  /** Per-quarter IAS 33 share factors for chart 11 — see FinancialChart. */
+  shareAdjustments?: ShareAdjustmentRow[];
 }) {
   const [featuredId, setFeaturedId] = useState<string>(DEFAULT_FEATURED);
   const featuredRef = useRef<HTMLDivElement>(null);
@@ -203,6 +206,7 @@ export function FinancialPanels({
               would strand it on a layer it has no data for. The legend's hidden
               series leaked across the swap the same way. */}
           <FinancialChart
+            shareAdjustments={shareAdjustments}
             key={featured.id}
             spec={featured}
             rows={rows}
@@ -228,6 +232,7 @@ export function FinancialPanels({
               selectLabel={t(locale, isFeatured ? "finFeatured" : "finShowLarge")}
             >
               <FinancialChart
+                shareAdjustments={shareAdjustments}
                 spec={spec}
                 rows={rows}
                 locale={locale}
