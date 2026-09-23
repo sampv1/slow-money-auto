@@ -48,6 +48,11 @@ GROUP2_KINDS = (
     "ESOP",
     "Public Offering",
     "Stock for stock merger",
+    # BA's "Chuyển đổi Trái phiếu thành Cổ phiếu", which the provider words as a
+    # TRANSFER rather than a conversion — 25 events over 12 symbols, and the only
+    # kind the first full pass could not classify. Real capital arrived (as debt
+    # that is now equity), so it dilutes and must never restate history.
+    "Transfer from Convertible Bonds",
 )
 
 # `chia tách cổ phiếu` is in Group 1 for completeness and BA confirmed (reply
@@ -83,7 +88,11 @@ def classify(title_en: str | None) -> int | None:
     make its window fail closed and become visible, because guessing wrong in
     the Group 1 direction silently rewrites every earlier quarter's EPS.
     """
-    t = title_en or ""
+    # NOT `title_en or ""`: the provider sends a float NaN for a missing title,
+    # and NaN is TRUTHY, so that idiom let it through to `kind in t` and raised
+    # "argument of type 'float' is not iterable" — which the caller then counted
+    # as a failed FETCH. VPH was the one symbol in 651 that hit it.
+    t = title_en if isinstance(title_en, str) else ""
     for kind in GROUP1_KINDS:
         if kind in t:
             return 1

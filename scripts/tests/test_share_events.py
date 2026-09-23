@@ -68,6 +68,36 @@ def test_classify_known_kinds():
         assert classify(t) == 2, t
 
 
+def test_classify_convertible_bond_conversion():
+    """The provider says TRANSFER, not conversion, and BA puts it in Nhóm 2.
+
+    It was the only unclassified kind in the first full pass — 25 events over 12
+    symbols, CII alone carrying 9 unusable quarters. Real capital arrived (debt
+    becoming equity), so it dilutes and must never restate history.
+    """
+    assert classify("Share Issue - Transfer from Convertible Bonds") == 2
+    assert classify("Share Issue - Transfer from Convertible Bonds ratio 5.8%") == 2
+
+
+def test_classify_survives_a_nan_title():
+    """The provider sends a float NaN for a missing title, and NaN is TRUTHY.
+
+    `title_en or ""` therefore passed the float straight to `kind in t`, raising
+    "argument of type 'float' is not iterable" — which the caller counted as a
+    failed FETCH rather than an unreadable row. One symbol in 651 hit it.
+    """
+    assert classify(float("nan")) is None          # type: ignore[arg-type]
+    assert classify(123) is None                   # type: ignore[arg-type]
+    evs = parse_events("VPH", [{
+        "id": "v1", "event_code": "ISS", "event_title_en": float("nan"),
+        "exercise_ratio": 0.1, "exright_date": "2026-02-10",
+    }])
+    assert len(evs) == 1 and evs[0].group is None and evs[0].title_en is None
+    # And it must poison its window rather than be ignored.
+    adjs = compute_adjustments(evs, {"2025-Q4": 100e6, "2026-Q1": 110e6})
+    assert not adjs["2026-Q1"].data_ok
+
+
 def test_classify_refuses_unknown_wording():
     """None is a refusal, not a default.
 

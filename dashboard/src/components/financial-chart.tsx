@@ -193,6 +193,16 @@ type ChartRow = { period: string; total: number | null } & Record<
  *  of the series' own key so the value stays numeric for the axes. */
 const CELL_PREFIX = "__cell__";
 
+/**
+ * Above this many percent, growth is stated as a multiple instead.
+ *
+ * BA's rule for the securities scanner's margin-growth column, applied here for
+ * the same reason: chart 11's 3-quarter average measured 57.292% on L40, which
+ * is arithmetically true on a near-zero base and reads as a bug. The percent
+ * equivalent of that page's `GROWTH_AS_MULTIPLE = 10` on ratios.
+ */
+const GROWTH_AS_MULTIPLE_PCT = 1000;
+
 /** Row key carrying a series' readout phrase, kept away from the series' own
  *  key so nothing downstream mistakes a phrase for a value. */
 const NOTE_PREFIX = "__note__";
@@ -1004,6 +1014,17 @@ function FinCards({ cards, locale }: { cards: FinCard[]; locale: Locale }) {
               ) : c.key === "streak" ? (
                 <span>
                   {formatNumber(c.value, 0)}/{c.ofTotal}
+                </span>
+              ) : c.unit === "percent" && c.value >= GROWTH_AS_MULTIPLE_PCT ? (
+                // BA'S OWN CONVENTION, borrowed from the securities scanner's
+                // margin-growth column: above ten-fold, a percentage stops
+                // being legible and is stated as a multiple, with the exact
+                // figure in the tooltip. L40 measured 57.292% on live data — a
+                // margin book growing from near-zero, true and unreadable.
+                // Reusing `secGrowthMultiple` rather than adding a second
+                // wording, so one rule reads the same in both places.
+                <span title={t(locale, "secGrowthMultipleTip").replace("{raw}", formatUnit(c.value, "percent"))}>
+                  {t(locale, "secGrowthMultiple").replace("{x}", formatNumber(1 + c.value / 100, 1))}
                 </span>
               ) : (
                 <span>{formatUnit(c.value, c.unit)}</span>
