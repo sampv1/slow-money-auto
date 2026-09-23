@@ -49,7 +49,16 @@ import {
   type ShareAdjRow,
 } from "@/lib/eps-adjusted";
 
-export type Unit = "vnd" | "percent" | "x" | "days" | "years";
+/**
+ * `vnd` is TỶ ĐỒNG — statements arrive in đồng and every card states the unit
+ * once, so the figures below read as 13.789 rather than 1.3788e13.
+ *
+ * `vndShare` is PLAIN ĐỒNG PER SHARE, and it exists because chart 11 is the one
+ * card whose value is not a balance-sheet magnitude. An EPS of 1.478đ divided
+ * into tỷ is 0,0000015, which rendered as "0,00" on every bar, tick and
+ * tooltip row while the bars themselves drew at their true heights.
+ */
+export type Unit = "vnd" | "vndShare" | "percent" | "x" | "days" | "years";
 
 // --- Frames -----------------------------------------------------------------
 
@@ -635,6 +644,20 @@ export type SeriesSpec = {
    * net-cash company's "-0,9 years to repay" is not a repayment period at all.
    */
   note?: (ctx: Ctx) => TranslationKey | null;
+  /**
+   * A sentence printed BESIDE the value, on its own line under the row.
+   *
+   * NOT `note`, which replaces the number — that is right for "Không vay nợ",
+   * where there is no number to give, and wrong for a caveat about a figure the
+   * reader still needs. Chart 11 has both kinds: BA asks for the revenue growth
+   * figure in the tooltip AND a faint warning when it is under 10%, so putting
+   * the warning in `note` deleted the very number the rule is about.
+   *
+   * Rendered wrapping, because a sentence in the value column is what overflowed
+   * onto the label — `note` may keep `whitespace-nowrap` since a short phrase
+   * stands in for a number and should not break.
+   */
+  caption?: (ctx: Ctx) => TranslationKey | null;
 };
 
 /**
@@ -1686,7 +1709,7 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
     id: "eps-canslim",
     title_en: "EPS growth & dilution warning (CANSLIM)",
     title_vi: "Tăng trưởng EPS & cảnh báo pha loãng (CANSLIM)",
-    unit: "vnd",
+    unit: "vndShare",
     caption_en: "VND per share; growth in %",
     caption_vi: "VNĐ/cổ phiếu; tăng trưởng theo %",
     // Quarters only. EPS_adj is defined against a quarter's own share count,
@@ -1705,7 +1728,7 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         kind: "bar",
         axis: "value",
         color: CHART11_NEUTRAL,
-        unit: "vnd",
+        unit: "vndShare",
         colorBy: (ctx) => {
           const g = yoyEpsAdj(ctx);
           if (g === null) return CHART11_NEUTRAL;
@@ -1714,8 +1737,9 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         compute: epsAdjHere,
         // BA asked that an unreconcilable window be DRAWN and SAID, not hidden.
         // `windowFactor` hands back k=1 when it refuses, so the bar is raw EPS
-        // and this note is what stops a reader taking it for a restated one.
-        note: (ctx) =>
+        // and this caption is what stops a reader taking it for a restated one.
+        // A CAPTION, not a note: the EPS figure must still be printed.
+        caption: (ctx) =>
           ctx.q0 && !adjWindow(ctx, ctx.cur.period).reconciled ? "finEpsUnadjusted" : null,
       },
       {
@@ -1779,7 +1803,10 @@ export const FINANCIAL_CHARTS: ChartSpec[] = [
         tooltipOnly: true,
         compute: (ctx) =>
           inYoyRange(ctx) ? growth(flow(ctx, P.revenue), flowYearAgo(ctx, P.revenue)) : null,
-        note: (ctx) => {
+        // BA asks for BOTH: the revenue growth figure in the tooltip, and a
+        // faint warning under it when EPS grew on less than 10% of revenue
+        // support. As a `note` the warning replaced the figure.
+        caption: (ctx) => {
           if (!inYoyRange(ctx)) return null;
           const rev = growth(flow(ctx, P.revenue), flowYearAgo(ctx, P.revenue));
           const eps = yoyEpsAdj(ctx);
@@ -1837,6 +1864,8 @@ export type ChartPoint = {
   values: Record<string, number | null>;
   bands: Record<string, [number, number] | null>;
   notes: Record<string, TranslationKey>;
+  /** Sentences printed beside a value, not instead of it. */
+  captions: Record<string, TranslationKey>;
   /** Per-bar colours, for a series whose spec sets `colorBy`. Resolved here
    *  rather than in the renderer because the rule reads this period's own
    *  context, which only the evaluator has. */
@@ -1909,6 +1938,7 @@ export function evaluate(
     const values: Record<string, number | null> = {};
     const bands: Record<string, [number, number] | null> = {};
     const notes: Record<string, TranslationKey> = {};
+    const captions: Record<string, TranslationKey> = {};
     const colors: Record<string, string> = {};
     for (const s of spec.series) {
       try {
@@ -1916,6 +1946,8 @@ export function evaluate(
         if (s.computeBand) bands[s.key] = s.computeBand(ctx);
         const note = s.note?.(ctx) ?? null;
         if (note) notes[s.key] = note;
+        const caption = s.caption?.(ctx) ?? null;
+        if (caption) captions[s.key] = caption;
         const color = s.colorBy?.(ctx) ?? null;
         if (color) colors[s.key] = color;
       } catch {
@@ -1927,6 +1959,7 @@ export function evaluate(
       values,
       bands,
       notes,
+      captions,
       colors,
       total: spec.total?.compute(ctx) ?? null,
     };

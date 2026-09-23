@@ -330,6 +330,7 @@ export const translations = {
     finOutlier: "outlier, drawn at the limit",
     finOutlierNote: "Outlier warning: {n} period(s) outside {min}…{max} days, drawn at the limit",
     // Chart 11 (CANSLIM EPS diagnostic).
+    finUnitPerShare: "VND / share",
     finEpsUnadjusted: "Drawn unadjusted — the announced share issues do not reconcile with the filed share count",
     finEpsWeakSales: "EPS grew without strong support from revenue",
     finEpsNoYoy: "No comparable quarter a year earlier",
@@ -1827,6 +1828,7 @@ export const translations = {
     finOutlier: "ngoại lai, vẽ tại mốc giới hạn",
     finOutlierNote: "Cảnh báo ngoại lai: {n} kỳ ngoài khoảng {min}…{max} ngày, vẽ tại mốc giới hạn",
     // Biểu đồ 11 (CANSLIM EPS diagnostic).
+    finUnitPerShare: "VNĐ / cổ phiếu",
     finEpsUnadjusted: "Vẽ chưa điều chỉnh — các đợt phát hành đã công bố không khớp với số cổ phiếu trên báo cáo",
     finEpsWeakSales: "EPS tăng nhưng thiếu sự hỗ trợ mạnh từ doanh thu",
     finEpsNoYoy: "Không có quý cùng kỳ năm trước để so sánh",

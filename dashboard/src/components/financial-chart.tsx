@@ -109,6 +109,13 @@ function formatVnd(v: number, digits?: number): string {
  */
 function formatUnit(v: number, unit: Unit, digits?: number): string {
   switch (unit) {
+    case "vndShare":
+      // PLAIN ĐỒNG, not tỷ. An EPS of 1.478 divided into tỷ is 0,0000015,
+      // which printed "0,00" on every bar, tick and tooltip row of chart 11
+      // while the bars drew at their true heights — the value was right and
+      // only the scale was wrong. No decimals: a fraction of a đồng per share
+      // is below anything the filings state.
+      return v.toLocaleString("vi-VN", { maximumFractionDigits: digits ?? 0 });
     case "percent":
       return `${v.toFixed(digits ?? (Math.abs(v) >= 100 ? 0 : 1))}%`;
     case "x": {
@@ -133,6 +140,7 @@ function formatUnit(v: number, unit: Unit, digits?: number): string {
  */
 function axisDecimals(unit: Unit, span: number): number | undefined {
   if (unit === "vnd") return span >= 100 ? 0 : span >= 10 ? 1 : 2;
+  if (unit === "vndShare") return 0;
   if (unit === "x" || unit === "percent" || unit === "years") return span >= 10 ? 0 : 1;
   if (unit === "days") return 0;
   return undefined;
@@ -206,6 +214,9 @@ const GROWTH_AS_MULTIPLE_PCT = 1000;
 /** Row key carrying a series' readout phrase, kept away from the series' own
  *  key so nothing downstream mistakes a phrase for a value. */
 const NOTE_PREFIX = "__note__";
+
+/** Row key for a sentence printed BESIDE a value rather than instead of it. */
+const CAPTION_PREFIX = "__caption__";
 
 /** Row key carrying the TRUE value of a mark that was clamped to its series'
  *  display range (`visualRange`). The series' own key holds the clamped value,
@@ -313,6 +324,7 @@ export function FinancialChart({
       // A readout phrase that stands in for a number ("Không vay nợ") travels
       // beside its series rather than inside it, so the value stays numeric.
       for (const [k, note] of Object.entries(p.notes)) row[`${NOTE_PREFIX}${k}`] = note;
+      for (const [k, cap] of Object.entries(p.captions)) row[`${CAPTION_PREFIX}${k}`] = cap;
       // A per-bar colour travels the same way, so the renderer never has to
       // re-derive a rule the evaluator already applied.
       for (const [k, color] of Object.entries(p.colors)) row[`${CELL_PREFIX}${k}`] = color;
@@ -355,6 +367,7 @@ export function FinancialChart({
           (d) =>
             hasValue(d[s.key]) ||
             typeof d[`${NOTE_PREFIX}${s.key}`] === "string" ||
+            typeof d[`${CAPTION_PREFIX}${s.key}`] === "string" ||
             // A series whose every value is past its cap still has something
             // to say — that it was held back — so it stays in the legend.
             typeof d[`${OUTLIER_PREFIX}${s.key}`] === "number",
@@ -1103,6 +1116,8 @@ function unitCaption(unit: Unit, locale: Locale): string {
       return t(locale, "finUnitDays");
     case "years":
       return t(locale, "finUnitYears");
+    case "vndShare":
+      return t(locale, "finUnitPerShare");
     default:
       return t(locale, "finUnitBn");
   }
@@ -1192,6 +1207,10 @@ function FinTooltip({
     const n = row[`${NOTE_PREFIX}${k}`];
     return typeof n === "string" ? (n as TranslationKey) : null;
   };
+  const captionOf = (k: string) => {
+    const n = row[`${CAPTION_PREFIX}${k}`];
+    return typeof n === "string" ? (n as TranslationKey) : null;
+  };
   // A BAND IS NOT POINTABLE — it is the region between two lines that are
   // themselves rows here, so including it would name the same fact twice.
   const onValueAxis = series.filter((sr) => sr.axis === "value" && sr.kind !== "band");
@@ -1233,9 +1252,11 @@ function FinTooltip({
       {shown.map((sr) => {
         const v = num(sr.key);
         const note = noteOf(sr.key);
+        const caption = captionOf(sr.key);
         const outlier = outlierOf(sr.key);
         return (
-          <div key={sr.key} className="flex items-start gap-1.5">
+          <div key={sr.key}>
+          <div className="flex items-start gap-1.5">
             <span
               className="inline-block shrink-0 rounded-full mt-[3px]"
               style={{ width: 6, height: 6, background: sr.color }}
@@ -1262,6 +1283,18 @@ function FinTooltip({
                 "—"
               )}
             </span>
+          </div>
+          {/* ITS OWN LINE, AND IT WRAPS. A sentence in the value cell inherits
+              `whitespace-nowrap` — which is there so a number never breaks —
+              and overflowed left across the label. */}
+          {caption && (
+            <div
+              className="pl-[13px] leading-tight"
+              style={{ color: CHART_LITERAL.reference }}
+            >
+              {t(locale, caption)}
+            </div>
+          )}
           </div>
         );
       })}
