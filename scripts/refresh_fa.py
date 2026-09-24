@@ -26,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ta.run_status import RunStatus
-from ta.common import get_supabase_client, safe_execute  # noqa: E402
+from ta.common import get_supabase_client, paged_select, safe_execute  # noqa: E402
 from fa import excel_import, metrics as fa_metrics, persist as fa_persist  # noqa: E402
 from fa.scoring import compute_score  # noqa: E402
 
@@ -172,7 +172,46 @@ def _qend_close(prices, period):
     return c, dt.isoformat()
 
 
-def _score_symbol(symbol, series, annual_pe, prices, config, backfill):
+def _load_share_adjustments(client) -> dict[str, dict]:
+    """{symbol: {period: Adjustment}} — the IAS 33 factors C1/C2/C3 read.
+
+    Loaded ONCE for the whole run rather than per symbol: it is ~41k narrow
+    rows, against 1,600 round trips to Supabase from a runner on the other side
+    of the Pacific.
+
+    AN EMPTY RESULT IS TOLERATED AND LOUD. If migration 069 is not applied, or
+    the ingest has never run, every window is unreconcilable and C1/C2/C3 fall
+    back to the as-filed EPS — which is exactly what they scored before this
+    change, so the run is correct and merely un-improved. Failing the run
+    instead would stop the nightly FA score over a display-grade input.
+    """
+    from fa.share_events import Adjustment
+
+    try:
+        rows = paged_select(
+            lambda off, n: client.table("fa_share_adjustments")
+            .select("symbol,period,shares,shares_prev,total_ratio,k_technical,"
+                    "announced_ratio,data_ok,reason")
+            .order("symbol").order("period").range(off, off + n - 1),
+            label="share adjustments",
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ::warning::share adjustments unavailable ({str(exc)[:120]}) — "
+              f"C1/C2/C3 fall back to as-filed EPS")
+        return {}
+
+    out: dict[str, dict] = {}
+    for r in rows:
+        out.setdefault(r["symbol"], {})[r["period"]] = Adjustment(
+            period=r["period"], shares=r["shares"], shares_prev=r["shares_prev"],
+            total_ratio=r["total_ratio"], k_technical=float(r["k_technical"]),
+            announced_ratio=r["announced_ratio"], data_ok=r["data_ok"],
+            reason=r["reason"])
+    print(f"  IAS 33 share factors: {len(out):,} symbols, {len(rows):,} quarters")
+    return out
+
+
+def _score_symbol(symbol, series, annual_pe, prices, config, backfill, adjustments=None):
     """Return list of fa_scores row dicts for one symbol."""
     elig = fa_metrics.eligible_periods(series)
     if not elig:
@@ -188,7 +227,7 @@ def _score_symbol(symbol, series, annual_pe, prices, config, backfill):
             price, price_date = live_close, live_date
         else:
             price, price_date = _qend_close(prices, period)
-        m = fa_metrics.compute_metrics(series, period, price, annual_pe)
+        m = fa_metrics.compute_metrics(series, period, price, annual_pe, adjustments)
         res = compute_score(m, config, fully_scorable=True)
         out.append(fa_persist.score_row_for(symbol, period, m, res, price_date))
     return out
@@ -211,6 +250,7 @@ def cmd_score(args) -> int:
 
     print(f"FA score: {len(target)} symbol(s) · {'BACKFILL' if args.backfill else 'latest-only'}"
           f"{' · DRY RUN' if args.dry_run else ''}")
+    adjustments = _load_share_adjustments(client)
     run_id = None if args.dry_run else fa_persist.start_run(client, None)
     processed = skipped = 0
     latest_period = None
@@ -223,7 +263,8 @@ def cmd_score(args) -> int:
                 skipped += 1
                 continue
             prices = _load_prices(client, sym, latest_only=not args.backfill)
-            rows = _score_symbol(sym, series, pe_all.get(sym, []), prices, config, args.backfill)
+            rows = _score_symbol(sym, series, pe_all.get(sym, []), prices, config,
+                                 args.backfill, adjustments.get(sym))
             if not rows:
                 skipped += 1
                 continue
@@ -276,7 +317,8 @@ def _print_inspect(client, symbol, series_all, pe_all, config):
     # run did rather than a near-miss.
     prices = _load_prices(client, symbol, latest_only=True)
     price = prices[-1][1] if prices else None
-    m = fa_metrics.compute_metrics(series, period, price, pe_all.get(symbol, []))
+    m = fa_metrics.compute_metrics(series, period, price, pe_all.get(symbol, []),
+                                   _load_share_adjustments(client).get(symbol))
     res = compute_score(m, config, fully_scorable=True)
     print(f"  scoring quarter: {period}  price={price}  ttm_eps={m['current_eps_ttm']}  median_pe={m['pe_5y_median']}\n")
     print(f"  {'Criterion':<22}{'Value':>12}{'Pts':>5}")
