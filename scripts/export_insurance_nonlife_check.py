@@ -328,6 +328,8 @@ def run_metadata(out_path, rows_result, rows_lineage, snapshot):
 def main() -> int:
     ap = argparse.ArgumentParser(description="Non-life P1-P5 rerun (BA V1)")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--persist-scope", action="store_true",
+                    help="§3.3: write the scope verdicts to fa_insurance_report_scope")
     args = ap.parse_args()
     client = get_supabase_client()
 
@@ -872,7 +874,14 @@ def main() -> int:
 
     from export_fa_scanner import write_xlsx
     out = Path(args.out)
-    snapshot = max((v.get("fetched_at") or "")[:10] for v in src.values()) or NOT_AVAILABLE
+    # §7.2 — the snapshot is when the STATEMENT data this run read was last
+    # refreshed, not when the release-date lookup ran: the statements are what
+    # P1-P4 are computed from, so they are what a reproduction has to match.
+    snap_rows = safe_execute(
+        client.table("fa_vnstock_statements").select("updated_at")
+        .in_("symbol", SY).eq("period_type", "quarter")
+        .order("updated_at", desc=True).limit(1), label="snapshot").data or []
+    snapshot = (snap_rows[0]["updated_at"][:19] if snap_rows else NOT_AVAILABLE)
     write_xlsx(out, {
         "TEST_SUMMARY": summary,
         "KIEM_TRA_TU_DONG": checks,
@@ -902,6 +911,22 @@ def main() -> int:
           f" · cờ biến động {dict(vol_counts)}")
     print(f"P5 ACCEPTED {sum(1 for r in p5 if r['p5_acceptance_status']=='ACCEPTED')}/{len(p5)}")
     print(f"Wrote {out} ({out.stat().st_size / 1024:.0f} KB)")
+
+    if args.persist_scope:
+        # §3.3 — the verdicts belong in the governance table, not only in a
+        # spreadsheet: that is where a later verification gets recorded against
+        # the same key, and where the pipeline will read it back.
+        payload = [{k: v for k, v in r.items()} for r in scope_rows]
+        try:
+            for i in range(0, len(payload), 200):
+                safe_execute(
+                    client.table("fa_insurance_report_scope").upsert(
+                        payload[i:i + 200], on_conflict="symbol,period"),
+                    label="scope upsert")
+            print(f"§3.3 wrote {len(payload)} rows to fa_insurance_report_scope")
+        except Exception as exc:  # noqa: BLE001
+            print(f"::warning::could not write scope table ({type(exc).__name__}); "
+                  f"apply supabase/072")
     return 0
 
 
