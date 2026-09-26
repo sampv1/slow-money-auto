@@ -9,6 +9,7 @@ import {
   getFaReleaseDates,
   getFaScoreMap,
   getUniverseLiquidity,
+  getInsuranceSymbols,
   getRealEstateSymbols,
   getSecuritiesSymbols,
   getSymbolMeta,
@@ -63,22 +64,24 @@ export default async function FaScannerManufacturingPage({
       // Score rows for the quarter + the 20-session avg volume for the
       // liquidity filter (same source as the TA scanner) — independent, so
       // fetched in parallel (both served from the data cache when warm).
-      const [allRows, uni, facts, realEstate, securities, dates, prevMap] = await Promise.all([
-        getFaRows(selected),
-        getUniverseLiquidity(),
-        getFaQuarterlyFacts(selected),
-        getRealEstateSymbols(),
-        getSecuritiesSymbols(),
-        getFaReleaseDates(selected),
-        prevQuarter ? getFaScoreMap(prevQuarter) : Promise.resolve({}),
-      ]);
-      // Property developers and brokers live on their own sub-pages, each
-      // scored by a rubric that can see what this one cannot — land bank and
-      // customer advances for the first, core earnings net of funding for the
-      // second. Both still carry a row in fa_scores (a broker's is UNRATED,
-      // since this rubric bands margins a broker does not report); showing it
-      // here would give the same company two unrelated numbers on two tabs.
-      const excluded = new Set([...realEstate, ...securities]);
+      const [allRows, uni, facts, realEstate, securities, insurance, dates, prevMap] =
+        await Promise.all([
+          getFaRows(selected),
+          getUniverseLiquidity(),
+          getFaQuarterlyFacts(selected),
+          getRealEstateSymbols(),
+          getSecuritiesSymbols(),
+          getInsuranceSymbols(),
+          getFaReleaseDates(selected),
+          prevQuarter ? getFaScoreMap(prevQuarter) : Promise.resolve({}),
+        ]);
+      // Property developers, brokers and insurers live on their own sub-pages,
+      // each scored by a rubric that can see what this one cannot — land bank
+      // and customer advances for the first, core earnings net of funding for
+      // the second, net insurance revenue and the capital buffer for the third.
+      // All three still carry a row in fa_scores; showing it here would give the
+      // same company two unrelated numbers on two tabs.
+      const excluded = new Set([...realEstate, ...securities, ...insurance]);
       rows = excluded.size > 0 ? allRows.filter((r) => !excluded.has(r.symbol)) : allRows;
       universe = uni;
       quarterly = facts;

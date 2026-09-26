@@ -33,6 +33,7 @@ Usage:
 
 import argparse
 import datetime as dt
+import json
 import statistics
 import sys
 from pathlib import Path
@@ -44,9 +45,32 @@ from fa.scoring import _tier_lt
 from fa.share_events import Adjustment
 from ta.common import get_supabase_client, paged_select, safe_execute
 
-#: Quarters to score. Three is what the EPS history supports (§4: the score at
-#: t needs 7 quarters, ΔFA needs 8, and we hold 9).
-QUARTERS = ["2025-Q4", "2026-Q1", "2026-Q2"]
+#: The scoreable range is DERIVED, not declared (A2/A3). C2 needs 7 consecutive
+#: quarters of standardised EPS and ΔFA needs the quarter before that scored too,
+#: so the range follows the EPS history and must never be hard-coded — a stale
+#: constant is how a quarter silently drops out of a rebase. Today the EPS set
+#: starts 2024-Q2, which makes 2025-Q4 the earliest scoreable quarter and gives
+#: exactly three: 2025-Q4, 2026-Q1, 2026-Q2.
+C2_QUARTERS_NEEDED = 7
+QUARTERS: list[str] = []          # filled by resolve_quarters()
+
+
+def resolve_quarters(eps: dict[str, dict]) -> list[str]:
+    """Every quarter the EPS history can score, oldest first.
+
+    A quarter is scoreable when SOME symbol has 7 contiguous quarters of EPS
+    ending there. Taking the union rather than the intersection is deliberate:
+    a symbol short of history loses its own row to `missing_criteria`, which is
+    visible, rather than removing the quarter for everyone, which is not.
+    """
+    have = {p for per in eps.values() for p in per}
+    if not have:
+        return []
+    out = []
+    for q in sorted(have):
+        if all(shift(q, i) in have for i in range(C2_QUARTERS_NEEDED)):
+            out.append(q)
+    return out
 
 #: §2 — 13 symbols; IFA is out of the working universe.
 EXCLUDED = {"IFA"}
@@ -140,10 +164,12 @@ THRESHOLDS = {
         "c4": [15, 17, 20],   # production c7, ROE
         "c5_bands": C5_BANDS_V1,
     },
-    # BA's reply §3. Still a PROPOSAL: §4 says BA locks it only after seeing this
-    # comparison, so neither set wins by being the default.
+    # A1 — LOCKED for operation as INS_TOAN_NGANH_50_V1 (§4.1). "Locked" means
+    # locked for use, NOT optimal: BA states the sample is 13 symbols over three
+    # quarters and re-evaluates after 4-6 quarters of operation. The `production`
+    # set is kept only so the comparison stays reproducible.
     "ba_v2": {
-        "status": "DE_XUAT_CHO_BA_KHOA",
+        "status": "DA_KHOA_V1_DE_VAN_HANH",
         "c1": [0, 10, 20],
         "c3": [0, 5, 10],
         "c4": [5, 10, 15],
@@ -164,6 +190,11 @@ EPS_NORM_VERSION = "EPS_STD_IAS33_DEDUP_V2"
 #: §6.1 — growth gap above this, in percentage points, in two consecutive
 #: quarters. BA's figure, still marked a hypothesis in the first spec.
 GROWTH_GAP_PP = 20.0
+
+
+def out_path_json(out: str) -> Path:
+    q = Path(out)
+    return q.with_suffix(".stats.json")
 
 
 def shift(period: str, back: int) -> str:
@@ -374,14 +405,20 @@ def score_one(symbol, period, data, bands):
 
     eq_now = bv(period, EQUITY)
     # Most severe wins (§6.2's stated priority), so the order here is the rule.
+    # A7 — TWO cap fields, deliberately. `future_cap_100` is what the cap WILL be
+    # once the deep 50 points exist; `applied_cap_current` is what is actually
+    # limiting the score today, which in a 50-point scale is nothing. One shared
+    # field would let a UI or an API read a stored 79 as a cap already in force.
     if eq_now is not None and eq_now <= 0:
-        gate, cap = "Không đạt", "loại khỏi xếp hạng"
+        gate, future_cap = "Không đạt", "loại khỏi xếp hạng"
     elif d_buf is not None and d_buf < -20 and (eq_yoy is not None and eq_yoy < 0):
-        gate, cap = "Rủi ro cao", 59
+        gate, future_cap = "Rủi ro cao", 59
     elif (d_buf is not None and d_buf < -10) or two_q:
-        gate, cap = "Cảnh báo", 79
+        gate, future_cap = "Cảnh báo", 79
     else:
-        gate, cap = "Đạt", None
+        gate, future_cap = "Đạt", None
+    # The one exclusion that applies NOW, not at 100 points (§4.5's exception).
+    applied_cap = "loại khỏi xếp hạng" if (eq_now is not None and eq_now <= 0) else None
     reasons = []
     if eq_now is not None and eq_now <= 0:
         reasons.append("tổng VCSH <= 0")
@@ -394,13 +431,17 @@ def score_one(symbol, period, data, bands):
     if two_q:
         reasons.append(f"khoảng cách tăng trưởng > {GROWTH_GAP_PP:g} đpt hai quý liên tiếp")
     row.update(equity_yoy_pct=eq_yoy, growth_gap_pp=gap, growth_gap_prev_pp=gap_prev,
-               two_quarter_flag=two_q, gate_status=gate, gate_cap=cap,
-               gate_reason="; ".join(reasons) or "chưa phát hiện cảnh báo vốn từ BCTC")
+               two_quarter_flag=two_q, capital_gate_status=gate,
+               future_cap_100=future_cap, applied_cap_current=applied_cap,
+               capital_gate_reason="; ".join(reasons) or "chưa phát hiện cảnh báo vốn từ BCTC")
 
     pts = [row[f"c{i}_points"] for i in range(1, 6)]
     row["missing_criteria"] = ", ".join(f"C{i}" for i in range(1, 6)
                                         if row[f"c{i}_points"] is None) or None
     row["score_50"] = sum(p for p in pts if p is not None)
+    # A5 — the total and its parts must not be able to disagree. Asserted here
+    # rather than checked in a report, so a row that breaks it cannot be written.
+    assert row["score_50"] == sum(p or 0 for p in pts), (symbol, period, pts)
     # The 30 and 20 blocks do not exist yet, so there is no /100 total to cap.
     # Reporting a null rather than the 50 is what keeps "not built" distinct
     # from "scored zero" — the rule the securities rubric exists to enforce.
@@ -414,7 +455,7 @@ def score_one(symbol, period, data, bands):
 
 
 
-def compare_threshold_sets(client, sets=("production", "ba_v2")):
+def compare_threshold_sets(client, sets=("production", "ba_v2"), quarters=None):
     """BA §4: run both sets on the SAME data and EPS version, then report what
     §4 asks for — per-criterion point distribution, per-symbol rank, and the
     symbols moving 7 points or more.
@@ -425,8 +466,9 @@ def compare_threshold_sets(client, sets=("production", "ba_v2")):
     """
     from collections import Counter
 
-    runs = {name: build_rows(client, THRESHOLDS[name], name) for name in sets}
-    latest = QUARTERS[-1]
+    runs = {name: build_rows(client, THRESHOLDS[name], name, quarters) for name in sets}
+    quarters = sorted({r["period"] for r in next(iter(runs.values()))})
+    latest = quarters[-1]
 
     # per-criterion distribution over every symbol-quarter
     dist = []
@@ -494,12 +536,12 @@ PROFIT_HISTORY_VERSION = "PROFIT_HISTORY_CONTEXT_V1"
 
 #: §7.4 — at most 20 quarters, t-19..t.
 PH_WINDOW_QUARTERS = 20
-#: §7.4 — under 8 quarters, no ratio at all.
-PH_MIN_QUARTERS = 8
-#: §7.8 — and never fewer than 5 valid HISTORICAL TTMs behind the median.
-#: These two floors do not agree: 8 quarters yields 5 TTMs, of which the current
-#: one is excluded (§7.6), leaving 4 — below this floor. So the effective
-#: minimum is 9 quarters. Reported to BA rather than silently reconciled.
+#: §4.4 of BA's acceptance doc — NINE, not eight. Nine quarters build six TTMs
+#: and, once the current one is excluded (§7.6), leave the five historical TTMs
+#: the median needs. IT reported the eight/nine conflict; BA locked nine.
+PH_MIN_QUARTERS = 9
+#: §7.8 — and never fewer than 5 valid HISTORICAL TTMs behind the median. With
+#: the quarter floor at 9 the two now agree exactly, which is why BA moved it.
 PH_MIN_HISTORICAL_TTM = 5
 #: §7.8 — ratio bands, in percent.
 PH_BANDS = [(120.0, "NEW_HIGHER_BASE"), (100.0, "NORMAL_RANGE"), (70.0, "RECOVERING")]
@@ -615,13 +657,14 @@ OUTPUT_ORDER = [
     "total_equity", "tech_reserve_gross", "capital_buffer_q", "capital_buffer_q_4",
     "c5_buffer_trend_pct", "c5_points",
     "score_50", "equity_yoy_pct", "growth_gap_pp", "growth_gap_prev_pp",
-    "two_quarter_flag", "gate_status", "gate_cap", "gate_reason",
+    "two_quarter_flag", "capital_gate_status", "capital_gate_reason",
+    "future_cap_100", "applied_cap_current",
     "prev_period", "prev_score_50", "delta_fa_points", "delta_fa_pct",
     "delta_fa_label",
     # §7.11 — chỉ số phụ, không tác động điểm
     "np_ttm_current", "historical_ttm_count", "median_np_ttm_history",
     "profit_history_ratio_pct", "profit_history_status", "profit_history_note",
-    "low_eps_base_flag", "one_off_profit_flag",
+    "low_eps_base_flag", "one_off_profit_status",
     "data_start_quarter", "data_end_quarter", "calculation_version",
     "missing_criteria", "notes",
     "threshold_set", "threshold_status", "score_version", "eps_norm_version",
@@ -635,23 +678,33 @@ def _ordered(row):
     return {k: r.get(k) for k in OUTPUT_ORDER}
 
 
-def build_rows(client, bands, set_name):
-    """Every symbol-quarter scored under one band set. One load per call site."""
+def build_rows(client, bands, set_name, quarters=None):
+    """Every symbol-quarter scored under one band set. One load per call site.
+
+    A3 — every quarter in the range is scored in THIS call, so a ΔFA can never
+    pair two different formula versions: there is only one version in the pass.
+    """
     universe = load_universe(client)
     symbols = [r["symbol"] for r in universe]
     types = {r["symbol"]: r["insurance_type"] for r in universe}
     names = {r["symbol"]: r.get("short_name_vi") for r in universe}
-    # The five criteria reach 8 quarters back (§10 of the earlier spec); §7's
-    # profit base reaches 20. One load covers the deeper of the two.
-    periods = sorted({shift(q, i) for q in QUARTERS
+    eps, adj = load_eps(client, symbols)
+    # A2 — the range comes from the EPS history, so a rebase covers every quarter
+    # the tab can show rather than whatever a constant last said.
+    quarters = quarters or resolve_quarters(eps)
+    if not quarters:
+        raise RuntimeError("no quarter has 7 contiguous quarters of standardised EPS")
+    # The five criteria reach 8 quarters back; §7's profit base reaches 20. One
+    # load covers the deeper of the two.
+    periods = sorted({shift(q, i) for q in quarters
                       for i in range(PH_WINDOW_QUARTERS + 4)})
     data = {
         "inc": load_statements(client, symbols, periods, "income", [REV, NP_PARENT]),
         "bal": load_statements(client, symbols, periods, "balance",
                                [EQUITY, MINORITY, RESERVE]),
+        "eps": eps, "adj": adj,
     }
-    data["eps"], data["adj"] = load_eps(client, symbols)
-    rel = load_release_dates(client, symbols, set(QUARTERS))
+    rel = load_release_dates(client, symbols, set(quarters))
 
     # §7.2 — LNST cổ đông mẹ, riêng từng quý, từ BCTC hợp nhất. Verified
     # per-quarter (not cumulative) on this store, so §7.3's subtraction is a
@@ -664,7 +717,7 @@ def build_rows(client, bands, set_name):
         }
 
     rows = []
-    for q in QUARTERS:
+    for q in quarters:
         for sym in symbols:
             r = score_one(sym, q, data, bands)
             r["name"] = names.get(sym)
@@ -677,8 +730,11 @@ def build_rows(client, bands, set_name):
             r["low_eps_base_flag"] = bool(
                 r.get("eps_q_4") is not None
                 and abs(r["eps_q_4"]) < LOW_BASE_EPS_VND)
-            # §7.10 — never inferred; only set once an actual one-off is identified.
-            r["one_off_profit_flag"] = False
+            # A8 — `False` would read as "we checked and there is none". There is
+            # no source that identifies a one-off, so the honest value is a
+            # status saying it was never evaluated. VERIFIED_NONE and
+            # VERIFIED_ONE_OFF exist for when a source does.
+            r["one_off_profit_status"] = "NOT_EVALUATED"
             rows.append(r)
 
     # §8: ΔFA from scores recomputed in THIS pass, never from a stored row.
@@ -704,12 +760,177 @@ def build_rows(client, bands, set_name):
 
 
 
+#: A11 / §7 — the twelve columns of the new layout, in BA's order, with the
+#: tooltip each one carries. The 14-column layout is superseded: it still had
+#: "Hiệu quả bảo hiểm /30" and "Định giá /20", neither of which exists.
+#:
+#: Emitted as a sheet rather than only built into a page, because the scores are
+#: NOT persisted yet — there is no table for a page to read. §10 accepts "ảnh
+#: hoặc file xuất giao diện thử nghiệm", and this is that file; the production
+#: page needs a decision to persist first.
+UI_COLUMNS_12 = [
+    ("Ngày công bố BCTC", "release_date",
+     "Ngày doanh nghiệp công bố BCTC quý này. Không tham gia điểm."),
+    ("Mã và loại hình", "ma_va_loai_hinh",
+     "Mã cổ phiếu và nhóm nghiệp vụ: Phi nhân thọ, Tái bảo hiểm hoặc Holding/Hỗn hợp."),
+    ("Tổng điểm Toàn ngành", "score_50",
+     "Tổng C1 đến C5, tối đa 50. Đây là điểm FA chung, KHÔNG phải điểm cuối cùng "
+     "của doanh nghiệp bảo hiểm — 50 điểm chuyên sâu theo loại hình chưa triển khai."),
+    ("Delta FA quý", "delta_fa_hien_thi",
+     "Thay đổi tổng điểm so với quý trước. Hai quý được tính lại trong cùng một "
+     "lượt chạy, cùng phiên bản EPS và cùng bộ ngưỡng."),
+    ("EPS YoY", "c1_hien_thi",
+     "(EPS quý này − EPS cùng kỳ) / |EPS cùng kỳ|. Mẫu số là TRỊ TUYỆT ĐỐI nên "
+     "chuyển lỗ thành lãi được đọc đúng. EPS còn âm nhận 0 điểm dù lỗ đã thu hẹp."),
+    ("Số quý EPS tăng", "c2_hien_thi",
+     "Số quý trong ba quý gần nhất có EPS tăng so với cùng kỳ. 3/3 = 10đ · "
+     "2/3 = 7đ · 1/3 = 3đ · 0/3 = 0đ."),
+    ("Doanh thu bảo hiểm YoY", "c3_hien_thi",
+     "Doanh thu thuần hoạt động kinh doanh bảo hiểm, so với cùng kỳ. Không dùng "
+     "phí bảo hiểm gốc — hai doanh nghiệp tái bảo hiểm không có dòng đó."),
+    ("ROE", "c4_hien_thi",
+     "LNST thuộc cổ đông công ty mẹ bốn quý gần nhất, chia VCSH cổ đông mẹ bình "
+     "quân đầu và cuối kỳ. VCSH mẹ = tổng VCSH − lợi ích cổ đông không kiểm soát."),
+    ("Xu hướng đệm vốn", "c5_hien_thi",
+     "Đệm vốn = tổng VCSH hợp nhất / tổng dự phòng nghiệp vụ. Cột này so với "
+     "CÙNG KỲ của chính doanh nghiệp. Không so mức tuyệt đối giữa các mã."),
+    ("Cổng an toàn vốn", "capital_gate_hien_thi",
+     "Chỉ báo từ BCTC, không phải tỷ lệ khả năng thanh toán theo quy định. "
+     "Trong thang 50 điểm KHÔNG áp trần 79 hay 59; chỉ VCSH không dương thì "
+     "loại khỏi xếp hạng."),
+    ("Nền lợi nhuận 5 năm", "nen_loi_nhuan_hien_thi",
+     "LNST TTM hiện tại so với trung vị các TTM lịch sử của chính doanh nghiệp "
+     "(tối đa 20 quý, đã loại TTM hiện tại). Chỉ số bối cảnh, KHÔNG tính điểm."),
+    ("Cảnh báo dữ liệu", "canh_bao_hien_thi",
+     "Nền EPS cùng kỳ dưới 100 đồng, thay đổi số cổ phiếu, hoặc lợi nhuận một "
+     "lần khi đã có nguồn xác minh. Không tác động điểm."),
+]
+
+PROFIT_STATUS_VI = {
+    "NEW_HIGHER_BASE": "Vượt mặt bằng lịch sử",
+    "NORMAL_RANGE": "Quanh nền lịch sử",
+    "RECOVERING": "Đang phục hồi",
+    "BELOW_NORMAL": "Thấp hơn nền lịch sử",
+    "CURRENT_LOSS": "Hiện đang lỗ",
+    "TURNAROUND": "Chuyển từ nền lỗ sang lãi",
+    "PERSISTENT_LOSS": "Vẫn trong nền lỗ",
+    "INSUFFICIENT_HISTORY": "Chưa đủ lịch sử",
+    "ERROR_CURRENT_TTM": "Lỗi dữ liệu TTM hiện tại",
+}
+
+C1_STATE_VI = {
+    "lo_sang_lai": "Lỗ sang lãi", "lai_sang_lo": "Lãi sang lỗ",
+    "thu_hep_thua_lo": "Thu hẹp thua lỗ", "lo_mo_rong": "Lỗ mở rộng",
+    "phat_sinh_loi_nhuan": "Phát sinh lợi nhuận", "khong_cai_thien": "Không cải thiện",
+}
+
+
+def _pct(v, digits=1):
+    """Vietnamese decimal comma, matching lib/format.ts."""
+    if v is None:
+        return "—"
+    return f"{v:,.{digits}f}".replace(",", "\u00a0").replace(".", ",") + "%"
+
+
+def ui_preview_rows(rows, quarters):
+    """A11 — the 12 columns rendered for the newest quarter."""
+    out = []
+    for r in sorted((x for x in rows if x["period"] == quarters[-1]),
+                    key=lambda x: -x["score_50"]):
+        # §5 — a state word replaces the percentage where a percentage misleads.
+        state = C1_STATE_VI.get(r["c1_display_state"] or "")
+        c1 = f"{state} · C1 {r['c1_points']}/10" if state else \
+             f"{_pct(r['c1_eps_yoy_pct'], 2)} · C1 {r['c1_points']}/10"
+        # §8 — points are the headline; percent only when the base is above zero.
+        if r["delta_fa_points"] is None:
+            dfa = "—"
+        elif r["delta_fa_label"]:
+            dfa = r["delta_fa_label"]
+        else:
+            dfa = f"{r['delta_fa_points']:+d} điểm · {_pct(r['delta_fa_pct'])}"
+        warn = []
+        if r["low_eps_base_flag"]:
+            warn.append("Nền EPS thấp")
+        if r["eps_basis"] == "adjusted":
+            warn.append("EPS đã hồi tố theo sự kiện cổ phiếu")
+        elif r["eps_basis"] == "raw":
+            warn.append("Chưa đối chiếu được sự kiện cổ phiếu")
+        ph = PROFIT_STATUS_VI.get(r["profit_history_status"], r["profit_history_status"])
+        out.append({
+            "release_date": r["release_date"],
+            "ma_va_loai_hinh": f"{r['symbol']} · {r['insurance_type']}",
+            "score_50": f"{r['score_50']}/50",
+            "delta_fa_hien_thi": dfa,
+            "c1_hien_thi": c1,
+            "c2_hien_thi": f"{r['c2_growth_quarters']}/3 · C2 {r['c2_points']}/10",
+            "c3_hien_thi": f"{_pct(r['c3_rev_yoy_pct'])} · C3 {r['c3_points']}/10",
+            "c4_hien_thi": f"{_pct(r['c4_roe_ttm_pct'])} · C4 {r['c4_points']}/10",
+            "c5_hien_thi": f"{_pct(r['c5_buffer_trend_pct'])} · C5 {r['c5_points']}/10",
+            "capital_gate_hien_thi": f"{r['capital_gate_status']} — {r['capital_gate_reason']}",
+            "nen_loi_nhuan_hien_thi": (
+                f"{_pct(r['profit_history_ratio_pct'])} · {ph}"
+                if r["profit_history_ratio_pct"] is not None else ph),
+            "canh_bao_hien_thi": " · ".join(warn) or "—",
+        })
+    return out
+
+
+def acceptance_stats(rows, quarters):
+    """A10 — every figure a report would quote, computed FROM the dataset.
+
+    BA caught the reason this exists: the Markdown report quoted C1 3,13 / C2
+    5,13 from an earlier run while the workbook held 3,56 / 5,05 from the final
+    one. Hand-copied statistics drift; these are emitted next to the data so a
+    report can only be wrong by ignoring them.
+    """
+    from collections import Counter
+    latest = [r for r in rows if r["period"] == quarters[-1]]
+
+    def avg(key, subset):
+        vals = [r[key] for r in subset if r[key] is not None]
+        return round(sum(vals) / len(vals), 2) if vals else None
+
+    crit = {}
+    for i in range(1, 6):
+        k = f"c{i}_points"
+        c = Counter(r[k] for r in rows)
+        crit[f"C{i}"] = {"pts_0": c.get(0, 0), "pts_3": c.get(3, 0),
+                         "pts_7": c.get(7, 0), "pts_10": c.get(10, 0),
+                         "khong_do_duoc": c.get(None, 0), "trung_binh": avg(k, rows)}
+    totals = sorted(r["score_50"] for r in latest)
+    return {
+        "quarters": quarters,
+        "so_quy": len(quarters),
+        "so_ma": len({r["symbol"] for r in rows}),
+        "so_dong": len(rows),
+        "quy_danh_gia": quarters[-1],
+        "tieu_chi": crit,
+        "tong_diem_quy_moi_nhat": {
+            "min": totals[0], "trung_vi": statistics.median(totals), "max": totals[-1]},
+        "missing_criteria_rows": sum(1 for r in rows if r["missing_criteria"]),
+        "score_50_khop_tong_5_tieu_chi": all(
+            r["score_50"] == sum(r[f"c{i}_points"] or 0 for i in range(1, 6)) for r in rows),
+        "phien_ban_diem": sorted({SCORE_VERSION}),
+        "phien_ban_eps": sorted({EPS_NORM_VERSION}),
+        "bo_nguong": sorted({r["threshold_set"] for r in rows}),
+        "delta_fa_co_gia_tri": sum(1 for r in rows if r["delta_fa_points"] is not None),
+        "delta_fa_null": sum(1 for r in rows if r["delta_fa_points"] is None),
+        "cong_an_toan_von": dict(Counter(r["capital_gate_status"] for r in latest)),
+        "applied_cap_khac_rong": sum(1 for r in rows if r["applied_cap_current"] is not None),
+        "nen_loi_nhuan": dict(Counter(r["profit_history_status"] for r in rows)),
+        "co_nen_eps_thap": sum(1 for r in rows if r["low_eps_base_flag"]),
+        "one_off_status": dict(Counter(r["one_off_profit_status"] for r in rows)),
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Tab Toàn ngành bảo hiểm deliverable")
     ap.add_argument("--out", required=True)
     ap.add_argument("--thresholds", default="ba_v2", choices=sorted(THRESHOLDS))
     ap.add_argument("--compare", action="store_true",
                     help="BA §4: run both band sets and emit the comparison sheets")
+    ap.add_argument("--acceptance", action="store_true",
+                    help="A12: one acceptance dataset, with A10's statistics beside it")
     args = ap.parse_args()
 
     client = get_supabase_client()
@@ -718,9 +939,10 @@ def main() -> int:
     if args.compare:
         sets = ("production", "ba_v2")
         runs, dist, rank_rows, moved = compare_threshold_sets(client, sets)
+        quarters = sorted({r["period"] for r in runs[sets[0]]})
         for name in sets:
-            tot = [r["score_50"] for r in runs[name] if r["period"] == QUARTERS[-1]]
-            print(f"{name:<12} {QUARTERS[-1]} /50: min {min(tot)} · "
+            tot = [r["score_50"] for r in runs[name] if r["period"] == quarters[-1]]
+            print(f"{name:<12} {quarters[-1]} /50: min {min(tot)} · "
                   f"median {statistics.median(tot):.0f} · max {max(tot)}")
         print(f"symbol-quarters whose total moves: {len(moved)} of {len(runs[sets[0]])}"
               f" · moving 7+ points: {sum(1 for r in moved if r['moved_7_plus'])}")
@@ -735,39 +957,62 @@ def main() -> int:
     else:
         bands = THRESHOLDS[args.thresholds]
         rows = build_rows(client, bands, args.thresholds)
+        quarters = sorted({r["period"] for r in rows})
         print(f"threshold set: {args.thresholds} ({bands['status']})")
-        sheets = {"bang_kiem_tra": [_ordered(r) for r in rows]}
+        sheets = {"bang_nghiem_thu" if args.acceptance else "bang_kiem_tra":
+                  [_ordered(r) for r in rows]}
+        if args.acceptance:
+            stats = acceptance_stats(rows, quarters)
+            js = out_path_json(args.out)
+            js.write_text(json.dumps(stats, ensure_ascii=False, indent=1))
+            print(f"A10 statistics -> {js}")
+            for k in ("C1", "C2", "C3", "C4", "C5"):
+                c = stats["tieu_chi"][k]
+                print(f"  {k}: 0đ {c['pts_0']:>3} · 3đ {c['pts_3']:>3} · 7đ {c['pts_7']:>3}"
+                      f" · 10đ {c['pts_10']:>3} · trung bình {c['trung_binh']}")
+            print(f"  A5 score_50 == ΣC1..C5: {stats['score_50_khop_tong_5_tieu_chi']}")
+            print(f"  A4 missing criteria rows: {stats['missing_criteria_rows']}")
+            print(f"  A7 applied_cap_current non-empty: {stats['applied_cap_khac_rong']}")
+            sheets["giao_dien_12_cot"] = ui_preview_rows(rows, quarters)
+            sheets["giao_dien_tooltip"] = [
+                {"thu_tu": i, "cot": name, "truong": key, "tooltip": tip}
+                for i, (name, key, tip) in enumerate(UI_COLUMNS_12, start=1)]
+            sheets["thong_ke_nghiem_thu"] = [
+                {"chi_tieu": k, **({"gia_tri": v} if not isinstance(v, (dict, list))
+                                   else {"gia_tri": json.dumps(v, ensure_ascii=False)})}
+                for k, v in stats.items()]
 
-    latest = [r for r in rows if r["period"] == QUARTERS[-1]]
+    latest = [r for r in rows if r["period"] == quarters[-1]]
     tot = [r["score_50"] for r in latest]
     na = [r for r in rows if r["missing_criteria"]]
     print(f"universe {len({r['symbol'] for r in rows})} · rows {len(rows)} · "
-          f"quarters {', '.join(QUARTERS)}")
-    print(f"{QUARTERS[-1]} score/50: min {min(tot)} · median {statistics.median(tot):.0f} "
+          f"quarters {', '.join(quarters)}")
+    print(f"{quarters[-1]} score/50: min {min(tot)} · median {statistics.median(tot):.0f} "
           f"· max {max(tot)}")
-    print(f"gate: {dict(Counter(r['gate_status'] for r in latest))}")
+    print(f"gate: {dict(Counter(r['capital_gate_status'] for r in latest))}")
     print(f"rows with a missing criterion: {len(na)}")
 
     gate_table = [{k: r.get(k) for k in
                    ("symbol", "period", "capital_buffer_q", "capital_buffer_q_4",
                     "c5_buffer_trend_pct", "equity_yoy_pct", "growth_gap_pp",
-                    "growth_gap_prev_pp", "two_quarter_flag", "gate_status",
-                    "gate_cap", "gate_reason")} for r in latest]
+                    "growth_gap_prev_pp", "two_quarter_flag", "capital_gate_status",
+                    "capital_gate_reason", "future_cap_100",
+                    "applied_cap_current")} for r in latest]
     exceptions = [{"symbol": r["symbol"], "period": r["period"],
                    "issue": r["notes"] or r["missing_criteria"],
-                   "detail": r["gate_reason"]}
+                   "detail": r["capital_gate_reason"]}
                   for r in rows if r["notes"] or r["missing_criteria"]]
     summary = [
         {"metric": "mode", "value": "compare" if args.compare else args.thresholds},
         {"metric": "universe", "value": len({r["symbol"] for r in rows})},
-        {"metric": "quarters", "value": ", ".join(QUARTERS)},
+        {"metric": "quarters", "value": ", ".join(quarters)},
         {"metric": "rows per set", "value": len(rows)},
-        {"metric": f"{QUARTERS[-1]} min /50", "value": min(tot)},
-        {"metric": f"{QUARTERS[-1]} median /50", "value": statistics.median(tot)},
-        {"metric": f"{QUARTERS[-1]} max /50", "value": max(tot)},
+        {"metric": f"{quarters[-1]} min /50", "value": min(tot)},
+        {"metric": f"{quarters[-1]} median /50", "value": statistics.median(tot)},
+        {"metric": f"{quarters[-1]} max /50", "value": max(tot)},
         {"metric": "rows with a missing criterion", "value": len(na)},
         *[{"metric": f"gate {k}", "value": v}
-          for k, v in sorted(Counter(r["gate_status"] for r in latest).items())],
+          for k, v in sorted(Counter(r["capital_gate_status"] for r in latest).items())],
         {"metric": "caps applied", "value": "none — BA §7, not in the 50-point scale"},
         {"metric": "blocks not built", "value": "50 điểm chuyên sâu theo loại hình"},
     ]

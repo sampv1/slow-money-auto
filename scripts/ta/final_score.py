@@ -119,8 +119,16 @@ def _real_estate_fa(client) -> dict[str, float]:
         return {}
 
 
-def _securities_blocked(client) -> set[str]:
-    """Securities symbols, which take NO Final score from any rubric today.
+#: Rubric groups whose symbols take NO Final score from any rubric yet. Both are
+#: here for the same reason and were found the same way — the manufacturing
+#: rubric computes a plausible number from criteria that do not describe the
+#: filer, and nothing stopped it reaching the composite.
+SECTOR_PENDING_GROUPS = ("securities", "insurance")
+
+
+def _sector_blocked(client) -> set[str]:
+    """Symbols in a sector whose own rubric is not live, so they take NO Final
+    score from any rubric today.
 
     Brokers are scored on their own 20-criterion CTCK rubric
     (fa/securities.py -> fa_securities_scores), not on fa_scores. But
@@ -141,8 +149,16 @@ def _securities_blocked(client) -> set[str]:
     returns a blocked SET rather than a score map — every member is skipped and
     the caller's reset path nulls final_score/final_grade.
 
-    Degrades to an empty set if fa_industry predates the securities group, so
-    the daily workflow keeps running against the old schema.
+    INSURANCE JOINS THEM (migration 070). Identical shape, found the same way:
+    all 14 insurers were `manufacturing`, so each carried a manufacturing FA
+    score and a Final Score built on it — measured at 2026-Q2 before the fix,
+    BVH rated A on 66.7 and ABI B on 60 with a Final Score of 43, from gross-
+    and net-margin deltas an insurance P&L does not report in that sense. Their
+    own 50-point Toàn ngành layer is computed but not persisted, so absence is
+    again the correct outcome rather than a number from the wrong rubric.
+
+    Degrades to an empty set if fa_industry predates either group, so the daily
+    workflow keeps running against the old schema.
     """
     try:
         blocked: set[str] = set()
@@ -150,19 +166,19 @@ def _securities_blocked(client) -> set[str]:
         while True:
             rows = safe_execute(
                 client.table("fa_industry").select("symbol,industry_group")
-                .eq("industry_group", "securities").order("symbol")
+                .in_("industry_group", list(SECTOR_PENDING_GROUPS)).order("symbol")
                 .range(offset, offset + page - 1),
-                label="final securities industry",
+                label="final sector-pending industry",
             ).data
             blocked.update(r["symbol"] for r in rows)
             if len(rows) < page:
                 break
             offset += page
         return blocked
-    except Exception as e:  # noqa: BLE001 — schema may predate migration 060
-        print(f"::warning::securities industry list unavailable "
-              f"({type(e).__name__}: {e}); brokers may keep a manufacturing "
-              "Final score this run")
+    except Exception as e:  # noqa: BLE001 — schema may predate migration 060/070
+        print(f"::warning::sector-pending industry list unavailable "
+              f"({type(e).__name__}: {e}); brokers and insurers may keep a "
+              "manufacturing Final score this run")
         return set()
 
 
@@ -204,9 +220,10 @@ def compute_final_score(client, dry_run: bool = False) -> dict:
     # Real-estate symbols take their FA half from the real-estate rubric. Keys
     # present with a None value are real-estate symbols with no usable RE score.
     re_fa = _real_estate_fa(client)
-    # Securities take no Final score from any rubric until their sector gate
-    # passes (V11v2). Read BEFORE the loop so one list read serves every symbol.
-    sec_blocked = _securities_blocked(client)
+    # Securities (V11v2 gate) and insurers (Toàn ngành not persisted) take no
+    # Final score from any rubric. Read BEFORE the loop so one list read serves
+    # every symbol.
+    sec_blocked = _sector_blocked(client)
 
     # Bucket by (period, score, grade): each distinct combination is one bulk
     # UPDATE instead of a write per symbol. Periods are few (one per reporting
@@ -220,9 +237,10 @@ def compute_final_score(client, dry_run: bool = False) -> dict:
         if ta_val is None:
             continue
         if sym in sec_blocked:
-            # Checked BEFORE real estate and before the blend: a broker must not
-            # reach the manufacturing branch at all. Skipping leaves the symbol
-            # out of `buckets`, so the reset path below nulls its final_score.
+            # Checked BEFORE real estate and before the blend: a broker or an
+            # insurer must not reach the manufacturing branch at all. Skipping
+            # leaves the symbol out of `buckets`, so the reset path below nulls
+            # its final_score.
             sec_skipped += 1
             continue
         if sym in re_fa:
@@ -240,8 +258,8 @@ def compute_final_score(client, dry_run: bool = False) -> dict:
     scored = sum(len(v) for v in buckets.values())
     stats = {"rows": len(latest), "scored": scored, "periods": periods,
              "real_estate": re_used, "real_estate_members": len(re_fa),
-             "securities_blocked": sec_skipped,
-             "securities_members": len(sec_blocked)}
+             "sector_blocked": sec_skipped,
+             "sector_members": len(sec_blocked)}
     if dry_run:
         return stats
 

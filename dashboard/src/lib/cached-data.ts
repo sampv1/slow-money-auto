@@ -793,6 +793,46 @@ export const getRealEstateSymbols = unstable_cache(
  * Empty before migration 060 is applied, which leaves brokers on the
  * manufacturing tab: the pre-existing behaviour, not a broken one.
  */
+/**
+ * Symbols scored on the INSURANCE rubric, subtracted by the manufacturing tab.
+ *
+ * Third instance of the same split (real estate 048, securities 060, insurance
+ * 070) and found the same way: all 14 insurers sat in `manufacturing`, so the
+ * manufacturing tab scored them on gross- and net-margin deltas an insurance
+ * P&L does not report in that sense — BVH rated A on 66.7 at 2026-Q2.
+ *
+ * Their own 50-point Toàn ngành layer is computed but NOT persisted, so an
+ * insurer has no FA score at all after this. That is the intended state: the
+ * alternative is a number from a rubric that does not describe the filer.
+ *
+ * Empty before migration 070 is applied, which leaves insurers on the
+ * manufacturing tab: the pre-existing behaviour, not a broken one.
+ */
+export const getInsuranceSymbols = unstable_cache(
+  async (): Promise<string[]> => {
+    try {
+      const rows = await fetchAllPaged<{ symbol: string }>((from, to, withCount) =>
+        supabase
+          .from("fa_industry")
+          .select("symbol", withCount ? { count: "exact" } : undefined)
+          .eq("industry_group", "insurance")
+          .order("symbol", { ascending: true })
+          .range(from, to),
+      );
+      return rows.map((r) => r.symbol);
+    } catch (e) {
+      console.warn(
+        "[fa-ins] fa_industry unavailable — the manufacturing scanner will keep " +
+          "showing insurers (apply supabase/070):",
+        e instanceof Error ? e.message : e,
+      );
+      return [];
+    }
+  },
+  ["fa-industry-insurance"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
 export const getSecuritiesSymbols = unstable_cache(
   async (): Promise<string[]> => {
     try {

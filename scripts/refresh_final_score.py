@@ -39,11 +39,11 @@ def main():
     breakdown = ", ".join(f"{p}: {n}" for p, n in sorted(periods.items(), reverse=True))
     print(f"{verb}: {stats['scored']}/{stats['rows']} symbols on their latest FA quarter"
           + (f" ({breakdown})" if breakdown else ""))
-    # Brokers are deliberately absent, not missing. Say so every run, or the
-    # next reader has to rediscover why the sector has no Final score.
-    if stats.get("securities_members"):
-        print(f"  securities: {stats['securities_blocked']} blocked "
-              f"(SECTOR_MODEL_PENDING) of {stats['securities_members']} members")
+    # Brokers and insurers are deliberately absent, not missing. Say so every
+    # run, or the next reader has to rediscover why a sector has no Final score.
+    if stats.get("sector_members"):
+        print(f"  sector rubric pending: {stats['sector_blocked']} blocked "
+              f"of {stats['sector_members']} members (securities + insurance)")
     sys.exit(_gate(stats, args.dry_run))
 
 

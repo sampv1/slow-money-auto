@@ -1,0 +1,86 @@
+{
+ "quarters": [
+  "2025-Q4",
+  "2026-Q1",
+  "2026-Q2"
+ ],
+ "so_quy": 3,
+ "so_ma": 13,
+ "so_dong": 39,
+ "quy_danh_gia": "2026-Q2",
+ "tieu_chi": {
+  "C1": {
+   "pts_0": 21,
+   "pts_3": 5,
+   "pts_7": 2,
+   "pts_10": 11,
+   "khong_do_duoc": 0,
+   "trung_binh": 3.56
+  },
+  "C2": {
+   "pts_0": 5,
+   "pts_3": 14,
+   "pts_7": 15,
+   "pts_10": 5,
+   "khong_do_duoc": 0,
+   "trung_binh": 5.05
+  },
+  "C3": {
+   "pts_0": 6,
+   "pts_3": 8,
+   "pts_7": 9,
+   "pts_10": 16,
+   "khong_do_duoc": 0,
+   "trung_binh": 6.33
+  },
+  "C4": {
+   "pts_0": 9,
+   "pts_3": 2,
+   "pts_7": 20,
+   "pts_10": 8,
+   "khong_do_duoc": 0,
+   "trung_binh": 5.79
+  },
+  "C5": {
+   "pts_0": 9,
+   "pts_3": 12,
+   "pts_7": 10,
+   "pts_10": 8,
+   "khong_do_duoc": 0,
+   "trung_binh": 4.77
+  }
+ },
+ "tong_diem_quy_moi_nhat": {
+  "min": 10,
+  "trung_vi": 27,
+  "max": 41
+ },
+ "missing_criteria_rows": 0,
+ "score_50_khop_tong_5_tieu_chi": true,
+ "phien_ban_diem": [
+  "INS_TOAN_NGANH_50_V1"
+ ],
+ "phien_ban_eps": [
+  "EPS_STD_IAS33_DEDUP_V2"
+ ],
+ "bo_nguong": [
+  "ba_v2"
+ ],
+ "delta_fa_co_gia_tri": 26,
+ "delta_fa_null": 13,
+ "cong_an_toan_von": {
+  "Đạt": 10,
+  "Cảnh báo": 3
+ },
+ "applied_cap_khac_rong": 0,
+ "nen_loi_nhuan": {
+  "NORMAL_RANGE": 12,
+  "NEW_HIGHER_BASE": 19,
+  "BELOW_NORMAL": 3,
+  "RECOVERING": 5
+ },
+ "co_nen_eps_thap": 3,
+ "one_off_status": {
+  "NOT_EVALUATED": 39
+ }
+}

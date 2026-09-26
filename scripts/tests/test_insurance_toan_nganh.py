@@ -26,8 +26,9 @@ from export_insurance_toan_nganh import (  # noqa: E402
     C1_TOP, C1_ZERO, C2_POINTS, C5_BANDS_V1, C5_BANDS_V2, GROWTH_GAP_PP,
     LOW_BASE_EPS_VND, PH_MIN_HISTORICAL_TTM, PH_MIN_QUARTERS,
     PH_WINDOW_QUARTERS, PROFIT_HISTORY_VERSION, SCALE_12_TO_10, THRESHOLDS,
-    c1_display_state, c1_sign_override, c2_flag, c5_points,
-    profit_history_context, shift, yoy_pct,
+    UI_COLUMNS_12, acceptance_stats, c1_display_state, c1_sign_override,
+    c2_flag, c5_points, profit_history_context, resolve_quarters, shift,
+    yoy_pct,
 )
 
 
@@ -256,11 +257,14 @@ def test_reply_thresholds_match_BAs_table():
     assert THRESHOLDS["production"]["c4"] == [15, 17, 20]
 
 
-def test_both_sets_are_marked_unlocked_or_baseline():
-    """§4: neither set is the decision yet. The status string travels onto every
-    output row, so a number can always say which bands produced it."""
-    assert THRESHOLDS["ba_v2"]["status"] == "DE_XUAT_CHO_BA_KHOA"
+def test_every_set_carries_its_status_onto_the_row():
+    """The status string travels onto every output row, so a number can always
+    say which bands produced it. BA has since LOCKED ba_v2 for operation (A1),
+    which is what `test_A1_the_band_set_is_locked_for_operation` pins; the
+    Production set stays only so the comparison remains reproducible."""
+    assert THRESHOLDS["ba_v2"]["status"] == "DA_KHOA_V1_DE_VAN_HANH"
     assert THRESHOLDS["production"]["status"] == "BAN_DAU_THEO_BANG_SAN_XUAT"
+    assert all("status" in spec for spec in THRESHOLDS.values())
 
 
 # --- BA's acceptance set §11: T01-T18 ---------------------------------------
@@ -388,22 +392,25 @@ def test_persistent_loss():
     assert out["profit_history_ratio_pct"] is None
 
 
-def test_T14_under_eight_quarters_is_INSUFFICIENT_HISTORY():
+def test_T14_under_nine_quarters_is_INSUFFICIENT_HISTORY():
     out = profit_history_context("X", "2026-Q2", _np([100.0] * 7))
     assert out["profit_history_status"] == "INSUFFICIENT_HISTORY"
     assert out["profit_history_ratio_pct"] is None
     assert out["np_ttm_current"] == 400.0, "TTM hiện tại vẫn tính được"
 
 
-def test_eight_quarters_fails_the_historical_ttm_floor():
-    """§7.4 admits 8 quarters, §7.8 requires 5 historical TTMs — and 8 quarters
-    yields only 4. The stricter rule wins, so the effective minimum is NINE.
-    Reported to BA rather than reconciled silently."""
+def test_A6_the_floor_is_nine_quarters_not_eight():
+    """IT reported that §7.4's "from 8 quarters" and §7.8's five-historical-TTM
+    floor disagree — 8 quarters build 5 TTMs and, once the current one is
+    excluded, leave 4. BA locked NINE (§4.4), which is the first depth where the
+    two agree: 9 quarters build 6 TTMs and leave exactly 5."""
+    assert PH_MIN_QUARTERS == 9
     eight = profit_history_context("X", "2026-Q2", _np([100.0] * 8))
-    assert eight["historical_ttm_count"] == 4 < PH_MIN_HISTORICAL_TTM
     assert eight["profit_history_status"] == "INSUFFICIENT_HISTORY"
+    assert eight["profit_history_ratio_pct"] is None
+    assert eight["np_ttm_current"] == 400.0, "TTM hiện tại vẫn tính được"
     nine = profit_history_context("X", "2026-Q2", _np([100.0] * 9))
-    assert nine["historical_ttm_count"] == 5
+    assert nine["historical_ttm_count"] == PH_MIN_HISTORICAL_TTM == 5
     assert nine["profit_history_status"] == "NORMAL_RANGE"
 
 
@@ -457,7 +464,8 @@ def test_profit_history_never_returns_a_bare_zero_ratio():
     """Phụ lục B: absence is a status, never 0. Every path either sets a ratio
     with a positive median and positive current, or sets a status code."""
     for vals in ([100.0] * 24, [-50.0] * 24, [100.0] * 4 + [-50.0] * 20,
-                 [-50.0] * 4 + [100.0] * 20, [100.0] * 7, [100.0] * 8):
+                 [-50.0] * 4 + [100.0] * 20, [100.0] * 7, [100.0] * 8,
+                 [100.0] * 9):
         out = profit_history_context("X", "2026-Q2", _np(vals))
         assert out["profit_history_status"] is not None
         if out["profit_history_ratio_pct"] is None:
@@ -466,6 +474,122 @@ def test_profit_history_never_returns_a_bare_zero_ratio():
                 "INSUFFICIENT_HISTORY", "ERROR_CURRENT_TTM")
         else:
             assert out["median_np_ttm_history"] > 0 and out["np_ttm_current"] > 0
+
+
+# --- BA's final acceptance checklist A1-A12 ---------------------------------
+
+def test_A1_the_band_set_is_locked_for_operation():
+    """§4.1 — locked for USE, explicitly not declared optimal: the sample is 13
+    symbols over three quarters and BA re-evaluates after 4-6 quarters."""
+    assert THRESHOLDS["ba_v2"]["status"] == "DA_KHOA_V1_DE_VAN_HANH"
+
+
+def test_A2_the_quarter_range_is_derived_from_the_eps_history():
+    """A stale constant is how a quarter silently drops out of a rebase, so the
+    range is a property of the data. C2 needs 7 contiguous quarters, so an EPS
+    set starting 2024-Q2 makes 2025-Q4 the earliest scoreable quarter."""
+    eps = {"X": {f"{y}-Q{q}": {"eps": 1.0}
+                 for y, q in [(2024, 2), (2024, 3), (2024, 4), (2025, 1), (2025, 2),
+                              (2025, 3), (2025, 4), (2026, 1), (2026, 2)]}}
+    assert resolve_quarters(eps) == ["2025-Q4", "2026-Q1", "2026-Q2"]
+    # one quarter short of seven yields nothing at all, rather than a short window
+    short = {"X": {f"2025-Q{q}": {"eps": 1.0} for q in (1, 2, 3, 4)}}
+    assert resolve_quarters(short) == []
+    assert resolve_quarters({}) == []
+
+
+def test_A2_a_hole_breaks_the_contiguity_requirement():
+    """Seven quarters that are not CONSECUTIVE cannot score C2 — the comparison
+    quarters t-4..t-6 have to exist."""
+    eps = {"X": {p: {"eps": 1.0} for p in
+                 ("2024-Q2", "2024-Q3", "2024-Q4", "2025-Q2", "2025-Q3",
+                  "2025-Q4", "2026-Q1", "2026-Q2")}}
+    assert "2025-Q4" not in resolve_quarters(eps)
+
+
+def test_A5_score_50_equals_the_sum_of_the_five():
+    """Asserted inside `score_one` too, so a row that breaks it cannot be
+    written. Here on the statistics, which is what a report quotes."""
+    rows = [{"symbol": "X", "period": "2026-Q2", "score_50": 27,
+             "c1_points": 10, "c2_points": 7, "c3_points": 7, "c4_points": 3,
+             "c5_points": 0, "missing_criteria": None, "threshold_set": "ba_v2",
+             "delta_fa_points": 2, "capital_gate_status": "Đạt",
+             "applied_cap_current": None, "profit_history_status": "NORMAL_RANGE",
+             "low_eps_base_flag": False, "one_off_profit_status": "NOT_EVALUATED"}]
+    st = acceptance_stats(rows, ["2026-Q2"])
+    assert st["score_50_khop_tong_5_tieu_chi"] is True
+    rows[0]["score_50"] = 28
+    assert acceptance_stats(rows, ["2026-Q2"])["score_50_khop_tong_5_tieu_chi"] is False
+
+
+def test_A7_the_applied_cap_is_empty_in_a_fifty_point_scale():
+    """§4.5 — `future_cap_100` may hold 79 or 59, but `applied_cap_current` must
+    be blank, or a UI reads a stored cap as one already in force. The single
+    exception that DOES apply now is equity <= 0."""
+    def caps(equity, d_buffer, equity_yoy, two_q):
+        status, future = gate(equity, d_buffer, equity_yoy, two_q)
+        applied = "loại khỏi xếp hạng" if (equity is not None and equity <= 0) else None
+        return status, future, applied
+    assert caps(1e12, -15.0, 2.0, False) == ("Cảnh báo", 79, None)
+    assert caps(1e12, -25.0, -4.0, False) == ("Rủi ro cao", 59, None)
+    assert caps(1e12, 5.0, 3.0, False) == ("Đạt", None, None)
+    # the one cap that bites today
+    assert caps(0.0, 5.0, 3.0, False)[2] == "loại khỏi xếp hạng"
+    assert caps(-1.0, 5.0, 3.0, False)[2] == "loại khỏi xếp hạng"
+
+
+def test_A8_an_unevaluated_one_off_is_not_false():
+    """A8 — `False` reads as "checked, none found". Nothing identifies a one-off,
+    so the honest value is a status that says it was never evaluated."""
+    rows = [{"symbol": "X", "period": "2026-Q2", "score_50": 0, "missing_criteria": None,
+             "threshold_set": "ba_v2", "delta_fa_points": None,
+             "capital_gate_status": "Đạt", "applied_cap_current": None,
+             "profit_history_status": "NORMAL_RANGE", "low_eps_base_flag": False,
+             "one_off_profit_status": "NOT_EVALUATED",
+             **{f"c{i}_points": 0 for i in range(1, 6)}}]
+    st = acceptance_stats(rows, ["2026-Q2"])
+    assert st["one_off_status"] == {"NOT_EVALUATED": 1}
+    assert False not in st["one_off_status"]
+
+
+def test_A10_statistics_come_from_the_dataset():
+    """The failure this prevents: a Markdown report quoted C1 3,13 / C2 5,13 from
+    an earlier run while the workbook held 3,56 / 5,05 from the final one. The
+    averages are computed here, from the rows, so a report cannot drift."""
+    rows = []
+    for i, pts in enumerate([(10, 10, 10, 10, 10), (0, 0, 0, 0, 0)]):
+        rows.append({"symbol": f"S{i}", "period": "2026-Q2", "score_50": sum(pts),
+                     "missing_criteria": None, "threshold_set": "ba_v2",
+                     "delta_fa_points": None, "capital_gate_status": "Đạt",
+                     "applied_cap_current": None, "low_eps_base_flag": False,
+                     "profit_history_status": "NORMAL_RANGE",
+                     "one_off_profit_status": "NOT_EVALUATED",
+                     **{f"c{n}_points": pts[n - 1] for n in range(1, 6)}})
+    st = acceptance_stats(rows, ["2026-Q2"])
+    assert st["tieu_chi"]["C1"]["trung_binh"] == 5.0
+    assert st["tieu_chi"]["C1"]["pts_10"] == 1 and st["tieu_chi"]["C1"]["pts_0"] == 1
+    assert st["tong_diem_quy_moi_nhat"] == {"min": 0, "trung_vi": 25.0, "max": 50}
+
+
+def test_A11_the_layout_is_twelve_columns_in_BAs_order():
+    """§7 — the 14-column layout is superseded; it still carried "Hiệu quả bảo
+    hiểm /30" and "Định giá /20", neither of which exists."""
+    assert len(UI_COLUMNS_12) == 12
+    names = [c[0] for c in UI_COLUMNS_12]
+    assert names[0] == "Ngày công bố BCTC"
+    assert names[2] == "Tổng điểm Toàn ngành"
+    assert names[-1] == "Cảnh báo dữ liệu"
+    assert not any("30" in n or "20" in n for n in names), "cột của bố cục cũ còn sót"
+    # every column carries a tooltip with a real explanation
+    assert all(len(tip) > 30 for _, _, tip in UI_COLUMNS_12)
+
+
+def test_A11_the_total_column_never_claims_to_be_a_final_score():
+    """§3 — "Tổng điểm 50 là điểm FA chung, không phải điểm cuối cùng". The
+    tooltip has to say so, because a column headed "Tổng điểm" invites the
+    opposite reading."""
+    tip = dict((c[1], c[2]) for c in UI_COLUMNS_12)["score_50"]
+    assert "không phải điểm cuối cùng" in tip.lower() or "KHÔNG phải điểm cuối cùng" in tip
 
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
