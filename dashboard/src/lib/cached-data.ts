@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 import { CHART_ONLY_SYMBOLS } from "./chart-only-symbols";
 import type { FaScore, FaQuarterlyRaw } from "./fa";
 import type { ReScore } from "./fa-re";
+import type { InsuranceScore, InsuranceWatchRow } from "./fa-insurance";
 import { buildQuarterlyFacts, faNpat, yearAgoPeriod } from "./fa";
 import type { DailyLog, Recommendation } from "./types";
 import type { IcbLabel, SymbolMeta } from "./symbol-meta";
@@ -793,6 +794,100 @@ export const getRealEstateSymbols = unstable_cache(
  * Empty before migration 060 is applied, which leaves brokers on the
  * manufacturing tab: the pre-existing behaviour, not a broken one.
  */
+/**
+ * Quarters present in `fa_insurance_scores` for the active score version,
+ * newest first.
+ *
+ * Pinned to the version the app reads, exactly as the securities tab pins its
+ * model: the table keys on the version triple so a rescore inserts BESIDE the
+ * old rows, and an unpinned read would show each quarter once per version ever
+ * scored.
+ */
+export const INS_SCORE_VERSION = "INS_TOAN_NGANH_50_V1";
+
+export const getInsuranceQuarters = unstable_cache(
+  async (): Promise<string[]> => {
+    const rows = await fetchAllPaged<{ period: string }>((from, to, withCount) =>
+      supabase
+        .from("fa_insurance_scores")
+        .select("period", withCount ? { count: "exact" } : undefined)
+        .eq("score_version", INS_SCORE_VERSION)
+        .order("period", { ascending: false })
+        .range(from, to),
+    );
+    return [...new Set(rows.map((r) => r.period))].sort().reverse();
+  },
+  ["fa-insurance-quarters"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/** Scored rows for one quarter, at the pinned score version. */
+export const getInsuranceRows = unstable_cache(
+  async (period: string): Promise<InsuranceScore[]> =>
+    fetchAllPaged<InsuranceScore>((from, to, withCount) =>
+      supabase
+        .from("fa_insurance_scores")
+        .select("*", withCount ? { count: "exact" } : undefined)
+        .eq("score_version", INS_SCORE_VERSION)
+        .eq("period", period)
+        .order("symbol", { ascending: true })
+        .range(from, to),
+    ),
+  ["fa-insurance-rows"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/**
+ * Insurers the system recognises but does not score (BA §16.2).
+ *
+ * Derived rather than stored: a symbol is watched when it is classified
+ * insurance and has no scored row, so a newly listed company appears here by
+ * itself and leaves once it has seven quarters of EPS. Keeping a list would be
+ * the fixed roster §16 forbids.
+ */
+export const getInsuranceWatchlist = unstable_cache(
+  async (): Promise<InsuranceWatchRow[]> => {
+    try {
+      const [classified, scored] = await Promise.all([
+        fetchAllPaged<{ symbol: string }>((from, to, withCount) =>
+          supabase
+            .from("fa_industry")
+            .select("symbol", withCount ? { count: "exact" } : undefined)
+            .eq("industry_group", "insurance")
+            .order("symbol", { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllPaged<{ symbol: string }>((from, to, withCount) =>
+          supabase
+            .from("fa_insurance_scores")
+            .select("symbol", withCount ? { count: "exact" } : undefined)
+            .eq("score_version", INS_SCORE_VERSION)
+            .order("symbol", { ascending: true })
+            .range(from, to),
+        ),
+      ]);
+      const has = new Set(scored.map((r) => r.symbol));
+      const waiting = classified.map((r) => r.symbol).filter((s) => !has.has(s));
+      if (waiting.length === 0) return [];
+      const meta = await fetchAllPaged<InsuranceWatchRow>((from, to, withCount) =>
+        supabase
+          .from("symbol_profile")
+          .select("symbol,short_name_vi,short_name_en,exchange",
+            withCount ? { count: "exact" } : undefined)
+          .in("symbol", waiting)
+          .order("symbol", { ascending: true })
+          .range(from, to),
+      );
+      return meta;
+    } catch (e) {
+      console.warn("[fa-ins] watchlist unavailable:", e instanceof Error ? e.message : e);
+      return [];
+    }
+  },
+  ["fa-insurance-watchlist"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
 /**
  * Symbols scored on the INSURANCE rubric, subtracted by the manufacturing tab.
  *

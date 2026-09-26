@@ -35,6 +35,11 @@ const TABS = [
     label: "faSubnavSecurities",
     hint: "faSubnavHintSecurities",
   },
+  {
+    href: "/fa-scanner/insurance",
+    label: "faSubnavInsurance",
+    hint: "faSubnavHintInsurance",
+  },
 ] as const;
 
 export function FaSubnav({ locale }: { locale: Locale }) {
