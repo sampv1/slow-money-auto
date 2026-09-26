@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fa.share_events import (  # noqa: E402
     Adjustment,
+    ShareEvent,
     classify,
     compute_adjustments,
     eps_adjusted,
@@ -388,6 +389,93 @@ def test_adjustment_defaults_cannot_restate():
     a = Adjustment(period="2026-Q1")
     assert a.k_technical == 1.0
 
+
+
+# --- the feed repeats events, and additive ratios make that inflate k --------
+
+def test_a_repeated_event_is_counted_once():
+    """ABI's real case: the feed served a 20% stock dividend and a 20% bonus on
+    2025-09-11, each TWICE under different event_ids (one copy carrying a
+    listing date, one not). Additively that read 0,80 -> k = 1,80 against a
+    filed share change of 1,400, so the window was refused and four quarters of
+    EPS silently fell back to as-filed.
+    """
+    ex = dt.date(2025, 9, 11)
+    events = [
+        ShareEvent(symbol="ABI", event_id="a1", event_code="ISS",
+                   title_en="Share Issue - Stock dividend ratio 20.0%", title_vi=None,
+                   group=1, ratio=0.20, exright_date=ex,
+                   listing_date=dt.date(2025, 10, 17), public_date=None, record_date=None),
+        ShareEvent(symbol="ABI", event_id="a2", event_code="ISS",
+                   title_en="Share Issue - Bonus Issue ratio 20.0%", title_vi=None,
+                   group=1, ratio=0.20, exright_date=ex,
+                   listing_date=dt.date(2025, 10, 17), public_date=None, record_date=None),
+        # the duplicate pair: same ex-date, same titles, same ratios, new ids
+        ShareEvent(symbol="ABI", event_id="b1", event_code="ISS",
+                   title_en="Share Issue - Stock dividend ratio 20.0%", title_vi=None,
+                   group=1, ratio=0.20, exright_date=ex,
+                   listing_date=None, public_date=None, record_date=None),
+        ShareEvent(symbol="ABI", event_id="b2", event_code="ISS",
+                   title_en="Share Issue - Bonus Issue ratio 20.0%", title_vi=None,
+                   group=1, ratio=0.20, exright_date=ex,
+                   listing_date=None, public_date=None, record_date=None),
+    ]
+    shares = {"2025-Q2": 72_391_750.0, "2025-Q3": 101_347_632.0,
+              "2025-Q4": 101_347_632.0, "2026-Q1": 101_347_632.0,
+              "2026-Q2": 101_347_632.0}
+    adj = compute_adjustments(events, shares)
+    q3 = adj["2025-Q3"]
+    assert abs(q3.k_technical - 1.40) < 1e-9, f"k={q3.k_technical}, muốn 1,40"
+    # and it now RECONCILES against the filed count, where 1,80 could not
+    assert q3.data_ok, q3.reason
+    wf = window_factor(adj, "2025-Q2", "2026-Q2")
+    assert wf.reconciled and abs(wf.k - 1.40) < 1e-9
+
+
+def test_two_real_events_on_one_ex_date_still_add():
+    """Deduplication must not collapse a genuine pair. GIC ran a 100% rights
+    issue and a 10% stock dividend on the SAME ex-date and went to exactly
+    2,10x — the titles differ, so both survive.
+    """
+    ex = dt.date(2024, 6, 3)
+    events = [
+        ShareEvent(symbol="GIC", event_id="1", event_code="ISS",
+                   title_en="Share Issue - Rights issue ratio 100.0%", title_vi=None,
+                   group=2, ratio=1.00, exright_date=ex,
+                   listing_date=None, public_date=None, record_date=None),
+        ShareEvent(symbol="GIC", event_id="2", event_code="ISS",
+                   title_en="Share Issue - Stock dividend ratio 10.0%", title_vi=None,
+                   group=1, ratio=0.10, exright_date=ex,
+                   listing_date=None, public_date=None, record_date=None),
+    ]
+    shares = {"2024-Q1": 10_000_000.0, "2024-Q2": 21_000_000.0, "2024-Q3": 21_000_000.0}
+    adj = compute_adjustments(events, shares)
+    q2 = adj["2024-Q2"]
+    # only the Nhóm 1 half enters k; the rights issue is real dilution
+    assert abs(q2.k_technical - 1.10) < 1e-9
+    assert abs(q2.total_ratio - 2.10) < 1e-6
+
+
+def test_same_title_and_ratio_on_DIFFERENT_ex_dates_both_count():
+    """Two identical-looking dividends a year apart are two events, and the
+    dedup key includes the ex-date so they compound rather than collapse."""
+    events = [
+        ShareEvent(symbol="X", event_id="1", event_code="ISS",
+                   title_en="Share Issue - Stock dividend ratio 10.0%", title_vi=None,
+                   group=1, ratio=0.10, exright_date=dt.date(2024, 6, 3),
+                   listing_date=None, public_date=None, record_date=None),
+        ShareEvent(symbol="X", event_id="2", event_code="ISS",
+                   title_en="Share Issue - Stock dividend ratio 10.0%", title_vi=None,
+                   group=1, ratio=0.10, exright_date=dt.date(2025, 6, 3),
+                   listing_date=None, public_date=None, record_date=None),
+    ]
+    shares = {"2024-Q1": 100.0, "2024-Q2": 110.0, "2024-Q3": 110.0,
+              "2025-Q1": 110.0, "2025-Q2": 121.0, "2025-Q3": 121.0}
+    adj = compute_adjustments(events, shares)
+    assert abs(adj["2024-Q2"].k_technical - 1.10) < 1e-9
+    assert abs(adj["2025-Q2"].k_technical - 1.10) < 1e-9
+    wf = window_factor(adj, "2024-Q1", "2025-Q3")
+    assert abs(wf.k - 1.21) < 1e-9, "hai sự kiện khác ngày phải nhân dồn"
 
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

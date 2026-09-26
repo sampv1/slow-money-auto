@@ -237,13 +237,37 @@ def _by_exdate(events: list[ShareEvent], period: str) -> dict[dt.date, list[Shar
     is therefore certain. An ISS row with no ex-right date is skipped here —
     that is the Nhóm 2 shape (no official figure until the issue result), and
     Nhóm 2 is taken as the residual rather than from an announcement.
+
+    THE FEED REPEATS EVENTS UNDER DIFFERENT IDS, and because ratios on one
+    ex-date are ADDITIVE a repeat inflates the factor rather than being
+    harmless. ABI announced a 20% stock dividend and a 20% bonus on
+    2025-09-11; the feed carries each twice — one copy with a listing date and
+    one without — so the sum read 0.80 and k came out 1.80 against a filed
+    1.400. Measured over the whole store: 19 duplicate groups on 14 symbols, of
+    which 5 inflate a Nhóm 1 factor (ABI 1.80 vs 1.40, BKG 1.10 vs 1.05, GAS
+    1.06 vs 1.03, HSL 1.10 vs 1.05, VC3 1.18 vs 1.09).
+
+    The identity is (ex-right date, title, ratio) and NOT the provider's
+    `event_id`, which is what differs between the copies. Two genuinely separate
+    issues on one ex-date would have to share all three to collide, and a real
+    pair does not: ABI's own two events differ by title, and GIC's 100% rights
+    issue and 10% stock dividend on one date differ by both.
+
+    Deduplicating here rather than at ingest is deliberate — `fa_share_events`
+    stays a faithful record of what the feed served, so the duplication remains
+    auditable and a later provider fix needs no backfill.
     """
     out: dict[dt.date, list[ShareEvent]] = {}
+    seen: set[tuple] = set()
     for e in events:
         if e.event_code != "ISS" or e.exright_date is None:
             continue
         if quarter_of(e.exright_date) != period:
             continue
+        key = (e.exright_date, e.title_en, e.ratio)
+        if key in seen:
+            continue
+        seen.add(key)
         out.setdefault(e.exright_date, []).append(e)
     return out
 
