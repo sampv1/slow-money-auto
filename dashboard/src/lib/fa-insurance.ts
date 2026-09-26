@@ -131,6 +131,50 @@ export function profitStatusColor(status: string | null): string {
   }
 }
 
+/**
+ * The gate STATUS is stored as the Vietnamese word the spec names, so it maps to
+ * an i18n key rather than rendering raw — otherwise the English page shows "Đạt".
+ */
+export const GATE_STATUS_KEY: Record<string, string> = {
+  "Đạt": "insGateDat",
+  "Cảnh báo": "insGateCanhBao",
+  "Rủi ro cao": "insGateRuiRoCao",
+  "Không đạt": "insGateKhongDat",
+};
+
+/**
+ * The gate REASON is stored as codes with their numbers, never as a sentence:
+ * "BUFFER_DOWN:-30.7;EQUITY_DOWN:-4.2". Prose written by the Python scorer
+ * reaches the DOM verbatim and cannot be translated at render — the leak
+ * `fa/real_estate.py` caused once, where an English scorer note appeared on the
+ * Vietnamese page.
+ */
+const GATE_REASON_KEY: Record<string, string> = {
+  NO_WARNING: "insGateNoWarning",
+  BUFFER_DOWN: "insGateBufferDown",
+  EQUITY_DOWN: "insGateEquityDown",
+  EQUITY_NOT_POSITIVE: "insGateEquityNotPositive",
+  GROWTH_GAP_2Q: "insGateGrowthGap2Q",
+};
+
+/** Decode the stored codes into i18n key + value pairs, in stored order. */
+export function gateReasonParts(
+  reason: string | null,
+): { key: string; value: string | null }[] {
+  if (!reason) return [];
+  return reason
+    .split(";")
+    .map((part) => {
+      const [code, value] = part.split(":");
+      const key = GATE_REASON_KEY[code];
+      // An unknown code is dropped rather than printed raw: a bare
+      // "SOMETHING_NEW:3" in a customer-facing cell is worse than nothing, and
+      // its absence shows up in review.
+      return key ? { key, value: value ?? null } : null;
+    })
+    .filter((x): x is { key: string; value: string } => x !== null);
+}
+
 /** §9 — the gate is a state, never a cap in this stage. */
 export function gateColor(status: string | null): string {
   switch (status) {

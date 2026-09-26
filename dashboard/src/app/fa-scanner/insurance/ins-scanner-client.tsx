@@ -8,10 +8,12 @@ import {
   type InsuranceScore,
   type InsuranceWatchRow,
   C1_STATE_KEY,
+  GATE_STATUS_KEY,
   INSURANCE_TYPE_KEY,
   INS_MAX_SCORE,
   PROFIT_STATUS_KEY,
   gateColor,
+  gateReasonParts,
   insPointsColor,
   profitStatusColor,
 } from "@/lib/fa-insurance";
@@ -284,13 +286,32 @@ export function InsuranceScannerClient({
                 </td>
                 <td className="px-2 text-body max-w-[16rem]">
                   <span className={gateColor(r.capital_gate_status)}>
-                    {r.capital_gate_status ?? "—"}
+                    {r.capital_gate_status
+                      ? t(locale, (GATE_STATUS_KEY[r.capital_gate_status] ?? "insGateDat") as never)
+                      : "—"}
                   </span>
-                  {r.capital_gate_reason && (
-                    <span className="block text-fg-muted break-words">
-                      {r.capital_gate_reason}
-                    </span>
-                  )}
+                  <span className="block text-fg-muted break-words">
+                    {gateReasonParts(r.capital_gate_reason)
+                      .map((p) =>
+                        p.value === null
+                          ? t(locale, p.key as never)
+                          // The number goes through formatNumber like every
+                          // other figure on the row: the house convention is a
+                          // decimal COMMA in both locales, and "-30.7%" sitting
+                          // beside the C5 cell's "−30,7%" reads as a bug.
+                          : t(locale, p.key as never).replace(
+                              "{v}",
+                              // A whole number keeps no decimal: the 20pp
+                              // threshold is a constant, and "20,0 đpt" reads
+                              // as a measurement rather than a rule.
+                              formatNumber(
+                                Number(p.value),
+                                Number.isInteger(Number(p.value)) ? 0 : 1,
+                              ),
+                            ),
+                      )
+                      .join(" · ")}
+                  </span>
                 </td>
                 <td className={TD_NUM}>
                   <span className="block">

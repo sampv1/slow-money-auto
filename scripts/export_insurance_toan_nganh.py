@@ -461,21 +461,24 @@ def score_one(symbol, period, data, bands):
         gate, future_cap = "Đạt", None
     # The one exclusion that applies NOW, not at 100 points (§4.5's exception).
     applied_cap = "loại khỏi xếp hạng" if (eq_now is not None and eq_now <= 0) else None
-    reasons = []
+    # THE REASON IS A CODE LIST, NOT PROSE. Vietnamese sentences written here
+    # reach the DOM verbatim and cannot be translated at render — the exact leak
+    # `fa/real_estate.py` caused once, where an English scorer note appeared on
+    # the Vietnamese page. Each code carries its number so the UI can compose a
+    # sentence in either locale: "BUFFER_DOWN:-30.7;EQUITY_DOWN:-4.2".
+    codes = []
     if eq_now is not None and eq_now <= 0:
-        reasons.append("tổng VCSH <= 0")
-    if d_buf is not None and d_buf < -20:
-        reasons.append(f"đệm vốn giảm {d_buf:.1f}%")
-    elif d_buf is not None and d_buf < -10:
-        reasons.append(f"đệm vốn giảm {d_buf:.1f}%")
+        codes.append("EQUITY_NOT_POSITIVE")
+    if d_buf is not None and d_buf < -10:
+        codes.append(f"BUFFER_DOWN:{d_buf:.1f}")
     if eq_yoy is not None and eq_yoy < 0:
-        reasons.append(f"VCSH giảm {eq_yoy:.1f}% YoY")
+        codes.append(f"EQUITY_DOWN:{eq_yoy:.1f}")
     if two_q:
-        reasons.append(f"khoảng cách tăng trưởng > {GROWTH_GAP_PP:g} đpt hai quý liên tiếp")
+        codes.append(f"GROWTH_GAP_2Q:{GROWTH_GAP_PP:g}")
     row.update(equity_yoy_pct=eq_yoy, growth_gap_pp=gap, growth_gap_prev_pp=gap_prev,
                two_quarter_flag=two_q, capital_gate_status=gate,
                future_cap_100=future_cap, applied_cap_current=applied_cap,
-               capital_gate_reason="; ".join(reasons) or "chưa phát hiện cảnh báo vốn từ BCTC")
+               capital_gate_reason=";".join(codes) or "NO_WARNING")
 
     pts = [row[f"c{i}_points"] for i in range(1, 6)]
     row["missing_criteria"] = ", ".join(f"C{i}" for i in range(1, 6)
