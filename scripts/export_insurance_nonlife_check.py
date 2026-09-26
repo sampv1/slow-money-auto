@@ -297,20 +297,33 @@ def verify_scope(symbol, period, meta, scope_seen_in_source):
 
 def run_metadata(out_path, rows_result, rows_lineage, snapshot):
     """§7.2 — enough to reproduce this exact run."""
-    def git(*args):
+    def git_raw(*args):
+        """Raw stdout, EMPTY STRING when git says nothing.
+
+        Kept separate from `git()` below because the two need opposite
+        treatments of emptiness: a missing commit hash is NOT_AVAILABLE, while
+        an empty `status --porcelain` is the meaningful answer "clean". Folding
+        them together made `pipeline_working_tree` report dirty unconditionally
+        — the fallback string is truthy, so the emptiness test never fired.
+        """
         try:
             return subprocess.run(["git", *args], capture_output=True, text=True,
                                   cwd=Path(__file__).resolve().parent,
-                                  timeout=10).stdout.strip() or NOT_AVAILABLE
+                                  timeout=10).stdout.strip()
         except Exception:  # noqa: BLE001
-            return NOT_AVAILABLE
+            return None
+
+    def git(*args):
+        out = git_raw(*args)
+        return out if out else NOT_AVAILABLE
     script = Path(__file__).resolve()
     return [
         {"key": "run_id", "value": RUN_ID},
         {"key": "generated_at", "value": dt.datetime.now().isoformat(timespec="seconds")},
         {"key": "pipeline_commit_hash", "value": git("rev-parse", "HEAD")},
         {"key": "pipeline_working_tree", "value":
-            "dirty" if git("status", "--porcelain", "--", str(script)) else "clean"},
+            (NOT_AVAILABLE if (st := git_raw("status", "--porcelain", "--", str(script)))
+             is None else ("dirty" if st else "clean"))},
         {"key": "script_name", "value": script.name},
         {"key": "script_sha256", "value":
             hashlib.sha256(script.read_bytes()).hexdigest()[:32]},
