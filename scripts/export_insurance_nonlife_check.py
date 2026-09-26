@@ -78,6 +78,16 @@ BALANCE_KEYS = [CASH, ST_INV, LT_INV, HTM_SEC, FVTPL, IMPAIRMENT,
 PB = "RT_VALUE_PB"
 
 INV_MAP_VERSION = "NONLIFE_INV_MAP_V1_CASH_ST_LT"
+#: §7.3 / §10 — the formula version, separate from the mapping version, so a
+#: change to one is distinguishable from a change to the other in a stored row.
+FORMULA_VERSION = "NONLIFE_P1_P5_V1_TTM_GROSS"
+
+#: §6.2 — the source fields that reach past the normalised layer to the filing.
+#: A value we do not hold is spelled out, never blank and never guessed.
+NOT_AVAILABLE = "NOT_AVAILABLE_FROM_PROVIDER"
+#: Which statement each standardised line was read from.
+STATEMENT_VI = {"income": "KQKD", "balance": "CĐKT", "ratio": "Chỉ tiêu định giá"}
+SCOPE_VI = {"HN": "Hợp nhất", "ĐL": "Riêng lẻ"}
 TOL = 0.01   # tỷ đồng
 
 
@@ -128,23 +138,79 @@ def resolve_universe(client):
             itype, src = "Phi nhân thọ", f"ICB_L4_{ICB_NON_LIFE}"
         else:
             itype, src = "Holding/Hỗn hợp", f"ICB_L4_{r.get('icb_l4')}"
-        out.append({**r, "insurance_type": itype, "insurance_type_source": src,
-                    "trong_tab_phi_nhan_tho": itype == "Phi nhân thọ"})
+        out.append({
+            **r,
+            # §3.4 — type governance. `effective_from` and `review_status` are
+            # carried so a reclassification has a date and an owner rather than
+            # being an undated overwrite; both are flagged for the database
+            # column this still needs.
+            "insurance_type": itype,
+            "insurance_type_source": src,
+            "insurance_type_effective_from": ("2026-09-26" if src == "BA_RULING"
+                                              else NOT_AVAILABLE),
+            "insurance_type_review_status": ("BA_CONFIRMED" if src == "BA_RULING"
+                                             else "FROM_PROVIDER_ICB"),
+            # §3.3 — THREE independent facts. The single `trong_tab_phi_nhan_tho`
+            # flag conflated "is a non-life insurer" with "is scored", which is
+            # what made IFA read as one of the nine.
+            "belongs_to_nonlife_universe": itype == "Phi nhân thọ",
+            "eligible_for_scoring": None,   # decided once the data is probed
+            "display_group": None,
+        })
+    return out
+
+
+def load_source_meta(client, symbols, periods):
+    """§6.2 — the filing behind each standardised figure.
+
+    `fa_statement_release_dates` carries the KBS statement header: publication
+    date, audit status and REPORT SCOPE. The scope matters more than it looks —
+    the first run hard-coded "Hợp nhất" for every row, and the header says 6 of
+    the 9 file SEPARATE statements. The balance sheet agrees independently:
+    every symbol marked HN carries a non-zero minority interest and every ĐL
+    carries zero, which is exactly the difference between the two scopes.
+    """
+    out = {}
+    rows = safe_execute(
+        client.table("fa_statement_release_dates")
+        .select("symbol,period,release_date,audit_status,report_scope,source")
+        .in_("symbol", symbols).order("symbol").order("period"),
+        label="release dates").data or []
+    for r in rows:
+        if r["period"] in periods:
+            out[(r["symbol"], r["period"])] = r
     return out
 
 
 def trace(symbol, period, name, formula, num, num_parts, den, den_parts,
-          unit, value, status, note=None):
+          unit, value, status, meta, statement, note=None):
     """§10 — every result carries its numerator, its parts, its denominator, its
     parts and the formula in words. BA must be able to see which figures made a
     number without opening the script."""
-    return {"symbol": symbol, "period": period, "chi_tieu": name,
-            "cong_thuc": formula,
-            "tu_so": num, "cau_phan_tu_so": num_parts,
-            "mau_so": den, "cau_phan_mau_so": den_parts,
-            "don_vi": unit, "ket_qua": value,
-            "loai_bao_cao": "Hợp nhất", "mapping_version": INV_MAP_VERSION,
-            "trang_thai": status, "ghi_chu": note}
+    m = meta or {}
+    scope = SCOPE_VI.get(m.get("report_scope"), m.get("report_scope") or NOT_AVAILABLE)
+    return {
+        "symbol": symbol, "period": period, "chi_tieu": name,
+        "cong_thuc": formula,
+        "tu_so": num, "cau_phan_tu_so": num_parts,
+        "mau_so": den, "cau_phan_mau_so": den_parts,
+        "don_vi": unit, "ket_qua": value,
+        # --- §6.2: through the normalised layer to the filing ---------------
+        # The id is OUR record key, not an issuer filing number: the provider
+        # publishes none, and inventing something that reads like a filing
+        # reference would be worse than saying so.
+        "source_document_id": f"{symbol}|{period}|quarter|{statement}",
+        "source_document_name": (f"BCTC {scope} quý {period[-1]}/{period[:4]} — {symbol}"
+                                 if scope != NOT_AVAILABLE else NOT_AVAILABLE),
+        "source_publication_date": m.get("release_date") or NOT_AVAILABLE,
+        "source_statement": STATEMENT_VI.get(statement, statement),
+        "source_note_or_page": NOT_AVAILABLE,
+        "source_provider": m.get("source") or "vnstock",
+        "loai_bao_cao": scope,
+        "audit_status": m.get("audit_status") or NOT_AVAILABLE,
+        "mapping_version": INV_MAP_VERSION,
+        "formula_version": FORMULA_VERSION,
+        "trang_thai": status, "ghi_chu": note}
 
 
 def main() -> int:
@@ -154,7 +220,7 @@ def main() -> int:
     client = get_supabase_client()
 
     universe = resolve_universe(client)
-    candidates = [u["symbol"] for u in universe if u["trong_tab_phi_nhan_tho"]]
+    candidates = [u["symbol"] for u in universe if u["belongs_to_nonlife_universe"]]
     # §2.5 gives membership by TYPE; a symbol still needs the data to be scored.
     # IFA is non-life by classification and holds no statements at all, so it is
     # recognised and watched rather than carried as a row of nulls — the same
@@ -169,12 +235,24 @@ def main() -> int:
             label=f"probe {p_}").data or []
         have.update(r["symbol"] for r in rows_)
     SY = [s_ for s_ in candidates if s_ in have]
-    watch = [u for u in universe
-             if u["trong_tab_phi_nhan_tho"] and u["symbol"] not in have]
-    for u in watch:
-        u["ly_do_theo_doi"] = "Không có BCTC trong cửa sổ kiểm tra"
+    # §3.3 — resolve the two remaining facts for EVERY symbol, so the three
+    # fields are always populated together and can never disagree.
+    for u in universe:
+        if not u["belongs_to_nonlife_universe"]:
+            u["eligible_for_scoring"] = False
+            u["display_group"] = "OTHER_INSURANCE_TAB"
+            u["ly_do"] = f"Thuộc loại hình {u['insurance_type']}"
+        elif u["symbol"] in have:
+            u["eligible_for_scoring"] = True
+            u["display_group"] = "SCORED"
+            u["ly_do"] = None
+        else:
+            u["eligible_for_scoring"] = False
+            u["display_group"] = "WATCHLIST"
+            u["ly_do"] = "Chưa có BCTC để tính P1–P5"
+    watch = [u for u in universe if u["display_group"] == "WATCHLIST"]
     if watch:
-        print(f"danh sách theo dõi (nhận diện nhưng chưa có dữ liệu): "
+        print("danh sách theo dõi (thuộc loại hình nhưng chưa đủ điều kiện chấm): "
               f"{', '.join(u['symbol'] for u in watch)}")
     names = {u["symbol"]: u.get("short_name_vi") for u in universe}
     print(f"universe (theo loại hình, không theo danh sách cứng): {len(SY)} mã — {', '.join(SY)}")
@@ -184,6 +262,7 @@ def main() -> int:
     need = sorted({shift(q, i) for q in QUARTERS for i in range(VOLATILITY_LOOKBACK + 8)})
     inc = load(client, SY, need, "income", INCOME_KEYS)
     bal = load(client, SY, need, "balance", BALANCE_KEYS)
+    src = load_source_meta(client, SY, set(need))
 
     def assets(s, p):
         b = bal.get((s, p))
@@ -216,9 +295,18 @@ def main() -> int:
         for q in QUARTERS:
             i, b = inc.get((s, q)), bal.get((s, q))
             i4 = inc.get((s, shift(q, 4)))
+            m = src.get((s, q), {})
+            scope = SCOPE_VI.get(m.get("report_scope"),
+                                 m.get("report_scope") or NOT_AVAILABLE)
             r = {"symbol": s, "ten": names.get(s), "period": q,
                  "insurance_type": "Phi nhân thọ",
-                 "report_scope": "Hợp nhất", "investment_mapping_version": INV_MAP_VERSION}
+                 # NOT hard-coded: the filing header says 6 of 9 are riêng lẻ.
+                 "report_scope": scope,
+                 "audit_status": m.get("audit_status") or NOT_AVAILABLE,
+                 "source_publication_date": m.get("release_date") or NOT_AVAILABLE,
+                 "source_provider": m.get("source") or "vnstock",
+                 "investment_mapping_version": INV_MAP_VERSION,
+                 "formula_version": FORMULA_VERSION}
 
             # ---------- P1 (§4) ----------
             rev, cost, gp = ((i or {}).get(REV), (i or {}).get(COST), (i or {}).get(GROSS_PROFIT))
@@ -236,7 +324,7 @@ def main() -> int:
             traces.append(trace(s, q, "P1 Biên lợi nhuận bảo hiểm",
                                 "LN gộp BH quý đơn lẻ / DTT BH quý đơn lẻ × 100",
                                 bn(gp), f"{GROSS_PROFIT}", bn(rev), f"{REV}",
-                                "%", p1, r["p1_acceptance_status"],
+                                "%", p1, r["p1_acceptance_status"], m, "income",
                                 f"đối chiếu |LN gộp − (DTT + CP)| = {diff:.4f} tỷ" if diff is not None else None))
 
             # ---------- P2 (§5) ----------
@@ -249,7 +337,8 @@ def main() -> int:
             traces.append(trace(s, q, "P2 Thay đổi biên BH YoY",
                                 "P1 quý hiện tại − P1 cùng quý năm trước",
                                 p1, f"P1({q})", p1_prev, f"P1({shift(q,4)})",
-                                "điểm phần trăm", p2, r["p2_acceptance_status"]))
+                                "điểm phần trăm", p2, r["p2_acceptance_status"], m, "income",
+                                f"P1 cùng kỳ lấy từ {shift(q,4)}"))
 
             # ---------- P3 (§6) ----------
             four = [net_fin_q(s, shift(q, k)) for k in range(4)]
@@ -300,8 +389,8 @@ def main() -> int:
                                 "(đã là cơ sở 12 tháng, KHÔNG nhân 4)",
                                 bn(ttm), f"Σ 4 quý ({FIN_INCOME} + {FIN_EXPENSE})",
                                 bn(avg_ttm), f"({CASH} + {ST_INV} + {LT_INV}) đầu và cuối kỳ TTM / 2",
-                                "%", p3, r["p3_acceptance_status"],
-                                f"cờ biến động: {vol}"))
+                                "%", p3, r["p3_acceptance_status"], m, "income",
+                                f"cờ biến động: {vol}; mẫu số đọc từ CĐKT"))
 
             # ---------- P4 (§7) ----------
             gr, ra = bb.get(GROSS_RESERVE), bb.get(REINS_ASSETS)
@@ -320,7 +409,7 @@ def main() -> int:
                                 "Tài sản tài chính cuối quý / Dự phòng nghiệp vụ GỘP cuối quý",
                                 bn(a_end), f"{CASH} + {ST_INV} + {LT_INV}",
                                 bn(gr), f"{GROSS_RESERVE}", "lần",
-                                r["p4_gross_coverage_x"], r["p4_acceptance_status"],
+                                r["p4_gross_coverage_x"], r["p4_acceptance_status"], m, "balance",
                                 "P4 thuần chỉ tham khảo, không chấm điểm"))
             rows.append(r)
 
@@ -342,7 +431,15 @@ def main() -> int:
             "pb_last_period": series[-1][0] if series else None,
             "p5_pb_relative_x": None if (cur is None or not med) else cur / med,
             "p5_acceptance_status": "ACCEPTED" if n >= PB_MIN_OBS else "WATCHLIST_INSUFFICIENT_HISTORY",
-            "nguon": f"{PB} — chỉ tiêu định giá của nguồn chuẩn hóa",
+            "source_document_id": f"{s}|{series[-1][0] if series else '—'}|quarter|ratio",
+            "source_document_name": (f"Chỉ tiêu định giá cuối quý — {s}"
+                                     if series else NOT_AVAILABLE),
+            "source_publication_date": NOT_AVAILABLE,
+            "source_statement": STATEMENT_VI["ratio"],
+            "source_note_or_page": NOT_AVAILABLE,
+            "source_provider": "vnstock",
+            "mapping_version": INV_MAP_VERSION,
+            "formula_version": FORMULA_VERSION,
             "ghi_chu": ("không tự ghép giá hồi tố với số cổ phiếu công bố: sai lệch "
                         "lịch sử −37%..+26%"),
         })
@@ -419,6 +516,11 @@ def main() -> int:
         {"muc": "P4 cơ sở chấm", "gia_tri": "GROSS (thuần chỉ tham khảo)"},
         {"muc": "P5 cửa sổ", "gia_tri": f"tối đa {PB_MAX_OBS}, tối thiểu {PB_MIN_OBS} quý"},
         {"muc": "P5 ACCEPTED", "gia_tri": f"{sum(1 for r in p5 if r['p5_acceptance_status']=='ACCEPTED')}/{len(p5)}"},
+        {"muc": "IFA", "gia_tri": "belongs_to_nonlife_universe=True · "
+                                   "eligible_for_scoring=False · display_group=WATCHLIST"},
+        {"muc": "phạm vi báo cáo", "gia_tri": "đọc từ header BCTC, KHÔNG mặc định hợp nhất"},
+        {"muc": "truy vết nguồn", "gia_tri": "6 trường §6.2 trên mọi dòng TRUY_VET"},
+        {"muc": "formula_version", "gia_tri": FORMULA_VERSION},
         {"muc": "ngưỡng điểm", "gia_tri": "KHÔNG đặt — §15.17"},
         {"muc": "giao diện", "gia_tri": "KHÔNG lập trình — §15.18"},
     ]
