@@ -41,7 +41,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fa.metrics import _eps_yoy_adjusted
-from fa.scoring import _tier_lt
 from fa.share_events import Adjustment
 from ta.common import get_supabase_client, paged_select, safe_execute
 
@@ -72,8 +71,11 @@ def resolve_quarters(eps: dict[str, dict]) -> list[str]:
             out.append(q)
     return out
 
-#: §2 — 13 symbols; IFA is out of the working universe.
-EXCLUDED = {"IFA"}
+#: F7 — no permanent hard-coded list. A symbol is RANKED when the rules below
+#: are met and otherwise carries a status, so a newly listed insurer enters by
+#: itself and one that loses its data leaves the same way. IFA is excluded today
+#: by the history rule, not by name.
+WATCHLIST_STATUS = "Chưa đủ lịch sử chấm điểm"
 
 REV = "IS_TOTAL_NET_REVENUE_FROM_INSURANCE_BUSINESS"
 NP_PARENT = "IS_PROFIT_AFTER_TAX_FOR_SHAREHOLDERS_OF_PARENT_COMPANY"
@@ -155,25 +157,46 @@ def c2_flag(eps_now, eps_base, pct):
     return pct is not None and pct > 0
 
 
+#: EVERY criterion is a band list of (operator, floor, points), descending, and
+#: the OPERATOR is load-bearing. BA's locked tables read "nhỏ hơn hoặc bằng 0%"
+#: for C1 and C3, so exactly 0 scores ZERO, while "từ 8%" for C4 and "từ 0%" for
+#: C5 are inclusive. A `bounds` list compared with `<` cannot express both, and
+#: transcribing the tables into one silently moved three boundaries: 0% read 3
+#: points on C1 and C3, and C4's bottom band started at 5 instead of 8.
+#: Spelling out the comparison is what makes a table reviewable against the spec.
+def _band(value, bands):
+    if value is None:
+        return None
+    for op, floor, pts in bands:
+        if (value >= floor) if op == ">=" else (value > floor):
+            return pts
+    return 0
+
+
 THRESHOLDS = {
-    # The bands the first spec mandated: the Production table, verbatim.
+    # The bands the first spec mandated: the Production table, verbatim. Kept
+    # only so BA's threshold comparison stays reproducible.
     "production": {
         "status": "BAN_DAU_THEO_BANG_SAN_XUAT",
-        "c1": [20, 30, 60],   # production c1, EPS YoY
-        "c3": [10, 15, 20],   # production c4, revenue YoY
-        "c4": [15, 17, 20],   # production c7, ROE
-        "c5_bands": C5_BANDS_V1,
+        "c1": [(">=", 60, 10), (">=", 30, 7), (">=", 20, 3)],
+        "c3": [(">=", 20, 10), (">=", 15, 7), (">=", 10, 3)],
+        "c4": [(">=", 20, 10), (">=", 17, 7), (">=", 15, 3)],
+        "c5": C5_BANDS_V1,
     },
-    # A1 — LOCKED for operation as INS_TOAN_NGANH_50_V1 (§4.1). "Locked" means
-    # locked for use, NOT optimal: BA states the sample is 13 symbols over three
-    # quarters and re-evaluates after 4-6 quarters of operation. The `production`
-    # set is kept only so the comparison stays reproducible.
+    # A1 — LOCKED for operation as INS_TOAN_NGANH_50_V1. "Locked" means locked
+    # for use, NOT optimal: BA states the sample is 13 symbols over three
+    # quarters and re-evaluates after 4-6 quarters of operation.
+    # Transcribed from the final spec §4.3, §6.3, §7.3 and §8.4.
     "ba_v2": {
         "status": "DA_KHOA_V1_DE_VAN_HANH",
-        "c1": [0, 10, 20],
-        "c3": [0, 5, 10],
-        "c4": [5, 10, 15],
-        "c5_bands": C5_BANDS_V2,
+        # §4.3 — <=0 -> 0 · >0..<10 -> 3 · 10..<20 -> 7 · >=20 -> 10
+        "c1": [(">=", 20, 10), (">=", 10, 7), (">", 0, 3)],
+        # §6.3 — <=0 -> 0 · >0..<5 -> 3 · 5..<10 -> 7 · >=10 -> 10
+        "c3": [(">=", 10, 10), (">=", 5, 7), (">", 0, 3)],
+        # §7.3 — <8 -> 0 · 8..<10 -> 3 · 10..<15 -> 7 · >=15 -> 10
+        "c4": [(">=", 15, 10), (">=", 10, 7), (">=", 8, 3)],
+        # §8.4
+        "c5": C5_BANDS_V2,
     },
 }
 
@@ -213,12 +236,7 @@ def yoy_pct(now, before):
 def c5_points(delta_pct, bands):
     """A missing buffer returns None, never 0 — 0 is the WORST band, so returning
     it would assert a collapse that was never measured."""
-    if delta_pct is None:
-        return None
-    for op, floor, pts in bands:
-        if (delta_pct >= floor) if op == ">=" else (delta_pct > floor):
-            return pts
-    return 0
+    return _band(delta_pct, bands)
 
 
 def page(client, table, cols, narrow=None, order=("symbol",)):
@@ -241,14 +259,43 @@ def load_universe(client):
     reinsurance = {"PRE", "VNR"}
     out = []
     for r in sorted(rows, key=lambda x: x["symbol"]):
-        if r.get("com_type_code") != "BH" or r["symbol"] in EXCLUDED:
+        if r.get("com_type_code") != "BH":
             continue
-        s = r["symbol"]
-        r["insurance_type"] = ("Holding/Hỗn hợp" if s in holding
-                               else "Tái bảo hiểm" if s in reinsurance
+        sym = r["symbol"]
+        # §16.1 requires the TYPE to be determined before a symbol is ranked.
+        # BA assigned BVH/PVI to Holding and PRE/VNR to reinsurance by name; the
+        # ICB code alone puts PVI with the non-life names, which is the error BA
+        # corrected, so the override stays until the provider carries the split.
+        r["insurance_type"] = ("Holding/Hỗn hợp" if sym in holding
+                               else "Tái bảo hiểm" if sym in reinsurance
                                else "Phi nhân thọ")
         out.append(r)
     return out
+
+
+def eligibility(symbol, eps_by_symbol, insurance_type):
+    """F7 / §16 — is this symbol RANKED, or only watched?
+
+    Ranked needs all of: classified insurance (the caller has already filtered
+    on that), a determined type, and 7 contiguous quarters of standardised EPS
+    so C2 can be scored. Anything short returns a reason and the symbol goes on
+    the watch list — visible, so a reader can see the system knows about it,
+    but NOT scored 0 and NOT ranked. Scoring 0 would assert a measured worst
+    case; that is the distinction this whole rubric keeps.
+    """
+    if not insurance_type:
+        return False, "Chưa xác định được loại hình"
+    per = eps_by_symbol.get(symbol) or {}
+    if not per:
+        return False, "Không có dữ liệu EPS chuẩn hóa"
+    newest = max(per)
+    contiguous = 0
+    while shift(newest, contiguous) in per:
+        contiguous += 1
+    if contiguous < C2_QUARTERS_NEEDED:
+        return False, (f"Chỉ có {contiguous} quý EPS liên tiếp, cần "
+                       f"{C2_QUARTERS_NEEDED} quý để chấm C2")
+    return True, None
 
 
 def load_statements(client, symbols, periods, statement, keys):
@@ -333,8 +380,7 @@ def score_one(symbol, period, data, bands):
         c1_pts = override
         c1_rule = c1_display_state(eps_q, eps_q4) or "theo_bang_trang_thai"
     else:
-        c1_pts = SCALE_12_TO_10[_tier_lt(c1, {"bounds": bands["c1"],
-                                              "points": [0, 4, 8, 12]})]
+        c1_pts = _band(c1, bands["c1"])
         c1_rule = "theo_cong_thuc"
     row.update(eps_q=eps_q, eps_q_4=eps_q4, c1_eps_yoy_pct=c1, eps_basis=c1_basis,
                c1_points=c1_pts, c1_rule=c1_rule,
@@ -361,9 +407,7 @@ def score_one(symbol, period, data, bands):
     rev_q, rev_q4 = iv(period, REV), iv(q4, REV)
     c3 = yoy_pct(rev_q, rev_q4)
     row.update(ins_rev_net_q=rev_q, ins_rev_net_q_4=rev_q4, c3_rev_yoy_pct=c3,
-               c3_points=(SCALE_12_TO_10[_tier_lt(c3, {"bounds": bands["c3"],
-                                                       "points": [0, 4, 8, 12]})]
-                          if c3 is not None else None))
+               c3_points=_band(c3, bands["c3"]))
 
     # --- C4: ROE bốn quý, phạm vi cổ đông mẹ (§5.4) ---
     np4 = [iv(shift(period, i), NP_PARENT) for i in range(4)]
@@ -378,9 +422,7 @@ def score_one(symbol, period, data, bands):
             roe = np_ttm / avg_pe * 100
     row.update(np_parent_ttm=np_ttm, parent_equity_q=pe_q, parent_equity_q_4=pe_q4,
                avg_parent_equity=avg_pe, c4_roe_ttm_pct=roe,
-               c4_points=(SCALE_12_TO_10[_tier_lt(roe, {"bounds": bands["c4"],
-                                                        "points": [0, 4, 8, 12]})]
-                          if roe is not None else None))
+               c4_points=_band(roe, bands["c4"]))
 
     # --- C5: xu hướng đệm vốn (§5.5) — YoY trend ONLY; the 20-quarter median
     # position was withdrawn from this criterion in the implementation spec. ---
@@ -389,7 +431,7 @@ def score_one(symbol, period, data, bands):
     row.update(total_equity=bv(period, EQUITY), tech_reserve_gross=bv(period, RESERVE),
                capital_buffer_q=buf_q, capital_buffer_q_4=buf_q4,
                c5_buffer_trend_pct=d_buf,
-               c5_points=c5_points(d_buf, bands["c5_bands"]))
+               c5_points=_band(d_buf, bands["c5"]))
 
     # --- Cổng an toàn vốn (§6) ---
     eq_yoy = yoy_pct(bv(period, EQUITY), bv(q4, EQUITY))
@@ -466,7 +508,9 @@ def compare_threshold_sets(client, sets=("production", "ba_v2"), quarters=None):
     """
     from collections import Counter
 
-    runs = {name: build_rows(client, THRESHOLDS[name], name, quarters) for name in sets}
+    built = {name: build_rows(client, THRESHOLDS[name], name, quarters) for name in sets}
+    runs = {name: r for name, (r, _) in built.items()}
+    universe = built[sets[0]][1]
     quarters = sorted({r["period"] for r in next(iter(runs.values()))})
     latest = quarters[-1]
 
@@ -522,7 +566,7 @@ def compare_threshold_sets(client, sets=("production", "ba_v2"), quarters=None):
         for i in range(1, 6):
             row[f"C{i}"] = f"{ra[f'c{i}_points']} -> {rb[f'c{i}_points']}"
         moved.append(row)
-    return runs, dist, rank_rows, sorted(moved, key=lambda r: -abs(r["delta"]))
+    return runs, dist, rank_rows, sorted(moved, key=lambda r: -abs(r["delta"])), universe
 
 
 
@@ -685,10 +729,20 @@ def build_rows(client, bands, set_name, quarters=None):
     pair two different formula versions: there is only one version in the pass.
     """
     universe = load_universe(client)
-    symbols = [r["symbol"] for r in universe]
+    all_symbols = [r["symbol"] for r in universe]
     types = {r["symbol"]: r["insurance_type"] for r in universe}
     names = {r["symbol"]: r.get("short_name_vi") for r in universe}
-    eps, adj = load_eps(client, symbols)
+    eps, adj = load_eps(client, all_symbols)
+    # F7 — who is RANKED is decided here, by rule, and recorded on the universe
+    # row so the watch list is an output rather than a comment.
+    symbols = []
+    for r in universe:
+        ok, why = eligibility(r["symbol"], eps, r["insurance_type"])
+        r["ranked"] = ok
+        r["watchlist_status"] = None if ok else WATCHLIST_STATUS
+        r["watchlist_reason"] = why
+        if ok:
+            symbols.append(r["symbol"])
     # A2 — the range comes from the EPS history, so a rebase covers every quarter
     # the tab can show rather than whatever a constant last said.
     quarters = quarters or resolve_quarters(eps)
@@ -737,26 +791,34 @@ def build_rows(client, bands, set_name, quarters=None):
             r["one_off_profit_status"] = "NOT_EVALUATED"
             rows.append(r)
 
-    # §8: ΔFA from scores recomputed in THIS pass, never from a stored row.
+    # F5 / §12 — ΔFA, from scores recomputed in THIS pass, never read back from a
+    # stored row. Four cases, and the two involving a zero are the ones a naive
+    # implementation gets wrong: a previous score of 0 must not divide, and "no
+    # previous quarter" is a different fact from "previous quarter scored 0".
     by = {(r["symbol"], r["period"]): r["score_50"] for r in rows}
     for r in rows:
         prev = shift(r["period"], 1)
         before = by.get((r["symbol"], prev))
+        now = r["score_50"]
         r["prev_period"] = prev if before is not None else None
         r["prev_score_50"] = before
-        r["delta_fa_points"] = None if before is None else r["score_50"] - before
-        # §8: percent only when the previous score is above zero; a zero base
-        # renders as a phrase, never as 0%, 100% or N/A.
-        if before is None:
-            r["delta_fa_pct"], r["delta_fa_label"] = None, None
-        elif before > 0:
-            r["delta_fa_pct"] = (r["score_50"] / before - 1) * 100
-            r["delta_fa_label"] = None
-        else:
+        if before is None:                       # no comparable quarter at all
+            r["delta_fa_points"] = None
             r["delta_fa_pct"] = None
-            r["delta_fa_label"] = ("Mới xuất hiện cải thiện" if r["score_50"] > 0
-                                   else "Chưa có cải thiện")
-    return rows
+            r["delta_fa_label"] = "Chưa có quý so sánh"
+        elif before > 0:
+            r["delta_fa_points"] = now - before
+            r["delta_fa_pct"] = (now / before - 1) * 100
+            r["delta_fa_label"] = None
+        elif now > 0:                            # 0 -> positive: never divide
+            r["delta_fa_points"] = now
+            r["delta_fa_pct"] = None
+            r["delta_fa_label"] = f"Từ 0 lên {now} điểm"
+        else:                                    # 0 -> 0 is a real zero, not absence
+            r["delta_fa_points"] = 0
+            r["delta_fa_pct"] = 0.0
+            r["delta_fa_label"] = None
+    return rows, universe
 
 
 
@@ -773,9 +835,11 @@ UI_COLUMNS_12 = [
      "Ngày doanh nghiệp công bố BCTC quý này. Không tham gia điểm."),
     ("Mã và loại hình", "ma_va_loai_hinh",
      "Mã cổ phiếu và nhóm nghiệp vụ: Phi nhân thọ, Tái bảo hiểm hoặc Holding/Hỗn hợp."),
-    ("Tổng điểm Toàn ngành", "score_50",
-     "Tổng C1 đến C5, tối đa 50. Đây là điểm FA chung, KHÔNG phải điểm cuối cùng "
-     "của doanh nghiệp bảo hiểm — 50 điểm chuyên sâu theo loại hình chưa triển khai."),
+    # F4 / §13 — the name is dictated: "Điểm chung toàn ngành /50", NOT "Tổng
+    # điểm", because a column headed "Tổng điểm" reads as the final FA score.
+    ("Điểm chung toàn ngành /50", "score_50",
+     "Đây là điểm FA chung tối đa 50 điểm, chưa phải điểm FA cuối cùng. Điểm cuối "
+     "cùng chỉ được hình thành sau khi cộng 50 điểm chuyên sâu theo loại hình."),
     ("Delta FA quý", "delta_fa_hien_thi",
      "Thay đổi tổng điểm so với quý trước. Hai quý được tính lại trong cùng một "
      "lượt chạy, cùng phiên bản EPS và cùng bộ ngưỡng."),
@@ -875,6 +939,107 @@ def ui_preview_rows(rows, quarters):
     return out
 
 
+#: F2 — the columns `fa_insurance_scores` holds, in the migration's order. Listed
+#: rather than derived from the row dict so an added export field cannot silently
+#: change what is written to the database.
+PERSIST_COLUMNS = [
+    "symbol", "period", "score_version", "eps_norm_version", "threshold_set",
+    "release_date", "insurance_type",
+    "c1_points", "c2_points", "c3_points", "c4_points", "c5_points", "score_50",
+    "eps_q", "eps_q_4", "c1_eps_yoy_pct", "eps_basis", "c1_display_state",
+    "c2_growth_quarters", "c2_flags",
+    "ins_rev_net_q", "ins_rev_net_q_4", "c3_rev_yoy_pct",
+    "np_parent_ttm", "parent_equity_q", "parent_equity_q_4", "avg_parent_equity",
+    "c4_roe_ttm_pct",
+    "total_equity", "tech_reserve_gross", "capital_buffer_q", "capital_buffer_q_4",
+    "c5_buffer_trend_pct",
+    "prev_period", "prev_score_50", "delta_fa_points", "delta_fa_pct",
+    "delta_fa_label",
+    "capital_gate_status", "capital_gate_reason", "future_cap_100",
+    "applied_cap_current", "equity_yoy_pct", "growth_gap_pp", "two_quarter_flag",
+    "np_ttm_current", "historical_ttm_count", "median_np_ttm_history",
+    "profit_history_ratio_pct", "profit_history_status", "profit_history_note",
+    "low_eps_base_flag", "one_off_profit_status",
+    "missing_criteria", "notes",
+]
+
+#: F10 — where the pre-write snapshot goes. A rollback needs the rows that were
+#: there BEFORE, and on a first run that is legitimately an empty list: restoring
+#: "nothing" is what undoes a first load.
+PERSIST_SNAPSHOT_DIR = Path(__file__).resolve().parent / "outputs" / "insurance_persist"
+
+
+def persist_rows(client, rows, dry=True):
+    """F2/F3 — write the scored rows to `fa_insurance_scores`.
+
+    Snapshots first (F10), then writes. The version triple is part of the key, so
+    a rescore under a NEW version inserts beside the old rows instead of
+    overwriting them — which is what makes §19.5's "no quarter mixes versions"
+    a query rather than a promise.
+    """
+    payload = []
+    for r in rows:
+        row = {k: r.get(k) for k in PERSIST_COLUMNS}
+        row["score_version"] = SCORE_VERSION
+        row["eps_norm_version"] = EPS_NORM_VERSION
+        # A5 again at the boundary: never write a total that disagrees with its
+        # parts, whatever happened upstream.
+        parts = sum(r.get(f"c{i}_points") or 0 for i in range(1, 6))
+        if row["score_50"] != parts:
+            raise RuntimeError(f"{r['symbol']} {r['period']}: score_50 "
+                               f"{row['score_50']} != ΣC {parts}")
+        payload.append(row)
+
+    PERSIST_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    try:
+        existing = safe_execute(
+            client.table("fa_insurance_scores").select("*")
+            .eq("score_version", SCORE_VERSION), label="insurance snapshot").data or []
+    except Exception as exc:  # noqa: BLE001
+        # PGRST205, not Postgres's 42P01: PostgREST answers from its schema cache
+        # first, so a table that has never existed reports as "not found in the
+        # schema cache". A dry run stays useful before the migration is applied;
+        # a real write must not.
+        if "PGRST205" not in str(exc) and "schema cache" not in str(exc):
+            raise
+        print("fa_insurance_scores does not exist yet — apply supabase/071 first.")
+        if not dry:
+            raise
+        print(f"F2 dry run: payload of {len(payload)} rows validated, "
+              f"{len(PERSIST_COLUMNS)} columns each; nothing written")
+        return 0
+    snap = PERSIST_SNAPSHOT_DIR / f"before_{stamp}.json"
+    snap.write_text(json.dumps(existing, default=str, indent=1))
+    print(f"F10 rollback snapshot: {len(existing)} existing rows -> {snap}")
+
+    if dry:
+        print(f"F2 dry run: would write {len(payload)} rows to fa_insurance_scores")
+        return 0
+    for i in range(0, len(payload), 200):
+        safe_execute(
+            client.table("fa_insurance_scores").upsert(
+                payload[i:i + 200],
+                on_conflict="symbol,period,score_version,eps_norm_version,threshold_set"),
+            label="fa_insurance_scores upsert")
+    print(f"F2 wrote {len(payload)} rows to fa_insurance_scores")
+
+    # F9 — read back and compare, rather than trusting the write.
+    back = safe_execute(
+        client.table("fa_insurance_scores")
+        .select("symbol,period,score_50,c1_points,c2_points,c3_points,c4_points,c5_points")
+        .eq("score_version", SCORE_VERSION), label="insurance readback").data or []
+    want = {(r["symbol"], r["period"]): r["score_50"] for r in payload}
+    got = {(r["symbol"], r["period"]): r["score_50"] for r in back}
+    if want != got:
+        missing = sorted(set(want) - set(got))
+        differ = sorted(k for k in set(want) & set(got) if want[k] != got[k])
+        raise RuntimeError(f"read-back mismatch: {len(missing)} missing, "
+                           f"{len(differ)} differing — {(missing + differ)[:5]}")
+    print(f"F9 read-back: {len(got)} rows match the export exactly")
+    return len(payload)
+
+
 def acceptance_stats(rows, quarters):
     """A10 — every figure a report would quote, computed FROM the dataset.
 
@@ -929,6 +1094,10 @@ def main() -> int:
     ap.add_argument("--thresholds", default="ba_v2", choices=sorted(THRESHOLDS))
     ap.add_argument("--compare", action="store_true",
                     help="BA §4: run both band sets and emit the comparison sheets")
+    ap.add_argument("--persist", action="store_true",
+                    help="F2: write the scored rows to fa_insurance_scores")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="with --persist: snapshot and report, write nothing")
     ap.add_argument("--acceptance", action="store_true",
                     help="A12: one acceptance dataset, with A10's statistics beside it")
     args = ap.parse_args()
@@ -938,7 +1107,7 @@ def main() -> int:
 
     if args.compare:
         sets = ("production", "ba_v2")
-        runs, dist, rank_rows, moved = compare_threshold_sets(client, sets)
+        runs, dist, rank_rows, moved, universe = compare_threshold_sets(client, sets)
         quarters = sorted({r["period"] for r in runs[sets[0]]})
         for name in sets:
             tot = [r["score_50"] for r in runs[name] if r["period"] == quarters[-1]]
@@ -956,7 +1125,7 @@ def main() -> int:
         }
     else:
         bands = THRESHOLDS[args.thresholds]
-        rows = build_rows(client, bands, args.thresholds)
+        rows, universe = build_rows(client, bands, args.thresholds)
         quarters = sorted({r["period"] for r in rows})
         print(f"threshold set: {args.thresholds} ({bands['status']})")
         sheets = {"bang_nghiem_thu" if args.acceptance else "bang_kiem_tra":
@@ -1022,7 +1191,15 @@ def main() -> int:
     write_xlsx(out, {"summary": summary, **sheets,
                      "cong_an_toan_von": gate_table,
                      "ngoai_le": exceptions or [{"note": "không có ngoại lệ"}],
-                     "universe": load_universe(client),
+                     "universe": universe,
+                     # F7 — symbols the system recognises but does not rank.
+                     "danh_sach_theo_doi": [
+                         {"symbol": u["symbol"], "ten": u.get("short_name_vi"),
+                          "loai_hinh": u["insurance_type"], "san": u.get("exchange"),
+                          "trang_thai": u["watchlist_status"],
+                          "ly_do": u["watchlist_reason"]}
+                         for u in universe if not u["ranked"]]
+                     or [{"note": "không có mã nào chờ đủ lịch sử"}],
                      "meta": [{"key": "generated_at",
                                "value": dt.datetime.now().isoformat(timespec="seconds")},
                               {"key": "spec", "value": "BA phản hồi IT tab Toàn ngành bảo hiểm"},
@@ -1032,6 +1209,11 @@ def main() -> int:
                               {"key": "eps_normalization_version", "value": EPS_NORM_VERSION},
                               {"key": "writes_to_db", "value": "none"}]})
     print(f"Wrote {out} ({out.stat().st_size / 1024:.0f} KB)")
+
+    if args.persist:
+        if args.compare:
+            raise SystemExit("--persist needs one locked band set, not --compare")
+        persist_rows(client, rows, dry=args.dry_run)
     return 0
 
 

@@ -25,9 +25,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from export_insurance_toan_nganh import (  # noqa: E402
     C1_TOP, C1_ZERO, C2_POINTS, C5_BANDS_V1, C5_BANDS_V2, GROWTH_GAP_PP,
     LOW_BASE_EPS_VND, PH_MIN_HISTORICAL_TTM, PH_MIN_QUARTERS,
-    PH_WINDOW_QUARTERS, PROFIT_HISTORY_VERSION, SCALE_12_TO_10, THRESHOLDS,
-    UI_COLUMNS_12, acceptance_stats, c1_display_state, c1_sign_override,
-    c2_flag, c5_points, profit_history_context, resolve_quarters, shift,
+    PH_WINDOW_QUARTERS, PROFIT_HISTORY_VERSION, THRESHOLDS,
+    C2_QUARTERS_NEEDED, PERSIST_COLUMNS, UI_COLUMNS_12, WATCHLIST_STATUS,
+    _band, acceptance_stats, c1_display_state, c1_sign_override, c2_flag,
+    c5_points, eligibility, profit_history_context, resolve_quarters, shift,
     yoy_pct,
 )
 
@@ -132,13 +133,11 @@ def test_gate_first_condition_is_determined_by_c5():
 
 # --- the scales -------------------------------------------------------------
 
-def test_c2_table_is_the_integer_rendering_of_the_production_scale():
-    """BA's §5.2 table is 0/3/7/10, which is 0/4/8/12 rescaled to 10 and
-    rounded. That is the argument for using the same integers everywhere else
-    instead of 3,33 and 6,67."""
+def test_c2_uses_the_locked_four_point_scale():
+    """0/3/7/10 across all five criteria, per BA's final spec §5.3."""
     assert C2_POINTS == {0: 0, 1: 3, 2: 7, 3: 10}
-    assert SCALE_12_TO_10 == {0: 0, 4: 3, 8: 7, 12: 10}
-    assert [SCALE_12_TO_10[p] for p in (0, 4, 8, 12)] == [C2_POINTS[k] for k in (0, 1, 2, 3)]
+    assert sorted({p for key in ("c1", "c3", "c4", "c5")
+                   for _, _, p in THRESHOLDS["ba_v2"][key]} | {0}) == [0, 3, 7, 10]
 
 
 def test_yoy_divides_by_the_absolute_base():
@@ -239,22 +238,46 @@ def test_exactly_zero_buffer_change_scores_seven():
     assert c5_points(0.0, C5_BANDS_V2) == 7
 
 
-def test_reply_bands_are_total_over_the_observed_range():
+def test_bands_are_descending_and_total():
+    """Every band list is tried top-down, so the floors must descend or a lower
+    band would shadow a higher one. And every value must land somewhere."""
     for name, spec in THRESHOLDS.items():
-        for key in ("c1", "c3", "c4"):
-            bounds = spec[key]
-            assert bounds == sorted(bounds), f"{name}.{key} không tăng dần"
-            assert len(bounds) == 3
+        for key in ("c1", "c3", "c4", "c5"):
+            floors = [f for _, f, _ in spec[key]]
+            assert floors == sorted(floors, reverse=True), f"{name}.{key}"
+            for v in (-1e6, -10, -0.01, 0, 0.01, 7, 10, 1e6):
+                assert _band(float(v), spec[key]) is not None
+            assert _band(None, spec[key]) is None
 
 
-def test_reply_thresholds_match_BAs_table():
-    """§3's numbers, transcribed once and pinned so a later edit is visible."""
-    assert THRESHOLDS["ba_v2"]["c1"] == [0, 10, 20]
-    assert THRESHOLDS["ba_v2"]["c3"] == [0, 5, 10]
-    assert THRESHOLDS["ba_v2"]["c4"] == [5, 10, 15]
-    assert THRESHOLDS["production"]["c1"] == [20, 30, 60]
-    assert THRESHOLDS["production"]["c3"] == [10, 15, 20]
-    assert THRESHOLDS["production"]["c4"] == [15, 17, 20]
+def test_the_locked_set_is_entirely_on_the_four_point_scale():
+    """0/3/7/10 across all five criteria of the LOCKED set. The `production`
+    set deliberately keeps the first spec's seven-band C5 (10/8/7/5/3/1/0),
+    because it is the record of the comparison BA reviewed and signed off — its
+    C5 averages 5,38 there against 4,77 under the locked table."""
+    locked = THRESHOLDS["ba_v2"]
+    assert sorted({p for key in ("c1", "c3", "c4", "c5")
+                   for _, _, p in locked[key]} | {0}) == [0, 3, 7, 10]
+    assert {p for _, _, p in THRESHOLDS["production"]["c5"]} == {10, 8, 7, 5, 3, 1}
+
+
+def test_locked_bands_match_the_final_spec_boundary_by_boundary():
+    """§4.3, §6.3, §7.3, §8.4 — every boundary the tables name. Three of these
+    were WRONG when the bands were a `bounds` list compared with `<`: 0% scored
+    3 on C1 and C3 where the spec says "nhỏ hơn hoặc bằng 0% -> 0", and C4's
+    bottom band started at 5 instead of 8."""
+    b = THRESHOLDS["ba_v2"]
+    for v, want in ((-5, 0), (0, 0), (0.01, 3), (9.99, 3), (10, 7), (19.99, 7),
+                    (20, 10), (50, 10)):
+        assert _band(float(v), b["c1"]) == want, f"C1 {v}%"
+    for v, want in ((-5, 0), (0, 0), (0.01, 3), (4.99, 3), (5, 7), (9.99, 7),
+                    (10, 10)):
+        assert _band(float(v), b["c3"]) == want, f"C3 {v}%"
+    for v, want in ((4.99, 0), (5, 0), (7.99, 0), (8, 3), (9.99, 3), (10, 7),
+                    (14.99, 7), (15, 10)):
+        assert _band(float(v), b["c4"]) == want, f"C4 {v}%"
+    for v, want in ((-10, 0), (-9.99, 3), (-0.01, 3), (0, 7), (9.99, 7), (10, 10)):
+        assert _band(float(v), b["c5"]) == want, f"C5 {v}%"
 
 
 def test_every_set_carries_its_status_onto_the_row():
@@ -275,10 +298,7 @@ def _c1(now, base):
     ov = c1_sign_override(now, base)
     if ov is not None:
         return ov
-    pct = yoy_pct(now, base)
-    bounds = THRESHOLDS["ba_v2"]["c1"]
-    from fa.scoring import _tier_lt
-    return SCALE_12_TO_10[_tier_lt(pct, {"bounds": bounds, "points": [0, 4, 8, 12]})]
+    return _band(yoy_pct(now, base), THRESHOLDS["ba_v2"]["c1"])
 
 
 def test_T01_positive_to_positive_rising():
@@ -577,7 +597,7 @@ def test_A11_the_layout_is_twelve_columns_in_BAs_order():
     assert len(UI_COLUMNS_12) == 12
     names = [c[0] for c in UI_COLUMNS_12]
     assert names[0] == "Ngày công bố BCTC"
-    assert names[2] == "Tổng điểm Toàn ngành"
+    assert names[2] == "Điểm chung toàn ngành /50"   # F4 renamed it
     assert names[-1] == "Cảnh báo dữ liệu"
     assert not any("30" in n or "20" in n for n in names), "cột của bố cục cũ còn sót"
     # every column carries a tooltip with a real explanation
@@ -585,11 +605,119 @@ def test_A11_the_layout_is_twelve_columns_in_BAs_order():
 
 
 def test_A11_the_total_column_never_claims_to_be_a_final_score():
-    """§3 — "Tổng điểm 50 là điểm FA chung, không phải điểm cuối cùng". The
-    tooltip has to say so, because a column headed "Tổng điểm" invites the
-    opposite reading."""
+    """§3 and §20 — 50 points is the common layer, not a final FA score. The
+    NAME had to change too, which F4 covers; this pins the tooltip."""
     tip = dict((c[1], c[2]) for c in UI_COLUMNS_12)["score_50"]
-    assert "không phải điểm cuối cùng" in tip.lower() or "KHÔNG phải điểm cuối cùng" in tip
+    assert "chưa phải điểm FA cuối cùng" in tip
+
+
+# --- BA's final checklist F1-F10 --------------------------------------------
+
+def test_F1_F7_eligibility_is_a_rule_not_a_hard_coded_list():
+    """§16 — "không duy trì danh sách mã cố định vĩnh viễn". A newly listed
+    insurer must enter by itself, and one without history must leave the same
+    way. IFA is on the watch list today because it has no EPS, not by name."""
+    nine = {f"{y}-Q{q}": {"eps": 1.0} for y, q in
+            [(2024, 2), (2024, 3), (2024, 4), (2025, 1), (2025, 2), (2025, 3),
+             (2025, 4), (2026, 1), (2026, 2)]}
+    ok, why = eligibility("NEW", {"NEW": nine}, "Phi nhân thọ")
+    assert ok and why is None
+    # exactly seven contiguous quarters is enough — that is C2's requirement
+    seven = {p: {"eps": 1.0} for p in list(nine)[-7:]}
+    assert eligibility("NEW", {"NEW": seven}, "Phi nhân thọ")[0] is True
+    # six is not
+    six = {p: {"eps": 1.0} for p in list(nine)[-6:]}
+    ok, why = eligibility("NEW", {"NEW": six}, "Phi nhân thọ")
+    assert ok is False and f"{C2_QUARTERS_NEEDED} quý" in why
+    # no EPS at all — IFA's case
+    ok, why = eligibility("IFA", {}, "Phi nhân thọ")
+    assert ok is False and "EPS" in why
+    # §16.1 also requires the TYPE to be determined
+    assert eligibility("NEW", {"NEW": nine}, None)[0] is False
+
+
+def test_F7_a_hole_breaks_contiguity_from_the_newest_quarter():
+    """Seven quarters with a gap cannot score C2 — the comparison quarters must
+    exist. Counting backwards from the newest is what catches it."""
+    holed = {p: {"eps": 1.0} for p in
+             ("2024-Q2", "2024-Q3", "2024-Q4", "2025-Q1", "2025-Q3", "2025-Q4",
+              "2026-Q1", "2026-Q2")}      # 2025-Q2 missing
+    ok, why = eligibility("X", {"X": holed}, "Phi nhân thọ")
+    assert ok is False and "4 quý EPS liên tiếp" in why
+
+
+def test_F7_the_watchlist_status_is_not_a_score():
+    """§16.2 — "Không cho 0 điểm". The status is a sentence, never a number."""
+    assert WATCHLIST_STATUS == "Chưa đủ lịch sử chấm điểm"
+    assert not isinstance(WATCHLIST_STATUS, (int, float))
+
+
+def test_F4_the_score_column_is_not_called_total():
+    """§13 — the name is "Điểm chung toàn ngành /50". A column headed "Tổng
+    điểm" reads as the final FA score, which §20 forbids."""
+    name = dict((c[1], c[0]) for c in UI_COLUMNS_12)["score_50"]
+    assert name == "Điểm chung toàn ngành /50"
+    assert "Tổng điểm" not in name
+    tip = dict((c[1], c[2]) for c in UI_COLUMNS_12)["score_50"]
+    assert "chưa phải điểm FA cuối cùng" in tip
+    assert "50 điểm chuyên sâu" in tip
+
+
+def delta(prev, now):
+    """§12.2's four cases, as the exporter computes them."""
+    if prev is None:
+        return None, None, "Chưa có quý so sánh"
+    if prev > 0:
+        return now - prev, (now / prev - 1) * 100, None
+    if now > 0:
+        return now, None, f"Từ 0 lên {now} điểm"
+    return 0, 0.0, None
+
+
+def test_F5_delta_fa_never_divides_by_zero():
+    """§12.2 — four cases. "No previous quarter" and "previous quarter was 0"
+    are DIFFERENT facts and must not share a rendering."""
+    pts, pct, label = delta(20, 27)
+    assert (pts, label) == (7, None) and abs(pct - 35.0) < 1e-9
+    assert delta(0, 12) == (12, None, "Từ 0 lên 12 điểm")
+    assert delta(0, 0) == (0, 0.0, None)
+    assert delta(None, 27) == (None, None, "Chưa có quý so sánh")
+    # never infinity, never a fabricated percentage off a zero base
+    for prev, now in ((0, 1), (0, 50), (0, 0)):
+        pts, pct, _ = delta(prev, now)
+        assert pct in (None, 0.0)
+        assert pts is not None
+
+
+def test_F5_a_fall_to_zero_still_has_a_percentage():
+    """prev > 0 is the normal branch whatever the current score is, including 0
+    — that is a real -100%, not a divide-by-zero."""
+    pts, pct, label = delta(20, 0)
+    assert (pts, label) == (-20, None) and abs(pct - (-100.0)) < 1e-9
+
+
+def test_F2_the_persist_columns_cover_every_criterion_and_its_inputs():
+    """§14.2 — the stored row must carry the numerators and denominators, not
+    only the points, because a formula in a script does not make a stored score
+    traceable once the source moves."""
+    need = {"symbol", "period", "score_version", "eps_norm_version",
+            "threshold_set", "score_50", "insurance_type",
+            "eps_q", "eps_q_4", "ins_rev_net_q", "ins_rev_net_q_4",
+            "np_parent_ttm", "avg_parent_equity", "total_equity",
+            "tech_reserve_gross", "capital_buffer_q", "capital_buffer_q_4",
+            "delta_fa_points", "delta_fa_pct", "applied_cap_current",
+            "future_cap_100", "one_off_profit_status", "profit_history_status"}
+    missing = need - set(PERSIST_COLUMNS)
+    assert not missing, f"thiếu trường: {sorted(missing)}"
+    for i in range(1, 6):
+        assert f"c{i}_points" in PERSIST_COLUMNS
+
+
+def test_F3_the_version_triple_is_part_of_the_key():
+    """§14.1 — keyed on (symbol, period, score_version, eps_norm_version,
+    threshold_set) so a rescore under a new version cannot overwrite history."""
+    for k in ("score_version", "eps_norm_version", "threshold_set"):
+        assert k in PERSIST_COLUMNS
 
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
