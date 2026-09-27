@@ -136,11 +136,37 @@ def test_patch_is_idempotent():
 
 
 def test_requirements_pins_vnstock_exactly():
-    """The pin IS the fix; the patch is only insurance."""
+    """The pin decides WHICH version. It is still the fix for 2026-08-18.
+
+    Moved 4.0.4 -> 4.0.9 on 2026-09-27, because the vendor index does not carry
+    4.0.4 and 4.0.9 initialises `hosting_service` before the if/elif chain —
+    the real `else` this pin was waiting for.
+    """
     req = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text()
     line = [x.strip() for x in req.splitlines()
             if x.strip().startswith("vnstock") and not x.strip().startswith("#")]
-    assert line == ["vnstock==4.0.4"], f"vnstock must stay pinned, found {line}"
+    assert line == ["vnstock==4.0.9"], f"vnstock must stay pinned, found {line}"
+    vnai = [x.strip() for x in req.splitlines()
+            if x.strip().startswith("vnai") and not x.strip().startswith("#")]
+    # Pinned explicitly rather than resolved as a vnstock dependency, so the
+    # version that was tested is the version that installs.
+    assert vnai == ["vnai==2.6.2"], f"vnai must stay pinned, found {vnai}"
+
+
+def test_requirements_does_not_depend_on_pypi_for_vnstock():
+    """The index decides WHETHER there is a version at all — the 2026-09-25 fix.
+
+    PyPI quarantined vnstock and vnai, listing zero files, so a pin alone could
+    not install anything. This asserts the vendor index is still configured, and
+    that it is an EXTRA index: switching to --index-url would send pandas,
+    supabase and everything else there too.
+    """
+    req = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text()
+    lines = [x.strip() for x in req.splitlines() if not x.strip().startswith("#")]
+    assert "--extra-index-url https://vnstocks.com/api/simple" in lines, (
+        "the vendor index must stay configured; PyPI alone cannot serve vnstock")
+    assert not any(x.startswith("--index-url") for x in lines), (
+        "--index-url would route EVERY package to the vendor index")
 
 
 if __name__ == "__main__":

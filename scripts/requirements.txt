@@ -1,64 +1,72 @@
 supabase>=2.0.0
 python-dotenv>=1.0.0
-# PINNED, do not loosen to >=. vnstock 4.0.5 and 4.0.6 ship a
-# get_hosting_service() (vnstock/core/utils/env.py) whose if/elif chain has no
-# else: every branch tests a cloud-host env var, and on an ordinary machine none
-# match, so `return hosting_service` reads a name that was never bound.
-#
-# 4.0.4 survives it only by accident — its last branch is
-# `elif ".hf.space" in os.environ["SPACE_HOST"]`, and the KeyError that raises on
-# any non-Hugging-Face machine is caught by the bare `except`, which is the ONLY
-# thing that assigns the variable. 4.0.5 "fixed" that KeyError by guarding the
-# lookup, removing the accidental assignment and making the UnboundLocalError
-# unconditional. 4.0.6 then called it from send_request() on the VCI path, so
-# EVERY request raises.
-#
-# That is what happened on 2026-08-18: this line said `>=3.4.0`, CI installs
-# fresh on every run, it picked up 4.0.6, and the whole pipeline collected zero
-# bars. ta/common.py patches the function at import time as a second line of
-# defence; both can go once upstream ships a release with a real else branch.
 # ---------------------------------------------------------------------------
-# vnstock AND vnai CANNOT BE INSTALLED FROM PyPI (2026-09-25).
+# HISTORY, because this file has now been the single point of failure twice.
 #
-# PyPI QUARANTINED both projects. The project pages still answer 200, but the
-# simple index carries `pypi:project-status: quarantined` and lists ZERO files,
-# so `pip install vnstock==4.0.4` fails for everyone with
-#   ERROR: Could not find a version that satisfies the requirement vnstock==4.0.4
-#          (from versions: none)
-# "from versions: none" is the tell: not a version that was yanked, an index
-# with nothing in it at all.
+#   2026-08-18  the line read `vnstock>=3.4.0`, CI resolved to 4.0.6, and every
+#               request raised UnboundLocalError. Fixed by pinning exactly.
+#   2026-09-25  PyPI quarantined the package and the pin could not help, because
+#               the problem was that NOTHING was downloadable. Fixed by changing
+#               where the file comes from.
 #
-# All seven daily workflows install from this file, so all seven died at
-# `Install dependencies` in 10-20 seconds and the pipeline collected nothing for
-# the 2026-09-25 session. A PIN DOES NOT PROTECT AGAINST WITHDRAWAL — the pin is
-# what 2026-08-18 taught and it is still right, it just answers a different
-# question. Neither does the GitHub pip cache: pip resolves against the index
-# BEFORE consulting the cache, so resolution fails first.
+# Different failures, different fixes, and neither replaces the other: the pin
+# still decides WHICH version, the index decides WHETHER there is one.
+# ---------------------------------------------------------------------------
+# vnstock AND vnai COME FROM THE VENDOR'S OWN INDEX, NOT FROM PyPI (2026-09-27).
 #
-# vnai is the harder half: a hard dependency of vnstock, quarantined too, and
-# with no public source repository (github.com/thinh-vu/vnai is 404).
+# PyPI quarantined both projects on 2026-09-25: the simple index carries
+# `pypi:project-status: quarantined` and lists ZERO files, so every `pip install`
+# failed with "from versions: none" — an index with nothing in it, not a version
+# that was yanked. All seven daily workflows install from this file, so all seven
+# died at `Install dependencies` in 10-20 seconds and the 2026-09-25 session was
+# never collected.
 #
-# THE WHEELS ARE NOT IN THIS REPOSITORY AND MUST NOT BE. vnstock is licensed
-# "Personal, research, non-commercial" and vnai is marked proprietary, while this
-# repo is public — committing either would redistribute restricted software to
-# everyone who clones it. vendor/wheels/README.md has the licence terms and the
-# three legitimate ways to supply them (a licensed channel from the vendor, a
-# private artifact store the workflow fetches with a secret, or a self-hosted
-# runner). Until one is in place the daily workflows cannot install and the
-# pipeline must be run by hand from a machine that already has the packages.
+# Vnstock's response (their technical notice, 2026-09-27) is to publish from their
+# own distribution site so the project no longer depends on PyPI at all. They
+# expect the PyPI review to take about a week; this does not wait for it, and
+# does not break if it succeeds — pip merges both indexes, and the exact pins
+# below decide what is actually installed.
 #
-# Two --find-links so a populated vendor/wheels resolves whether pip runs from
-# the repo root (as every workflow does) or from scripts/ (as a developer does).
-# pip warns and continues when the directory is absent or empty, so this file is
-# correct either way.
+# --extra-index-url, not --index-url: pandas, supabase and everything else must
+# keep coming from PyPI. The vendor index serves only vnstock and vnai.
+--extra-index-url https://vnstocks.com/api/simple
+
+# A LOCAL FALLBACK, and the reason it is worth keeping after the index exists:
+# this file now has TWO external dependencies for the same package, and the whole
+# incident was one of them going away. If vnstocks.com is unreachable, dropping
+# the matching wheels into vendor/wheels installs offline. The directory is
+# gitignored — vnstock is licensed "Personal, research, non-commercial" and vnai
+# is proprietary, while this repo is PUBLIC, so the files must never be committed
+# here. vendor/wheels/README.md has the detail. pip warns and continues when the
+# directory is absent, so this line is correct either way.
 --find-links vendor/wheels
 --find-links ../vendor/wheels
 
-# PINNED, do not loosen to >=. See the 4.0.5/4.0.6 UnboundLocalError note above.
-vnstock==4.0.4
-# Pinned explicitly even though vnstock requires it, so the vendored version is
-# recorded rather than being whatever the wheel happened to resolve to.
-vnai==2.4.9
+# PINNED, and the pin moved for the first time since 2026-08-18.
+#
+# 4.0.4 was pinned because 4.0.5/4.0.6 shipped a get_hosting_service() whose
+# if/elif chain had no else, so `return hosting_service` read a name that was
+# never bound and EVERY VCI request raised. The vendor index does not carry
+# 4.0.4 (only 4.0.8 and 4.0.9), so this upgrade was forced — and it was checked
+# against that exact bug before being accepted, not assumed:
+#
+#   4.0.9 initialises `hosting_service = "Local or Unknown"` BEFORE the chain and
+#   wraps the whole thing in try/except. That is the real else this pin was
+#   waiting for.
+#
+# Verified before changing it, in a clean venv built from the vendor index:
+# all 6 tests in tests/test_vnstock_hosting_patch.py pass; the VN-Index series,
+# price_board and history() return values IDENTICAL to 4.0.4 (FPT 64,700 and
+# VNINDEX 1,785.11 on 2026-09-25, with the index price-scale rule honoured).
+#
+# ta.common.patch_vnstock_hosting_service() is KEPT even though 4.0.9 no longer
+# needs it. It is idempotent, verified harmless against 4.0.9, and it is what
+# protects a machine that still has an older build installed. Removing it is a
+# separate change that should not ride along with an incident fix.
+vnstock==4.0.9
+# Pinned explicitly rather than left to vnstock's dependency resolution, so the
+# version that was tested is the version that installs.
+vnai==2.6.2
 anthropic>=0.40.0
 pandas>=2.0.0
 numpy>=1.24.0

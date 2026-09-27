@@ -1,76 +1,59 @@
-# vendor/wheels — vnstock and vnai, supplied out of band
+# vendor/wheels — an offline fallback, not the primary route
 
-**This directory is intentionally empty in git.** The two wheels it is meant to
-hold are proprietary and this repository is public.
+**Primary route: the vendor's own package index.** `scripts/requirements.txt`
+carries `--extra-index-url https://vnstocks.com/api/simple`, which is how
+`vnstock` and `vnai` are installed. This directory is a second line of defence
+for when that host is unreachable, and it is **empty in git on purpose**.
 
-## What happened (2026-09-25)
+## Background (2026-09-25 → 2026-09-27)
 
-PyPI **quarantined** both `vnstock` and `vnai`. The project pages still answer
-`200`, but the simple index carries `pypi:project-status: quarantined` and lists
-**zero files**, so for everyone, everywhere:
+PyPI **quarantined** both `vnstock` and `vnai`: the simple index carried
+`pypi:project-status: quarantined` and listed **zero files**, so every install
+failed with
 
 ```
 ERROR: Could not find a version that satisfies the requirement vnstock==4.0.4
        (from versions: none)
-ERROR: No matching distribution found for vnstock==4.0.4
 ```
 
-`from versions: none` is the tell — not a version that was yanked, an index with
-nothing in it at all.
+`from versions: none` is the tell — an index with nothing in it, not a version
+that was yanked. All seven daily workflows install from `requirements.txt`, so
+all seven died at `Install dependencies` in 10-20 seconds and the 2026-09-25
+session was never collected.
 
-All seven daily workflows install from `scripts/requirements.txt`, so all seven
-died at `Install dependencies` in 10-20 seconds and the pipeline collected
-nothing for the 2026-09-25 session. **A version pin does not protect against a
-package being withdrawn**, and neither does the GitHub pip cache: pip resolves
-against the index *before* it consults the cache, so resolution fails first.
+Vnstock's answer (technical notice, 2026-09-27) was to publish from their own
+distribution site so the project no longer depends on PyPI. They expect the PyPI
+review to take about a week; our configuration does not wait for it and does not
+break if it succeeds, because pip merges both indexes and the exact pins decide
+what installs.
 
-`vnai` is the harder half. It is a hard dependency of `vnstock`, it is
-quarantined too, and it has **no public source repository** —
-`github.com/thinh-vu/vnai` is `404`. `github.com/thinh-vu/vnstock` still exists;
-its sibling packages (`vnstock_data`, `vnstock_ta`, `vnstock_ezchart`) are still
-active on PyPI.
+## Why a local fallback is still worth having
 
-## Why the wheels are not committed here
+The fix replaced one external dependency with another. If `vnstocks.com` is
+unreachable, a populated `vendor/wheels` installs offline — pip finds the files
+locally and never reaches the network for them.
+
+Keep the versions here **matching the pins** in `requirements.txt`; wheels for
+some other version are never selected and only look like cover that is not there.
+To refresh after a pin change:
+
+```bash
+pip download --no-deps -d vendor/wheels \
+  --extra-index-url https://vnstocks.com/api/simple \
+  "vnstock==4.0.9" "vnai==2.6.2"
+```
+
+## Why the files are gitignored
 
 | Package | License |
 |---|---|
 | `vnstock` | `Custom: Personal, research, non-commercial; contact support@vnstocks.com for other use` |
 | `vnai` | `proprietary` |
 
-This repo is public. Committing either wheel would redistribute restricted
-software to anyone who clones it — and the projects being under an
-administrative hold makes that worse, not better. The licence is also why the
-answer is not "mirror it somewhere convenient": a mirror is still distribution.
+This repository is **public**. Committing either wheel would redistribute
+restricted software to everyone who clones it. Installing from the vendor's own
+index does not — that is the vendor distributing their own work, which is the
+whole reason it is the primary route.
 
-## How to supply them
-
-`scripts/requirements.txt` already carries `--find-links vendor/wheels` (and
-`../vendor/wheels`, so the path resolves whether pip runs from the repo root as
-the workflows do, or from `scripts/` as a developer does). pip warns and
-continues when the directory is empty, so nothing breaks by leaving it so; the
-install simply falls back to PyPI and fails while the quarantine stands.
-
-Drop `vnstock-4.0.4-py3-none-any.whl` and `vnai-2.4.9-py3-none-any.whl` in here
-and the install works offline. Both are pure `py3-none-any`, so a wheel repacked
-from a working install is faithful — the installed layout *is* the wheel layout.
-
-For CI, in order of preference:
-
-1. **Get a licensed channel from the vendor.** `support@vnstocks.com`, or the
-   Insiders programme the package advertises. This is the only route that is
-   both durable and unambiguously permitted, and it is the one to pursue.
-2. **Host the wheels in a private store** the workflow fetches with a secret — a
-   private repo release, S3, or GitHub Packages — and add a step before
-   `Install dependencies`. Private, so not redistribution, but check the licence
-   terms cover your use.
-3. **A self-hosted runner** with both packages pre-installed.
-
-Until one of those is in place the daily workflows cannot install, and the
-pipeline has to be run by hand from a machine that already has a working
-install. `.claude/skills/data-audit/SKILL.md` has the recovery order.
-
-A longer-term option worth evaluating separately: the still-active
-`vnstock_data` / `vnstock_ta` packages may cover what this pipeline uses, which
-would remove the dependency on a quarantined project altogether. That is a
-migration, not a fix, and it needs its own measurement pass — every provider
-call in `scripts/ta/` reads through `vnstock`.
+`.gitignore` carries `vendor/wheels/*.whl`. Do not remove that line. pip warns
+and continues when this directory is empty, so a fresh clone is correct as-is.
