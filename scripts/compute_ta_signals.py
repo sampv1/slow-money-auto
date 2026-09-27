@@ -349,9 +349,31 @@ def finish_run(client, run_id: int | None, status: str, symbols_n: int, signals_
     2026-08-19, zero signals for it, and a scanner showing no symbols at all.
 
     So the run records the LATEST date it actually wrote.
+
+    AND WHEN IT WROTE NOTHING THERE IS NO SUCH DATE, which is the hole this
+    correction left open (2026-09-27). `if trading_date:` skips the correction on
+    a zero-write run, so start_run's wall-clock stamp survives — recreating
+    precisely the phantom the docstring above describes. A run writes nothing
+    whenever every symbol it was given triggered nothing: a narrow `--symbols`
+    set, a set of dormant tickers, a quiet market. It fires most easily on a
+    non-trading day, which is exactly when someone is doing manual verification,
+    and it happened while recovering the 2026-09-25 outage — ten dormant symbols,
+    0 rows, a `success` row stamped Sunday 2026-09-27, and a TA Scanner dropdown
+    offering a date with no symbols on it.
+
+    A run that wrote nothing must not claim a date it has no signals for, so it
+    falls back to the newest date that DOES have them. That is the value the
+    scanner's dropdown needs, and it can never advance past reality.
     """
     if run_id is None:
         return
+    if not trading_date and not signals_n:
+        newest = safe_execute(
+            client.table("ta_signals").select("date")
+            .order("date", desc=True).limit(1),
+            label="ta_runs fallback date").data
+        if newest:
+            trading_date = newest[0]["date"]
     payload = {
         "finished_at": "now()",
         "status": status,
