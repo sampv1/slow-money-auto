@@ -36,6 +36,24 @@
 -- ---------------------------------------------------------------------------
 -- 1. Report scope, per symbol-quarter — the §4.6 field set
 -- ---------------------------------------------------------------------------
+-- CLEAR THE OLD ROWS FIRST, and this is not housekeeping — it is what makes the
+-- rest of this file apply at all.
+--
+-- The table holds 36 rows written under the scope model BA has replaced. Adding
+-- `scope_decision_rule` leaves them NULL, and the NOT-NULL check below is then
+-- violated by every one of them, so the statement fails and the SQL editor's
+-- transaction rolls the WHOLE migration back. That is exactly what happened on
+-- the first attempt: PostgREST's schema cache still reported 072's 11 columns
+-- afterwards, with nothing from this file applied.
+--
+-- Deleting them is also what BA asked for independently (§8): "Số lượng bản ghi
+-- phạm vi phải được tính lại sau khi áp dụng quy tắc mới. Không giữ nguyên các
+-- trạng thái cũ chỉ vì chúng đã xuất hiện trong file kiểm tra trước." The rows
+-- carry `scope_review_status = PENDING` from the withdrawn "does a consolidated
+-- report exist" question, so keeping them would preserve verdicts the new rule
+-- does not produce. The scorer rewrites every row it needs.
+delete from fa_insurance_report_scope;
+
 alter table fa_insurance_report_scope
   -- What the provider RECORDS for this period (§4.1). Never skipped, and never
   -- inferred: 'CONSOLIDATED' / 'STANDALONE' come from the filing header's
@@ -102,13 +120,53 @@ alter table fa_insurance_report_scope
   check (not (selected_report_type = 'NONE_WAITING_CONSOLIDATED'
               and usage_status = 'USED'));
 
+-- BA §2.4's status vocabulary. A THIRD axis, deliberately separate from
+-- provider_report_type (what the source recorded) and selected_report_type
+-- (what we chose): this one records HOW STRONG THE EVIDENCE IS, and BA's §2.3
+-- is emphatic that the two must not be conflated. `PARENT_VERIFIED` requires a
+-- DIRECT source label and may never be assigned because the minority interest
+-- happens to be zero — a consolidated report of a wholly-owned parent reads zero
+-- too. Periods outside the 4 quarters the header labels are
+-- SCOPE_AS_PROVIDED_CONTINUOUS: an operational state, not a verified one.
+alter table fa_insurance_report_scope
+  add column if not exists scope_status text;
+
+alter table fa_insurance_report_scope
+  drop constraint if exists fa_ins_scope_status_check;
+alter table fa_insurance_report_scope
+  add constraint fa_ins_scope_status_check
+  check (scope_status in (
+    'CONSOLIDATED_VERIFIED',        -- source label, or minority interest > 0
+    'PARENT_VERIFIED',              -- DIRECT source label only
+    'SCOPE_AS_PROVIDED_BASELINE',   -- first period of the series (§2.5)
+    'SCOPE_AS_PROVIDED_CONTINUOUS', -- used continuously, no change signal (§2.3)
+    'WAITING_CONSOLIDATED',         -- current standalone, prior consolidated
+    'SCOPE_CHANGE_VERIFIED'));      -- verified loss of control (§2.6)
+
+comment on column fa_insurance_report_scope.scope_status is
+  'BA §2.4 — the EVIDENCE GRADE of the scope decision, not the decision itself. '
+  'PARENT_VERIFIED needs a direct source label; BS_MINORITY_INTEREST = 0 must '
+  'never produce it (§2.3), because a consolidated report of a wholly-owned '
+  'parent also reads zero. Older periods the header does not label are '
+  'SCOPE_AS_PROVIDED_CONTINUOUS, which states an operational continuity rather '
+  'than a verification.';
+
 -- Every written row names the rule that decided it. §4.6 asks for the decision
--- to be stored, and a decision with no rule attached cannot be reviewed.
+-- to be stored, and a decision with no rule attached cannot be reviewed. Safe
+-- to require now: the delete above left the table empty, so there is no
+-- pre-existing row to violate it — which is the mistake that rolled this
+-- migration back the first time.
 alter table fa_insurance_report_scope
   drop constraint if exists fa_ins_scope_decision_rule_required;
 alter table fa_insurance_report_scope
   add constraint fa_ins_scope_decision_rule_required
   check (scope_decision_rule is not null);
+
+alter table fa_insurance_report_scope
+  drop constraint if exists fa_ins_scope_status_required;
+alter table fa_insurance_report_scope
+  add constraint fa_ins_scope_status_required
+  check (scope_status is not null);
 
 comment on column fa_insurance_report_scope.provider_report_type is
   'What the PROVIDER records for this period (§4.1), never inferred. The filing '
