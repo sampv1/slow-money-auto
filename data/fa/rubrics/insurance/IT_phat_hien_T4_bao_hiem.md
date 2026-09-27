@@ -103,3 +103,18 @@ Phương án A và B cho cùng kết quả trên tập này. Điều đáng chú
 VCG kích hoạt **đúng T1, T3, T5** như BA dự đoán ở §4.2, và VLB kích hoạt T4 như §11.2 yêu cầu. Không mã nào bị tự động trừ điểm: cả hai đều dừng ở `REVIEW_TRIGGERED`, đúng §3.2.
 
 Nếu BA chọn phương án A, IT chỉ cần đổi một toán tử và chạy lại; không ảnh hưởng phần còn lại của vòng nghiệm thu.
+
+---
+
+## 6. Bằng chứng bổ sung (đo sau khi chạy đủ 4 quý)
+
+Chạy T1–T5 trên cả bốn quý cho thấy một trường hợp còn rõ hơn: **T4 kích hoạt ở kỳ mà thu nhập khác THẤP HƠN trung vị của chính nó.**
+
+| Mã | Kỳ | Thu nhập khác | Trung vị 8 quý | Kích hoạt |
+|---|---|---:|---:|---|
+| PGI | 2025-Q3 | **78,8 tỷ** | 80,6 tỷ | T4 |
+| PTI | 2025-Q3 | **58,7 tỷ** | 87,8 tỷ | T4 |
+
+2 trong 16 lần T4 kích hoạt là như vậy. Ở hai kỳ này, dòng đang bị kiểm tra **thấp hơn mức thông thường của chính doanh nghiệp**, nhưng điều kiện tỷ trọng vẫn thỏa vì LNTT quý đó nhỏ (PGI 46,2 tỷ; PTI 92,9 tỷ). Không có định nghĩa nào của "bất thường" bao gồm một giá trị dưới trung vị lịch sử.
+
+Đây là cùng một nguyên nhân đã nêu ở mục 3 — điều kiện tỷ trọng đo **LNTT mỏng**, không đo **thu nhập khác bất thường** — nhưng ở dạng dễ kiểm chứng nhất. Phương án A (tỷ trọng **VÀ** trung vị) loại đúng hai kỳ này, vì cả hai đều không đạt điều kiện trung vị.
