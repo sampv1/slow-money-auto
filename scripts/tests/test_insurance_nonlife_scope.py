@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Pins the four rules BA's CHOT_HOAN_THANH_TAB_PHI_NHAN_THO_GUI_IT_V1 settles.
+"""Pins the status-layer rules that survived BA's §2 rewrite.
+
+The report-scope resolver this file also used to test was REPLACED — BA's
+PHAN_HOI_CHOT_CUOI §2 withdrew the "does a consolidated report exist" question
+entirely, and `tests/test_nonlife_scope.py` covers the flow that replaced it.
+What remains here is still live and still load-bearing: the three-state scope
+comparison P2 and P3 use, the eligibility conjunction, and the separation of the
+P3 volatility flag from the calculation status.
+
+Originally written against CHOT_HOAN_THANH_TAB_PHI_NHAN_THO_GUI_IT_V1.
 
 Each of the four had shipped as its opposite, and each failure was invisible in
 the output rather than loud:
@@ -21,22 +30,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from export_insurance_nonlife_check import (  # noqa: E402
-    CALC_ACCEPTED, CALC_REJECTED, SCOPE_SOURCE_OFFSETS, finalise_statuses,
-    metric_result, quarter_end, resolve_scope, scope_status_for, shift,
+    CALC_ACCEPTED, CALC_REJECTED, SCOPE_EXEMPT_METRICS, SCOPE_SOURCE_OFFSETS,
+    finalise_statuses, metric_result, scope_status_for, shift,
 )
 
-HDR_HN = {"report_scope": "HN"}
-HDR_DL = {"report_scope": "ĐL"}
-POLICY_NONE = {}
-POL_NO_CONSO = {"X": {"scope_policy": "NO_CONSOLIDATED_PREPARED",
-                      "effective_from": "2020-01-01", "effective_to": None,
-                      "verification_source": "CBTT HNX — <link>",
-                      "verified_date": "2026-09-27", "verified_by": "BA",
-                      "note": None}}
-POL_CONSO = {"X": {"scope_policy": "CONSOLIDATED_PREPARED",
-                   "effective_from": "2020-01-01", "effective_to": None,
-                   "verification_source": "CBTT HNX — <link>",
-                   "verified_date": "2026-09-27", "verified_by": "BA", "note": None}}
 
 _fail = []
 
@@ -71,94 +68,6 @@ def test_unknown_scope_is_PENDING_never_PASS():
 
 # ---------------------------------------------------------------------------
 # 2. Evidence admissible for a report scope (§4.2, §4.5)
-# ---------------------------------------------------------------------------
-def test_header_consolidated_is_verified():
-    r = resolve_scope("X", "2026-Q2", HDR_HN, 1.0, POLICY_NONE)
-    check("header HN ⇒ CONSOLIDATED", r["record_report_scope"] == "CONSOLIDATED")
-    check("header HN ⇒ VERIFIED", r["scope_review_status"] == "VERIFIED")
-    check("header HN ⇒ available True", r["consolidated_report_available"] is True)
-
-
-def test_header_standalone_knows_the_record_but_not_the_existence():
-    """The distinction the old single column could not hold."""
-    r = resolve_scope("X", "2026-Q2", HDR_DL, 0.0, POLICY_NONE)
-    check("header ĐL ⇒ record STANDALONE", r["record_report_scope"] == "STANDALONE")
-    # NULL, not False. False would claim a verification nobody performed.
-    check("header ĐL ⇒ existence unknown (None)",
-          r["consolidated_report_available"] is None)
-    check("header ĐL ⇒ review PENDING", r["scope_review_status"] == "PENDING")
-    check("header ĐL ⇒ method is the header",
-          r["scope_verification_method"] == "STATEMENT_HEADER")
-
-
-def test_minority_interest_identifies_a_consolidated_record():
-    """Admissible because it asserts PRESENCE of a consolidated subsidiary."""
-    r = resolve_scope("X", "2024-Q3", None, 145_723_147_660.0, POLICY_NONE)
-    check("NCI>0, no header ⇒ CONSOLIDATED",
-          r["record_report_scope"] == "CONSOLIDATED")
-    check("NCI>0 ⇒ method recorded",
-          r["scope_verification_method"] == "BALANCE_SHEET_MINORITY_INTEREST")
-    check("NCI>0 ⇒ VERIFIED", r["scope_review_status"] == "VERIFIED")
-
-
-def test_a_ZERO_minority_interest_proves_nothing():
-    """THE REFUSAL THAT MATTERS. A zero is consistent with a standalone filing
-    AND with consolidating wholly-owned subsidiaries, so it may not decide the
-    scope in either direction (BA §4.2). 96 of 171 source periods land here."""
-    r = resolve_scope("X", "2024-Q3", None, 0.0, POLICY_NONE)
-    check("NCI=0, no header ⇒ UNDETERMINED",
-          r["record_report_scope"] == "UNDETERMINED")
-    check("NCI=0 ⇒ never VERIFIED", r["scope_review_status"] != "VERIFIED")
-    check("NCI=0 ⇒ selected scope UNDETERMINED",
-          r["selected_report_scope"] == "UNDETERMINED")
-    check("NCI=0 ⇒ existence still unknown",
-          r["consolidated_report_available"] is None)
-    # A missing balance sheet is the same answer, not a worse one.
-    r2 = resolve_scope("X", "2021-Q1", None, None, POLICY_NONE)
-    check("no balance sheet ⇒ UNDETERMINED",
-          r2["record_report_scope"] == "UNDETERMINED")
-
-
-def test_a_verified_policy_is_what_closes_the_existence_question():
-    r = resolve_scope("X", "2024-Q3", None, 0.0, POL_NO_CONSO)
-    check("policy NO_CONSOLIDATED ⇒ STANDALONE",
-          r["record_report_scope"] == "STANDALONE")
-    # The ONLY route to False: a verified negative.
-    check("policy NO_CONSOLIDATED ⇒ available False",
-          r["consolidated_report_available"] is False)
-    check("policy ⇒ VERIFIED", r["scope_review_status"] == "VERIFIED")
-    check("policy ⇒ source carries the disclosure",
-          r["scope_verification_source"].startswith("CBTT"))
-
-
-def test_a_consolidated_report_the_provider_lacks_is_a_CONFLICT():
-    """§4.5 — standalone must not be accepted silently in that case."""
-    r = resolve_scope("X", "2026-Q2", HDR_DL, 0.0, POL_CONSO)
-    check("policy CONSOLIDATED + ĐL record ⇒ CONFLICT",
-          r["scope_review_status"] == "CONFLICT")
-    check("CONFLICT ⇒ not selected as standalone",
-          r["selected_report_scope"] == "UNDETERMINED")
-    check("CONFLICT ⇒ reason names the missing report",
-          r["scope_selection_reason"] == "CONSOLIDATED_MISSING_FROM_PROVIDER")
-
-
-def test_a_policy_does_not_reach_back_before_its_effective_date():
-    """§4.6 — the policy is a date range, so a quarter that ended before it
-    began is still unverified. Without this a single row would silently restate
-    every quarter the company ever filed."""
-    pol = {"X": {**POL_NO_CONSO["X"], "effective_from": "2025-01-01"}}
-    before = resolve_scope("X", "2024-Q3", None, 0.0, pol)
-    after = resolve_scope("X", "2025-Q2", None, 0.0, pol)
-    check("quarter before effective_from is untouched",
-          before["record_report_scope"] == "UNDETERMINED")
-    check("quarter after effective_from is verified",
-          after["scope_review_status"] == "VERIFIED")
-    check("quarter_end is the quarter's LAST day",
-          quarter_end("2025-Q2") == dt.date(2025, 6, 30))
-
-
-# ---------------------------------------------------------------------------
-# 3. The volatility flag is not a status (§7)
 # ---------------------------------------------------------------------------
 def test_the_flag_never_enters_calculation_status():
     r = metric_result("id", "X", "2026-Q2", "P3", 4.75, "%", CALC_ACCEPTED,

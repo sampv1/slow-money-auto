@@ -41,6 +41,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from fa.nonlife_scope import (USED as SCOPE_USED, ControlEvent,
+                              resolve_series)
+from fa.one_off import TriggerInput, screen as one_off_screen
 from ta.common import get_supabase_client, safe_execute
 
 #: §2.5 — the list is NOT the condition. A symbol qualifies by its stored
@@ -63,8 +66,14 @@ REV = "IS_TOTAL_NET_REVENUE_FROM_INSURANCE_BUSINESS"
 COST = "IS_TOTAL_DIRECT_INSURANCE_OPERATING_EXPENSES"
 GROSS_PROFIT = "IS_GROSS_INSURANCE_OPERATING_PROFIT"
 FIN_INCOME = "IS_FINANCIAL_INCOME"
+#: §3.3 — the one-off filter's variable is SINGLE-QUARTER pre-tax profit, never
+#: a cumulative figure: it tests the abnormal amount before tax and avoids tax
+#: noise. Plus the "other income" line T4 reads.
+PBT = "IS_PROFIT_BEFORE_TAX"
+OTHER_INCOME = "IS_OTHER_INCOME"
 FIN_EXPENSE = "IS_FINANCIAL_EXPENSES"
-INCOME_KEYS = [REV, COST, GROSS_PROFIT, FIN_INCOME, FIN_EXPENSE]
+INCOME_KEYS = [REV, COST, GROSS_PROFIT, FIN_INCOME, FIN_EXPENSE,
+               PBT, OTHER_INCOME]
 
 CASH = "BS_CASH_AND_PRECIOUS_METALS"
 ST_INV = "BS_SHORT_TERM_INVESTMENTS"
@@ -95,6 +104,13 @@ SPEC_VERSION = "CHOT_HOAN_THANH_TAB_PHI_NHAN_THO_GUI_IT_V1"
 #: was the gap: P2 reads the year-ago quarter and P3 reads five.
 SCOPE_SOURCE_OFFSETS = {"P1": (0,), "P2": (0, 4), "P3": (0, 1, 2, 3, 4),
                         "P4": (0,)}
+#: §5.7 / §7.9 — P5 is NOT gated on report scope. It reads the provider's P/B
+#: series directly, and BA rules the scope check out for it explicitly: "Không
+#: dùng phạm vi hợp nhất/công ty mẹ để chặn chuỗi P/B trực tiếp." Before this,
+#: requiring a determined scope for all 20 P/B quarters blocked P5 on six of
+#: nine symbols and was the single largest cause of 3/9.
+SCOPE_EXEMPT_METRICS = frozenset({"P5"})
+
 #: The balance-sheet line that POSITIVELY identifies a consolidated record.
 #: A value above zero means the record consolidates a partly-owned subsidiary.
 #: Zero proves nothing (§4.2) and is never used.
@@ -365,7 +381,14 @@ def finalise_statuses(results, lin, record_scope, required_periods,
         rid, sym, code = r["metric_result_id"], r["symbol"], r["metric_code"]
         periods = required_periods.get(rid, ())
         scopes = [record_scope.get((sym, p)) for p in periods]
-        r["scope_validation_status"] = scope_status_for(scopes) if periods else "PENDING"
+        if code in SCOPE_EXEMPT_METRICS:
+            # §5.7 — exempt by rule, not by having no periods to check. Recorded
+            # as its own value so a reader can see the exemption was applied
+            # rather than inferring it from an empty check.
+            r["scope_validation_status"] = "NOT_APPLICABLE"
+        else:
+            r["scope_validation_status"] = (scope_status_for(scopes) if periods
+                                            else "PENDING")
         r["scope_source_period_count"] = len(periods)
         r["scope_undetermined_periods"] = ", ".join(
             p for p, sc in zip(periods, scopes)
@@ -383,7 +406,7 @@ def finalise_statuses(results, lin, record_scope, required_periods,
         if r["calculation_status"] != CALC_ACCEPTED:
             reasons.append(f"calculation_status={r['calculation_status']}"
                            + (f" ({r['calculation_note']})" if r.get("calculation_note") else ""))
-        if r["scope_validation_status"] != "PASS":
+        if r["scope_validation_status"] not in ("PASS", "NOT_APPLICABLE"):
             reasons.append(
                 f"scope_validation_status={r['scope_validation_status']}"
                 + (f" — kỳ chưa xác định phạm vi: {r['scope_undetermined_periods']}"
@@ -398,187 +421,6 @@ def finalise_statuses(results, lin, record_scope, required_periods,
             reasons.append(f"{code} chưa đủ lịch sử tối thiểu")
         r["scoring_eligibility"] = "ELIGIBLE" if not reasons else "BLOCKED"
         r["blocked_reason"] = "; ".join(reasons) or None
-
-
-def load_scope_policy(client):
-    """§4.6 — the verified reporting policy per company, over a DATE RANGE.
-
-    Read BEFORE any per-period evidence, and deliberately empty until an issuer
-    or exchange disclosure has been read: nothing in the provider data can
-    populate it, and populating it from provider data would be exactly the guess
-    it exists to replace. One row per company is what turns every source period
-    in range from PENDING to VERIFIED — no code change, nothing keyed by symbol
-    inside the script.
-    """
-    try:
-        rows = safe_execute(
-            client.table("fa_insurance_scope_policy")
-            .select("symbol,scope_policy,effective_from,effective_to,"
-                    "verification_source,verified_date,verified_by,note")
-            .is_("effective_to", "null").order("symbol"), label="scope policy").data or []
-    except Exception as exc:  # noqa: BLE001
-        print(f"::warning::fa_insurance_scope_policy unavailable "
-              f"({type(exc).__name__}). Apply supabase/073.")
-        return {}
-    return {r["symbol"]: r for r in rows}
-
-
-def quarter_end(period):
-    """Last calendar day of a 'YYYY-Qn' quarter — for comparing against a policy
-    effective date, since a policy is stated in dates and a source in quarters."""
-    y, q = int(period[:4]), int(period[-1])
-    m, d = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}[q]
-    return dt.date(y, m, d)
-
-
-def resolve_scope(symbol, period, header, minority, policy):
-    """§4 and §5.2 — determine the report scope of ONE source period.
-
-    TWO SEPARATE FACTS, and conflating them is what made the old checks pass on
-    unknown data:
-
-      record_report_scope            which scope the record we read IS
-      consolidated_report_available  whether a consolidated report EXISTS
-
-    A period can have a perfectly determined record scope — the filing header
-    names it — while the existence question stays wide open, which is precisely
-    the state of the six standalone filers. The scope checks (§5.2, §6.2) read
-    the first; the acceptance gate reads the second.
-
-    Evidence, in precedence order:
-
-      1. A VERIFIED SCOPE POLICY (§4.6). The only thing that can close the
-         existence question, because it is the only input carrying a disclosure.
-      2. THE FILING HEADER. Names the scope of the record served. Reaches the
-         latest four quarters only.
-      3. BS_MINORITY_INTEREST > 0. POSITIVE identification of a consolidated
-         record: the balance sheet consolidates a partly-owned subsidiary.
-         Admissible because it asserts presence, not absence — a ZERO minority
-         interest is consistent with both scopes and is never used (§4.2).
-         Agrees with the header on 36 of 36 periods where both exist.
-      4. Nothing — UNDETERMINED, which is a real answer and must stay visible.
-    """
-    hdr = SCOPE_VI.get((header or {}).get("report_scope"))
-    pol = policy.get(symbol)
-    nci_consolidated = minority is not None and minority > 0
-
-    if pol and quarter_end(period) >= dt.date.fromisoformat(pol["effective_from"]):
-        if pol["scope_policy"] == "NO_CONSOLIDATED_PREPARED":
-            return {
-                "record_report_scope": "STANDALONE",
-                "consolidated_report_available": False,
-                "standalone_report_available": True,
-                "selected_report_scope": "STANDALONE",
-                "scope_selection_reason": "NO_CONSOLIDATED_REPORT_STANDALONE_SELECTED",
-                "scope_verification_method": "VERIFIED_SCOPE_POLICY",
-                "scope_policy_applied": pol["scope_policy"],
-                "scope_verification_source": pol["verification_source"],
-                "scope_verified_date": pol["verified_date"],
-                "scope_review_status": "VERIFIED",
-                "scope_note": "Áp dụng chính sách phạm vi đã xác minh theo hiệu lực",
-            }
-        # CONSOLIDATED_PREPARED: a consolidated report exists. If the record we
-        # hold is the standalone one, §4.5 forbids accepting it silently — that
-        # is a CONFLICT, not a selection.
-        if hdr == "Hợp nhất" or nci_consolidated:
-            return {
-                "record_report_scope": "CONSOLIDATED",
-                "consolidated_report_available": True,
-                "standalone_report_available": None,
-                "selected_report_scope": "CONSOLIDATED",
-                "scope_selection_reason": "CONSOLIDATED_AVAILABLE_AND_SELECTED",
-                "scope_verification_method": "VERIFIED_SCOPE_POLICY",
-                "scope_policy_applied": pol["scope_policy"],
-                "scope_verification_source": pol["verification_source"],
-                "scope_verified_date": pol["verified_date"],
-                "scope_review_status": "VERIFIED",
-                "scope_note": "Chính sách xác nhận có BCTC hợp nhất và bản đọc là hợp nhất",
-            }
-        return {
-            "record_report_scope": "STANDALONE" if hdr == "Riêng lẻ" else "UNDETERMINED",
-            "consolidated_report_available": True,
-            "standalone_report_available": hdr == "Riêng lẻ" or None,
-            "selected_report_scope": "UNDETERMINED",
-            "scope_selection_reason": "CONSOLIDATED_MISSING_FROM_PROVIDER",
-            "scope_verification_method": "VERIFIED_SCOPE_POLICY",
-            "scope_policy_applied": pol["scope_policy"],
-            "scope_verification_source": pol["verification_source"],
-            "scope_verified_date": pol["verified_date"],
-            "scope_review_status": "CONFLICT",
-            "scope_note": ("Chính sách xác nhận DN có lập BCTC hợp nhất nhưng nguồn "
-                           "không phục vụ bản đó — §4.5 không cho phép tự dùng "
-                           "riêng lẻ rồi báo ACCEPTED"),
-        }
-
-    if hdr == "Hợp nhất":
-        return {
-            "record_report_scope": "CONSOLIDATED",
-            "consolidated_report_available": True,
-            "standalone_report_available": None,
-            "selected_report_scope": "CONSOLIDATED",
-            "scope_selection_reason": "CONSOLIDATED_AVAILABLE_AND_SELECTED",
-            "scope_verification_method": "STATEMENT_HEADER",
-            "scope_policy_applied": None,
-            "scope_verification_source": "Header BCTC do nguồn phục vụ (KBS)",
-            "scope_verified_date": dt.date.today().isoformat(),
-            "scope_review_status": "VERIFIED",
-            "scope_note": "Header ghi hợp nhất và pipeline dùng đúng bản đó",
-        }
-
-    if nci_consolidated:
-        # No header for this period, but the record consolidates a partly-owned
-        # subsidiary — so the record IS consolidated. Positive evidence, which a
-        # zero would not be.
-        return {
-            "record_report_scope": "CONSOLIDATED",
-            "consolidated_report_available": True,
-            "standalone_report_available": None,
-            "selected_report_scope": "CONSOLIDATED",
-            "scope_selection_reason": "CONSOLIDATED_IDENTIFIED_BY_MINORITY_INTEREST",
-            "scope_verification_method": "BALANCE_SHEET_MINORITY_INTEREST",
-            "scope_policy_applied": None,
-            "scope_verification_source": (
-                "Bảng CĐKT: lợi ích cổ đông không kiểm soát > 0 ⇒ bản đọc là hợp "
-                "nhất (khớp header 36/36 ở các kỳ có cả hai)"),
-            "scope_verified_date": dt.date.today().isoformat(),
-            "scope_review_status": "VERIFIED",
-            "scope_note": ("Xác định DƯƠNG: có hợp nhất công ty con chưa sở hữu "
-                           "toàn bộ. Số 0 KHÔNG được dùng theo chiều ngược lại"),
-        }
-
-    if hdr == "Riêng lẻ":
-        return {
-            "record_report_scope": "STANDALONE",
-            # Known record, open existence question — NULL, never False (§4.1).
-            "consolidated_report_available": None,
-            "standalone_report_available": True,
-            "selected_report_scope": "STANDALONE",
-            "scope_selection_reason": "STANDALONE_RECORD_EXISTENCE_UNVERIFIED",
-            "scope_verification_method": "STATEMENT_HEADER",
-            "scope_policy_applied": None,
-            "scope_verification_source": "Header BCTC do nguồn phục vụ (KBS)",
-            "scope_verified_date": None,
-            "scope_review_status": "PENDING",
-            "scope_note": ("Header xác định bản đọc là RIÊNG LẺ. Chưa xác minh "
-                           "được DN có lập BCTC hợp nhất hay không — cần nguồn "
-                           "công bố của doanh nghiệp (§4.4)"),
-        }
-
-    return {
-        "record_report_scope": "UNDETERMINED",
-        "consolidated_report_available": None,
-        "standalone_report_available": None,
-        "selected_report_scope": "UNDETERMINED",
-        "scope_selection_reason": "SCOPE_NOT_DETERMINABLE_FROM_SOURCE",
-        "scope_verification_method": "NOT_DETERMINABLE_FROM_SOURCE",
-        "scope_policy_applied": None,
-        "scope_verification_source": NOT_AVAILABLE,
-        "scope_verified_date": None,
-        "scope_review_status": "PENDING",
-        "scope_note": ("Không có header (nguồn chỉ phục vụ 4 quý gần nhất) và "
-                       "lợi ích cổ đông không kiểm soát = 0, vốn phù hợp với cả "
-                       "hai phạm vi nên không kết luận được"),
-    }
 
 
 def run_metadata(out_path, rows_result, rows_lineage, snapshot):
@@ -627,8 +469,10 @@ def run_metadata(out_path, rows_result, rows_lineage, snapshot):
 def main() -> int:
     ap = argparse.ArgumentParser(description="Non-life P1-P5 rerun (BA V1)")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--persist-scope", action="store_true",
-                    help="§3.3: write the scope verdicts to fa_insurance_report_scope")
+    ap.add_argument("--no-persist", action="store_true",
+                    help="§8: skip writing scope/gate to the DB (inspection only). "
+                         "Persistence is the DEFAULT — §12 condition 3 requires "
+                         "the data to be read back from the database.")
     args = ap.parse_args()
     client = get_supabase_client()
 
@@ -681,22 +525,48 @@ def main() -> int:
     inc = load(client, SY, need, "income", INCOME_KEYS)
     bal = load(client, SY, scope_periods, "balance", BALANCE_KEYS)
     src = load_source_meta(client, SY, set(scope_periods))
-    policy = load_scope_policy(client)
-    if not policy:
-        print("chính sách phạm vi (fa_insurance_scope_policy): 0 dòng — "
-              "đúng trạng thái ban đầu, chỉ nguồn công bố của DN mới ghi được")
+    # §2.6 — verified loss-of-control events, the ONLY thing that licenses moving
+    # a symbol from consolidated to standalone. Read from the DB; empty is the
+    # correct state, and with no event §2.1 item 4 waits rather than switching.
+    events_by_symbol: dict[str, list] = {}
+    try:
+        for r_ in (safe_execute(
+                client.table("fa_insurance_control_events")
+                .select("symbol,effective_date,transaction_completed,"
+                        "has_remaining_subsidiaries,evidence_type,evidence_source")
+                .order("symbol").order("effective_date"),
+                label="control events").data or []):
+            events_by_symbol.setdefault(r_["symbol"], []).append(ControlEvent(
+                effective_date=dt.date.fromisoformat(r_["effective_date"]),
+                transaction_completed=bool(r_["transaction_completed"]),
+                has_remaining_subsidiaries=r_["has_remaining_subsidiaries"],
+                evidence_type=r_["evidence_type"],
+                evidence_source=r_["evidence_source"]))
+    except Exception as exc:  # noqa: BLE001
+        print(f"::warning::fa_insurance_control_events unreadable "
+              f"({type(exc).__name__}) — apply supabase/073. Treating as no "
+              f"events, which is the conservative branch of §2.1 item 4.")
+    n_events = sum(len(v) for v in events_by_symbol.values())
+    print(f"sự kiện mất quyền kiểm soát đã xác minh: {n_events} "
+          f"({'đúng trạng thái ban đầu' if not n_events else 'từ CSDL'})")
 
-    # §4.3 — resolve the scope of EVERY source period any formula reads, not
-    # only the four quarters on display. That is where the old verification
-    # stopped, and it is why P2's year-ago quarter and P3's TTM opening date had
-    # no scope at all.
-    scope_res = {}
+    # §2 — resolve every source period any formula reads, OLDEST FIRST, because
+    # §2.1 item 4 compares against the prior period's RESOLVED status.
+    scope_res: dict[tuple[str, str], dict] = {}
     for s_ in SY:
-        for p_ in scope_periods:
-            scope_res[(s_, p_)] = resolve_scope(
-                s_, p_, src.get((s_, p_)),
-                (bal.get((s_, p_)) or {}).get(MINORITY), policy)
-    record_scope = {k: v["record_report_scope"] for k, v in scope_res.items()}
+        series = resolve_series(
+            s_, scope_periods,
+            {p_: (src.get((s_, p_)) or {}).get("report_scope") for p_ in scope_periods},
+            {p_: (bal.get((s_, p_)) or {}).get(MINORITY) for p_ in scope_periods},
+            events_by_symbol.get(s_))
+        for p_, r_ in series.items():
+            scope_res[(s_, p_)] = r_
+    # What the scope CHECKS compare. A period the system did not select (waiting
+    # for a consolidated report) has no usable basis, so it reads None and the
+    # dependent metric is blocked rather than scored on a basis nobody chose.
+    record_scope = {k: (v["selected_report_type"] if v["usage_status"] == SCOPE_USED
+                        else None)
+                    for k, v in scope_res.items()}
 
     def assets(s, p):
         b = bal.get((s, p))
@@ -740,7 +610,6 @@ def main() -> int:
                  "insurance_type": "Phi nhân thọ",
                  # NOT hard-coded: the filing header says 6 of 9 are riêng lẻ.
                  "report_scope": scope,
-                 "record_report_scope": record_scope.get((s, q)),
                  "audit_status": m.get("audit_status") or NOT_AVAILABLE,
                  "source_publication_date": m.get("release_date") or NOT_AVAILABLE,
                  "source_provider": m.get("source") or "vnstock",
@@ -987,10 +856,19 @@ def main() -> int:
             min_history_met=n >= PB_MIN_OBS,
             calc_note=None if n >= PB_MIN_OBS
             else f"chỉ có {n} quan sát P/B, tối thiểu {PB_MIN_OBS}"))
-        # §11.1 CHECK_SCOPE_05 applies to P5 too: its yardstick is the symbol's
-        # OWN history, so a scope change inside that window is a real
-        # comparability problem — BHI is exactly that case.
-        req_periods[rid5] = tuple(per for per, _ in series)
+        # §5.7 / §7.9 — P5 IS NOT SCOPE-GATED, and BA rules it out in as many
+        # words: "Không dùng phạm vi hợp nhất/công ty mẹ để chặn chuỗi P/B trực
+        # tiếp." It reads the provider's P/B series directly rather than
+        # recombining price, equity and share count, so the consolidated /
+        # standalone question does not arise per slice. Requiring a determined
+        # scope across all 20 quarters is what blocked P5 on six of nine symbols
+        # and was the single largest cause of the previous 3/9.
+        #
+        # An EMPTY tuple, not an omission: `finalise_statuses` reads
+        # `required_periods.get(rid, ())` and treats a missing entry as
+        # "no source periods recorded" -> PENDING, which would re-block P5 by
+        # accident. SCOPE_EXEMPT_METRICS makes the exemption explicit there.
+        req_periods[rid5] = ()
         req_roles[rid5] = ({"P5_CURRENT_PB"}
                            | {f"P5_HISTORICAL_PB_{per}" for per, _ in series})
         lin.append(lineage(rid5, "P5_CURRENT_PB", series[-1][0] if series else "—",
@@ -1001,10 +879,52 @@ def main() -> int:
         for per, _ in series:
             used_by.setdefault((s, per), set()).add("P5")
 
+    # Migration 072 left three columns NOT NULL — selected_report_scope,
+    # scope_selection_reason and scope_review_status — and BA's §2 model does not
+    # produce them directly. They are DERIVED from the new fields rather than
+    # dropped, because 072 is applied and its constraints still hold.
+    #
+    # scope_review_status is the honest mapping of BA's own vocabulary: the three
+    # statuses ending in _VERIFIED are verified, and the two SCOPE_AS_PROVIDED
+    # ones are explicitly operational rather than verified (§2.3), so they stay
+    # PENDING. That is not a blocker any more — §2.5 item 3 and §11.1.2 both say
+    # a period like this must still be usable, and `usage_status` is what the
+    # gate reads.
+    LEGACY_SELECTED = {"CONSOLIDATED": "CONSOLIDATED", "STANDALONE": "STANDALONE",
+                       "NONE_WAITING_CONSOLIDATED": "UNDETERMINED"}
+    # `scope_selection_reason` keeps 072's five permitted values, and they answer
+    # 072's question: "why was this scope selected", framed around whether a
+    # consolidated report EXISTS. BA withdrew that question, so the column is
+    # legacy — `scope_status` and `scope_decision_rule` carry the §2 model.
+    #
+    # The mapping is still literally true, which is the only reason it is
+    # acceptable: NOT_YET_VERIFIED says the EXISTENCE question is unverified, and
+    # it is, for every row that is not consolidated. It does NOT contradict
+    # PARENT_VERIFIED, which is about the scope of the RECORD we read — two
+    # different questions, which is exactly the distinction §2.3 draws. The
+    # workbook states this so a reader cannot take the two for a conflict.
+    LEGACY_REASON = {
+        "CONSOLIDATED_VERIFIED": "CONSOLIDATED_AVAILABLE_AND_SELECTED",
+        "SCOPE_CHANGE_VERIFIED": "NO_CONSOLIDATED_REPORT_STANDALONE_SELECTED",
+        "WAITING_CONSOLIDATED": "CONSOLIDATED_MISSING_FROM_PROVIDER",
+        "PARENT_VERIFIED": "NOT_YET_VERIFIED",
+        "SCOPE_AS_PROVIDED_BASELINE": "NOT_YET_VERIFIED",
+        "SCOPE_AS_PROVIDED_CONTINUOUS": "NOT_YET_VERIFIED",
+    }
     for (s_, p_), codes in sorted(used_by.items()):
-        scope_rows.append({"symbol": s_, "period": p_,
-                           "used_by_metrics": ", ".join(sorted(codes)),
-                           **scope_res[(s_, p_)]})
+        r_ = scope_res[(s_, p_)]
+        st = r_["scope_status"]
+        scope_rows.append({
+            "symbol": s_, "period": p_,
+            "used_by_metrics": ", ".join(sorted(codes)),
+            **r_,
+            "selected_report_scope": LEGACY_SELECTED.get(
+                r_["selected_report_type"], "UNDETERMINED"),
+            "scope_selection_reason": LEGACY_REASON[st],
+            "scope_review_status": ("VERIFIED" if st.endswith("_VERIFIED")
+                                    else "PENDING"),
+            "scope_note": r_["scope_decision_rule"],
+        })
 
     # §10.1 — the conjunction, resolved once over every result.
     company_eligible = {u["symbol"]: bool(u["eligible_for_scoring"]) for u in universe}
@@ -1029,6 +949,142 @@ def main() -> int:
         r_["p5_scoring_eligibility"] = m_.get("scoring_eligibility")
         r_["p5_blocked_reason"] = m_.get("blocked_reason")
 
+    # ---------- §6.1: the company-level gate, BEFORE any summing ----------
+    # A criterion can be computable on its own; a company earns a 50-point total
+    # only with all five valid for the SAME period. §6.1 forbids the
+    # alternatives by name: no partial sum, no normalising four criteria up to
+    # 50, no scoring a blocked criterion 0, and no appearance in that period's
+    # official ranking.
+    #
+    # P5 is keyed on the LATEST quarter only (it is a valuation snapshot against
+    # the symbol's own history, not a per-quarter figure), so every period's gate
+    # reads the same P5 verdict. Stated here because silently reusing it would
+    # look like a bug to the next reader.
+    gate_rows = []
+    p5_elig = {r_["symbol"]: elig_by.get((r_["symbol"], QUARTERS[-1], "P5"), {})
+               for r_ in p5}
+    for s_ in SY:
+        for q_ in QUARTERS:
+            valid, blocking, why = {}, [], []
+            for code in ("P1", "P2", "P3", "P4"):
+                m_ = elig_by.get((s_, q_, code), {})
+                ok = m_.get("scoring_eligibility") == "ELIGIBLE"
+                valid[code] = ok
+                if not ok:
+                    blocking.append(code)
+                    if m_.get("blocked_reason"):
+                        why.append(f"{code}: {m_['blocked_reason']}")
+            m5 = p5_elig.get(s_, {})
+            valid["P5"] = m5.get("scoring_eligibility") == "ELIGIBLE"
+            if not valid["P5"]:
+                blocking.append("P5")
+                if m5.get("blocked_reason"):
+                    why.append(f"P5: {m5['blocked_reason']}")
+            gate_rows.append({
+                "symbol": s_, "period": q_,
+                **{f"{k.lower()}_valid": v for k, v in valid.items()},
+                "eligible_for_total": not blocking,
+                # §12.3 and §6.1 both forbid a generic reason.
+                "blocking_criteria": ", ".join(blocking) or None,
+                "blocking_reason": "; ".join(why) or None,
+                "run_id": RUN_ID,
+            })
+    gate_by = {(g["symbol"], g["period"]): g for g in gate_rows}
+
+    # ---------- §3: one-off screen (tier 1 only — T1..T5) ----------
+    # Returns REVIEW_TRIGGERED or AUTO_NORMAL and nothing else. §3.2 puts the
+    # original filing between a trigger and a penalty, so no amount, ratio or
+    # deduction is produced here.
+    def _inc(sym, per, key):
+        return (inc.get((sym, per)) or {}).get(key)
+
+    one_off_rows = []
+    for s_ in SY:
+        for q_ in QUARTERS:
+            prior = [shift(q_, k) for k in range(1, 9)]
+            one_off_rows.append(one_off_screen(TriggerInput(
+                symbol=s_, period=q_,
+                pbt=_inc(s_, q_, PBT), pbt_year_ago=_inc(s_, shift(q_, 4), PBT),
+                prior_8q_pbt=[_inc(s_, x, PBT) for x in prior],
+                other_income=_inc(s_, q_, OTHER_INCOME),
+                prior_8q_other_income=[_inc(s_, x, OTHER_INCOME) for x in prior],
+                financial_income=_inc(s_, q_, FIN_INCOME),
+                prior_8q_financial_income=[_inc(s_, x, FIN_INCOME) for x in prior],
+                # §3.4 — T5 is written for non-financial issuers. Recorded so a
+                # reviewer looks for a specific non-recurring line rather than
+                # treating investment income as one-off.
+                is_financial_sector=True)))
+    one_off_by = {(r_["symbol"], r_["period"]): r_ for r_ in one_off_rows}
+
+
+    # ---------- §8: write the scope + gate to the DB, then READ THEM BACK ----------
+    # Persistence is no longer behind a flag. §8 makes writing and reading back
+    # part of acceptance, and §12 condition 3 requires the data to come from the
+    # database rather than only from a spreadsheet. --no-persist exists for a
+    # dry inspection.
+    scope_db_rows = None
+    gate_db_rows = None
+    if not args.no_persist:
+            # §8 — write the scope verdicts and the gate to the operational DB, not only in a
+        # spreadsheet: that is where a later verification gets recorded against
+        # the same key, and where the pipeline will read it back.
+        # Only the columns migration 073 defines. Sending a key the table does
+        # not have fails the whole batch, so the payload is built from an
+        # explicit allow-list rather than from whatever the resolver returned.
+        SCOPE_COLS = (
+            "symbol", "period", "provider_report_type", "selected_report_type",
+            "prior_period_scope", "prior_period", "loss_of_control_event",
+            "event_effective_date", "has_remaining_subsidiaries",
+            "scope_decision_rule", "scope_verification_method", "checked_date",
+            "usage_status", "used_by_metrics", "scope_status",
+            "consolidated_report_available", "standalone_report_available",
+            "scope_verification_source",
+            # 072's NOT NULL columns, derived above.
+            "selected_report_scope", "scope_selection_reason",
+            "scope_review_status", "scope_note",
+        )
+        payload = [{k: r.get(k) for k in SCOPE_COLS if k in r} for r in scope_rows]
+        wrote = read_back = 0
+        try:
+            for i in range(0, len(payload), 200):
+                safe_execute(
+                    client.table("fa_insurance_report_scope").upsert(
+                        payload[i:i + 200], on_conflict="symbol,period"),
+                    label="scope upsert")
+                wrote += len(payload[i:i + 200])
+            # §8 item 4-5 — read it BACK, and prove the scorer uses the table
+            # rather than only that the write returned 204. A denied PostgREST
+            # write answers 204 with zero rows affected, which looks identical
+            # to success.
+            read_back = safe_execute(
+                client.table("fa_insurance_report_scope")
+                .select("*", count="exact").limit(1),
+                label="scope read-back").count or 0
+            print(f"§8 fa_insurance_report_scope: ghi {wrote} dòng, "
+                  f"đọc lại {read_back} dòng")
+        except Exception as exc:  # noqa: BLE001
+            print(f"::warning::không ghi được bảng phạm vi "
+                  f"({type(exc).__name__}: {str(exc)[:300]})")
+
+        gate_payload = [{k: g.get(k) for k in (
+            "symbol", "period", "p1_valid", "p2_valid", "p3_valid", "p4_valid",
+            "p5_valid", "eligible_for_total", "blocking_criteria",
+            "blocking_reason", "run_id")} for g in gate_rows]
+        try:
+            for i in range(0, len(gate_payload), 200):
+                safe_execute(
+                    client.table("fa_insurance_nonlife_eligibility").upsert(
+                        gate_payload[i:i + 200], on_conflict="symbol,period"),
+                    label="eligibility upsert")
+            back = safe_execute(
+                client.table("fa_insurance_nonlife_eligibility")
+                .select("*", count="exact").limit(1),
+                label="eligibility read-back").count or 0
+            print(f"§6 fa_insurance_nonlife_eligibility: ghi {len(gate_payload)} "
+                  f"dòng, đọc lại {back} dòng")
+        except Exception as exc:  # noqa: BLE001
+            print(f"::warning::không ghi được bảng cổng ({type(exc).__name__})")
+        scope_db_rows, gate_db_rows = read_back, back
 
     # ---------- §3.6, §4.4, §5.4: the checks, run and recorded ----------
     # Executed rather than asserted in prose: §7 of the previous round asks for
@@ -1060,24 +1116,60 @@ def main() -> int:
 
     checks = []
     # ---- scope (§11.1) ----
+    # §11.1 items 1-4, rewritten for BA's §2 model. The two checks this
+    # replaces tested the WITHDRAWN premise — "chọn riêng lẻ ⇒ đã xác minh không
+    # có BCTC hợp nhất" — which is the manual confirmation §1 item 4 says must no
+    # longer block anything.
     bad = [f"{r['symbol']} {r['period']}" for r in scope_rows
-           if r["selected_report_scope"] == "CONSOLIDATED"
-           and r["consolidated_report_available"] is not True]
+           if r["symbol"] in ("BHI", "BIC", "PTI")
+           and r["selected_report_type"] != "CONSOLIDATED"]
     checks.append(fails("CHECK_SCOPE_01", bad,
-                        "chọn hợp nhất ⇒ consolidated_report_available = True"))
+                        "BHI, BIC, PTI dùng hợp nhất ở mọi kỳ (§11.1.1)"))
+
+    SIX = ("ABI", "AIC", "BLI", "BMI", "MIG", "PGI")
     bad = [f"{r['symbol']} {r['period']}" for r in scope_rows
-           if r["selected_report_scope"] == "STANDALONE"
-           and r["scope_selection_reason"] == "NOT_YET_VERIFIED"]
-    pend = [f"{r['symbol']} {r['period']}" for r in scope_rows
-            if r["scope_review_status"] == "PENDING"]
+           if r["symbol"] in SIX and r["usage_status"] != SCOPE_USED]
     checks.append(fails(
         "CHECK_SCOPE_02", bad,
-        "chọn riêng lẻ ⇒ đã xác minh không có BCTC hợp nhất",
-        pending=pend,
-        note=("PENDING đúng theo thiết kế: chưa có nguồn công bố của DN nên sự "
-              "tồn tại của BCTC hợp nhất chưa được xác minh. Một dòng trong "
-              "fa_insurance_scope_policy cho mỗi DN là đủ để chuyển PASS."
-              if pend else None)))
+        "sáu mã riêng lẻ được dùng theo chuỗi nguồn liên tục, không bị chặn "
+        "vì yêu cầu xác minh thủ công cũ (§11.1.2)"))
+
+    # §11.1.4 — THE CHECK THAT ENCODES BA's CORRECTION. A zero minority interest
+    # must never produce PARENT_VERIFIED, because a consolidated report of a
+    # wholly-owned parent reads zero too. Only a direct source label earns it.
+    bad = []
+    for r in scope_rows:
+        if r["scope_status"] != "PARENT_VERIFIED":
+            continue
+        if (src.get((r["symbol"], r["period"])) or {}).get("report_scope") != "ĐL":
+            bad.append(f"{r['symbol']} {r['period']}")
+    checks.append(fails(
+        "CHECK_SCOPE_04A", bad,
+        "PARENT_VERIFIED chỉ khi nguồn ghi TRỰC TIẾP riêng lẻ — không bao giờ "
+        "từ lợi ích cổ đông không kiểm soát = 0 (§2.3, §11.1.4)"))
+
+    # §11.1.3 — the first period of a series, with no direct evidence.
+    bad = []
+    for s_ in SY:
+        first = min(p_ for (sy, p_) in scope_res if sy == s_)
+        r = scope_res[(s_, first)]
+        if (r["provider_report_type"] == "UNDETERMINED"
+                and r["scope_status"] != "SCOPE_AS_PROVIDED_BASELINE"):
+            bad.append(f"{s_} {first}")
+    checks.append(fails(
+        "CHECK_SCOPE_04B", bad,
+        "kỳ đầu chuỗi thiếu bằng chứng trực tiếp ⇒ SCOPE_AS_PROVIDED_BASELINE "
+        "(§2.5, §11.1.3)"))
+
+    # §11.1.5 / §8 — the program must READ the new table, not merely write it.
+    # Proved by reading back and comparing to what was resolved in memory.
+    checks.append(fails(
+        "CHECK_SCOPE_073", [] if scope_db_rows == len(scope_rows)
+        else [f"ghi {len(scope_rows)} nhưng đọc lại {scope_db_rows}"],
+        "migration 073 đã áp và số dòng phạm vi đọc lại khớp số dòng đã ghi",
+        note=(f"đọc lại {scope_db_rows} dòng từ fa_insurance_report_scope"
+              if scope_db_rows is not None else
+              "chưa ghi (chạy với --persist-scope để kiểm tra)")))
 
     # §5.2 — the rule, verbatim: unknown on either side is PENDING, never PASS.
     bad, pend = [], []
@@ -1118,6 +1210,7 @@ def main() -> int:
     # lets an undetermined source through the gate.
     bad = [f"{r['symbol']} {r['period']} {r['metric_code']}" for r in results
            if r["scoring_eligibility"] == "ELIGIBLE"
+           and r["metric_code"] not in SCOPE_EXEMPT_METRICS
            and (r["scope_validation_status"] != "PASS"
                 or r.get("scope_undetermined_periods"))]
     checks.append(fails("CHECK_SCOPE_05", bad,
@@ -1314,18 +1407,52 @@ def main() -> int:
     for s in SY:
         r, v = by.get((s, latest), {}), p5_by.get(s, {})
         f = lambda x, d=2: "—" if x is None else f"{x:,.{d}f}"
+        sc = scope_res.get((s, latest), {})
+        g = gate_by.get((s, latest), {})
+        oo = one_off_by.get((s, latest), {})
         table.append({
-            "Mã": s, "Tên": names.get(s),
+            "Mã": s, "Tên": names.get(s), "Kỳ": latest,
+            # §10.1 — the report type the source recorded, what the system
+            # selected, and the evidence grade, as three separate columns.
+            "Loại BC nguồn ghi": sc.get("provider_report_type"),
+            "Phạm vi hệ thống chọn": sc.get("selected_report_type"),
+            "Trạng thái phạm vi": sc.get("scope_status"),
             "P1 (%)": f(r.get("p1_underwriting_margin_pct")),
+            "P1 trạng thái": r.get("p1_scoring_eligibility"),
             "P2 (điểm %)": f(r.get("p2_underwriting_margin_delta_yoy_pp")),
+            "P2 trạng thái": r.get("p2_scoring_eligibility"),
             "P3 TTM (%)": f(r.get("p3_investment_yield_net_ttm_pct")),
-            "Cờ biến động P3": r.get("investment_income_volatility_flag"),
+            "P3 trạng thái": r.get("p3_scoring_eligibility"),
+            # §11.2 of the prior round / §10.4 — the flag appears ONLY at the
+            # symbol-period that triggered it. A column reading "NORMAL" down
+            # every row made an ordinary reading look like a warning.
+            "Cờ biến động P3": (r.get("investment_income_volatility_flag")
+                                if r.get("investment_income_volatility_flag")
+                                == "HIGH_VARIATION" else None),
             "P4 gộp (lần)": f(r.get("p4_gross_coverage_x")),
-            "P4 thuần tham khảo (lần)": f(r.get("p4_net_coverage_reference_x")),
+            "P4 trạng thái": r.get("p4_scoring_eligibility"),
             "P5 (lần)": f(v.get("p5_pb_relative_x"), 3),
+            "P5 trạng thái": v.get("p5_scoring_eligibility"),
             "Số quý P/B": v.get("pb_observation_count"),
-            "Kết luận": ("P1–P4 đủ dữ liệu; P3 có cờ biến động, "
-                         "không tự động xác định one-off"),
+            "company_metric_eligibility": ("ELIGIBLE" if g.get("eligible_for_total")
+                                           else "BLOCKED"),
+            "Chỉ tiêu đang chặn": g.get("blocking_criteria"),
+            "Điều kiện T1–T5 kích hoạt": oo.get("triggers_fired"),
+            "one_off_review_status": oo.get("one_off_review_status"),
+            "one_off_penalty": oo.get("one_off_penalty"),
+            # §10.1 asks for these; they are filled by tier 2 and by the score
+            # pass, which this data round does not run — so they are present and
+            # empty rather than absent, and the reason says which.
+            "Khoản one-off xác nhận": None,
+            "Cơ sở trước/sau thuế": None,
+            "R_Q": None, "R_TTM": None, "R sử dụng": None,
+            "Điểm FA thô": None, "Điểm FA cuối": None,
+            "Kỳ FA": latest,
+            "Lý do chưa hoàn thành": (
+                g.get("blocking_reason") if not g.get("eligible_for_total")
+                else ("chờ tier 2 đọc BCTC gốc (§3.2)"
+                      if oo.get("one_off_review_status") == "REVIEW_TRIGGERED"
+                      else None)),
         })
 
     # ---------- distributions (§14, items 1-8) ----------
@@ -1347,7 +1474,6 @@ def main() -> int:
         dist("P2 Δ biên YoY", "p2_underwriting_margin_delta_yoy_pp", cur, "điểm %"),
         dist("P3 Hiệu suất đầu tư thuần TTM", "p3_investment_yield_net_ttm_pct", cur, "%"),
         dist("P4 Bao phủ dự phòng gộp", "p4_gross_coverage_x", cur, "lần"),
-        dist("P4 thuần (tham khảo)", "p4_net_coverage_reference_x", cur, "lần"),
         dist("P5 P/B tương đối", "p5_pb_relative_x", p5, "lần", 3),
         dist("Tỷ lệ nhượng tái", "ceded_share_pct", cur, "%", 1),
         {"chi_tieu": "— trên toàn bộ 4 quý —"},
@@ -1386,25 +1512,75 @@ def main() -> int:
         {"muc": "IFA", "gia_tri": "belongs_to_nonlife_universe=True · "
                                    "eligible_for_scoring=False · display_group=WATCHLIST"},
         {"muc": "phạm vi báo cáo", "gia_tri": "đọc từ header BCTC, KHÔNG mặc định hợp nhất"},
-        {"muc": "truy vết nguồn", "gia_tri": "6 trường §6.2 trên mọi dòng TRUY_VET"},
+        {"muc": "truy vết nguồn", "gia_tri": "Kết quả từng chỉ tiêu lưu tại METRIC_RESULT; toàn bộ nguồn dữ liệu dùng để tính kết quả lưu tại METRIC_SOURCE_LINEAGE (§10.3)"},
         {"muc": "formula_version", "gia_tri": FORMULA_VERSION},
         {"muc": "ngưỡng điểm", "gia_tri": "KHÔNG đặt — §15.17"},
         {"muc": "giao diện", "gia_tri": "KHÔNG lập trình — §15.18"},
     ]
 
-    issues = [{"symbol": r["symbol"], "period": r["period"], "van_de": k,
-               "gia_tri": r.get(k)}
-              for r in rows for k in ("p1_acceptance_status", "p2_acceptance_status",
-                                      "p3_calculation_status", "p4_acceptance_status")
-              if not str(r.get(k, "")).startswith(("ACCEPTED", "PASS"))]
-    issues += [{"symbol": r["symbol"], "period": "—",
-                "van_de": "p5_acceptance_status", "gia_tri": r["p5_acceptance_status"]}
-               for r in p5 if r["p5_acceptance_status"] != "ACCEPTED"]
+    # §12.2 / §12.3 — grouped by ROOT CAUSE, not one line per downstream
+    # symptom. BA's objection was precise: the old file's 96 / 120 / 54 / 4 were
+    # the chain effects of ONE scope problem presented as hundreds of
+    # independent faults.
+    def _issue(cause, syms, periods, metrics, status, checked, action):
+        return {"nguyen_nhan_goc": cause,
+                "ma_anh_huong": ", ".join(sorted(set(syms))) or "—",
+                "ky_anh_huong": ", ".join(sorted(set(periods))) or "—",
+                "chi_tieu_anh_huong": ", ".join(sorted(set(metrics))) or "—",
+                "trang_thai": status, "nguon_da_kiem_tra": checked,
+                "hanh_dong_can_lam": action}
+
+    issues = []
+    blocked = [r for r in results if r["scoring_eligibility"] == "BLOCKED"]
+    by_cause: dict[str, list] = {}
+    for r in blocked:
+        # The first named condition in blocked_reason IS the root cause; the rest
+        # are its consequences on the same row.
+        cause = (r["blocked_reason"] or "không rõ").split(";")[0].split("—")[0].strip()
+        by_cause.setdefault(cause, []).append(r)
+    for cause, rs in sorted(by_cause.items(), key=lambda x: -len(x[1])):
+        issues.append(_issue(
+            cause, [x["symbol"] for x in rs], [x["period"] for x in rs],
+            [x["metric_code"] for x in rs],
+            f"BLOCKED · {len(rs)} kết quả chỉ tiêu",
+            "fa_vnstock_statements, fa_statement_release_dates, "
+            "fa_insurance_report_scope",
+            "xem blocked_reason trong METRIC_RESULT cho từng mã–kỳ"))
+    waiting = [v for v in scope_res.values()
+               if v["usage_status"] != SCOPE_USED]
+    if waiting:
+        issues.append(_issue(
+            "Kỳ hiện tại chỉ có BCTC riêng lẻ trong khi kỳ hoàn thành gần nhất "
+            "dùng hợp nhất (§2.1.4)",
+            [v["symbol"] for v in waiting], [v["period"] for v in waiting],
+            ["P1", "P2", "P3", "P4"], "WAITING_CONSOLIDATED",
+            "header BCTC (nguồn), fa_insurance_control_events",
+            "chờ BCTC hợp nhất của kỳ hiện tại; giữ điểm kỳ hoàn thành gần nhất"))
+    triggered = [r for r in one_off_rows
+                 if r["one_off_review_status"] == "REVIEW_TRIGGERED"]
+    if triggered:
+        issues.append(_issue(
+            "Bộ lọc số học T1–T5 kích hoạt — cần tier 2 đọc BCTC gốc (§3.2)",
+            [r["symbol"] for r in triggered], [r["period"] for r in triggered],
+            ["Điểm trừ one-off"], "REVIEW_TRIGGERED",
+            "fa_vnstock_statements (LNTT, thu nhập khác, DT tài chính)",
+            "prompt mở BCTC gốc + thuyết minh trên website DN; chưa trừ điểm"))
+    unlabelled = [v for v in scope_res.values()
+                  if v["scope_status"] in ("SCOPE_AS_PROVIDED_CONTINUOUS",
+                                           "SCOPE_AS_PROVIDED_BASELINE")]
+    if unlabelled:
+        issues.append(_issue(
+            "Nguồn chỉ phục vụ nhãn loại báo cáo cho 4 quý gần nhất (§2.3)",
+            [v["symbol"] for v in unlabelled], [v["period"] for v in unlabelled],
+            ["P2", "P3"], "SCOPE_AS_PROVIDED — trạng thái vận hành, "
+            "KHÔNG phải đã xác minh",
+            "header BCTC: đã thử page_size 6/20/40, nguồn luôn trả 4 quý",
+            "không chặn tính toán (§2.5.3); không ghi là đã xác minh riêng lẻ"))
 
     failed = [c for c in checks if c["ket_qua"] == "FAIL"]
     pending_checks = [c for c in checks if c["ket_qua"] == "PENDING"]
     elig = Counter((r["metric_code"], r["scoring_eligibility"]) for r in results)
-    scope_state = Counter(r["record_report_scope"] for r in scope_rows)
+    scope_state = Counter(r["scope_status"] for r in scope_rows)
     review_state = Counter(r["scope_review_status"] for r in scope_rows)
     full = sorted({r["symbol"] for r in results} - {
         r["symbol"] for r in results if r["scoring_eligibility"] != "ELIGIBLE"})
@@ -1434,12 +1610,17 @@ def main() -> int:
              else "không có mã nào trong bảng chính thức"},
         {"muc": "— phạm vi báo cáo trên MỌI kỳ nguồn —", "gia_tri": ""},
         {"muc": "số mã-kỳ nguồn được xác minh phạm vi", "gia_tri": len(scope_rows)},
-        {"muc": "record_report_scope",
+        {"muc": "scope_status (§2.4)",
          "gia_tri": " · ".join(f"{k} {v}" for k, v in sorted(scope_state.items()))},
         {"muc": "scope_review_status",
          "gia_tri": " · ".join(f"{k} {v}" for k, v in sorted(review_state.items()))},
-        {"muc": "chính sách phạm vi đã xác minh",
-         "gia_tri": f"{len(policy)} DN — bảng fa_insurance_scope_policy"},
+        {"muc": "sự kiện mất quyền kiểm soát đã xác minh (§2.6)",
+         "gia_tri": f"{n_events} sự kiện — bảng fa_insurance_control_events"},
+        {"muc": "ghi chú cột legacy 072",
+         "gia_tri": "scope_selection_reason/scope_review_status trả lời câu hỏi "
+                    "CŨ (có tồn tại BCTC hợp nhất hay không) mà BA đã bỏ; "
+                    "scope_status mới là trạng thái theo §2.4. NOT_YET_VERIFIED "
+                    "KHÔNG mâu thuẫn với PARENT_VERIFIED — hai câu hỏi khác nhau"},
         {"muc": "— phân loại (§8.2) —", "gia_tri": ""},
         {"muc": "classification_source_status",
          "gia_tri": " · ".join(f"{k} {v}" for k, v in sorted(Counter(
@@ -1490,9 +1671,11 @@ def main() -> int:
         "METRIC_RESULT": results,
         "METRIC_SOURCE_LINEAGE": lin,
         "REPORT_SCOPE_VERIFICATION": scope_rows,
+        "CONG_DU_DIEU_KIEN": gate_rows,
+        "MOT_LAN_T1_T5": one_off_rows,
         "universe_theo_loai_hinh": universe,
         "DANH_SACH_THEO_DOI": watch or [{"note": "không có mã nào chờ dữ liệu"}],
-        "LOI_VA_KY_THIEU": issues or [{"note": "không có"}],
+        "VAN_DE_DU_LIEU_CAN_XU_LY": issues or [{"note": "không có"}],
         "meta": run_metadata(out, len(results), len(lin), snapshot),
     })
     print(f"run_id {RUN_ID}")
@@ -1520,21 +1703,6 @@ def main() -> int:
     print(f"P5 ACCEPTED {sum(1 for r in p5 if r['p5_acceptance_status']=='ACCEPTED')}/{len(p5)}")
     print(f"Wrote {out} ({out.stat().st_size / 1024:.0f} KB)")
 
-    if args.persist_scope:
-        # §3.3 — the verdicts belong in the governance table, not only in a
-        # spreadsheet: that is where a later verification gets recorded against
-        # the same key, and where the pipeline will read it back.
-        payload = [{k: v for k, v in r.items()} for r in scope_rows]
-        try:
-            for i in range(0, len(payload), 200):
-                safe_execute(
-                    client.table("fa_insurance_report_scope").upsert(
-                        payload[i:i + 200], on_conflict="symbol,period"),
-                    label="scope upsert")
-            print(f"§3.3 wrote {len(payload)} rows to fa_insurance_report_scope")
-        except Exception as exc:  # noqa: BLE001
-            print(f"::warning::could not write scope table ({type(exc).__name__}); "
-                  f"apply supabase/072")
     return 0
 
 
