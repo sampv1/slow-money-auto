@@ -137,7 +137,12 @@ def write_xlsx(path: Path, sheets: dict[str, list[dict]]) -> None:
         if not rows:
             ws.append(["(no rows)"])
             continue
-        headers = list(rows[0].keys())
+        # UNION in first-seen order, not `rows[0].keys()`. A key that appears
+        # only on a later row was silently dropped — the non-life check sheet
+        # lost its `ghi_chu` column that way, which is where a PENDING check
+        # explains itself. Additive: every existing column keeps its position,
+        # so no other export's layout moves.
+        headers = list(dict.fromkeys(k for r in rows for k in r))
         ws.append(headers)
         for cell in ws[1]:
             cell.font = Font(bold=True)
