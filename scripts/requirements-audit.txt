@@ -1,0 +1,27 @@
+# Minimal dependencies for audit_data.py ONLY — the fallback that keeps the
+# watchdog alive when the full install cannot resolve.
+#
+# WHY THIS FILE EXISTS (2026-09-27)
+# --------------------------------
+# data-audit-daily.yml is the job that reports a missing session, and it was
+# installing the same requirements.txt as every collector. So the PyPI quarantine
+# of vnstock/vnai would have killed the watchdog at `pip install` too — a monitor
+# that cannot run during the outage it exists to detect. The full install is still
+# attempted first; this is the fallback.
+#
+# audit_data.py needs nothing but a Supabase client: `ta/common.py` imports no
+# provider library at module level, and layer_calendar's `from ta.benchmark
+# import ...` sits inside a try/except that degrades to a WARN. Verified by
+# running the audit in a venv containing only these two packages — every layer
+# reported, exit 0, with the calendar check honestly saying it could not check.
+#
+# THE COST IS REAL AND MUST STAY VISIBLE: without vnstock there is no external
+# witness, so layer_calendar cannot FAIL on a missing session — exactly the check
+# this incident added. Degraded mode keeps the other nine layers working and says
+# out loud that it is degraded; it is not a substitute for fixing the install.
+#
+# Do not grow this file. Anything that needs a provider call belongs in
+# requirements.txt, because a dependency added here silently widens what the
+# fallback pretends to cover.
+supabase>=2.0.0
+python-dotenv>=1.0.0

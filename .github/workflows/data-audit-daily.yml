@@ -55,28 +55,50 @@ jobs:
           cache: "pip"
           cache-dependency-path: scripts/requirements.txt
 
+      # THE WATCHDOG MUST SURVIVE THE OUTAGE IT DETECTS. Installing the same
+      # requirements.txt as the collectors meant the PyPI quarantine of
+      # vnstock/vnai would kill this job at `pip install` as well — which is how
+      # 2026-09-25 went unreported for two days. So the full install is
+      # attempted, and a failure falls back to the two packages audit_data.py
+      # actually needs rather than ending the run.
       - name: Install dependencies
-        run: pip install -r scripts/requirements.txt
+        id: deps
+        run: |
+          if pip install -r scripts/requirements.txt; then
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Full install failed — falling back to the audit-only dependency set (scripts/requirements-audit.txt). The data audit still runs, but WITHOUT the external calendar witness, so a missing session can only WARN, not FAIL. See vendor/wheels/README.md."
+            pip install -r scripts/requirements-audit.txt
+            echo "mode=degraded" >> "$GITHUB_OUTPUT"
+          fi
 
       # A BROKEN TOOLCHAIN AND MISSING DATA ARE DIFFERENT INCIDENTS, and from
       # outside the job they look identical: one red X. They call for different
-      # actions — repair the install versus recover a session — so the summary
-      # has to say which before the audit runs at all.
-      - name: Verify the toolchain imports
+      # actions — repair the install versus recover a session — so this records
+      # which, WITHOUT failing yet: the audit still has to run and report. The
+      # job is failed at the end instead, so both verdicts get through.
+      - name: Report the toolchain state
+        id: toolchain
         run: |
           cd scripts
           python - <<'PY'
-          import sys
+          import os
           try:
-              import vnstock, vnai, pandas, supabase   # noqa: F401
+              import vnstock, vnai   # noqa: F401
               from importlib.metadata import version
-              print(f"vnstock {version('vnstock')} · vnai {version('vnai')}")
+              msg = f"vnstock {version('vnstock')} · vnai {version('vnai')}"
+              ok = True
           except Exception as exc:
-              print(f"::error::toolchain broken, not a data problem: "
-                    f"{type(exc).__name__}: {exc}")
-              print("Both vnstock and vnai are QUARANTINED on PyPI and are served "
-                    "from vendor/wheels — see scripts/requirements.txt.")
-              sys.exit(1)
+              msg = f"{type(exc).__name__}: {exc}"
+              ok = False
+              print("::error::Toolchain degraded, which is NOT a data problem: "
+                    f"{msg}. vnstock and vnai are QUARANTINED on PyPI (zero files "
+                    "on the index), so nothing can install them from there. The "
+                    "audit below still ran; its calendar check could not.")
+          print(msg)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"ok={'true' if ok else 'false'}\n")
+              fh.write(f"detail={msg}\n")
           PY
 
       - name: Verify secrets are set
@@ -88,8 +110,11 @@ jobs:
           if [ -z "$SUPABASE_ANON_KEY" ]; then echo "::error::SUPABASE_ANON_KEY secret not set"; exit 1; fi
           echo "Secrets OK."
 
+      # `continue-on-error` so a critical data gap does not stop the summary from
+      # being written; the final step is what fails the job.
       - name: Audit the data chain
         id: audit
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -127,3 +152,19 @@ jobs:
             echo
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # BOTH verdicts fail the job, and the summary above already distinguishes
+      # them. Failing earlier would have hidden whichever one came second.
+      - name: Fail on a data gap or a degraded toolchain
+        if: always()
+        run: |
+          rc=0
+          if [ "${{ steps.audit.outcome }}" != "success" ]; then
+            echo "::error::The data chain audit reported a critical gap — see the job summary."
+            rc=1
+          fi
+          if [ "${{ steps.toolchain.outputs.ok }}" != "true" ]; then
+            echo "::error::Dependencies could not be installed in full (${{ steps.deps.outputs.mode }} mode). The pipeline cannot run in CI until vendor/wheels is supplied."
+            rc=1
+          fi
+          exit $rc
