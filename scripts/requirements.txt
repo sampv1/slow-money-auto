@@ -17,7 +17,48 @@ python-dotenv>=1.0.0
 # fresh on every run, it picked up 4.0.6, and the whole pipeline collected zero
 # bars. ta/common.py patches the function at import time as a second line of
 # defence; both can go once upstream ships a release with a real else branch.
+# ---------------------------------------------------------------------------
+# vnstock AND vnai CANNOT BE INSTALLED FROM PyPI (2026-09-25).
+#
+# PyPI QUARANTINED both projects. The project pages still answer 200, but the
+# simple index carries `pypi:project-status: quarantined` and lists ZERO files,
+# so `pip install vnstock==4.0.4` fails for everyone with
+#   ERROR: Could not find a version that satisfies the requirement vnstock==4.0.4
+#          (from versions: none)
+# "from versions: none" is the tell: not a version that was yanked, an index
+# with nothing in it at all.
+#
+# All seven daily workflows install from this file, so all seven died at
+# `Install dependencies` in 10-20 seconds and the pipeline collected nothing for
+# the 2026-09-25 session. A PIN DOES NOT PROTECT AGAINST WITHDRAWAL — the pin is
+# what 2026-08-18 taught and it is still right, it just answers a different
+# question. Neither does the GitHub pip cache: pip resolves against the index
+# BEFORE consulting the cache, so resolution fails first.
+#
+# vnai is the harder half: a hard dependency of vnstock, quarantined too, and
+# with no public source repository (github.com/thinh-vu/vnai is 404).
+#
+# THE WHEELS ARE NOT IN THIS REPOSITORY AND MUST NOT BE. vnstock is licensed
+# "Personal, research, non-commercial" and vnai is marked proprietary, while this
+# repo is public — committing either would redistribute restricted software to
+# everyone who clones it. vendor/wheels/README.md has the licence terms and the
+# three legitimate ways to supply them (a licensed channel from the vendor, a
+# private artifact store the workflow fetches with a secret, or a self-hosted
+# runner). Until one is in place the daily workflows cannot install and the
+# pipeline must be run by hand from a machine that already has the packages.
+#
+# Two --find-links so a populated vendor/wheels resolves whether pip runs from
+# the repo root (as every workflow does) or from scripts/ (as a developer does).
+# pip warns and continues when the directory is absent or empty, so this file is
+# correct either way.
+--find-links vendor/wheels
+--find-links ../vendor/wheels
+
+# PINNED, do not loosen to >=. See the 4.0.5/4.0.6 UnboundLocalError note above.
 vnstock==4.0.4
+# Pinned explicitly even though vnstock requires it, so the vendored version is
+# recorded rather than being whatever the wheel happened to resolve to.
+vnai==2.4.9
 anthropic>=0.40.0
 pandas>=2.0.0
 numpy>=1.24.0

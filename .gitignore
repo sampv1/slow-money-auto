@@ -27,3 +27,9 @@ dashboard/out/
 
 # vnstock auto-writes this on import; see VNSTOCK_DISABLE_AGENT_SETUP
 /AGENTS.md
+
+# Proprietary wheels, kept OUT of this public repo on purpose — see
+# vendor/wheels/README.md. vnstock is licensed "Personal, research,
+# non-commercial" and vnai is marked proprietary, so publishing them here would
+# redistribute someone else's restricted software to the world.
+vendor/wheels/*.whl

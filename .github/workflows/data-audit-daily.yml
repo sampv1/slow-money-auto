@@ -1,0 +1,129 @@
+name: Data Audit Daily
+
+# THE WATCHDOG THAT WAS MISSING (2026-09-27).
+#
+# Every collector already gates its own writes through ta/run_status.py, and that
+# architecture is sound — but it lives INSIDE the Python process. On 2026-09-25
+# PyPI quarantined the `vnstock` package, all seven daily workflows died at
+# `pip install` in 10-20 seconds, and so not one require() ever executed. Nothing
+# was collected, nothing was checked, and nothing said so: the only signal was
+# seven red X's in the Actions tab, which is a place nobody looks on a Friday
+# evening. The gap was found two days later by opening the website.
+#
+# A collector cannot be its own monitor, because the ways it fails include not
+# running. This job is deliberately SEPARATE: it reads the database and compares
+# it against the market, so it reports a hole whatever the cause — a quarantined
+# dependency, a revoked secret, a disabled schedule, a provider outage, or a bug.
+#
+# It is also why audit_data.py gained `layer_calendar`: its trading calendar was
+# derived from ta_ohlcv itself, so a session with zero bars was not in the
+# calendar and could not be reported missing. The audit ran green, exit 0, with a
+# whole session absent. The witness has to be outside the pipeline.
+
+on:
+  schedule:
+    # 15:00 UTC (22:00 ICT). AFTER every collector: ta-daily 09:23 (+13:47
+    # backup), fa-import 08:00, fa-score 10:10, macro-daily 13:30, and
+    # fa-securities, which macro-daily triggers and which has a 14:05 backstop.
+    # Auditing before the last writer finishes would report its lag as a fault,
+    # which is how a monitor teaches people to ignore it.
+    #
+    # Runs EVERY day, not Mon-Fri. A weekend run is the cheap case — the market
+    # traded no new session, so layer_calendar confirms the newest one is stored
+    # and the job is quiet. Restricting it to weekdays would have left exactly
+    # this incident undetected until Monday, since Friday's collection failed
+    # after Friday's audit would already have run.
+    - cron: "0 15 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: data-audit-daily
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    environment: supabase
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      # A BROKEN TOOLCHAIN AND MISSING DATA ARE DIFFERENT INCIDENTS, and from
+      # outside the job they look identical: one red X. They call for different
+      # actions — repair the install versus recover a session — so the summary
+      # has to say which before the audit runs at all.
+      - name: Verify the toolchain imports
+        run: |
+          cd scripts
+          python - <<'PY'
+          import sys
+          try:
+              import vnstock, vnai, pandas, supabase   # noqa: F401
+              from importlib.metadata import version
+              print(f"vnstock {version('vnstock')} · vnai {version('vnai')}")
+          except Exception as exc:
+              print(f"::error::toolchain broken, not a data problem: "
+                    f"{type(exc).__name__}: {exc}")
+              print("Both vnstock and vnai are QUARANTINED on PyPI and are served "
+                    "from vendor/wheels — see scripts/requirements.txt.")
+              sys.exit(1)
+          PY
+
+      - name: Verify secrets are set
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then echo "::error::SUPABASE_URL secret not set"; exit 1; fi
+          if [ -z "$SUPABASE_ANON_KEY" ]; then echo "::error::SUPABASE_ANON_KEY secret not set"; exit 1; fi
+          echo "Secrets OK."
+
+      - name: Audit the data chain
+        id: audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          cd scripts
+          set -o pipefail
+          # Tee so the summary can quote the failures even though the script's
+          # own exit code is what fails the job.
+          python audit_data.py 2>&1 | tee "$RUNNER_TEMP/audit.txt"
+
+      # Always, so a failing audit still explains itself in the run summary
+      # rather than only in a log someone has to open and scroll.
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Data chain audit"
+            echo
+            if [ "${{ steps.audit.outcome }}" = "success" ]; then
+              echo "No critical gap."
+            else
+              echo "### Critical gaps"
+              echo '```'
+              grep -E "FAIL" "$RUNNER_TEMP/audit.txt" || echo "(audit did not run)"
+              echo '```'
+              echo "Recovery runbook: \`.claude/skills/data-audit/SKILL.md\`"
+            fi
+            echo
+            echo "<details><summary>Full audit</summary>"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/audit.txt" 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"

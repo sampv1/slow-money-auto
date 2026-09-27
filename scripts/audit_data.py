@@ -152,6 +152,74 @@ class Audit:
             frm += 1000
         return sorted({x["date"] for x in rows}, reverse=True)
 
+    def layer_calendar(self, sessions: list[str]) -> None:
+        """Does the MARKET have a session we do not? (2026-09-27)
+
+        THIS IS THE ONE CHECK THAT CANNOT USE OUR OWN TABLES, and that is the
+        whole reason it exists. `sessions()` derives the trading calendar from
+        `ta_ohlcv` — deliberately, so a public holiday is not reported as an
+        outage — but the consequence is that a session with ZERO bars is not in
+        the calendar at all and therefore cannot be reported missing. The audit
+        was comparing the table against itself.
+
+        On 2026-09-27 that produced a completely green report, exit 0, while the
+        whole of Friday 2026-09-25 was absent: PyPI had quarantined `vnstock`,
+        every daily workflow died at `pip install`, and nothing was collected.
+        Each layer read "2026-09-24 · 3d behind", which on a Sunday is exactly
+        what a healthy pipeline looks like — Friday, Saturday, Sunday. Day
+        counting cannot separate "the market was shut" from "we collected
+        nothing", because both leave the same hole.
+
+        The witness has to be OUTSIDE the pipeline. `macro_series.vnindex` does
+        not qualify: it is written by our own macro job, which failed for the
+        same reason, so it was missing 09-25 too. The provider is the only thing
+        that knows what days the exchange traded.
+
+        A provider failure is reported as WARN, not FAIL: it means we could not
+        check, which is a different fact from a confirmed gap, and turning the
+        audit red on someone else's outage is how a monitor gets ignored.
+        """
+        try:
+            from ta.benchmark import fetch_vnindex_closes
+            series = fetch_vnindex_closes(start=self.asof - timedelta(days=20),
+                                          end=self.asof)
+        except Exception as exc:  # noqa: BLE001
+            series = None
+            detail = f"{type(exc).__name__}"
+        if series is None or len(series) == 0:
+            self.add("0 calendar", "market sessions", None, WARN,
+                     "could not reach any benchmark provider — a missing "
+                     "session cannot be ruled out this run")
+            return
+
+        market = sorted(str(d) for d in series.index)
+        ours = set(sessions)
+        if not ours:
+            self.add("0 calendar", "market sessions", market[-1], FAIL,
+                     "no stored sessions at all in the audit window")
+            return
+        # CLIP TO WHERE OUR OWN WINDOW IS AUTHORITATIVE. The provider honours the
+        # start date loosely and hands back a few sessions more than asked, while
+        # `sessions()` covers a fixed 20 days — so an unclipped comparison
+        # reported 2026-09-03 and 2026-09-04 as missing when they are simply
+        # older than the window, on a run where nothing was wrong. Phantom gaps
+        # are how a monitor gets ignored, which is the same reason sofr/dxy are
+        # excluded from the interior-gap check.
+        floor = min(ours)
+        missing = [d for d in market
+                   if floor <= d <= self.asof.isoformat() and d not in ours]
+        newest_market = market[-1]
+        if not missing:
+            self.add("0 calendar", "market sessions", newest_market, OK,
+                     f"provider's newest session {newest_market} is stored; "
+                     f"{len(market)} session(s) checked")
+            return
+        # Count SESSIONS behind, not days: that is the number that is the same on
+        # a Monday as on a Sunday, and the one a closure cannot inflate.
+        self.add("0 calendar", "market sessions", newest_market, FAIL,
+                 f"{len(missing)} session(s) the market traded and we do NOT "
+                 f"hold: {', '.join(missing[-6:])}")
+
     def layer_ohlcv(self, sessions: list[str]) -> None:
         if not sessions:
             self.add("1 bars", "ta_ohlcv", None, FAIL, "no bars in the last 20 days at all")
@@ -340,6 +408,7 @@ class Audit:
 
     def run(self) -> None:
         sessions = self.sessions()
+        self.layer_calendar(sessions)
         self.layer_ohlcv(sessions)
         self.layer_signals(sessions)
         self.layer_universe()
