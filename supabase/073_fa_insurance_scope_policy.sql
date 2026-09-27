@@ -1,205 +1,195 @@
--- Migration 073: report-scope determination, a scope POLICY with effective
--- dates, and explicit classification semantics.
+-- Migration 073: report-scope selection per symbol-quarter (BA §4), the
+-- loss-of-control events it depends on, and explicit classification semantics.
 --
--- WHY -----------------------------------------------------------------------
--- 072 recorded which scope the pipeline used and whether that choice had been
--- verified. Three gaps showed up the moment the non-life checks were tightened:
+-- SUPERSEDES THE FIRST DRAFT OF THIS FILE, which was never applied — the
+-- `fa_insurance_scope_policy` table it created does not exist in any database,
+-- so this is a revision rather than an edit to applied history. BA's
+-- PHAN_HOI_CUOI §9.2 item 1 asks for exactly this ("sửa logic phạm vi trong
+-- migration/chương trình theo Mục 4").
 --
---   1. THE TABLE COULD NOT SAY "UNDETERMINED". `selected_report_scope` admits
---      only CONSOLIDATED and STANDALONE, so a period whose scope nothing
---      establishes had to be filed as one of the two. That is the same
---      collapse 072 avoided for `consolidated_report_available`, reappearing
---      one column to the left. P2 reads the year-ago quarter and P3 reads five
---      quarters, and the filing-header source serves only the latest four — so
---      "undetermined" is the majority state for the source periods, not an edge
---      case.
+-- WHAT CHANGED, AND WHY IT MATTERS -------------------------------------------
+-- The draft was built around a question BA has now withdrawn: "does a
+-- consolidated report EXIST for this company?" That question needed a manual,
+-- company-level disclosure nobody had, so six of nine insurers were blocked and
+-- only 3/9 could be scored.
 --
---   2. TWO DIFFERENT FACTS WERE SHARING ONE COLUMN. "Which scope is the record
---      we read" and "does a consolidated report exist for this company" are
---      separate questions with separate evidence, and the scope checks need the
---      first while the acceptance gate needs the second. A period can have a
---      perfectly determined record scope (the header names it) while the
---      existence question stays open. `record_report_scope` now carries the
---      first; `consolidated_report_available` keeps the second.
+-- §4 replaces it with a question the data can answer, per symbol-quarter:
+-- DID THE REPORTING BASIS CHANGE? That is a comparison, not an existence
+-- proof, and §4.7 is explicit that the six may not stay blocked for want of the
+-- old confirmation. The flow:
 --
---   3. VERIFYING THE SAME COMPANY EVERY QUARTER IS NOT A PLAN. A company's
---      group structure changes rarely, so the answer belongs to a DATE RANGE,
---      not to a quarter. `fa_insurance_scope_policy` holds it that way, and the
---      resolver reads it BEFORE falling back to per-period evidence — so when
---      the issuer disclosure arrives it is one INSERT per company and every
---      quarter in range becomes verified, with no code change and nothing
---      hard-coded per symbol.
+--   provider says Hợp nhất            -> use it, no further check        (§4.2)
+--   provider says Riêng lẻ, prior also Riêng lẻ
+--                                     -> use it; this is the company's
+--                                        continuous basis            (§4.3 A)
+--   provider says Riêng lẻ, prior was Hợp nhất
+--                                     -> do NOT score the new quarter; hold the
+--                                        last completed consolidated score and
+--                                        wait, UNLESS a verified loss of control
+--                                        before the quarter start with no
+--                                        remaining subsidiaries      (§4.3 B, §4.5)
 --
--- A SECOND, VERIFIABLE SOURCE OF RECORD SCOPE ---------------------------------
--- `BS_MINORITY_INTEREST > 0` proves the record consolidates a partly-owned
--- subsidiary, i.e. that record IS a consolidated statement. It is a POSITIVE
--- identification, which is why it is admissible where a zero minority interest
--- is not: zero is consistent with a standalone filing AND with a consolidation
--- of wholly-owned subsidiaries, so it proves nothing and must never be used.
--- Checked against the filing header on every symbol-period where both exist:
--- 36 of 36 agree, 0 disagree. It reaches as deep as the balance sheet does,
--- which closed the older source periods for BIC and PTI (24 quarters each) and
--- for BHI from 2023-Q2 — BHI reads zero at 2023-Q1 and has no balance sheet
--- before it, so BHI is the case that proves the method does not simply mirror
--- whatever the recent quarters said.
+-- So the columns change from "is there a consolidated report" to "what did the
+-- provider record, what did we select, what was the prior basis, and did a
+-- control event justify a change".
 
 -- ---------------------------------------------------------------------------
--- 1. Report scope: admit UNDETERMINED, and separate record scope from existence
+-- 1. Report scope, per symbol-quarter — the §4.6 field set
 -- ---------------------------------------------------------------------------
 alter table fa_insurance_report_scope
-  add column if not exists record_report_scope text not null default 'UNDETERMINED',
-  -- How the record scope was established, so a verdict can be re-examined
-  -- without re-deriving it. Never blank on a written row.
+  -- What the provider RECORDS for this period (§4.1). Never skipped, and never
+  -- inferred: 'CONSOLIDATED' / 'STANDALONE' come from the filing header's
+  -- `United` field, 'CONSOLIDATED_BY_MINORITY_INTEREST' from the balance sheet
+  -- (see the note on evidence below), 'UNDETERMINED' when neither speaks.
+  add column if not exists provider_report_type text,
+  -- What the system SELECTED, which is not always what the provider recorded —
+  -- §4.3 case B selects nothing and waits.
+  add column if not exists selected_report_type text,
+  -- The basis of the most recent COMPLETED period, which is what case A and
+  -- case B are distinguished by.
+  add column if not exists prior_period_scope text,
+  add column if not exists prior_period text,
+  -- §4.4 / §4.5. NULL means "not examined", FALSE means "examined, none found".
+  -- The distinction is the same one `consolidated_report_available` carries and
+  -- for the same reason: a guess is what BA rejected.
+  add column if not exists loss_of_control_event boolean,
+  add column if not exists event_effective_date date,
+  add column if not exists has_remaining_subsidiaries boolean,
+  -- §4.6: how the decision was reached, so it can be re-examined without being
+  -- re-derived.
+  add column if not exists scope_decision_rule text,
   add column if not exists scope_verification_method text,
-  -- Which P-criteria read this symbol-period. A source period exists in this
-  -- table BECAUSE a formula reads it; recording which one is what makes
-  -- "extend the verification to every source period" auditable rather than
-  -- asserted.
-  add column if not exists used_by_metrics text,
-  add column if not exists scope_policy_applied text;
+  add column if not exists checked_date date,
+  -- USED vs WAITING_FOR_CONSOLIDATED — §4.3 case B's outcome has to be a stored
+  -- state, because the dashboard must show which period a held score came from.
+  add column if not exists usage_status text,
+  -- Which criteria read this symbol-period. A source period is in this table
+  -- BECAUSE a formula reads it; recording which makes "every source period was
+  -- checked" auditable instead of asserted.
+  add column if not exists used_by_metrics text;
 
 alter table fa_insurance_report_scope
-  drop constraint if exists fa_insurance_report_scope_record_report_scope_check;
+  drop constraint if exists fa_ins_scope_provider_type_check;
 alter table fa_insurance_report_scope
-  add constraint fa_insurance_report_scope_record_report_scope_check
-  check (record_report_scope in ('CONSOLIDATED', 'STANDALONE', 'UNDETERMINED'));
-
-comment on column fa_insurance_report_scope.record_report_scope is
-  'The scope of the statement record this pipeline actually read. UNDETERMINED '
-  'is a real value, not a placeholder: it means no source establishes it. '
-  'Distinct from consolidated_report_available, which answers whether a '
-  'consolidated report EXISTS — a period can have a known record scope and an '
-  'open existence question at the same time.';
-
-comment on column fa_insurance_report_scope.scope_verification_method is
-  'STATEMENT_HEADER · BALANCE_SHEET_MINORITY_INTEREST · VERIFIED_SCOPE_POLICY · '
-  'NOT_DETERMINABLE_FROM_SOURCE. A zero minority interest is NOT a method: it '
-  'is consistent with both scopes and proves neither.';
-
--- `selected_report_scope` must be able to say "neither" for the same reason.
-alter table fa_insurance_report_scope
-  drop constraint if exists fa_insurance_report_scope_selected_report_scope_check;
-alter table fa_insurance_report_scope
-  add constraint fa_insurance_report_scope_selected_report_scope_check
-  check (selected_report_scope in ('CONSOLIDATED', 'STANDALONE', 'UNDETERMINED'));
+  add constraint fa_ins_scope_provider_type_check
+  check (provider_report_type is null or provider_report_type in (
+    'CONSOLIDATED',                      -- filing header: United = 'HN'
+    'STANDALONE',                        -- filing header: United = 'ĐL'
+    'CONSOLIDATED_BY_MINORITY_INTEREST', -- see the evidence note below
+    'UNDETERMINED'));
 
 alter table fa_insurance_report_scope
-  drop constraint if exists fa_insurance_report_scope_scope_selection_reason_check;
+  drop constraint if exists fa_ins_scope_selected_type_check;
 alter table fa_insurance_report_scope
-  add constraint fa_insurance_report_scope_scope_selection_reason_check
-  check (scope_selection_reason in (
-    'CONSOLIDATED_AVAILABLE_AND_SELECTED',
-    'NO_CONSOLIDATED_REPORT_STANDALONE_SELECTED',
-    'CONSOLIDATED_MISSING_FROM_PROVIDER',
-    'SCOPE_CONFLICT_REQUIRES_REVIEW',
-    -- New: the record's scope is identified but the existence question is open.
-    'CONSOLIDATED_IDENTIFIED_BY_MINORITY_INTEREST',
-    'STANDALONE_RECORD_EXISTENCE_UNVERIFIED',
-    -- New: nothing establishes even the record's scope.
-    'SCOPE_NOT_DETERMINABLE_FROM_SOURCE',
-    'NOT_YET_VERIFIED'));
+  add constraint fa_ins_scope_selected_type_check
+  check (selected_report_type is null or selected_report_type in (
+    'CONSOLIDATED', 'STANDALONE', 'NONE_WAITING_CONSOLIDATED'));
 
--- A written row must say how it was decided. Enforced rather than conventional:
--- the first non-life run filled this kind of field by assumption.
 alter table fa_insurance_report_scope
-  drop constraint if exists fa_insurance_report_scope_method_required;
+  drop constraint if exists fa_ins_scope_usage_status_check;
 alter table fa_insurance_report_scope
-  add constraint fa_insurance_report_scope_method_required
-  check (scope_verification_method is not null);
+  add constraint fa_ins_scope_usage_status_check
+  check (usage_status is null or usage_status in (
+    'USED', 'WAITING_FOR_CONSOLIDATED', 'BLOCKED_UNDETERMINED'));
 
--- An UNDETERMINED record scope can never be VERIFIED, and a VERIFIED row can
--- never be UNDETERMINED. Without this the two columns can drift into a state
--- that reads as "we checked, and the answer is that we do not know".
+-- A selected scope of NONE_WAITING_CONSOLIDATED and a usage_status of USED are
+-- contradictory. Enforced rather than left to the writer, because the writer is
+-- what got this wrong the first time.
 alter table fa_insurance_report_scope
-  drop constraint if exists fa_insurance_report_scope_undetermined_not_verified;
+  drop constraint if exists fa_ins_scope_waiting_is_not_used;
 alter table fa_insurance_report_scope
-  add constraint fa_insurance_report_scope_undetermined_not_verified
-  check (not (record_report_scope = 'UNDETERMINED'
-             and scope_review_status = 'VERIFIED'));
+  add constraint fa_ins_scope_waiting_is_not_used
+  check (not (selected_report_type = 'NONE_WAITING_CONSOLIDATED'
+              and usage_status = 'USED'));
+
+-- Every written row names the rule that decided it. §4.6 asks for the decision
+-- to be stored, and a decision with no rule attached cannot be reviewed.
+alter table fa_insurance_report_scope
+  drop constraint if exists fa_ins_scope_decision_rule_required;
+alter table fa_insurance_report_scope
+  add constraint fa_ins_scope_decision_rule_required
+  check (scope_decision_rule is not null);
+
+comment on column fa_insurance_report_scope.provider_report_type is
+  'What the PROVIDER records for this period (§4.1), never inferred. The filing '
+  'header (`United`) is authoritative but reaches only the latest 4 quarters — '
+  'measured: KBS returns 4 distinct quarters whatever page_size is asked for. '
+  'Beyond that the one admissible signal is BS_MINORITY_INTEREST > 0, which '
+  'POSITIVELY identifies a consolidated record (the balance sheet consolidates a '
+  'partly-owned subsidiary) and agrees with the header on 36 of 36 periods where '
+  'both exist. A ZERO minority interest is consistent with BOTH scopes and is '
+  'never used — that asymmetry is why one direction is evidence and the other '
+  'is not.';
+
+comment on column fa_insurance_report_scope.usage_status is
+  'WAITING_FOR_CONSOLIDATED is §4.3 case B: the provider has served a standalone '
+  'report where the prior period was consolidated, which usually means the '
+  'standalone was simply published first. The new quarter is NOT scored and the '
+  'last completed consolidated score is held — holding a score is not the same '
+  'as copying its figures into the new period (§4.3).';
 
 -- ---------------------------------------------------------------------------
--- 2. Scope policy, with effective dates (BA §4.6)
+-- 2. Loss-of-control events (§4.4, §4.5)
 -- ---------------------------------------------------------------------------
-create table if not exists fa_insurance_scope_policy (
+-- The ONLY thing that licenses switching from consolidated to standalone. Its
+-- evidence is external by nature — statement notes, a completed-transaction
+-- disclosure, a transfer date, the subsidiary list — so this table is populated
+-- by hand and is EMPTY until such a disclosure is read. Empty is correct: with
+-- no event on file, §4.3 case B holds the previous score and waits, which is
+-- the conservative branch.
+create table if not exists fa_insurance_control_events (
   symbol text not null,
-
-  -- The verified fact about the company's reporting, not about one quarter.
-  --   NO_CONSOLIDATED_PREPARED  — verified that the company prepares none, so
-  --                               the standalone statement is the only one and
-  --                               is the correct basis.
-  --   CONSOLIDATED_PREPARED     — it prepares one. Whether the provider serves
-  --                               it is a separate matter and does NOT license
-  --                               falling back to standalone silently.
-  scope_policy text not null
-    check (scope_policy in ('NO_CONSOLIDATED_PREPARED', 'CONSOLIDATED_PREPARED')),
-
-  effective_from date not null,
-  -- NULL = still in force. A group restructuring CLOSES this row and inserts a
-  -- new one, exactly as fa_insurance_classification does, so a past quarter
-  -- keeps the policy that was true when it was scored.
-  effective_to date,
-
-  -- Required, and deliberately so: a policy row is the thing that flips periods
-  -- to VERIFIED, so it may not exist without naming what verified it. This is
-  -- the column that must carry an issuer or exchange disclosure — the pipeline
-  -- cannot write one from provider data.
-  verification_source text not null,
-  verified_date date not null,
+  -- The date control was actually lost, which §4.5 routes on. NOT the
+  -- announcement date and NOT the resolution date: BA is explicit that a plan
+  -- or a resolution with the transaction incomplete keeps the company on the
+  -- consolidated basis.
+  effective_date date not null,
+  event_type text not null
+    check (event_type in ('SUBSIDIARY_DIVESTED', 'CONTROL_LOST_OTHER')),
+  -- FALSE is what allows the switch; TRUE keeps the company consolidated even
+  -- after a divestment (§4.5, last row). NULL means not established, which is
+  -- treated as "still consolidating" because that is the safe reading.
+  has_remaining_subsidiaries boolean,
+  -- Required. §4.4 ranks the acceptable evidence and rules out a mere plan;
+  -- a row without a source cannot be audited against that ranking.
+  evidence_type text not null
+    check (evidence_type in ('STATEMENT_NOTES', 'COMPLETION_DISCLOSURE',
+                             'TRANSFER_EFFECTIVE_DATE', 'SUBSIDIARY_LIST',
+                             'OWNERSHIP_AFTER_TRANSACTION')),
+  evidence_source text not null,
+  transaction_completed boolean not null default false,
   verified_by text not null,
+  verified_date date not null,
   note text,
   updated_at timestamptz not null default now(),
 
-  primary key (symbol, effective_from)
+  primary key (symbol, effective_date)
 );
 
-comment on table fa_insurance_scope_policy is
-  'Verified reporting policy per company over a date range, so the report-scope '
-  'question is answered once rather than re-verified every quarter. Read by the '
-  'scope resolver BEFORE any per-period evidence. Empty is the correct initial '
-  'state: nothing in the provider data can populate it, and populating it from '
-  'provider data would be the guess this table exists to replace.';
+comment on table fa_insurance_control_events is
+  'Verified loss-of-control events, the only basis for moving a symbol from the '
+  'consolidated to the standalone report (§4.4/§4.5). Populated by hand from an '
+  'issuer disclosure; EMPTY is the correct initial state, and with no row the '
+  'scope resolver takes §4.3 case B and waits for the consolidated report rather '
+  'than accepting a standalone one.';
 
-comment on column fa_insurance_scope_policy.scope_policy is
-  'NO_CONSOLIDATED_PREPARED is a VERIFIED negative — it is what licenses a '
-  'standalone basis. It must never be inferred from a zero minority interest, '
-  'from the absence of goodwill, or from the provider serving one report.';
+comment on column fa_insurance_control_events.transaction_completed is
+  'FALSE for a plan or a resolution. §4.5 keeps such a symbol on the '
+  'consolidated basis, so an incomplete transaction must never read as an event '
+  'that licenses the switch.';
 
-alter table fa_insurance_scope_policy enable row level security;
-drop policy if exists "fa_insurance_scope_policy read" on fa_insurance_scope_policy;
-create policy "fa_insurance_scope_policy read" on fa_insurance_scope_policy
+alter table fa_insurance_control_events enable row level security;
+drop policy if exists "fa_insurance_control_events read" on fa_insurance_control_events;
+create policy "fa_insurance_control_events read" on fa_insurance_control_events
   for select using (true);
 
-create index if not exists fa_insurance_scope_policy_active_idx
-  on fa_insurance_scope_policy (symbol, effective_to);
-
--- WORKED EXAMPLE — the whole of the next round, once BA supplies the answer.
--- Nothing is inserted here, because no disclosure has been read:
---
---   insert into fa_insurance_scope_policy
---     (symbol, scope_policy, effective_from, verification_source,
---      verified_date, verified_by, note)
---   values
---     ('ABI', 'NO_CONSOLIDATED_PREPARED', date '2020-01-01',
---      'Công bố thông tin HNX/website DN — <đường dẫn cụ thể>',
---      date '2026-09-27', 'BA',
---      'DN không lập BCTC hợp nhất quý trong khoảng hiệu lực');
---
--- One row per company turns every source period in range from UNDETERMINED or
--- PENDING into VERIFIED, and CHECK_SCOPE_02/03/04/05 follow without a code
--- change.
-
 -- ---------------------------------------------------------------------------
--- 3. Classification: PENDING must mean ONE thing (BA §8.2)
+-- 3. Classification: PENDING must mean ONE thing (BA §8.2 of the prior round)
 -- ---------------------------------------------------------------------------
--- The problem being fixed is not a missing value but an ambiguous one. Ten
--- non-life symbols carried insurance_type_review_status = 'PENDING' while being
--- scored, and PVI/BVH carried 'VERIFIED' while being excluded — so PENDING
--- appeared both to block and not to block. The two questions are separated:
---
---   classification_source_status — how good is the evidence for the TYPE
---   classification_usage_status  — may that type be used to route and score
---
--- and neither is the same as `eligible_for_scoring`, which is about the DATA.
+-- Ten non-life symbols carried insurance_type_review_status = 'PENDING' while
+-- being scored, and PVI/BVH carried 'VERIFIED' while being excluded — so
+-- PENDING appeared both to block and not to block. Two questions, two columns,
+-- and neither is `eligible_for_scoring`, which is about the DATA.
 alter table fa_insurance_classification
   add column if not exists classification_source_status text,
   add column if not exists classification_usage_status text;
@@ -219,21 +209,14 @@ alter table fa_insurance_classification
   check (classification_usage_status is null
          or classification_usage_status in ('ACTIVE', 'BLOCKED'));
 
-comment on column fa_insurance_classification.classification_source_status is
-  'Quality of the evidence for the type. PROVIDER = an unambiguous ICB code '
-  'with no competing ruling. BA_VERIFIED = a named BA decision. PENDING_REVIEW '
-  '= the type is unresolved or contested.';
-
 comment on column fa_insurance_classification.classification_usage_status is
   'Whether this type may route a symbol to a tab and be scored. An unambiguous '
   'provider code is ACTIVE without manual review — waiting for a human to '
-  'confirm what the source already states unambiguously blocks nothing and '
-  'costs coverage. Only an unresolved or contested type is BLOCKED. This is '
-  'SEPARATE from eligible_for_scoring, which asks whether the DATA is '
-  'sufficient: IFA is ACTIVE as a non-life insurer and still unscorable.';
+  'confirm what the source already states unambiguously blocks nothing and costs '
+  'coverage. Only an unresolved or contested type is BLOCKED. SEPARATE from '
+  'eligible_for_scoring, which asks whether the DATA suffices: IFA is ACTIVE as '
+  'a non-life insurer and still unscorable.';
 
--- Backfill by that rule. A BA ruling is BA_VERIFIED/ACTIVE; an unambiguous ICB
--- seed is PROVIDER/ACTIVE; a CONFLICT is PENDING_REVIEW/BLOCKED.
 update fa_insurance_classification
    set classification_source_status =
          case when insurance_type_source = 'BA_DECISION' then 'BA_VERIFIED'
@@ -246,22 +229,62 @@ update fa_insurance_classification
  where classification_usage_status is null;
 
 -- ---------------------------------------------------------------------------
+-- 4. Company-level eligibility gate (§7)
+-- ---------------------------------------------------------------------------
+-- A criterion can be computable on its own, but a company earns a TOTAL only
+-- with all five. §7.3 forbids the alternatives explicitly: no summing P1+P4 and
+-- leaving the rest blank, no scoring an incomplete criterion 0, and no
+-- normalising four criteria up to 50 points.
+create table if not exists fa_insurance_nonlife_eligibility (
+  symbol text not null,
+  period text not null,
+  p1_valid boolean not null,
+  p2_valid boolean not null,
+  p3_valid boolean not null,
+  p4_valid boolean not null,
+  p5_valid boolean not null,
+  -- The gate. Stored rather than derived at read time so the dashboard and the
+  -- scorer cannot disagree about it — two implementations of one rule is what
+  -- made the securities tabs contradict each other twice.
+  eligible_for_total boolean not null,
+  -- Which criteria are missing, by name. §7.4 and §12.3 both forbid a generic
+  -- reason; a reader has to be able to act on this without re-running anything.
+  blocking_criteria text,
+  blocking_reason text,
+  run_id text,
+  computed_at timestamptz not null default now(),
+
+  primary key (symbol, period)
+);
+
+comment on table fa_insurance_nonlife_eligibility is
+  'BA §7: a non-life insurer receives a 50-point total only when P1-P5 are ALL '
+  'valid for the SAME period. eligible_for_total = false withholds the total; it '
+  'never means zero, and the symbol simply does not appear in that period''s '
+  'official ranking (§3.2) while keeping its last completed score for Signal Pro.';
+
+alter table fa_insurance_nonlife_eligibility enable row level security;
+drop policy if exists "fa_insurance_nonlife_eligibility read" on fa_insurance_nonlife_eligibility;
+create policy "fa_insurance_nonlife_eligibility read" on fa_insurance_nonlife_eligibility
+  for select using (true);
+
+-- ---------------------------------------------------------------------------
 -- VERIFY
 --
---   select record_report_scope, scope_review_status, count(*)
---     from fa_insurance_report_scope group by 1, 2 order by 1, 2;
---   -- after the rerun with --persist-scope, expect no row that is both
---   -- UNDETERMINED and VERIFIED (the check constraint forbids it)
+--   select provider_report_type, selected_report_type, usage_status, count(*)
+--     from fa_insurance_report_scope group by 1,2,3 order by 1,2,3;
+--   -- after the rerun: no row both NONE_WAITING_CONSOLIDATED and USED
+--   -- (the check constraint forbids it), and every row carries a decision rule
 --
---   select count(*) from fa_insurance_scope_policy;
---   -- expect 0 until BA supplies a disclosure. Zero is correct, not missing.
+--   select count(*) from fa_insurance_control_events;
+--   -- expect 0. No issuer disclosure has been read, and with no event §4.3
+--   -- case B correctly waits rather than switching basis.
+--
+--   select eligible_for_total, count(*) from fa_insurance_nonlife_eligibility
+--    group by 1;
+--   -- BA §7.4 targets 9/9 eligible for the latest period
 --
 --   select classification_source_status, classification_usage_status, count(*)
 --     from fa_insurance_classification
---    where insurance_type_effective_to is null group by 1, 2;
+--    where insurance_type_effective_to is null group by 1,2;
 --   -- expect BA_VERIFIED/ACTIVE 2 (PVI, BVH) and PROVIDER/ACTIVE 12
---
---   select symbol, insurance_type, classification_usage_status
---     from fa_insurance_classification
---    where classification_usage_status = 'BLOCKED';
---   -- expect 0 rows: no insurer's type is contested today
