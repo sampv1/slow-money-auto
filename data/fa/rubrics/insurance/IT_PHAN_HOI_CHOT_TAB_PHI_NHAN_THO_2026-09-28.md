@@ -16,8 +16,17 @@ Trả lời `PHAN_HOI_IT_CHOT_TAB_PHI_NHAN_THO_VA_CHUYEN_SANG_TAI_BAO_HIEM.md`
 8. Trạng thái vòng nghiệm thu:               CHƯA HOÀN TẤT
 9. File kết quả và phiên bản chương trình:
    data/exports/nonlife_nghiem_thu_2026Q2.xlsx
-   commit e887ae6 · NONLIFE_P1_P5_V1_TTM_GROSS · NONLIFE_INV_MAP_V1_CASH_ST_LT
+   phiên bản CHƯƠNG TRÌNH: commit 042d35a
+   formula_version NONLIFE_P1_P5_V1_TTM_GROSS
+   mapping_version NONLIFE_INV_MAP_V1_CASH_ST_LT
 ```
+
+`042d35a` là commit **cuối cùng thay đổi mã nguồn**; các commit sau nó chỉ
+thêm tài liệu. Sheet `meta` của workbook ghi commit tại đúng thời điểm chạy
+(có thể là một commit tài liệu muộn hơn) cùng mã băm SHA-256 của từng tệp
+chương trình — dùng `script_sha256`, `one_off_engine_sha256`,
+`nonlife_scope_sha256` và `tier2_results_sha256` để đối chiếu chính xác, vì
+mã băm tệp không đổi khi commit tài liệu.
 
 Theo đúng §12, vì dòng 6 chưa đạt 9/9, **IT KHÔNG gửi đề nghị đóng tab.**
 
