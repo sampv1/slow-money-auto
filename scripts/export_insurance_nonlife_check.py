@@ -44,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fa.nonlife_scope import (USED as SCOPE_USED, ControlEvent,
                               resolve_series)
 from fa.one_off import (CHECK_ONE_OFF_TIER2_CURRENT, COMPLETION_COMPLETED,
+                        T4_RULE_V2,
                         STATUS_REVIEW_TRIGGERED, STATUS_SOURCE_INCOMPLETE,
                         TriggerInput, check_tier2_current, completion_status,
                         screen as one_off_screen)
@@ -100,7 +101,7 @@ RUN_ID = f"NONLIFE-{dt.datetime.now():%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
 #: §6.2 — the source fields that reach past the normalised layer to the filing.
 #: A value we do not hold is spelled out, never blank and never guessed.
 NOT_AVAILABLE = "NOT_AVAILABLE_FROM_PROVIDER"
-SPEC_VERSION = "CHOT_HOAN_THANH_TAB_PHI_NHAN_THO_GUI_IT_V1"
+SPEC_VERSION = "PHAN_HOI_CHOT_NGHIEM_THU_CUOI_TAB_PHI_NHAN_THO_2026-09-27"
 
 #: §4.3 — the source periods each criterion actually reads, as OFFSETS back
 #: from the result's own quarter. Verifying only the four displayed quarters
@@ -518,16 +519,50 @@ def run_metadata(out_path, rows_result, rows_lineage, snapshot):
         out = git_raw(*args)
         return out if out else NOT_AVAILABLE
     script = Path(__file__).resolve()
+    root = script.parent
+
+    def sha(path):
+        p_ = Path(path)
+        return (hashlib.sha256(p_.read_bytes()).hexdigest()[:32] if p_.exists()
+                else NOT_AVAILABLE)
+
     return [
         {"key": "run_id", "value": RUN_ID},
         {"key": "generated_at", "value": dt.datetime.now().isoformat(timespec="seconds")},
+        # §9.5 — declared in the metadata as well as in TEST_SUMMARY, so a
+        # reader who opens the meta sheet alone still learns that editing an
+        # input cell will not move a score.
+        {"key": "workbook_type", "value": "STATIC_AUDIT_EXPORT"},
         {"key": "pipeline_commit_hash", "value": git("rev-parse", "HEAD")},
+        # §10 asks whether the HANDOVER can be reproduced, so the tree test
+        # covers every file the run reads — the export, the engine modules and
+        # the tier-2 audit file — not just the entry point. Scoped to those
+        # paths rather than the whole repo, because unrelated untracked BA
+        # documents elsewhere would otherwise report this run as dirty.
         {"key": "pipeline_working_tree", "value":
-            (NOT_AVAILABLE if (st := git_raw("status", "--porcelain", "--", str(script)))
-             is None else ("dirty" if st else "clean"))},
+            (NOT_AVAILABLE if (st := git_raw(
+                "status", "--porcelain", "--", str(script),
+                str(root / "fa" / "one_off.py"),
+                str(root / "fa" / "nonlife_scope.py"),
+                str(root.parent / "data" / "fa" / "rubrics" / "insurance"
+                    / "one_off_tier2_results.json"))) is None
+             else ("dirty" if st else "clean"))},
         {"key": "script_name", "value": script.name},
-        {"key": "script_sha256", "value":
-            hashlib.sha256(script.read_bytes()).hexdigest()[:32]},
+        {"key": "script_sha256", "value": sha(script)},
+        # The engine and the audit file decide the one-off column, so a
+        # reproduction has to match them too — a commit hash alone does not say
+        # which of them a given run actually read.
+        {"key": "one_off_engine_sha256", "value": sha(root / "fa" / "one_off.py")},
+        {"key": "nonlife_scope_sha256", "value": sha(root / "fa" / "nonlife_scope.py")},
+        {"key": "tier2_results_sha256", "value": sha(
+            root.parent / "data" / "fa" / "rubrics" / "insurance"
+            / "one_off_tier2_results.json")},
+        # §8.2 — which T4 produced this workbook's triggers. The rule changed
+        # mid-round, so a stored result is ambiguous without it.
+        {"key": "t4_rule_in_force", "value": T4_RULE_V2},
+        {"key": "t4_evaluable_for_insurers", "value":
+            "false — mẫu BCTC bảo hiểm không phục vụ dòng Thu nhập khác "
+            "(xem IT_phat_hien_T4_bao_hiem.md)"},
         {"key": "formula_version", "value": FORMULA_VERSION},
         {"key": "mapping_version", "value": INV_MAP_VERSION},
         {"key": "source_snapshot_date", "value": snapshot},
