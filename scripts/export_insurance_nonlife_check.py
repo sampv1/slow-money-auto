@@ -43,6 +43,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fa.nonlife_scope import (USED as SCOPE_USED, ControlEvent,
                               resolve_series)
+from fa.nonlife_bands import (SCORE_BANDS_VERSION, audit_bands, deep_score,
+                             fa_final, fa_raw, score_one)
 from fa.one_off import (CHECK_ONE_OFF_TIER2_CURRENT, COMPLETION_COMPLETED,
                         INPUT_INVALID_MAPPING, T4_RULE_V1, T4_RULE_V2,
                         STATUS_REVIEW_TRIGGERED, STATUS_SOURCE_INCOMPLETE,
@@ -987,6 +989,59 @@ def main() -> int:
         for per, _ in series:
             used_by.setdefault((s, per), set()).add("P5")
 
+    # ---------- §11.2 — P5 AS OF EACH OF THE FOUR QUARTERS ----------
+    # The block above computes P5 once, for the current quarter. BA's §11.2 asks
+    # for all 36 symbol-quarters, so the older three need their own P5 — and it
+    # has to be POINT IN TIME: 2025-Q3's median may only see quarters up to
+    # 2025-Q3, or a historical score would depend on prices that had not
+    # happened yet.
+    #
+    # This loads a SEPARATE, DEEPER series instead of widening `pb_periods`.
+    # Widening it would give the current quarter 23 observations instead of 20
+    # and silently move every live P5 — the shared-history regression this
+    # codebase has already been bitten by twice. The existing `p5` list and its
+    # six checks are left untouched, and `_assert_p5_matches_live` below proves
+    # the new path reproduces the old one for the quarter they share.
+    pb_deep_periods = [shift(QUARTERS[-1], i)
+                       for i in range(PB_MAX_OBS + len(QUARTERS) - 1)]
+    pb_deep = load(client, SY, pb_deep_periods, "ratio", [PB])
+
+    def p5_as_of(sym, target):
+        """§9.2-§9.3 — P/B at `target` over the median of its own trailing
+        window: at most 20 observations, at least 8, ending AT `target`."""
+        asc = [p_ for p_ in reversed(pb_deep_periods) if p_ <= target]
+        obs = [(p_, pb_deep[(sym, p_)][PB]) for p_ in asc
+               if (sym, p_) in pb_deep and pb_deep[(sym, p_)][PB] is not None]
+        window = obs[-PB_MAX_OBS:]
+        if not window or window[-1][0] != target:
+            # No P/B AT the target quarter: the ratio has no numerator, which is
+            # absence of data, not a valuation of zero (§9.3).
+            return {"p5_value": None, "n": len(window),
+                    "status": "NO_PB_AT_PERIOD", "first": None, "last": None,
+                    "median": None, "current": None}
+        cur_ = window[-1][1]
+        med_ = statistics.median([v for _, v in window])
+        return {
+            "p5_value": None if not med_ else cur_ / med_,
+            "n": len(window), "first": window[0][0], "last": window[-1][0],
+            "median": med_, "current": cur_,
+            "status": ("ACCEPTED" if len(window) >= PB_MIN_OBS
+                       else "WATCHLIST_INSUFFICIENT_HISTORY"),
+        }
+
+    # The self-check that makes the new path trustworthy: for the quarter both
+    # paths compute, they must agree to the bit. If they ever do not, the deeper
+    # load has changed a live score and the run should stop rather than publish.
+    _p5_live = {x["symbol"]: x for x in p5}
+    for s_ in SY:
+        a_ = _p5_live[s_]["p5_pb_relative_x"]
+        b_ = p5_as_of(s_, QUARTERS[-1])["p5_value"]
+        if (a_ is None) != (b_ is None) or (
+                a_ is not None and abs(a_ - b_) > 1e-12):
+            raise AssertionError(
+                f"P5 theo kỳ khác P5 hiện hành cho {s_}: {a_} vs {b_} — "
+                f"cửa sổ sâu hơn đã làm đổi điểm đang chạy")
+
     # Migration 072 left three columns NOT NULL — selected_report_scope,
     # scope_selection_reason and scope_review_status — and BA's §2 model does not
     # produce them directly. They are DERIVED from the new fields rather than
@@ -1225,6 +1280,107 @@ def main() -> int:
           f"{len(cancelled)} kết quả kích hoạt T4 bị HỦY")
 
     one_off_by = {(r_["symbol"], r_["period"]): r_ for r_ in one_off_rows}
+
+    # ---------- BA CHOT_BAND §10-§11 — Deep Score/50 and FA Final/100 --------
+    # Runs over all 36 symbol-quarters, not the nine rows of the current
+    # quarter (§11.2): the bands have to be shown behaving across quarters, and
+    # quarter-on-quarter movement cannot be computed from one quarter.
+    common = {}
+    for row_ in (safe_execute(
+            client.table("fa_insurance_scores")
+            .select("symbol,period,score_50,score_version,threshold_set")
+            .in_("symbol", SY).in_("period", QUARTERS),
+            label="common score").data or []):
+        common[(row_["symbol"], row_["period"])] = row_
+
+    by_sq = {(r_["symbol"], r_["period"]): r_ for r_ in rows}
+    band_rows = []
+    for s_ in SY:
+        for q_ in QUARTERS:
+            r_ = by_sq.get((s_, q_), {})
+            p5r = p5_as_of(s_, q_)
+            vals = {
+                "P1": r_.get("p1_underwriting_margin_pct"),
+                "P2": r_.get("p2_underwriting_margin_delta_yoy_pp"),
+                "P3": r_.get("p3_investment_yield_net_ttm_pct"),
+                "P4": r_.get("p4_gross_coverage_x"),
+                # §9.3 — under 8 observations the symbol goes on a watch list
+                # and is NOT scored 0, so the value is withheld rather than
+                # banded.
+                "P5": (p5r["p5_value"]
+                       if p5r["status"] == "ACCEPTED" else None),
+            }
+            scored = deep_score(vals)
+            c_ = common.get((s_, q_))
+            common_50 = c_["score_50"] if c_ else None
+            raw = fa_raw(common_50, scored["deep_score_50"])
+            oo = one_off_by.get((s_, q_), {})
+            # §10.3 — the adjustment is stored NEGATIVE. A completed review with
+            # no one-off is a measured 0; a review that is not finished has no
+            # adjustment to apply and must not be treated as 0, so the FA score
+            # is withheld instead (§15.1 item 5).
+            oo_done = (completion_status(oo.get("one_off_review_status")
+                                         or STATUS_REVIEW_TRIGGERED)
+                       == COMPLETION_COMPLETED)
+            adj = -abs(oo.get("one_off_penalty") or 0) if oo_done else None
+            final = fa_final(raw, adj) if oo_done else None
+            band_rows.append({
+                "symbol": s_, "period": q_, "data_period": q_,
+                "source_publication_date": (r_.get("source_publication_date")
+                                            or NOT_AVAILABLE),
+                "p1_value": vals["P1"], "p1_band": scored["p1_band"],
+                "p1_score": scored["p1_score"],
+                "p2_value": vals["P2"], "p2_band": scored["p2_band"],
+                "p2_score": scored["p2_score"],
+                "p3_value": vals["P3"], "p3_band": scored["p3_band"],
+                "p3_score": scored["p3_score"],
+                "p4_value": vals["P4"], "p4_band": scored["p4_band"],
+                "p4_score": scored["p4_score"],
+                "p5_value": vals["P5"], "p5_band": scored["p5_band"],
+                "p5_score": scored["p5_score"],
+                "p5_observation_count": p5r["n"],
+                "p5_history_status": p5r["status"],
+                "deep_score_50": scored["deep_score_50"],
+                "deep_missing": scored["deep_missing"] or NOT_APPLICABLE,
+                "common_score_50": common_50 if common_50 is not None
+                                   else NOT_AVAILABLE,
+                "common_score_version": (c_["score_version"] if c_
+                                         else NOT_AVAILABLE),
+                "fa_raw_100": raw if raw is not None else NOT_AVAILABLE,
+                "one_off_review_status": oo.get("one_off_review_status"),
+                "one_off_adjustment": adj if oo_done else NOT_AVAILABLE,
+                "fa_final_100": final if final is not None else NOT_AVAILABLE,
+                # §15.2 — the DATA period is never written as the FA period
+                # until the whole chain closed for that row.
+                "fa_completed_period": q_ if final is not None
+                                       else NOT_SCORED_BY_DESIGN,
+                "fa_completion_status": ("COMPLETED" if final is not None
+                                         else NOT_SCORED_BY_DESIGN),
+                "scoring_version": scored["scoring_version"],
+                "run_id": RUN_ID,
+            })
+
+    # §13 `fa_delta_vs_previous` — against the previous quarter THAT HAS a final
+    # score, not simply the previous quarter: with 2025-Q3 unscored, "previous"
+    # would otherwise be blank for 2025-Q4 and the series would start a quarter
+    # late.
+    for s_ in SY:
+        prev = None
+        for r_ in [x for x in band_rows if x["symbol"] == s_]:
+            cur_ = r_["fa_final_100"]
+            r_["fa_delta_vs_previous"] = (
+                round(cur_ - prev, 2) if isinstance(cur_, (int, float))
+                and prev is not None else NOT_APPLICABLE)
+            if isinstance(cur_, (int, float)):
+                prev = cur_
+    fa_by = {(r_["symbol"], r_["period"]): r_ for r_ in band_rows}
+    _done = [r_ for r_ in band_rows if r_["fa_completion_status"] == "COMPLETED"]
+    print(f"band điểm {SCORE_BANDS_VERSION}: "
+          f"{sum(1 for r_ in band_rows if r_['deep_score_50'] is not None)}"
+          f"/{len(band_rows)} có Deep Score · "
+          f"{sum(1 for r_ in band_rows if r_['common_score_50'] != NOT_AVAILABLE)}"
+          f"/{len(band_rows)} có Common Score · "
+          f"{len(_done)}/{len(band_rows)} có FA Final")
 
 
     # ---------- §8: write the scope + gate to the DB, then READ THEM BACK ----------
@@ -1647,6 +1803,70 @@ def main() -> int:
                     f"không lấy được nguồn {tier2_check['source_incomplete']}"),
     })
 
+    # ---------- §17.3 — BA's boundary table, run inside the export ----------
+    # §12's values are pinned in tests/test_nonlife_bands.py, which is where a
+    # regression should fail. They are ALSO evaluated here because §17.3 asks
+    # for the result in the handover file: BA reads the workbook, not the test
+    # runner, and a table nobody can see in the deliverable is not evidence to
+    # them.
+    BOUNDARY_CASES = {
+        "P1": [(-0.0001, 0), (0.0, 3), (4.9999, 3), (5.0, 6),
+               (11.9999, 6), (12.0, 9), (19.9999, 9), (20.0, 12)],
+        "P2": [(-5.0, 0), (-4.9999, 3), (-0.0001, 3), (0.0, 6),
+               (1.9999, 6), (2.0, 8), (4.9999, 8), (5.0, 10)],
+        "P3": [(1.9999, 0), (2.0, 2), (2.9999, 2), (3.0, 4),
+               (3.9999, 4), (4.0, 6), (4.9999, 6), (5.0, 8)],
+        "P4": [(0.9999, 0), (1.0, 2), (1.0999, 2), (1.1, 4),
+               (1.2499, 4), (1.25, 6), (1.4999, 6), (1.5, 8)],
+        "P5": [(0.7, 12), (0.7001, 9), (0.85, 9), (0.8501, 6),
+               (1.0, 6), (1.0001, 3), (1.15, 3), (1.1501, 0)],
+    }
+    band_tests = []
+    for code_, cases_ in BOUNDARY_CASES.items():
+        for val_, want_ in cases_:
+            got_, label_ = score_one(code_, val_)
+            band_tests.append({
+                "chi_tieu": code_, "gia_tri": val_, "diem_mong_doi": want_,
+                "diem_thuc_te": got_, "band": label_,
+                "ket_qua": "PASS" if got_ == want_ else "FAIL",
+            })
+    band_audit = audit_bands()
+    band_tests.append({
+        "chi_tieu": "TẤT CẢ", "gia_tri": "§3.3 band kín, không chồng lấn",
+        "diem_mong_doi": "không có khoảng trống/chồng lấn",
+        "diem_thuc_te": "; ".join(band_audit) or "đạt",
+        "band": SCORE_BANDS_VERSION,
+        "ket_qua": "PASS" if not band_audit else "FAIL",
+    })
+    band_fail = [t for t in band_tests if t["ket_qua"] != "PASS"]
+    checks.append({
+        "check": "CHECK_BAND_BOUNDARY_V1",
+        "quy_tac": ("mọi giá trị biên tại §12 chấm đúng điểm, và band kín "
+                    "không chồng lấn (§3.3)"),
+        "so_vi_pham": len(band_fail), "so_chua_xac_dinh": 0,
+        "ket_qua": "FAIL" if band_fail else "PASS",
+        "chi_tiet": ", ".join(f"{t['chi_tieu']}={t['gia_tri']}"
+                              for t in band_fail[:6]) or "—",
+        "ghi_chu": f"{len(band_tests)} phép thử · {SCORE_BANDS_VERSION}",
+    })
+    # §15.2 — a Deep Score must be the sum of all five, never a partial one.
+    bad = [f"{r_['symbol']} {r_['period']}" for r_ in band_rows
+           if r_["deep_score_50"] is not None
+           and r_["deep_score_50"] != sum(
+               r_[f"p{i}_score"] for i in range(1, 6))]
+    checks.append(fails("CHECK_DEEP_SCORE_SUM", bad,
+                        "deep_score_50 = P1+P2+P3+P4+P5, không cộng một phần"))
+    bad = [f"{r_['symbol']} {r_['period']}" for r_ in band_rows
+           if isinstance(r_["fa_final_100"], (int, float))
+           and not (0 <= r_["fa_final_100"] <= 100)]
+    checks.append(fails("CHECK_FA_FINAL_RANGE", bad, "0 <= FA Final <= 100"))
+    # §15.2 — never write the data period as the FA period on an unfinished row.
+    bad = [f"{r_['symbol']} {r_['period']}" for r_ in band_rows
+           if r_["fa_completed_period"] != NOT_SCORED_BY_DESIGN
+           and r_["fa_completion_status"] != "COMPLETED"]
+    checks.append(fails("CHECK_FA_PERIOD_ONLY_WHEN_DONE", bad,
+                        "chỉ ghi fa_completed_period khi FA Final đã khóa"))
+
     # ---------- §14 summary table ----------
     by = {(r["symbol"], r["period"]): r for r in rows}
     p5_by = {r["symbol"]: r for r in p5}
@@ -1711,13 +1931,24 @@ def main() -> int:
             # §5 — the process state, separate from the verdict above.
             "one_off_completion_status": completion_status(
                 oo.get("one_off_review_status") or STATUS_REVIEW_TRIGGERED),
-            # §7 — three fields, not one "Kỳ FA". The data round has a data
-            # period; it does NOT have a completed FA period, because BA has not
-            # locked the P1-P5 thresholds and nothing has been scored.
-            "fa_completion_status": NOT_SCORED_BY_DESIGN,
-            "fa_completed_period": NOT_SCORED_BY_DESIGN,
-            "Điểm FA thô": NOT_SCORED_BY_DESIGN,
-            "Điểm FA cuối": NOT_SCORED_BY_DESIGN,
+            # §7 — still three separate fields. They now carry real scores,
+            # because BA locked the P1-P5 bands; a row that did not complete the
+            # chain still reads NOT_SCORED_BY_DESIGN rather than a blank.
+            "P1–P5 điểm": "·".join(
+                str(fa_by.get((s, latest), {}).get(f"p{i}_score", "—"))
+                for i in range(1, 6)),
+            "Deep Score /50": fa_by.get((s, latest), {}).get("deep_score_50"),
+            "Common Score /50": fa_by.get((s, latest), {}).get("common_score_50"),
+            "Điểm FA thô /100": fa_by.get((s, latest), {}).get("fa_raw_100"),
+            "Điều chỉnh one-off": fa_by.get((s, latest), {}).get("one_off_adjustment"),
+            "Điểm FA cuối /100": fa_by.get((s, latest), {}).get("fa_final_100"),
+            "Thay đổi so kỳ FA trước": fa_by.get((s, latest), {}).get(
+                "fa_delta_vs_previous"),
+            "fa_completion_status": fa_by.get((s, latest), {}).get(
+                "fa_completion_status", NOT_SCORED_BY_DESIGN),
+            "fa_completed_period": fa_by.get((s, latest), {}).get(
+                "fa_completed_period", NOT_SCORED_BY_DESIGN),
+            "scoring_version": SCORE_BANDS_VERSION,
             "Lý do chưa hoàn thành": _incomplete_reason(g, oo),
         })
 
@@ -1949,9 +2180,31 @@ def main() -> int:
         {"muc": CHECK_ONE_OFF_TIER2_CURRENT, "gia_tri":
             f"{tier2_check['result']} — {tier2_check['outstanding']} mã chưa hoàn tất"},
         {"muc": "số mã FA đã chấm chính thức", "gia_tri":
-            f"0/{len(table)} — {NOT_SCORED_BY_DESIGN} (BA chưa khóa thang điểm P1–P5)"},
+            f"{sum(1 for t in table if t['fa_completion_status'] == 'COMPLETED')}"
+            f"/{len(table)} (kỳ {latest})"},
         {"muc": "trạng thái vòng chấm điểm", "gia_tri":
-            f"{NOT_SCORED_BY_DESIGN} — vòng này chỉ là vòng DỮ LIỆU (§2.1)"},
+            ("HOÀN TẤT" if all(t["fa_completion_status"] == "COMPLETED"
+                               for t in table)
+             else "CHƯA HOÀN TẤT")},
+        {"muc": "— band điểm P1–P5 —", "gia_tri": ""},
+        {"muc": "phiên bản band", "gia_tri": SCORE_BANDS_VERSION},
+        {"muc": "phạm vi đã chạy", "gia_tri":
+            f"{len(band_rows)} mã–quý ({len(SY)} mã x {len(QUARTERS)} quý)"},
+        {"muc": "có Deep Score /50", "gia_tri":
+            f"{sum(1 for r_ in band_rows if r_['deep_score_50'] is not None)}"
+            f"/{len(band_rows)}"},
+        {"muc": "có Common Score /50", "gia_tri":
+            f"{sum(1 for r_ in band_rows if r_['common_score_50'] != NOT_AVAILABLE)}"
+            f"/{len(band_rows)} — {QUARTERS[0]} chưa có điểm chung cho mã nào "
+            f"(rubric Toàn ngành cần 7 quý EPS liên tục, dữ liệu bắt đầu 2024-Q2)"},
+        {"muc": "có FA Final /100", "gia_tri":
+            f"{sum(1 for r_ in band_rows if r_['fa_completion_status'] == 'COMPLETED')}"
+            f"/{len(band_rows)} toàn bộ · "
+            f"{sum(1 for t in table if t['fa_completion_status'] == 'COMPLETED')}"
+            f"/{len(table)} tại {latest}"},
+        {"muc": "kiểm thử band biên (§12)", "gia_tri":
+            f"{sum(1 for t in band_tests if t['ket_qua'] == 'PASS')} PASS · "
+            f"{len(band_fail)} FAIL / {len(band_tests)}"},
         {"muc": "kiểm tra PENDING", "gia_tri":
             ", ".join(c["check"] for c in pending_checks) or "—"},
         {"muc": "kiểm tra FAIL", "gia_tri":
@@ -1993,6 +2246,32 @@ def main() -> int:
          "gia_tri": "LEGACY_DO_NOT_USE_FOR_SCORING — giữ để tương thích CSDL. "
                     "Trường nghiệp vụ chính thức là scope_status (§2.4)."}]
 
+    # §17.2 — one row per symbol for the current quarter, sorted by FA Final
+    # DESCENDING. A symbol with no final score sorts last rather than being
+    # dropped: §15.2 forbids removing a company from the table because a step is
+    # unfinished, and an absent score is not a low one.
+    q2_rows = [r_ for r_ in band_rows if r_["period"] == QUARTERS[-1]]
+    fa_summary = sorted(
+        ({"Mã": r_["symbol"], "Tên": names.get(r_["symbol"]),
+          "data_period": r_["period"],
+          "P1": r_["p1_score"], "P2": r_["p2_score"], "P3": r_["p3_score"],
+          "P4": r_["p4_score"], "P5": r_["p5_score"],
+          "Deep Score /50": r_["deep_score_50"],
+          "Common Score /50": r_["common_score_50"],
+          "FA Raw /100": r_["fa_raw_100"],
+          "Điều chỉnh one-off": r_["one_off_adjustment"],
+          "FA Final /100": r_["fa_final_100"],
+          "Thay đổi so kỳ trước": r_["fa_delta_vs_previous"],
+          "fa_completion_status": r_["fa_completion_status"],
+          "fa_completed_period": r_["fa_completed_period"],
+          "one_off_review_status": r_["one_off_review_status"],
+          "scoring_version": r_["scoring_version"]}
+         for r_ in q2_rows),
+        key=lambda x: (isinstance(x["FA Final /100"], (int, float)),
+                       x["FA Final /100"] if isinstance(
+                           x["FA Final /100"], (int, float)) else 0),
+        reverse=True)
+
     from export_fa_scanner import write_xlsx
     out = Path(args.out)
     # §7.2 — the snapshot is when the STATEMENT data this run read was last
@@ -2015,6 +2294,9 @@ def main() -> int:
         "METRIC_SOURCE_LINEAGE": lin,
         "REPORT_SCOPE_VERIFICATION": scope_rows,
         "CONG_DU_DIEU_KIEN": gate_rows,
+        "DIEM_36_MA_QUY": band_rows,
+        "TONG_HOP_FA_QUY_HIEN_TAI": fa_summary,
+        "KIEM_THU_BAND_DIEM": band_tests,
         "MOT_LAN_T1_T5": one_off_rows,
         "ANH_XA_THU_NHAP_KHAC": mapping_rows or [{"note": "chưa đối chiếu"}],
         "T4_DA_HUY_ANH_XA_SAI": cancelled or [{"note": "không có kết quả nào bị hủy"}],
