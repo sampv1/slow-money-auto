@@ -202,13 +202,33 @@ Final**, và 9 dòng chưa chấm đều nêu rõ lý do.
 
 ## 9. Hai việc IT báo để BA biết, không đề nghị thay đổi gì
 
-**a) Điểm FA dao động mạnh giữa các quý.** 4 trong 16 cặp quý liên tiếp thay đổi
-từ 10 điểm trở lên; BLI +30, BMI +25, PGI −14. IT đã kiểm tra số học và band —
-**không phải lỗi**. BLI là thay đổi thật: P1 đi từ 16,2% lên 26,0% và P2 đảo
-chiều từ −8,0 lên +6,4 điểm phần trăm, vượt nhiều band cùng lúc, đúng như thiết
-kế của P2 là bắt tín hiệu đảo chiều sớm. Biến động chia gần đều giữa hai nửa: 96
-(chuyên sâu) so với 90 (chung) tính theo trị tuyệt đối. Nếu BA muốn điểm ổn định
-hơn thì đó là quyết định thiết kế của BA, và §3.4 cấm IT tự nới band.
+**a) Điểm FA dao động mạnh giữa các quý — số liệu đã được sửa lại.**
+
+*Câu cũ ghi "4 trong 16 cặp quý ... BLI +30, BMI +25, PGI −14" — nêu bốn nhưng
+chỉ liệt kê ba. IT xin cải chính và nêu đủ. Trường hợp thứ tư bị thiếu là **ABI
+2026-Q1 (+17 điểm)**. Đồng thời con số đã thay đổi sau khi hoàn tất BHI: BHI có
+thêm hai cặp quý, nên tổng đi từ 16 lên **18 cặp** và số trường hợp lớn đi từ 4
+lên **6**.*
+
+**Số đúng hiện tại: 6 trong 18 cặp quý liên tiếp thay đổi từ 10 điểm trở lên.**
+
+| Mã | Kỳ | Δ điểm | ΔFA % |
+|---|---|--:|--:|
+| BLI | 2026-Q2 | +30 | +81,08% |
+| BMI | 2026-Q2 | +25 | +53,19% |
+| BHI | 2026-Q2 | −20 | −30,30% |
+| BHI | 2026-Q1 | +19 | +40,43% |
+| ABI | 2026-Q1 | +17 | +27,42% |
+| PGI | 2026-Q2 | −14 | −21,21% |
+
+IT đã kiểm tra số học và band — **không phải lỗi**. BLI là thay đổi thật: P1 đi
+từ 16,2% lên 26,0% và P2 đảo chiều từ −8,0 lên +6,4 điểm phần trăm, vượt nhiều
+band cùng lúc, đúng như thiết kế của P2 là bắt tín hiệu đảo chiều sớm.
+
+Biến động chia gần đều giữa hai nửa, tính trên 18 cặp theo trị tuyệt đối:
+**119 (chuyên sâu P1–P5)** so với **106 (chung C1–C5)**, tức 47% đến từ nửa
+chung. Nếu BA muốn điểm ổn định hơn thì đó là quyết định thiết kế của BA, và
+§3.4 cấm IT tự nới band.
 
 **b) Hai band chưa từng được dùng:** band 0 điểm của P1 (biên bảo hiểm âm) và
 band 0 điểm của P3 (lợi suất đầu tư dưới 2%). Không doanh nghiệp nào rơi vào hai
