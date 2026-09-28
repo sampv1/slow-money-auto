@@ -152,7 +152,50 @@
       "note_on_mapping": "Dòng IS_OTHER_INCOME mà nguồn chuẩn hóa phục vụ KHÔNG phải dòng 'Thu nhập khác' của báo cáo KQKD. Đây là xác nhận độc lập từ chính BCTC của doanh nghiệp cho phát hiện nêu tại IT_phat_hien_T4_bao_hiem.md. AIC: dòng nguồn 423,19 tỷ trong khi LNTT công bố chỉ 9,87 tỷ (4.288,94%).",
       "tier2_incomplete_reason": "Đã kiểm tra 12 tên miền doanh nghiệp, 2 cổng công bố, 4 nguồn dữ liệu, 8 tổ hợp đường dẫn kho lưu trữ và 3 lần tìm kiếm web — không lấy được tệp BCTC quý II/2026 (doanh nghiệp ĐÃ công bố 23/07/2026, đính chính 03/08/2026). Cần BA cung cấp bản mềm.",
       "superseded_by": "INVALID_MAPPING_TRIGGER_CANCELLED",
-      "superseded_note": "Điều kiện T4 kích hoạt AIC được HỦY theo §4.1 mục 2: đầu vào của điều kiện là một dòng ánh xạ sai (xem mapping_thu_nhap_khac.json). Sau khi hủy, AIC không còn điều kiện nào kích hoạt, nên theo §5 mục 3 kết luận là AUTO_NORMAL — do tầng 1 sinh ra, không phải một phán quyết tầng 2. Bản ghi này giữ lại toàn bộ dấu vết việc IT đã cố lấy BCTC gốc (§9.3) và KHÔNG còn quyết định trạng thái của dòng kết quả."
+      "superseded_note": "Điều kiện T4 kích hoạt AIC được HỦY theo §4.1 mục 2: đầu vào của điều kiện là một dòng ánh xạ sai (xem mapping_thu_nhap_khac.json). Sau khi hủy, AIC không còn điều kiện nào kích hoạt, nên theo §5 mục 3 kết luận là AUTO_NORMAL — do tầng 1 sinh ra, không phải một phán quyết tầng 2. Bản ghi này giữ lại toàn bộ dấu vết việc IT đã cố lấy BCTC gốc (§9.3) và KHÔNG còn quyết định trạng thái của dòng kết quả.",
+      "ba_section_16": {
+        "1_ten_chinh_xac_pdf_con_thieu": "Báo cáo tài chính Quý II/2026 của Tổng CTCP Bảo hiểm DBV (mã AIC), BẢN ĐÍNH CHÍNH công bố 03/08/2026 17:35 — công bố gốc 23/07/2026 10:29. Chấp nhận thay thế: BCTC bán niên 2026 soát xét, công bố 17/08/2026 16:25.",
+        "2_bat_buoc_hay_luu_ho_so": "CHỈ LƯU HỒ SƠ (artefact truy vết nguồn)",
+        "2_giai_thich": "Kết luận AUTO_NORMAL của AIC KHÔNG dựa trên tệp này. Nó dựa trên việc hủy điều kiện T4 theo §4.1 vì đầu vào bị ánh xạ sai, và sau khi hủy thì AIC không còn điều kiện nào kích hoạt — theo §5 mục 3, không có điều kiện kích hoạt nghĩa là AUTO_NORMAL và KHÔNG cần đọc BCTC gốc. Quy trình chỉ bắt buộc đọc BCTC khi có điều kiện kích hoạt.",
+        "3_bon_bao_cao_goc_da_dung_de_xac_minh_mapping": [
+          {
+            "symbol": "BLI",
+            "tai_lieu": "Báo cáo tài chính Quý 2 và 6 tháng đầu năm 2026, Tổng CTCP Bảo hiểm Bảo Long, công bố 21/07/2026",
+            "trang_thuyet_minh": "Thuyết minh 31 'Lợi nhuận khác' (trang 33); Thuyết minh 28 'Doanh thu hoạt động tài chính'",
+            "url": "https://baolonginsurance.com.vn/Data/Sites/1/media/Nha%20dau%20tu/bao-cao-tai-chinh/2026/BCTC%20QUY%202%20VA%206%20THANG%202026%20TIENG%20VIET.pdf"
+          },
+          {
+            "symbol": "PGI",
+            "tai_lieu": "Báo cáo tài chính Quý II năm 2026, Tổng CTCP Bảo hiểm Petrolimex (PJICO), ký số 28/07/2026",
+            "trang_thuyet_minh": "Báo cáo kết quả kinh doanh Phần 1, trang 7 — dòng 4 'Thu nhập khác' (mã số 13) và dòng 10 'Tổng lợi nhuận kế toán trước thuế' (mã số 50)",
+            "url": "https://www.pjico.com.vn/wp-content/uploads/2026/07/20260728-PGI-Bao-cao-Tai-chinh-quy-II-nam-2026.pdf"
+          },
+          {
+            "symbol": "PTI",
+            "tai_lieu": "Báo cáo tài chính hợp nhất Quý II/2026, Tổng CTCP Bảo hiểm Bưu điện (PTI)",
+            "trang_thuyet_minh": "Kết quả hoạt động kinh doanh hợp nhất, Phần I, trang 7 — dòng 4 'Thu nhập khác' (mã số 13) và dòng 10.2 'Tổng lợi nhuận kế toán trước thuế' (mã số 50.2)",
+            "url": "https://www.pti.com.vn/wp-content/uploads/2026/07/VI_BaoCaoTaiChinhHopNhat_Q2_2026.pdf"
+          },
+          {
+            "symbol": "BHI",
+            "tai_lieu": "Báo cáo tài chính hợp nhất Quý II và 6 tháng đầu năm 2026, Tổng CTCP Bảo hiểm Sài Gòn - Hà Nội (BSH)",
+            "trang_thuyet_minh": "Báo cáo kết quả hoạt động kinh doanh hợp nhất, Phần II, trang 9 — dòng 19 'Lợi nhuận thuần từ hoạt động kinh doanh' (mã 30), dòng 20 'Thu nhập khác' (mã 31), dòng 21 'Chi phí khác' (mã 32)",
+            "url": "https://bshc.com.vn/wp-content/uploads/2020/05/BCTC-hop-nhat-30.6.26_0001_0001.pdf"
+          }
+        ],
+        "4_thieu_tep_khong_lam_doi_ket_qua": {
+          "P1_den_P5": "KHÔNG ĐỔI — P1–P5 đọc từ fa_vnstock_statements đã nghiệm thu, không đọc từ PDF.",
+          "trang_thai_AUTO_NORMAL": "KHÔNG ĐỔI — xem mục 2.",
+          "diem_FA": "KHÔNG ĐỔI — điểm trừ one-off của AIC là 0 vì không có điều kiện nào kích hoạt sau khi hủy T4.",
+          "xac_nhan": "IT xác nhận việc thiếu tệp PDF không làm thay đổi P1–P5, trạng thái AUTO_NORMAL hay điểm FA của AIC."
+        },
+        "5_bo_sung_pdf_truoc_khi_dong_nghiem_thu": {
+          "trang_thai": "CHƯA BỔ SUNG ĐƯỢC",
+          "ly_do": "Đã kiểm tra 12 tên miền doanh nghiệp, 2 cổng công bố, 4 nguồn dữ liệu, 8 tổ hợp đường dẫn kho lưu trữ và 3 lần tìm kiếm web — không lấy được tệp BCTC quý II/2026 (doanh nghiệp ĐÃ công bố 23/07/2026, đính chính 03/08/2026). Cần BA cung cấp bản mềm.",
+          "can_gi": "Một người thao tác trên trình duyệt tải tệp từ nguồn công bố và đặt vào kho tài liệu nội bộ. Môi trường chạy của IT không mở được trang công bố của doanh nghiệp (khoảng 25 tên miền, 2 cổng công bố, 4 nguồn dữ liệu, 18 tổ hợp đường dẫn kho lưu trữ và 4 lần tìm kiếm web đều thất bại).",
+          "de_xuat": "BA quyết định một trong hai: (a) cung cấp tệp để IT lưu vào kho nguồn rồi đóng nghiệm thu; hoặc (b) chấp nhận đóng nghiệm thu với artefact này ghi nhận là còn thiếu, vì theo mục 2 và 4 nó không ảnh hưởng tới bất kỳ con số nào."
+        }
+      }
     }
   ]
 }
