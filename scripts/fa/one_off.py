@@ -89,6 +89,15 @@ STATUS_CONFIRMED_NORMAL = "CONFIRMED_NORMAL"    # filing read, ordinary; penalty
 STATUS_CONFIRMED_ONE_OFF = "CONFIRMED_ONE_OFF"  # filing read, amount known
 STATUS_SOURCE_INCOMPLETE = "SOURCE_INCOMPLETE"  # issuer has not published enough
 
+#: §4.1 — the state of a condition's INPUT, separate from the condition's own
+#: result. `INVALID_MAPPING` is BA's word for "the standardised line we fed this
+#: condition is not the line the rule names", which obliges more than skipping
+#: the test: the old trigger results are cancelled and every symbol-period that
+#: used the same mapping rule is re-run.
+INPUT_OK = "OK"
+INPUT_MISSING = "MISSING_INPUT"
+INPUT_INVALID_MAPPING = "INVALID_MAPPING"
+
 #: §5 — the one-off PROCESS's own state, which is a different question from the
 #: review verdict. `one_off_review_status` says what the filing showed;
 #: `one_off_completion_status` says whether the step is finished. BA separates
@@ -218,6 +227,13 @@ class TriggerResult:
     #: which means the condition was evaluated and not met — §3.5 turns on
     #: whether a trigger fired, and "could not test" is not "did not fire".
     evaluable: bool = True
+    #: WHY a condition could not be evaluated, as a code rather than prose.
+    #: BA's §4.1 names `INVALID_MAPPING` specifically, and it is a different
+    #: fact from a missing figure: a missing figure may arrive next quarter,
+    #: while an invalid mapping means every result this condition ever produced
+    #: was computed from the wrong line and has to be withdrawn (§4.1 items 2,
+    #: 5 and 6). A shared "not evaluable" could not tell those apart.
+    input_status: str = INPUT_OK
 
 
 def evaluate_triggers(ti: TriggerInput) -> dict[str, TriggerResult]:
@@ -279,11 +295,13 @@ def evaluate_triggers(ti: TriggerInput) -> dict[str, TriggerResult]:
         # it. Reporting `evaluable=False` keeps "could not test" distinct from
         # "tested and did not fire", which §3.5 depends on.
         out["T4"] = TriggerResult(
-            False, "mẫu BCTC bảo hiểm không có dòng Thu nhập khác ngoài hoạt "
-                   "động (dòng nguồn phục vụ không phải số cộng vào LNTT) — "
-                   "không đánh giá được T4", evaluable=False)
+            False, "ÁNH XẠ SAI (§4.1): dòng nguồn phục vụ làm 'thu nhập khác' "
+                   "không phải dòng Thu nhập khác của BCTC và không phải số "
+                   "cộng vào LNTT — kết quả kích hoạt T4 cũ bị HỦY",
+            evaluable=False, input_status=INPUT_INVALID_MAPPING)
     elif oth is None or pbt is None:
-        out["T4"] = TriggerResult(False, "thiếu thu nhập khác hoặc LNTT", evaluable=False)
+        out["T4"] = TriggerResult(False, "thiếu thu nhập khác hoặc LNTT",
+                                  evaluable=False, input_status=INPUT_MISSING)
     elif ti.t4_rule == T4_RULE_V1:
         share = oth / abs(pbt) if pbt else None
         share_ok = share is not None and share >= T4_SHARE_OF_PBT
@@ -399,6 +417,7 @@ def screen(ti: TriggerInput) -> dict:
         **{f"{k.lower()}_fired": v.fired for k, v in res.items()},
         **{f"{k.lower()}_detail": v.detail for k, v in res.items()},
         **{f"{k.lower()}_evaluable": v.evaluable for k, v in res.items()},
+        **{f"{k.lower()}_input_status": v.input_status for k, v in res.items()},
     }
 
 

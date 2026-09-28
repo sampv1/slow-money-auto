@@ -9,7 +9,11 @@
     "verdict can never be produced by the same pass that raised the trigger.",
     "",
     "source_page_note is REQUIRED by §3.6 and is what proves the filing was read",
-    "rather than assumed. A symbol-period with no entry here stays REVIEW_TRIGGERED."
+    "rather than assumed. A symbol-period with no entry here stays REVIEW_TRIGGERED.",
+    "",
+    "`verdicts` — phán quyết ĐANG ÁP DỤNG cho dòng kết quả.",
+    "`retrieval_attempts` — dấu vết các lần lấy tài liệu không còn quyết định",
+    "trạng thái, giữ lại theo §9.3 thay vì xóa."
   ],
   "verdicts": [
     {
@@ -110,7 +114,9 @@
         "Theo §3.5 kết luận là CONFIRMED_NORMAL với điểm trừ 0."
       ],
       "note_on_mapping": "Dòng IS_OTHER_INCOME mà nguồn chuẩn hóa phục vụ KHÔNG phải dòng 'Thu nhập khác' của báo cáo KQKD. Đây là xác nhận độc lập từ chính BCTC của doanh nghiệp cho phát hiện nêu tại IT_phat_hien_T4_bao_hiem.md. BHI: BCTC ÂM 1,53 tỷ so với dòng nguồn 272,48 tỷ."
-    },
+    }
+  ],
+  "retrieval_attempts": [
     {
       "symbol": "AIC",
       "period": "2026-Q2",
@@ -144,7 +150,9 @@
         "ĐỀ NGHỊ CỤ THỂ VỚI BA: xin bản mềm BCTC quý II/2026 của Bảo hiểm DBV ĐÃ BAO GỒM BẢN ĐÍNH CHÍNH NGÀY 03/08/2026 (hoặc BCTC bán niên soát xét công bố 17/08/2026, dùng được theo cách IT đã áp dụng cho PTI). Chỉ cần trang Báo cáo kết quả hoạt động kinh doanh có dòng 'Thu nhập khác' và 'Tổng lợi nhuận kế toán trước thuế'. Có tài liệu này IT kết luận được trong ngày."
       ],
       "note_on_mapping": "Dòng IS_OTHER_INCOME mà nguồn chuẩn hóa phục vụ KHÔNG phải dòng 'Thu nhập khác' của báo cáo KQKD. Đây là xác nhận độc lập từ chính BCTC của doanh nghiệp cho phát hiện nêu tại IT_phat_hien_T4_bao_hiem.md. AIC: dòng nguồn 423,19 tỷ trong khi LNTT công bố chỉ 9,87 tỷ (4.288,94%).",
-      "tier2_incomplete_reason": "Đã kiểm tra 12 tên miền doanh nghiệp, 2 cổng công bố, 4 nguồn dữ liệu, 8 tổ hợp đường dẫn kho lưu trữ và 3 lần tìm kiếm web — không lấy được tệp BCTC quý II/2026 (doanh nghiệp ĐÃ công bố 23/07/2026, đính chính 03/08/2026). Cần BA cung cấp bản mềm."
+      "tier2_incomplete_reason": "Đã kiểm tra 12 tên miền doanh nghiệp, 2 cổng công bố, 4 nguồn dữ liệu, 8 tổ hợp đường dẫn kho lưu trữ và 3 lần tìm kiếm web — không lấy được tệp BCTC quý II/2026 (doanh nghiệp ĐÃ công bố 23/07/2026, đính chính 03/08/2026). Cần BA cung cấp bản mềm.",
+      "superseded_by": "INVALID_MAPPING_TRIGGER_CANCELLED",
+      "superseded_note": "Điều kiện T4 kích hoạt AIC được HỦY theo §4.1 mục 2: đầu vào của điều kiện là một dòng ánh xạ sai (xem mapping_thu_nhap_khac.json). Sau khi hủy, AIC không còn điều kiện nào kích hoạt, nên theo §5 mục 3 kết luận là AUTO_NORMAL — do tầng 1 sinh ra, không phải một phán quyết tầng 2. Bản ghi này giữ lại toàn bộ dấu vết việc IT đã cố lấy BCTC gốc (§9.3) và KHÔNG còn quyết định trạng thái của dòng kết quả."
     }
   ]
 }

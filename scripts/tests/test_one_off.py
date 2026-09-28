@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fa.one_off import (  # noqa: E402
-    T4_RULE_V1, T4_RULE_V2,
+    INPUT_INVALID_MAPPING, INPUT_MISSING, INPUT_OK, T4_RULE_V1, T4_RULE_V2,
     MIN_ABS_VND, STATUS_AUTO_NORMAL, STATUS_CONFIRMED_NORMAL,
     STATUS_CONFIRMED_ONE_OFF, STATUS_COMPLETES_FA, STATUS_REVIEW_TRIGGERED,
     STATUS_SOURCE_INCOMPLETE, TAX_BASIS_POST, TAX_BASIS_PRE, TriggerInput,
@@ -185,6 +185,67 @@ def test_T4_v1_drops_the_multiple_when_its_median_is_not_positive():
     r2 = evaluate_triggers(ti(pbt=1000 * B, other_income=30 * B,
                               prior_8q_other_income=[0.0] * 8, **v1))["T4"]
     check("no multiple fallback at a low share", not r2.fired)
+
+
+def test_an_invalid_mapping_is_not_a_missing_input():
+    """BA §4.1 names INVALID_MAPPING specifically, and it obliges more than
+    skipping the test. A MISSING figure may arrive next quarter and nothing has
+    to be withdrawn; an INVALID MAPPING means every result the condition ever
+    produced came from the wrong line, so the old triggers are cancelled and
+    every symbol-period that used the rule is re-run (§4.1 items 2, 5, 6). A
+    shared `evaluable=False` could not tell a reader which of the two happened,
+    and only one of them requires a re-run."""
+    bad = evaluate_triggers(ti(pbt=9.9 * B, other_income=423.2 * B,
+                               prior_8q_other_income=[221.1 * B] * 8,
+                               other_income_is_pl_addend=False))["T4"]
+    check("wrong line -> INVALID_MAPPING",
+          bad.input_status == INPUT_INVALID_MAPPING, bad.detail)
+    check("and is not evaluable", not bad.evaluable)
+    check("and did not fire", not bad.fired)
+    check("detail says the old trigger is cancelled", "HỦY" in bad.detail)
+
+    # A genuinely absent figure is the OTHER code — same `evaluable`, different
+    # obligation.
+    absent = evaluate_triggers(ti(pbt=100 * B, other_income=None))["T4"]
+    check("absent figure -> MISSING_INPUT",
+          absent.input_status == INPUT_MISSING, absent.detail)
+    check("the two codes differ",
+          absent.input_status != bad.input_status)
+
+    ok = evaluate_triggers(ti(pbt=100 * B, other_income=30 * B,
+                              prior_8q_other_income=[28 * B] * 8,
+                              other_income_year_ago=29 * B))["T4"]
+    check("a usable input reports OK", ok.input_status == INPUT_OK)
+
+
+def test_cancelling_T4_leaves_AIC_shaped_rows_AUTO_NORMAL():
+    """§4.1 item 2 + §5 item 3 — once the invalid trigger is cancelled, a symbol
+    with nothing else firing is AUTO_NORMAL, which is tier 1's own output. It is
+    NOT a tier-2 verdict: no filing was read, so CONFIRMED_NORMAL would assert a
+    reading that never happened."""
+    r = screen(TriggerInput(
+        symbol="AIC", period="2026-Q2", pbt=9.87 * B, pbt_year_ago=20.39 * B,
+        prior_8q_pbt=[11.12 * B, 25.04 * B, -15.74 * B, 20.39 * B,
+                      11.20 * B, 36.12 * B, -44.16 * B, 13.10 * B],
+        other_income=423.19 * B,
+        prior_8q_other_income=[419.75 * B, 609.04 * B, 196.05 * B, 120.53 * B,
+                               180.76 * B, 315.83 * B, 246.19 * B, 126.61 * B],
+        financial_income=69.83 * B,
+        prior_8q_financial_income=[59.13 * B, 44.14 * B, 43.05 * B, 41.92 * B,
+                                   42.23 * B, 41.11 * B, 38.28 * B, 37.79 * B],
+        is_financial_sector=True, other_income_is_pl_addend=False))
+    check("no trigger survives", not r["triggers_fired"], str(r["triggers_fired"]))
+    check("status is AUTO_NORMAL", r["one_off_review_status"] == "AUTO_NORMAL")
+    check("penalty is a measured 0", r["one_off_penalty"] == 0)
+    check("T4 carries the mapping code",
+          r["t4_input_status"] == INPUT_INVALID_MAPPING)
+    # The same figures under the OLD mapping fired — that is what was withdrawn.
+    before = screen(TriggerInput(
+        symbol="AIC", period="2026-Q2", pbt=9.87 * B, pbt_year_ago=20.39 * B,
+        prior_8q_pbt=[], other_income=423.19 * B,
+        prior_8q_other_income=[221.1 * B] * 8,
+        is_financial_sector=True, t4_rule=T4_RULE_V1))
+    check("and it DID fire before the mapping was corrected", before["t4_fired"])
 
 
 def test_T4_v2_needs_materiality_AND_an_unusual_move():

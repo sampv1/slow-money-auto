@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fa.nonlife_scope import (USED as SCOPE_USED, ControlEvent,
                               resolve_series)
 from fa.one_off import (CHECK_ONE_OFF_TIER2_CURRENT, COMPLETION_COMPLETED,
-                        T4_RULE_V2,
+                        INPUT_INVALID_MAPPING, T4_RULE_V1, T4_RULE_V2,
                         STATUS_REVIEW_TRIGGERED, STATUS_SOURCE_INCOMPLETE,
                         TriggerInput, check_tier2_current, completion_status,
                         screen as one_off_screen)
@@ -1175,6 +1175,55 @@ def main() -> int:
           f"one_off_tier2_results.json; "
           f"{sum(1 for r_ in one_off_rows if r_['one_off_review_status'] == STATUS_REVIEW_TRIGGERED)}"
           f" mã-kỳ còn chờ BCTC gốc")
+    # ---------- §4 — mapping traceability, and §4.1's affected scope ----------
+    # BA asks two separate things: prove the mapping was checked against the
+    # original statements (the 8 fields), and then act on the finding across the
+    # WHOLE dataset rather than patching one cell. The second is what this block
+    # measures — every symbol-period whose T4 input carries INVALID_MAPPING is a
+    # cancelled trigger, and the count is reported rather than left implicit.
+    map_path = (Path(__file__).resolve().parents[1] / "data" / "fa" / "rubrics"
+                / "insurance" / "mapping_thu_nhap_khac.json")
+    mapping_doc = json.loads(map_path.read_text()) if map_path.exists() else {}
+    mapping_rows = mapping_doc.get("rows", [])
+    invalid_scope = [r_ for r_ in one_off_rows
+                     if r_.get("t4_input_status") == INPUT_INVALID_MAPPING]
+    # §4.1 item 6 — a cancelled trigger is one that WOULD have fired under the
+    # old mapping. Re-screening under v1 with the line restored is how the
+    # withdrawal is sized: without it "we cancelled the triggers" is a claim
+    # with no number behind it.
+    cancelled = []
+    for r_ in one_off_rows:
+        if r_.get("t4_input_status") != INPUT_INVALID_MAPPING:
+            continue
+        prior_ = [shift(r_["period"], k) for k in range(1, 9)]
+        before = one_off_screen(TriggerInput(
+            symbol=r_["symbol"], period=r_["period"],
+            pbt=_inc(r_["symbol"], r_["period"], PBT),
+            pbt_year_ago=_inc(r_["symbol"], shift(r_["period"], 4), PBT),
+            prior_8q_pbt=[_inc(r_["symbol"], x, PBT) for x in prior_],
+            other_income=_inc(r_["symbol"], r_["period"], OTHER_INCOME),
+            prior_8q_other_income=[_inc(r_["symbol"], x, OTHER_INCOME)
+                                   for x in prior_],
+            financial_income=_inc(r_["symbol"], r_["period"], FIN_INCOME),
+            prior_8q_financial_income=[_inc(r_["symbol"], x, FIN_INCOME)
+                                       for x in prior_],
+            is_financial_sector=True, other_income_is_pl_addend=True,
+            t4_rule=T4_RULE_V1))
+        if before["t4_fired"]:
+            cancelled.append({
+                "symbol": r_["symbol"], "period": r_["period"],
+                "t4_truoc_khi_huy": "KÍCH HOẠT",
+                "chi_tiet_truoc": before["t4_detail"],
+                "t4_sau_khi_huy": "ĐÃ HỦY — INVALID_MAPPING (§4.1)",
+                "trang_thai_sau": r_["one_off_review_status"],
+                "mapping_version": mapping_doc.get("mapping_version"),
+                "run_id": RUN_ID,
+            })
+    print(f"§4.1 ánh xạ: {mapping_doc.get('verdict', NOT_AVAILABLE)} · "
+          f"{len(mapping_rows)} mã đối chiếu BCTC · "
+          f"{len(invalid_scope)} mã-kỳ có đầu vào T4 sai · "
+          f"{len(cancelled)} kết quả kích hoạt T4 bị HỦY")
+
     one_off_by = {(r_["symbol"], r_["period"]): r_ for r_ in one_off_rows}
 
 
@@ -1967,6 +2016,8 @@ def main() -> int:
         "REPORT_SCOPE_VERIFICATION": scope_rows,
         "CONG_DU_DIEU_KIEN": gate_rows,
         "MOT_LAN_T1_T5": one_off_rows,
+        "ANH_XA_THU_NHAP_KHAC": mapping_rows or [{"note": "chưa đối chiếu"}],
+        "T4_DA_HUY_ANH_XA_SAI": cancelled or [{"note": "không có kết quả nào bị hủy"}],
         "universe_theo_loai_hinh": universe,
         "DANH_SACH_THEO_DOI": watch or [{"note": "không có mã nào chờ dữ liệu"}],
         "VAN_DE_DU_LIEU_CAN_XU_LY": issues or [{"note": "không có"}],
