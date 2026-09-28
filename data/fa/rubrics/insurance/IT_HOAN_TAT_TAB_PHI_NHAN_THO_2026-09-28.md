@@ -22,6 +22,12 @@ Trả lời `YEU_CAU_HOAN_TAT_TAB_PHI_NHAN_THO_SAU_NGHIEM_THU_2026-09-28.md`.
 12. Vấn đề còn lại chặn vận hành: KHÔNG
 ```
 
+`474f707` là commit **cuối cùng thay đổi mã nguồn**; các commit sau nó chỉ thêm
+tài liệu. Sheet `meta` ghi commit tại đúng thời điểm chạy (có thể là một commit
+tài liệu muộn hơn) cùng mã băm SHA-256 của từng tệp chương trình — dùng
+`script_sha256`, `one_off_engine_sha256` và `nonlife_scope_sha256` để đối chiếu
+chính xác, vì mã băm tệp không đổi khi commit tài liệu.
+
 **Toàn bộ 14 mục §8 và 10 điều kiện §9 đều đạt.** Điểm FA quý II/2026 của cả
 chín mã **giữ nguyên** đúng như mốc đối chiếu §2.
 
