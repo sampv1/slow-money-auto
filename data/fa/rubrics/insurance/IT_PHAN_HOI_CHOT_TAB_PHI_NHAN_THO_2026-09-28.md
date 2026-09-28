@@ -16,7 +16,7 @@ Trả lời `PHAN_HOI_IT_CHOT_TAB_PHI_NHAN_THO_VA_CHUYEN_SANG_TAI_BAO_HIEM.md`
 8. Trạng thái vòng nghiệm thu:               CHƯA HOÀN TẤT
 9. File kết quả và phiên bản chương trình:
    data/exports/nonlife_nghiem_thu_2026Q2.xlsx
-   commit 042d35a · NONLIFE_P1_P5_V1_TTM_GROSS · NONLIFE_INV_MAP_V1_CASH_ST_LT
+   commit e887ae6 · NONLIFE_P1_P5_V1_TTM_GROSS · NONLIFE_INV_MAP_V1_CASH_ST_LT
 ```
 
 Theo đúng §12, vì dòng 6 chưa đạt 9/9, **IT KHÔNG gửi đề nghị đóng tab.**
