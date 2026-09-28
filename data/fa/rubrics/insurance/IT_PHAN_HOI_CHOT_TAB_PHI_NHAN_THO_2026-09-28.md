@@ -174,8 +174,13 @@ văn bản trước của BA giữ lại cho BA.
 | Đã lưu phiên bản mã nguồn, quy tắc ánh xạ, nguồn dữ liệu, kết quả | ✅ `pipeline_working_tree = clean` |
 | Có thể chạy lại và tái tạo đúng kết quả | ✅ 24.555 ô, **0 khác biệt** |
 
-**14/17 đạt. Ba mục chưa đạt đều là cùng một nguyên nhân: chưa có ngưỡng P1–P5.**
-(Mục đầu — lấy tài liệu AIC — không còn chặn kết quả sau khi §4.1 được áp dụng.)
+**13/17 đạt. Bốn mục chưa đạt, thuộc HAI nguyên nhân khác nhau:**
+
+- **Ba mục** — điểm FA thô, điểm FA cuối, kỳ FA hoàn thành — chờ bảng ngưỡng
+  P1–P5 của BA (§4 ở trên).
+- **Một mục** — lấy và lưu đúng tài liệu AIC quý II/2026 — IT không lấy được.
+  Mục này **không còn chặn kết quả** sau khi §4.1 được áp dụng, nhưng nó vẫn là
+  một mục chưa đạt trong checklist và IT đếm nó như vậy.
 
 **Ghi chú minh bạch về mục "không còn REVIEW_TRIGGERED":** kỳ chính thức
 2026-Q2 không còn trạng thái chờ nào. Trong workbook vẫn còn **6 mã-kỳ ở các quý
