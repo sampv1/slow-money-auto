@@ -33,3 +33,6 @@ dashboard/out/
 # non-commercial" and vnai is marked proprietary, so publishing them here would
 # redistribute someone else's restricted software to the world.
 vendor/wheels/*.whl
+
+# Serena MCP tool cache — editor/tooling state, not project content
+.serena/
