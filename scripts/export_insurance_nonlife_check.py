@@ -43,8 +43,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fa.nonlife_scope import (USED as SCOPE_USED, ControlEvent,
                               resolve_series)
-from fa.nonlife_bands import (SCORE_BANDS_VERSION, audit_bands, deep_score,
-                             fa_final, fa_raw, score_one)
+from fa.nonlife_bands import (DELTA_CALCULATED, SCORE_BANDS_VERSION,
+                             audit_bands, deep_score, fa_delta, fa_final,
+                             fa_raw, score_one)
 from fa.one_off import (CHECK_ONE_OFF_TIER2_CURRENT, COMPLETION_COMPLETED,
                         INPUT_INVALID_MAPPING, T4_RULE_V1, T4_RULE_V2,
                         STATUS_REVIEW_TRIGGERED, STATUS_SOURCE_INCOMPLETE,
@@ -1188,8 +1189,9 @@ def main() -> int:
     # trigger, because §3.2 puts the issuer's filing between the two.
     tier2_path = (Path(__file__).resolve().parents[1] / "data" / "fa" / "rubrics"
                   / "insurance" / "one_off_tier2_results.json")
-    tier2 = {}
+    tier2, tier2_doc = {}, {}
     if tier2_path.exists():
+        tier2_doc = json.loads(tier2_path.read_text())
         for v in json.loads(tier2_path.read_text()).get("verdicts", []):
             tier2[(v["symbol"], v["period"])] = v
     for r_ in one_off_rows:
@@ -1360,19 +1362,40 @@ def main() -> int:
                 "run_id": RUN_ID,
             })
 
-    # §13 `fa_delta_vs_previous` — against the previous quarter THAT HAS a final
-    # score, not simply the previous quarter: with 2025-Q3 unscored, "previous"
-    # would otherwise be blank for 2025-Q4 and the series would start a quarter
-    # late.
-    for s_ in SY:
-        prev = None
-        for r_ in [x for x in band_rows if x["symbol"] == s_]:
-            cur_ = r_["fa_final_100"]
-            r_["fa_delta_vs_previous"] = (
-                round(cur_ - prev, 2) if isinstance(cur_, (int, float))
-                and prev is not None else NOT_APPLICABLE)
-            if isinstance(cur_, (int, float)):
-                prev = cur_
+    # §3 — Δ POINTS and ΔFA PERCENT, as separate fields.
+    #
+    # THE COMPARISON QUARTER IS ALWAYS THE IMMEDIATELY PRECEDING ONE. An earlier
+    # version carried the last quarter that HAD a score, so a gap was silently
+    # stepped over and the result still presented as quarter-on-quarter. §3.5
+    # bans exactly that ("So sánh với một quý cũ hơn chỉ vì quý liền trước chưa
+    # hoàn thành"), and BA's recommended CHECK_FA_DELTA_PREVIOUS_PERIOD exists
+    # to catch it, so the rule is enforced rather than merely intended.
+    idx = {(r_["symbol"], r_["period"]): r_ for r_ in band_rows}
+    for r_ in band_rows:
+        prev_period = shift(r_["period"], 1)
+        prev_row = idx.get((r_["symbol"], prev_period))
+        cur_ = r_["fa_final_100"]
+        cur_val = cur_ if isinstance(cur_, (int, float)) else None
+        if prev_row is None:
+            # Outside the loaded window — genuinely no prior quarter to compare.
+            d_ = fa_delta(cur_val, None, previous_exists=False)
+        else:
+            pv = prev_row["fa_final_100"]
+            pv_val = pv if isinstance(pv, (int, float)) else None
+            # "Chờ one-off" and "chưa đủ điều kiện chấm" are different reasons
+            # for the same blank, and §3.5 gives them different status codes.
+            pending = (pv_val is None
+                       and prev_row["one_off_review_status"] is not None
+                       and completion_status(prev_row["one_off_review_status"])
+                       != COMPLETION_COMPLETED)
+            d_ = fa_delta(cur_val, pv_val, previous_pending=pending)
+        r_.update(d_)
+        r_["fa_delta_previous_period"] = prev_period if prev_row else NOT_APPLICABLE
+        # Kept for continuity with the earlier workbook, now explicitly the
+        # POINTS figure so nobody reads it as a percentage.
+        r_["fa_delta_vs_previous"] = (d_["fa_delta_points"]
+                                      if d_["fa_delta_points"] is not None
+                                      else NOT_APPLICABLE)
     fa_by = {(r_["symbol"], r_["period"]): r_ for r_ in band_rows}
     _done = [r_ for r_ in band_rows if r_["fa_completion_status"] == "COMPLETED"]
     print(f"band điểm {SCORE_BANDS_VERSION}: "
@@ -1867,6 +1890,96 @@ def main() -> int:
     checks.append(fails("CHECK_FA_PERIOD_ONLY_WHEN_DONE", bad,
                         "chỉ ghi fa_completed_period khi FA Final đã khóa"))
 
+    # ---------- §6 — source-archive status, separate from scoring ----------
+    # BA's point is that a missing archive file and a blocked score are
+    # different facts. `scoring_blocked` is carried as its own field so the
+    # sheet cannot be read as "AIC is blocked": the symbol scores and displays
+    # normally, and only the FILING CABINET is incomplete.
+    archive_rows = []
+    for v_ in (tier2_doc.get("retrieval_attempts") or []):
+        b16 = v_.get("ba_section_16", {})
+        archive_rows.append({
+            "symbol": v_["symbol"], "period": v_["period"],
+            "artifact_type": "BCTC/PDF nguồn",
+            "archive_status": "MISSING_NON_BLOCKING_ARCHIVE",
+            "scoring_blocked": "FALSE",
+            "artifact_name": b16.get("1_ten_chinh_xac_pdf_con_thieu"),
+            "reason": ("Chưa lưu được PDF; ánh xạ sai đã được hủy theo §4.1 và "
+                       "không còn trigger one-off hợp lệ"),
+            "follow_up_action": "Bổ sung PDF vào kho lưu trữ khi truy cập được",
+            "one_off_review_status": (one_off_by.get((v_["symbol"], v_["period"]))
+                                      or {}).get("one_off_review_status"),
+            "fa_final_100": (fa_by.get((v_["symbol"], v_["period"])) or {}).get(
+                "fa_final_100"),
+            "run_id": RUN_ID,
+        })
+    # §6.3 — a missing archive must never turn into a BLOCKED symbol. Asserted
+    # rather than trusted, because the whole point of the status is that it
+    # changes nothing downstream.
+    bad = [a["symbol"] for a in archive_rows
+           if a["scoring_blocked"] != "FALSE"
+           or not isinstance(a["fa_final_100"], (int, float))]
+    checks.append(fails("CHECK_ARCHIVE_NON_BLOCKING", bad,
+                        "hồ sơ nguồn thiếu được ghi MISSING_NON_BLOCKING_ARCHIVE "
+                        "và KHÔNG chặn chấm điểm — mã vẫn có FA Final (§6.3)"))
+
+    # ---------- §5 — the three ΔFA checks ----------
+    # §5.1 — the percentage is recomputed from the two stored scores and
+    # compared to the stored rate BEFORE any display rounding, so a field that
+    # merely LOOKS right at two decimals cannot pass.
+    bad = []
+    for r_ in band_rows:
+        if r_["fa_delta_status"] != DELTA_CALCULATED:
+            continue
+        prev_row = idx.get((r_["symbol"], shift(r_["period"], 1)))
+        pv = prev_row["fa_final_100"] if prev_row else None
+        cur_ = r_["fa_final_100"]
+        if not isinstance(pv, (int, float)) or not isinstance(cur_, (int, float)) \
+                or pv <= 0:
+            bad.append(f"{r_['symbol']} {r_['period']} (mẫu số không hợp lệ)")
+            continue
+        expected = (cur_ - pv) / pv * 100.0
+        if abs(expected - (r_["fa_delta_pct_value"] or 0)) > 1e-9:
+            bad.append(f"{r_['symbol']} {r_['period']}")
+        # §5.1's last bullet: the points figure must not have been stored as
+        # the rate. They coincide only when the previous score is exactly 100,
+        # which does not occur here, so equality is a real signal.
+        elif (r_["fa_delta_points"] == r_["fa_delta_pct_value"]
+              and abs(pv - 100.0) > 1e-9 and r_["fa_delta_points"] != 0):
+            bad.append(f"{r_['symbol']} {r_['period']} (điểm dùng thay cho %)")
+    checks.append(fails("CHECK_FA_DELTA_PCT_FORMULA", bad,
+                        "ΔFA % = (FA hiện tại − FA quý liền trước) / FA quý "
+                        "liền trước × 100, mẫu số > 0, không dùng Δ điểm thay "
+                        "cho tỷ lệ (§5.1)"))
+
+    # §5.2 — completeness at the CURRENT quarter. PENDING rather than FAIL when
+    # a previous quarter is still in one-off review: that is unfinished work,
+    # not a wrong number, and §5.2 names the two outcomes separately.
+    cur_rows = [r_ for r_ in band_rows if r_["period"] == latest]
+    bad = [f"{r_['symbol']}" for r_ in cur_rows if not r_["fa_delta_status"]]
+    pend = [f"{r_['symbol']} (quý trước chờ one-off)" for r_ in cur_rows
+            if r_["fa_delta_status"] == "PREVIOUS_QUARTER_PENDING"]
+    bad += [f"{r_['symbol']} (thiếu Δ dù có điểm quý trước)" for r_ in cur_rows
+            if r_["fa_delta_status"] == DELTA_CALCULATED
+            and (r_["fa_delta_points"] is None
+                 or r_["fa_delta_pct_value"] is None)]
+    checks.append(fails("CHECK_FA_DELTA_CURRENT_COMPLETE", bad,
+                        f"{len(cur_rows)}/{len(cur_rows)} mã kỳ {latest} có "
+                        f"fa_delta_status hợp lệ; mã có điểm quý trước > 0 phải "
+                        f"đủ cả Δ điểm và ΔFA % (§5.2)",
+                        pending=pend or None))
+
+    # §5.3 — the preventive one. The comparison quarter must be the quarter
+    # immediately before, never an earlier one that happened to have a score.
+    bad = [f"{r_['symbol']} {r_['period']} -> {r_['fa_delta_previous_period']}"
+           for r_ in band_rows
+           if r_["fa_delta_previous_period"] != NOT_APPLICABLE
+           and r_["fa_delta_previous_period"] != shift(r_["period"], 1)]
+    checks.append(fails("CHECK_FA_DELTA_PREVIOUS_PERIOD", bad,
+                        "kỳ so sánh phải là quý LIỀN TRƯỚC theo thời gian, "
+                        "không được lùi xa hơn khi quý liền trước chưa hoàn "
+                        "thành (§5.3)"))
+
     # ---------- §14 summary table ----------
     by = {(r["symbol"], r["period"]): r for r in rows}
     p5_by = {r["symbol"]: r for r in p5}
@@ -1942,8 +2055,10 @@ def main() -> int:
             "Điểm FA thô /100": fa_by.get((s, latest), {}).get("fa_raw_100"),
             "Điều chỉnh one-off": fa_by.get((s, latest), {}).get("one_off_adjustment"),
             "Điểm FA cuối /100": fa_by.get((s, latest), {}).get("fa_final_100"),
-            "Thay đổi so kỳ FA trước": fa_by.get((s, latest), {}).get(
-                "fa_delta_vs_previous"),
+            "Δ điểm": fa_by.get((s, latest), {}).get("fa_delta_points"),
+            "ΔFA %": fa_by.get((s, latest), {}).get("fa_delta_pct_value"),
+            "ΔFA hiển thị": fa_by.get((s, latest), {}).get("fa_delta_display"),
+            "fa_delta_status": fa_by.get((s, latest), {}).get("fa_delta_status"),
             "fa_completion_status": fa_by.get((s, latest), {}).get(
                 "fa_completion_status", NOT_SCORED_BY_DESIGN),
             "fa_completed_period": fa_by.get((s, latest), {}).get(
@@ -2261,7 +2376,11 @@ def main() -> int:
           "FA Raw /100": r_["fa_raw_100"],
           "Điều chỉnh one-off": r_["one_off_adjustment"],
           "FA Final /100": r_["fa_final_100"],
-          "Thay đổi so kỳ trước": r_["fa_delta_vs_previous"],
+          "Δ điểm": r_["fa_delta_points"],
+          "ΔFA %": r_["fa_delta_pct_value"],
+          "ΔFA hiển thị": r_["fa_delta_display"],
+          "fa_delta_status": r_["fa_delta_status"],
+          "Kỳ so sánh": r_["fa_delta_previous_period"],
           "fa_completion_status": r_["fa_completion_status"],
           "fa_completed_period": r_["fa_completed_period"],
           "one_off_review_status": r_["one_off_review_status"],
@@ -2297,6 +2416,7 @@ def main() -> int:
         "DIEM_36_MA_QUY": band_rows,
         "TONG_HOP_FA_QUY_HIEN_TAI": fa_summary,
         "KIEM_THU_BAND_DIEM": band_tests,
+        "HO_SO_NGUON_THIEU": archive_rows or [{"note": "không có hồ sơ nào thiếu"}],
         "MOT_LAN_T1_T5": one_off_rows,
         "ANH_XA_THU_NHAP_KHAC": mapping_rows or [{"note": "chưa đối chiếu"}],
         "T4_DA_HUY_ANH_XA_SAI": cancelled or [{"note": "không có kết quả nào bị hủy"}],

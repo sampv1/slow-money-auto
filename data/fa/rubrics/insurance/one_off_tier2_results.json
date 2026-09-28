@@ -114,6 +114,57 @@
         "Theo §3.5 kết luận là CONFIRMED_NORMAL với điểm trừ 0."
       ],
       "note_on_mapping": "Dòng IS_OTHER_INCOME mà nguồn chuẩn hóa phục vụ KHÔNG phải dòng 'Thu nhập khác' của báo cáo KQKD. Đây là xác nhận độc lập từ chính BCTC của doanh nghiệp cho phát hiện nêu tại IT_phat_hien_T4_bao_hiem.md. BHI: BCTC ÂM 1,53 tỷ so với dòng nguồn 272,48 tỷ."
+    },
+    {
+      "symbol": "BHI",
+      "period": "2026-Q1",
+      "trigger_codes": "T2",
+      "classification": "CONFIRMED_NORMAL",
+      "no_one_off_found": true,
+      "one_off_amount": null,
+      "tax_basis": "PRE_TAX",
+      "penalty": 0,
+      "source_document": "Báo cáo tài chính hợp nhất Quý 1/2026, Tổng CTCP Bảo hiểm Sài Gòn - Hà Nội (BSH), công bố 29/04/2026; kèm công văn 155/2026/BSH-CBTT giải trình chênh lệch KQKD quý 1/2026",
+      "source_url": "https://bshc.com.vn/wp-content/uploads/2020/05/BCTC-hop-nhat-31.3.26.pdf",
+      "source_page_note": "KQKD hợp nhất Phần II, trang 9 — mã 30 'Lợi nhuận thuần từ HĐKD', mã 31 'Thu nhập khác', mã 32 'Chi phí khác', mã 19 'Lợi nhuận gộp HĐKD bảo hiểm', mã 25 'Lợi nhuận gộp HĐ tài chính'; công văn giải trình 155/2026/BSH-CBTT ngày 29/04/2026",
+      "reviewed_by": "IT",
+      "reviewed_date": "2026-09-28",
+      "rationale": [
+        "Tái tính LNTT quý = mã 30 + mã 31 - mã 32 = 25.851.453.269 + 2.246.063.832 - 364.877.076 = 27.732.640.025 đồng, LỆCH 0 ĐỒNG so với dữ liệu chuẩn hóa.",
+        "Cùng kỳ 2025-Q1 tái tính = (8.037.336.966) + 3.288.596.997 - 1.938.604.262 = (6.687.344.231) đồng, cũng khớp dữ liệu chuẩn hóa — nên điều kiện T2 kích hoạt là đúng số.",
+        "TOÀN BỘ mức cải thiện đến từ HOẠT ĐỘNG BẢO HIỂM: lợi nhuận gộp HĐKD bảo hiểm tăng từ 26.698.093.298 lên 78.386.280.532, tức +51,69 tỷ — lớn hơn cả mức cải thiện LNTT (+34,42 tỷ).",
+        "Hai khoản còn lại đều GIẢM: lợi nhuận gộp hoạt động tài chính từ 19,61 tỷ xuống 5,47 tỷ (-14,14 tỷ); thu nhập khác từ 3,29 tỷ xuống 2,25 tỷ (-1,04 tỷ). Không có khoản bất thường nào làm TĂNG lợi nhuận.",
+        "Nguyên nhân hoạt động thể hiện rõ trong chính báo cáo: tổng chi phí hoạt động kinh doanh bảo hiểm giảm từ 665.486.313.085 xuống 407.637.681.256, tức GIẢM 38,7%.",
+        "Công văn giải trình 155/2026/BSH-CBTT của chính doanh nghiệp nêu nguyên nhân: 'BSH cơ cấu lại sản phẩm theo hướng thúc đẩy các sản phẩm với chi phí kinh doanh thấp'. Đây là thay đổi cơ cấu kinh doanh thông thường, không phải giao dịch một lần.",
+        "Kiểm tra ngưỡng §3.9: R_Q = 2.246.063.832 / 27.732.640.025 = 8,10%, dưới ngưỡng 10%. Kể cả khi coi TOÀN BỘ thu nhập khác là một lần thì điểm trừ vẫn bằng 0.",
+        "Theo §3.5, kết luận là CONFIRMED_NORMAL với điểm trừ 0."
+      ],
+      "note_on_mapping": "Xác nhận lại phát hiện ánh xạ: BCTC ghi thu nhập khác quý 1/2026 là 2,25 tỷ, trong khi dòng IS_OTHER_INCOME của nguồn chuẩn hóa phục vụ một giá trị khác hẳn."
+    },
+    {
+      "symbol": "BHI",
+      "period": "2025-Q4",
+      "trigger_codes": "T3",
+      "classification": "CONFIRMED_NORMAL",
+      "no_one_off_found": true,
+      "one_off_amount": null,
+      "tax_basis": "PRE_TAX",
+      "penalty": 0,
+      "source_document": "Báo cáo tài chính hợp nhất Quý 4/2025 (công bố 30/01/2026) VÀ Báo cáo tài chính hợp nhất năm 2025 ĐÃ KIỂM TOÁN (ký 24/03/2026), Tổng CTCP Bảo hiểm Sài Gòn - Hà Nội (BSH); kèm công văn 104/2025/BSH-CBTT giải trình chênh lệch KQKD quý 4/2025",
+      "source_url": "https://bshc.com.vn/wp-content/uploads/2020/05/bctc-hop-nhat_Q4-2025-V_0001.pdf",
+      "source_page_note": "BCTC quý 4/2025: KQKD hợp nhất Phần II, trang 9-10 — mã 30, mã 31, mã 32, mã 40 'Lợi nhuận khác', mã 50 'Tổng lợi nhuận kế toán trước thuế'. BCTC năm 2025 đã kiểm toán: KQKD hợp nhất Phần I, trang 9 — mã 50. Công văn 104/2025/BSH-CBTT ngày 30/01/2026.",
+      "reviewed_by": "IT",
+      "reviewed_date": "2026-09-28",
+      "rationale": [
+        "LNTT quý 4/2025 trên BCTC QUÝ (chưa kiểm toán) là 37.008.407.330 đồng — tái tính từ mã 30 + 31 - 32 = 44.772.490.689 + 2.967.861.696 - 10.731.945.055, khớp đúng số in trên báo cáo.",
+        "Dữ liệu chuẩn hóa lưu 41,74 tỷ, CAO HƠN 4,73 tỷ. IT đã truy nguyên và đây KHÔNG phải lỗi: LNTT năm 2025 ĐÃ KIỂM TOÁN là 28.368.695.876 đồng, so với 23.639.765.290 đồng trên bản quý — kiểm toán điều chỉnh TĂNG 4.728.930.586 đồng. Nguồn chuẩn hóa suy ra quý 4 bằng (năm đã kiểm toán - chín tháng), nên toàn bộ chênh lệch kiểm toán rơi vào quý 4: 28.368.695.876 - (13.367.344.231) = 41.736.040.107 đồng, đúng bằng giá trị đang lưu.",
+        "Chênh lệch kiểm toán là ĐIỀU CHỈNH KIỂM TOÁN cho cả năm, không phải một giao dịch một lần trong quý 4. Nó không có bản chất của một khoản thu nhập bất thường và không được xử lý như vậy.",
+        "Trên chính BCTC quý 4, 'Lợi nhuận khác' (mã 40) là ÂM 7.764.083.359 đồng (thu nhập khác 2.967.861.696 trừ chi phí khác 10.731.945.055). Theo §3.7, khoản làm GIẢM lợi nhuận không bị trừ thêm điểm FA.",
+        "Công văn giải trình 104/2025/BSH-CBTT của chính doanh nghiệp cho biết lợi nhuận sau thuế hợp nhất quý 4/2025 là 23.299 triệu đồng, GIẢM 8.917 triệu so với cùng kỳ (32.216 triệu), với hai nguyên nhân: cơ cấu lại danh mục sản phẩm làm giảm quy mô doanh thu, và lợi nhuận hoạt động đầu tư giảm. Doanh nghiệp không nêu bất kỳ khoản thu nhập một lần nào.",
+        "Vì sao T3 kích hoạt: LNTT của BHI có tính MÙA VỤ rất mạnh — quý 3 lỗ đều đặn (2023-Q3 -41,89 tỷ; 2024-Q3 -57,49 tỷ; 2025-Q3 -30,37 tỷ) trong khi quý 2 và quý 4 có lãi. Các quý lỗ kéo trung vị 8 quý xuống chỉ còn 6,9 tỷ, nên bất kỳ quý 4 bình thường nào cũng vượt ngưỡng 2,5 lần trung vị. Đây là đặc tính mùa vụ của chuỗi số, không phải bằng chứng có khoản một lần.",
+        "Theo §3.5, kết luận là CONFIRMED_NORMAL với điểm trừ 0."
+      ],
+      "note_on_mapping": "Ghi nhận để BA biết: quý 4 của nguồn chuẩn hóa là SỐ SUY RA (năm đã kiểm toán trừ chín tháng chưa kiểm toán), nên có thể khác BCTC quý 4 công bố lần đầu. Với BHI năm 2025 khoảng cách này là 4,73 tỷ. Điều này KHÔNG ảnh hưởng P1–P5 vì cả năm chỉ tiêu đều không đọc LNTT."
     }
   ],
   "retrieval_attempts": [

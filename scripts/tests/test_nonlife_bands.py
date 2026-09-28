@@ -17,8 +17,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fa.nonlife_bands import (  # noqa: E402
-    CRITERION_MAX, DEEP_MAX, SCORE_BANDS_VERSION, audit_bands, deep_score,
-    fa_final, fa_raw, score_one)
+    CRITERION_MAX, DEEP_MAX, DELTA_CALCULATED, DELTA_NO_CHANGE_FROM_ZERO,
+    DELTA_NO_PRIOR, DELTA_PREVIOUS_PENDING, DELTA_RECOVERY_FROM_ZERO,
+    SCORE_BANDS_VERSION, audit_bands, deep_score, fa_delta, fa_final, fa_raw,
+    score_one)
 
 _fail = []
 
@@ -142,3 +144,87 @@ if __name__ == "__main__":
         fn()
     print(f"\n{'FAILED: ' + ', '.join(_fail) if _fail else 'all checks passed'}")
     sys.exit(1 if _fail else 0)
+
+
+# ---------------------------------------------------------------------------
+# BA `YEU_CAU_HOAN_TAT...` §3 — Δ points vs ΔFA percent
+# ---------------------------------------------------------------------------
+#: §3.6, copied from BA's table. These are the eight symbols that had two
+#: completed quarters when BA wrote it.
+DELTA_CASES = [
+    ("ABI", 82, 79, 3.80), ("AIC", 36, 39, -7.69), ("BIC", 57, 51, 11.76),
+    ("BLI", 67, 37, 81.08), ("BMI", 72, 47, 53.19), ("MIG", 63, 58, 8.62),
+    ("PGI", 52, 66, -21.21), ("PTI", 53, 46, 15.22),
+]
+
+
+def test_BA_section_3_6_expected_percentages():
+    for sym, cur, prev, want in DELTA_CASES:
+        r = fa_delta(cur, prev)
+        check(f"§3.6 {sym} {prev}->{cur} = {want:+.2f}%",
+              round(r["fa_delta_pct_value"], 2) == want,
+              f"được {r['fa_delta_pct_value']:.4f}")
+
+
+def test_points_and_percent_are_different_fields():
+    """BA's objection in one case: BLI moved 37 -> 67. That is +30 POINTS and
+    +81.08 PERCENT, and a single field labelled ΔFA carrying 30 reads as 30%."""
+    r = fa_delta(67, 37)
+    check("points is the score difference", r["fa_delta_points"] == 30)
+    check("percent is the rate", round(r["fa_delta_pct_value"], 2) == 81.08)
+    check("they are not the same number",
+          r["fa_delta_points"] != round(r["fa_delta_pct_value"], 2))
+
+
+def test_full_precision_is_stored_and_only_display_is_rounded():
+    """§3.4 — store the computed value, round for display only."""
+    r = fa_delta(53, 46)
+    check("stored value is not pre-rounded",
+          abs(r["fa_delta_pct_value"] - (7 / 46 * 100)) < 1e-12,
+          str(r["fa_delta_pct_value"]))
+    check("display carries two decimals and a comma",
+          r["fa_delta_display"] == "▲ 15,22%", r["fa_delta_display"])
+
+
+def test_the_four_special_cases_never_divide_by_zero():
+    """§3.5 — each of BA's states, and none of them fabricates a number."""
+    r = fa_delta(10, 0)
+    check("0 -> positive is RECOVERY_FROM_ZERO",
+          r["fa_delta_status"] == DELTA_RECOVERY_FROM_ZERO)
+    check("and states no percentage", r["fa_delta_pct_value"] is None)
+    check("and says so", r["fa_delta_display"] == "Phục hồi từ 0")
+
+    r = fa_delta(0, 0)
+    check("0 -> 0 is NO_CHANGE_FROM_ZERO",
+          r["fa_delta_status"] == DELTA_NO_CHANGE_FROM_ZERO)
+    check("and displays 0,00%", r["fa_delta_display"] == "0,00%")
+
+    r = fa_delta(50, None)
+    check("no prior quarter is NO_PRIOR_COMPLETED_FA",
+          r["fa_delta_status"] == DELTA_NO_PRIOR)
+    check("and invents no delta", r["fa_delta_points"] is None
+          and r["fa_delta_pct_value"] is None)
+
+    r = fa_delta(46, None, previous_pending=True)
+    check("prior quarter mid-review is PREVIOUS_QUARTER_PENDING",
+          r["fa_delta_status"] == DELTA_PREVIOUS_PENDING)
+    # The distinction BA draws: "no prior quarter" waits for data, "prior
+    # quarter pending" waits for a review. Merging them loses the action.
+    check("which is NOT the same status as having no prior quarter",
+          r["fa_delta_status"] != DELTA_NO_PRIOR)
+
+
+def test_a_missing_delta_is_never_reported_as_zero():
+    """§3.5's ban list: no `0` standing in for an uncomputed delta."""
+    for r in (fa_delta(50, None), fa_delta(46, None, previous_pending=True),
+              fa_delta(None, 50)):
+        check(f"{r['fa_delta_status']} carries no 0",
+              r["fa_delta_points"] != 0 and r["fa_delta_pct_value"] != 0)
+
+
+def test_sign_drives_the_arrow():
+    check("increase is up", fa_delta(82, 79)["fa_delta_display"].startswith("▲"))
+    check("decrease is down", fa_delta(36, 39)["fa_delta_display"].startswith("▼"))
+    flat = fa_delta(50, 50)
+    check("no change has no arrow", flat["fa_delta_display"] == "0,00%")
+    check("and is still CALCULATED", flat["fa_delta_status"] == DELTA_CALCULATED)

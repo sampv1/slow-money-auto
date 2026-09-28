@@ -205,3 +205,69 @@ def audit_bands() -> list[str]:
             problems.append(f"{code}: điểm tối đa {max(b.points for b in bands)}"
                             f" khác thiết kế {CRITERION_MAX[code]}")
     return problems
+
+
+# ---------------------------------------------------------------------------
+# BA `YEU_CAU_HOAN_TAT...` §3 — Δ điểm and ΔFA %, kept apart
+# ---------------------------------------------------------------------------
+#: §3.5's five states. The pair that matters is the last two: "there is no
+#: prior quarter to compare with" and "the prior quarter exists but its one-off
+#: review is unfinished" call for different actions — wait for data versus
+#: finish a review — so they are never merged.
+DELTA_CALCULATED = "CALCULATED"
+DELTA_RECOVERY_FROM_ZERO = "RECOVERY_FROM_ZERO"
+DELTA_NO_CHANGE_FROM_ZERO = "NO_CHANGE_FROM_ZERO"
+DELTA_NO_PRIOR = "NO_PRIOR_COMPLETED_FA"
+DELTA_PREVIOUS_PENDING = "PREVIOUS_QUARTER_PENDING"
+
+#: §3.4 — display rounds to two decimals; the stored value does not.
+DELTA_DISPLAY_DP = 2
+
+
+def fa_delta(current, previous, previous_pending=False, previous_exists=True):
+    """§3.3-§3.5 — the Δ in POINTS and the Δ in PERCENT, as separate fields.
+
+    `fa_delta_points` is a score difference and `fa_delta_pct_value` is a rate;
+    BA's objection is that one field called "ΔFA" carrying +30 reads as +30%
+    when BLI actually moved 37 -> 67, which is +81.08%. They are computed and
+    stored apart, and only the percentage is for display (§3.4).
+
+    THE COMPARISON QUARTER IS THE IMMEDIATELY PRECEDING ONE, ALWAYS. §3.5 bans
+    reaching further back when that quarter is unfinished — doing so silently
+    compares across a gap and reports it as a quarter-on-quarter move. Callers
+    pass what the previous quarter IS, and an unusable one yields a status, not
+    a substitute.
+    """
+    out = {"fa_delta_points": None, "fa_delta_pct_value": None,
+           "fa_delta_status": None, "fa_delta_display": None}
+    if current is None:
+        # Nothing to compare FROM: the current quarter itself is not scored.
+        out["fa_delta_status"] = DELTA_NO_PRIOR if previous_exists else DELTA_NO_PRIOR
+        out["fa_delta_display"] = "Chưa đủ kỳ trước"
+        return out
+    if previous_pending:
+        out["fa_delta_status"] = DELTA_PREVIOUS_PENDING
+        out["fa_delta_display"] = "Quý trước chưa hoàn tất one-off"
+        return out
+    if previous is None:
+        out["fa_delta_status"] = DELTA_NO_PRIOR
+        out["fa_delta_display"] = "Chưa đủ kỳ trước"
+        return out
+
+    out["fa_delta_points"] = float(current) - float(previous)
+    if previous > 0:
+        # Full precision stored; §3.4 rounds only for display.
+        pct = (float(current) - float(previous)) / float(previous) * 100.0
+        out["fa_delta_pct_value"] = pct
+        out["fa_delta_status"] = DELTA_CALCULATED
+        shown = f"{abs(pct):,.{DELTA_DISPLAY_DP}f}".replace(",", " ").replace(".", ",")
+        arrow = "▲ " if pct > 0 else ("▼ " if pct < 0 else "")
+        out["fa_delta_display"] = f"{arrow}{shown}%" if pct else f"0,{'0' * DELTA_DISPLAY_DP}%"
+    elif current > 0:
+        # §3.5 — never divide by zero, and never call it 0% either.
+        out["fa_delta_status"] = DELTA_RECOVERY_FROM_ZERO
+        out["fa_delta_display"] = "Phục hồi từ 0"
+    else:
+        out["fa_delta_status"] = DELTA_NO_CHANGE_FROM_ZERO
+        out["fa_delta_display"] = f"0,{'0' * DELTA_DISPLAY_DP}%"
+    return out
