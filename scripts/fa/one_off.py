@@ -120,6 +120,28 @@ class TriggerInput:
     #: §3.4 T5 is written for non-financial issuers. Recorded rather than used to
     #: skip the test — see the note on T5 below.
     is_financial_sector: bool = False
+    #: WHETHER `other_income` IS THE P&L's NON-OPERATING "Thu nhập khác" AT ALL.
+    #:
+    #: False for the provider's INSURANCE template, where the line it serves as
+    #: other income is NOT an addend of pre-tax profit. Measured over 36
+    #: insurer-quarters: LNTT minus insurance-operating profit minus financial
+    #: profit leaves a residual under about 7 tỷ, while the served line runs to
+    #: hundreds (AIC 609.0, BHI 272.5, PTI 135.4, PGI 93.9) — so it is a GROSS
+    #: component already inside the insurance revenue/expense blocks, not
+    #: non-operating income. No other candidate line carries the residual either:
+    #: the best of five matches 17 of 36, and those are mostly cases where both
+    #: sides are ~0.
+    #:
+    #: The non-financial template is the opposite and was checked the same way:
+    #: operating profit + net other income reproduces pre-tax profit EXACTLY
+    #: (VLB 2026-Q2 residual 0.0, VCG 2025-Q3 residual -0.0), so T4 is sound
+    #: there and VLB's 348.2 tỷ really is non-operating other income.
+    #:
+    #: Feeding T4 the insurance line made it fire on 29 of 72 insurer-quarters,
+    #: twice on quarters where that line sat BELOW its own eight-quarter median
+    #: (PGI 2025-Q3, PTI 2025-Q3). That was a mapping fault, not a threshold
+    #: fault, and it is why T4 is UNEVALUABLE here rather than retuned.
+    other_income_is_pl_addend: bool = True
 
 
 @dataclass
@@ -185,7 +207,16 @@ def evaluate_triggers(ti: TriggerInput) -> dict[str, TriggerResult]:
     # ---- T4: other income materially large ----
     oth, med_oth = ti.other_income, _median(
         ti.prior_8q_other_income[:MEDIAN_LOOKBACK_Q])
-    if oth is None or pbt is None:
+    if not ti.other_income_is_pl_addend:
+        # NOT a threshold decision — the input does not exist. §3.4 T4 tests the
+        # P&L's non-operating "Thu nhập khác", and this template does not serve
+        # it. Reporting `evaluable=False` keeps "could not test" distinct from
+        # "tested and did not fire", which §3.5 depends on.
+        out["T4"] = TriggerResult(
+            False, "mẫu BCTC bảo hiểm không có dòng Thu nhập khác ngoài hoạt "
+                   "động (dòng nguồn phục vụ không phải số cộng vào LNTT) — "
+                   "không đánh giá được T4", evaluable=False)
+    elif oth is None or pbt is None:
         out["T4"] = TriggerResult(False, "thiếu thu nhập khác hoặc LNTT", evaluable=False)
     else:
         share = oth / abs(pbt) if pbt else None
@@ -310,6 +341,7 @@ def confirm(
     source_page_note: str | None = None,
     recurs: bool | None = None,
     source_incomplete: bool = False,
+    no_one_off_found: bool = False,
 ) -> dict:
     """Tier 2's verdict, from facts the FILING supplied (§3.6).
 
@@ -327,6 +359,31 @@ def confirm(
             "one_off_review_status": STATUS_SOURCE_INCOMPLETE,
             "one_off_penalty": None,
             "reason": "DN chưa công bố đủ BCTC/thuyết minh để kết luận (§3.5)",
+        }
+
+    # §3.5's CONFIRMED_NORMAL is "read the filing and confirmed it is ordinary
+    # activity" — there may be NO one-off amount to report at all. Requiring one
+    # would have forced a genuinely clean quarter into SOURCE_INCOMPLETE, which
+    # then holds the previous period's FA score under §6.2 for no reason. The
+    # source reference is still required, because it is what proves the filing
+    # was actually read rather than assumed.
+    if no_one_off_found:
+        if not source_page_note:
+            return {
+                "symbol": symbol, "period": period,
+                "one_off_review_status": STATUS_SOURCE_INCOMPLETE,
+                "one_off_penalty": None,
+                "reason": ("kết luận 'không có khoản một lần' nhưng thiếu "
+                           "trang/số thuyết minh chứng minh đã đọc BCTC (§3.5)"),
+            }
+        return {
+            "symbol": symbol, "period": period,
+            "one_off_review_status": STATUS_CONFIRMED_NORMAL,
+            "one_off_penalty": 0,
+            "source_page_note": source_page_note,
+            "reason": ("đã đọc BCTC và thuyết minh, không có khoản lợi nhuận "
+                       "một lần đủ điều kiện §3.6"),
+            "engine_version": ONE_OFF_ENGINE_VERSION,
         }
 
     missing = [n for n, v in (

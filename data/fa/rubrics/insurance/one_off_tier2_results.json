@@ -1,0 +1,42 @@
+{
+  "_readme": [
+    "Tier 2 verdicts (BA PHAN_HOI_CHOT_CUOI §3.2, §3.6). One entry per symbol-period",
+    "that tier 1 marked REVIEW_TRIGGERED and a reviewer then resolved from the",
+    "ISSUER'S OWN published statements and notes.",
+    "",
+    "This file is the audit trail. Tier 1 cannot write it — §3.2 puts the filing",
+    "between a trigger and a score — and the export script only READS it, so a",
+    "verdict can never be produced by the same pass that raised the trigger.",
+    "",
+    "source_page_note is REQUIRED by §3.6 and is what proves the filing was read",
+    "rather than assumed. A symbol-period with no entry here stays REVIEW_TRIGGERED."
+  ],
+  "verdicts": [
+    {
+      "symbol": "BLI",
+      "period": "2026-Q2",
+      "trigger_codes": "T1",
+      "classification": "CONFIRMED_NORMAL",
+      "no_one_off_found": true,
+      "one_off_amount": null,
+      "tax_basis": "PRE_TAX",
+      "penalty": 0,
+      "source_document": "Báo cáo tài chính Quý 2 và 6 tháng đầu năm 2026, Tổng CTCP Bảo hiểm Bảo Long, công bố 21/07/2026",
+      "source_url": "https://baolonginsurance.com.vn/Data/Sites/1/media/Nha%20dau%20tu/bao-cao-tai-chinh/2026/BCTC%20QUY%202%20VA%206%20THANG%202026%20TIENG%20VIET.pdf",
+      "source_page_note": "Thuyết minh 31 'Lợi nhuận khác' (trang 33); Thuyết minh 28 'Doanh thu hoạt động tài chính'",
+      "reviewed_by": "IT",
+      "reviewed_date": "2026-09-27",
+      "rationale": [
+        "Các dòng trong BCTC tái tính đúng LNTT quý: 31.761.033.128 đồng, lệch 0 đồng.",
+        "LNTT Quý 2/2026 là 31.761.033.128 so với 2.059.937.088 cùng kỳ — khớp dữ liệu chuẩn hóa đến đồng, nên T1 kích hoạt là đúng.",
+        "Phân tích mức tăng 29,70 tỷ: kết quả hoạt động BẢO HIỂM +26,50 tỷ (89,2%); hoạt động tài chính +1,53 tỷ (5,1%); chi phí quản lý giảm +1,14 tỷ (3,8%); lợi nhuận khác +0,53 tỷ (1,8%).",
+        "Doanh thu hoạt động bảo hiểm thuần tăng 7,5% và tổng chi phí hoạt động bảo hiểm GIẢM 1,1% — hoạt động kinh doanh thông thường.",
+        "Thuyết minh 28: doanh thu tài chính gồm lãi tiền gửi 33,84 tỷ (6 tháng), cổ tức 0,61 tỷ, lãi chênh lệch tỷ giá 1,64 tỷ. §3.7 nêu rõ lãi tiền gửi, cổ tức và thu nhập đầu tư thông thường KHÔNG tự coi là một lần.",
+        "Thuyết minh 31: thu nhập khác 6 tháng 1.515.181.408 đồng, toàn bộ ghi là 'Khác', KHÔNG nêu giao dịch riêng biệt nào; lợi nhuận khác thuần chỉ 82.689.788 đồng.",
+        "Kiểm tra giả định bất lợi nhất: nếu coi TOÀN BỘ thu nhập khác quý (1.475.439.263) là một lần thì R_Q = 4,65%, dưới ngưỡng 10% của §3.9, điểm trừ vẫn bằng 0.",
+        "Không đủ điều kiện §3.6 để xác nhận một khoản một lần: thuyết minh không nêu bản chất giao dịch riêng biệt nào. Theo §3.5, kết luận là CONFIRMED_NORMAL."
+      ],
+      "note_on_mapping": "Thuyết minh 31 của DN ghi thu nhập khác Quý 2 là 1,48 tỷ, KHÔNG phải 22,0 tỷ như dòng IS_OTHER_INCOME mà nguồn chuẩn hóa phục vụ. Đây là xác nhận độc lập từ chính BCTC của doanh nghiệp cho phát hiện ánh xạ nêu tại IT_phat_hien_T4_bao_hiem.md."
+    }
+  ]
+}

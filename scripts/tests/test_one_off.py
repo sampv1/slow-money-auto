@@ -341,6 +341,61 @@ def test_impact_ratio_uses_an_absolute_denominator():
     check("zero profit -> None", impact_ratio(50.0, 0.0) is None)
 
 
+def test_T4_is_UNEVALUABLE_where_other_income_is_not_a_PL_addend():
+    """The correction that matters most in this module's history.
+
+    The provider's INSURANCE template serves a line as other income that is NOT
+    an addend of pre-tax profit — measured over 36 insurer-quarters, the
+    non-operating residual is under ~7 tỷ while that line runs to hundreds (AIC
+    609.0, BHI 272.5). Feeding it to T4 made it fire on 29 of 72
+    insurer-quarters, twice on quarters where the line sat BELOW its own median.
+
+    That was a MAPPING fault, not a threshold fault, so the answer is
+    `evaluable=False` — the input does not exist — and not a retuned operator.
+    """
+    r = evaluate_triggers(ti(pbt=9.9 * B, other_income=423.2 * B,
+                             prior_8q_other_income=[221.1 * B] * 8,
+                             other_income_is_pl_addend=False))["T4"]
+    check("insurance template -> T4 unevaluable", not r.evaluable)
+    check("and therefore not fired", not r.fired)
+    check("reason names the cause", "không phải số cộng vào LNTT" in r.detail)
+    # The same figures WOULD have fired under the old mapping — that is the point.
+    r2 = evaluate_triggers(ti(pbt=9.9 * B, other_income=423.2 * B,
+                              prior_8q_other_income=[221.1 * B] * 8))["T4"]
+    check("the same inputs fire when the line IS a P&L addend", r2.fired)
+
+
+def test_T4_still_works_for_a_non_financial_filer():
+    """VLB's other income reconciles exactly: operating 119.9 + net other 348.2
+    = 468.1 = pre-tax profit, residual 0.0. So T4 must keep firing there."""
+    r = evaluate_triggers(ti(pbt=468.1 * B, other_income=348.2 * B,
+                             prior_8q_other_income=[1.0 * B] * 8))["T4"]
+    check("VLB still fires T4", r.fired, r.detail)
+    check("and is evaluable", r.evaluable)
+
+
+def test_a_clean_quarter_can_be_confirmed_without_an_amount():
+    """§3.5's CONFIRMED_NORMAL is "read the filing, it is ordinary activity" —
+    there may be no one-off amount at all. Demanding one forced a clean quarter
+    into SOURCE_INCOMPLETE, which then holds the previous FA score under §6.2
+    for no reason. The source reference is still required: it is what proves the
+    filing was read rather than assumed."""
+    r = confirm(symbol="BLI", period="2026-Q2", tax_basis=TAX_BASIS_PRE,
+                one_off_amount=None, profit_q=31.8 * B, profit_ttm=None,
+                no_one_off_found=True, source_page_note="Thuyết minh 5.2")
+    check("clean quarter -> CONFIRMED_NORMAL",
+          r["one_off_review_status"] == STATUS_CONFIRMED_NORMAL)
+    check("penalty is a real 0", r["one_off_penalty"] == 0)
+    check("completes FA", r["one_off_review_status"] in STATUS_COMPLETES_FA)
+    # But a bare claim with no reference is not a reading.
+    r2 = confirm(symbol="BLI", period="2026-Q2", tax_basis=TAX_BASIS_PRE,
+                 one_off_amount=None, profit_q=31.8 * B, profit_ttm=None,
+                 no_one_off_found=True, source_page_note=None)
+    check("no source reference -> SOURCE_INCOMPLETE",
+          r2["one_off_review_status"] == STATUS_SOURCE_INCOMPLETE)
+    check("and no penalty", r2["one_off_penalty"] is None)
+
+
 if __name__ == "__main__":
     for fn in [v for k, v in sorted(globals().items()) if k.startswith("test_")]:
         print(f"\n-- {fn.__name__}")

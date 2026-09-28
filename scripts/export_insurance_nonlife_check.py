@@ -43,7 +43,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fa.nonlife_scope import (USED as SCOPE_USED, ControlEvent,
                               resolve_series)
-from fa.one_off import TriggerInput, screen as one_off_screen
+from fa.one_off import (STATUS_REVIEW_TRIGGERED, TriggerInput,
+                        screen as one_off_screen)
 from ta.common import get_supabase_client, safe_execute
 
 #: §2.5 — the list is NOT the condition. A symbol qualifies by its stored
@@ -1013,7 +1014,42 @@ def main() -> int:
                 # §3.4 — T5 is written for non-financial issuers. Recorded so a
                 # reviewer looks for a specific non-recurring line rather than
                 # treating investment income as one-off.
-                is_financial_sector=True)))
+                is_financial_sector=True,
+                # The insurance template serves no non-operating "Thu nhập khác"
+                # line: what it calls other income is not an addend of pre-tax
+                # profit. See the measurement in fa/one_off.py — T4 is therefore
+                # unevaluable here, which is honest rather than firing it on a
+                # line that means something else.
+                other_income_is_pl_addend=False)))
+    # §3.2 / §3.6 — tier 2's verdicts, READ from the audit file. The export only
+    # reads it: a verdict must never be produced by the same pass that raised the
+    # trigger, because §3.2 puts the issuer's filing between the two.
+    tier2_path = (Path(__file__).resolve().parents[1] / "data" / "fa" / "rubrics"
+                  / "insurance" / "one_off_tier2_results.json")
+    tier2 = {}
+    if tier2_path.exists():
+        for v in json.loads(tier2_path.read_text()).get("verdicts", []):
+            tier2[(v["symbol"], v["period"])] = v
+    for r_ in one_off_rows:
+        v = tier2.get((r_["symbol"], r_["period"]))
+        if not v or r_["one_off_review_status"] != STATUS_REVIEW_TRIGGERED:
+            continue
+        # §3.6 requires the source reference; without it the verdict does not
+        # apply and the symbol stays REVIEW_TRIGGERED.
+        if not v.get("source_page_note"):
+            print(f"::warning::tier 2 verdict for {r_['symbol']} {r_['period']} "
+                  f"has no source_page_note — không áp dụng (§3.6)")
+            continue
+        r_["one_off_review_status"] = v["classification"]
+        r_["one_off_penalty"] = v.get("penalty")
+        r_["tier2_source_document"] = v.get("source_document")
+        r_["tier2_source_page_note"] = v.get("source_page_note")
+        r_["tier2_reviewed_by"] = v.get("reviewed_by")
+        r_["tier2_reviewed_date"] = v.get("reviewed_date")
+    print(f"tier 2 (§3.2): {len(tier2)} phán quyết đã đọc từ "
+          f"one_off_tier2_results.json; "
+          f"{sum(1 for r_ in one_off_rows if r_['one_off_review_status'] == STATUS_REVIEW_TRIGGERED)}"
+          f" mã-kỳ còn chờ BCTC gốc")
     one_off_by = {(r_["symbol"], r_["period"]): r_ for r_ in one_off_rows}
 
 

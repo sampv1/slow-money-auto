@@ -1,120 +1,104 @@
-# IT — Một trường hợp dữ liệu chưa được quy tắc bao phủ: T4 trên doanh nghiệp bảo hiểm
+# IT — ĐÍNH CHÍNH: nguyên nhân T4 không phải toán tử, mà là IT ánh xạ sai dòng
 
 **Gửi:** BA · **Ngày:** 27/09/2026
-**Căn cứ:** `PHAN_HOI_CHOT_CUOI_GUI_IT_PHI_NHAN_THO_2026-09-27.md` §14 — báo cáo theo đúng khuôn khi phát sinh trường hợp thực tế ngoài quy tắc.
+**Thay thế hoàn toàn bản trước của chính file này.**
 
-IT **đã triển khai T4 đúng như đặc tả** và không tự sửa. Báo cáo này chỉ nêu một phát hiện có số đo kèm đề xuất, để BA quyết.
-
----
-
-## 1. Theo khuôn §14
-
-| Trường | Nội dung |
-|---|---|
-| **Mã** | AIC, PGI (nặng nhất); PTI, BHI, BIC, BLI (một phần) |
-| **Kỳ** | 2024-Q3 … 2026-Q2 (8 quý đã đo) |
-| **Chỉ tiêu** | Điều kiện kích hoạt **T4** (§3.4) |
-| **Dòng nguồn** | `fa_vnstock_statements.items->IS_OTHER_INCOME` và `->IS_PROFIT_BEFORE_TAX` |
-| **Quy tắc chưa bao phủ** | §3.4 gắn lưu ý ngành cho **T5** (*"không áp nguyên xi cho ngân hàng, chứng khoán hoặc bảo hiểm"*) nhưng **không gắn cho T4**, trong khi T4 có cùng hành vi cấu trúc trên DN bảo hiểm |
-| **Ảnh hưởng** | T4 kích hoạt **29/72 mã-quý (40%)**; AIC và PGI kích hoạt **8/8 quý** |
-| **Phương án đề xuất** | Xem mục 4 |
+> ## Đính chính
+>
+> Bản trước IT kết luận T4 kích hoạt nhiều vì **T4 là phép HOẶC còn T5 là phép VÀ**, và đề nghị BA đổi toán tử cho ngành bảo hiểm.
+>
+> **Kết luận đó SAI.** Triệu chứng là thật (29/72 mã-kỳ), nhưng nguyên nhân không phải thiết kế của BA. Nguyên nhân là **IT đã đưa vào T4 một dòng không phải "Thu nhập khác"**.
+>
+> **BA không cần đổi gì trong T4.** Đề nghị ở bản trước xin được rút lại.
 
 ---
 
-## 2. Vì sao đây là vấn đề cấu trúc, không phải tín hiệu
+## 1. Phát hiện
 
-Với DN bảo hiểm, `IS_OTHER_INCOME` **không phải một dòng dư nhỏ ngoài hoạt động**. Số đo tại 2026-Q2:
+Trong mẫu BCTC **bảo hiểm** của nhà cung cấp, dòng được phục vụ dưới tên "thu nhập khác" **không phải là số cộng vào LNTT**.
 
-| Mã | LNTT quý | Thu nhập khác | **Trung vị thu nhập khác 8 quý** | T4 |
-|---|---:|---:|---:|---|
-| AIC | 9,9 tỷ | 423,2 tỷ | **221,1 tỷ** | kích hoạt |
-| PGI | 118,9 tỷ | 93,9 tỷ | **80,6 tỷ** | kích hoạt |
-| PTI | 83,0 tỷ | 135,4 tỷ | **74,9 tỷ** | kích hoạt |
-| BHI | −2,8 tỷ | 272,5 tỷ | 9,6 tỷ | kích hoạt |
-| BLI | 31,8 tỷ | 22,0 tỷ | 0,2 tỷ | kích hoạt |
-
-AIC có trung vị thu nhập khác **221,1 tỷ** — tức mức 200–400 tỷ là **bình thường** với AIC, và nó gấp hơn 22 lần LNTT quý của chính mã đó. Điều kiện tỷ trọng của T4 (thu nhập khác ≥ 25% |LNTT|) vì vậy **luôn thỏa mãn theo cấu trúc**, không phản ánh bất thường nào.
-
-Tần suất theo từng mã, 8 quý:
+Kiểm tra bằng phép đối chiếu, trên 36 mã-kỳ:
 
 ```
-mã     24-Q3 24-Q4 25-Q1 25-Q2 25-Q3 25-Q4 26-Q1 26-Q2   tần suất
-ABI       -     -     -     -     -     -     -     -      0/8
-AIC      T4    T4    T4    T4    T4    T4    T4    T4      8/8
-BHI       -    T4     -     -     -    T4     -    T4      3/8
-BIC       -     -    T4     -     -    T4    T4     -      3/8
-BLI       -     -     -     -     -     -     -    T4      1/8
-BMI       -     -     -     -     -     -     -     -      0/8
-MIG       -     -     -     -     -     -     -     -      0/8
-PGI      T4    T4    T4    T4    T4    T4    T4    T4      8/8
-PTI      T4    T4     -    T4    T4    T4     -    T4      6/8
+LNTT − Lợi nhuận hoạt động bảo hiểm − Lợi nhuận hoạt động tài chính = phần dư
 ```
 
-**Một điều kiện kích hoạt 8/8 quý thì không còn phát hiện bất thường — nó đang phát hiện cấu trúc bình thường của chính mã đó.** Theo §3.2, AIC và PGI sẽ phải mở BCTC gốc **mỗi quý, vĩnh viễn**, và kết luận gần như luôn là `CONFIRMED_NORMAL`.
-
----
-
-## 3. Nguyên nhân gốc: T4 là phép HOẶC, T5 là phép VÀ
-
-Đây là điểm IT muốn nêu rõ, vì nó giải thích tại sao T5 hoạt động tốt trên bảo hiểm mà T4 thì không:
-
-| | Cấu trúc điều kiện |
+| | Giá trị |
 |---|---|
-| **T5** | tỷ trọng ≥ 50% **VÀ** ≥ 2× trung vị **VÀ** tăng tuyệt đối ≥ 50 tỷ |
-| **T4** | ( tỷ trọng ≥ 25% **HOẶC** ≥ 3× trung vị ) **VÀ** ≥ 20 tỷ |
+| Phần dư thực tế (phần ngoài hoạt động) | thường **dưới ~7 tỷ** |
+| Dòng nhà cung cấp gọi là thu nhập khác | AIC **609,0** · BHI **272,5** · PTI **135,4** · PGI **93,9** tỷ |
 
-T5 là **hội**, nên điều kiện "≥ 2× trung vị của chính nó" tự loại các mã có thu nhập tài chính lớn theo cấu trúc. IT đã đo: T5 đầy đủ kích hoạt **0/9** mã bảo hiểm tại 2026-Q2, dù riêng điều kiện tỷ trọng kích hoạt 5/9. Chính hai điều kiện còn lại làm việc bảo vệ đó.
+Ví dụ PGI 2026-Q2, đối chiếu từng dòng:
 
-T4 là **tuyển**, nên điều kiện tỷ trọng một mình đủ kích hoạt, và với DN bảo hiểm có LNTT mỏng so với dòng thu nhập khác thì nó luôn đúng.
+| Dòng | Giá trị (tỷ) |
+|---|---:|
+| Lợi nhuận gộp hoạt động bảo hiểm | 247,1 |
+| Chi phí quản lý doanh nghiệp | −166,3 |
+| **Lợi nhuận hoạt động bảo hiểm** | **80,8** |
+| Lợi nhuận hoạt động tài chính (41,8 − 7,3) | **34,5** |
+| Tổng hai hoạt động | 115,3 |
+| **LNTT báo cáo** | **118,9** |
+| Phần dư ngoài hoạt động | **3,6** |
+| Dòng "thu nhập khác" nhà cung cấp phục vụ | **93,9** ← không nằm trong phép cộng |
 
----
+Cộng 93,9 vào sẽ ra 209,2, không phải 118,9. Vậy 93,9 là một **cấu phần gộp nằm sẵn trong khối doanh thu/chi phí bảo hiểm**, không phải thu nhập ngoài hoạt động.
 
-## 4. Ba phương án, kèm số đo
+**Không có dòng nào khác gánh phần dư đó.** IT đã thử năm dòng ứng viên; dòng khớp nhiều nhất chỉ đạt **17/36**, và phần lớn là các kỳ mà cả hai phía đều ≈ 0. Tức mẫu BCTC bảo hiểm **không phục vụ dòng "Thu nhập khác" theo nghĩa §3.4 T4**.
 
-IT đo lại trên cùng 72 mã-quý:
+## 2. Vì sao chắc chắn đây là lỗi ánh xạ, không phải ngưỡng
 
-| Phương án | Kích hoạt | Mã kích hoạt nhiều nhất |
-|---|---:|---|
-| **Hiện tại** — tỷ trọng **HOẶC** trung vị | **29/72 (40%)** | AIC 8/8, PGI 8/8, PTI 6/8 |
-| **A** — tỷ trọng **VÀ** trung vị | **8/72 (11%)** | BHI 3/8, BIC 3/8, AIC 1/8 |
-| **B** — chỉ trung vị (≥ 3×) | **8/72 (11%)** | BHI 3/8, BIC 3/8, AIC 1/8 |
+Cùng phép đối chiếu trên mẫu **phi tài chính** cho kết quả ngược lại — **khớp tuyệt đối**:
 
-Phương án A và B cho cùng kết quả trên tập này. Điều đáng chú ý: **AIC từ 8/8 xuống 1/8** — đúng mã có dòng thu nhập khác lớn theo cấu trúc — trong khi BHI và BIC giữ lại các quý có bước nhảy thật so với lịch sử của chính mình.
+| Mã | Kỳ | LN hoạt động | Thu nhập khác thuần | Tổng | LNTT | Phần dư |
+|---|---|---:|---:|---:|---:|---:|
+| VLB | 2026-Q2 | 119,9 | **348,2** | 468,1 | 468,1 | **0,0** |
+| VCG | 2025-Q3 | 3.512,7 | −3,1 | 3.509,6 | 3.509,6 | **−0,0** |
 
-**IT nghiêng về phương án A** (tỷ trọng **VÀ** trung vị, chỉ áp cho DN bảo hiểm), vì:
+Nên với DN phi tài chính, dòng đó **đúng** là Thu nhập khác và T4 hoạt động đúng: 348,2 tỷ của VLB thực sự là thu nhập ngoài hoạt động, bằng 74,39% LNTT.
 
-1. Nó làm T4 có cùng cấu trúc hội như T5 — cùng một cách xử lý cho cùng một vấn đề, không thêm khái niệm mới.
-2. Nó giữ nguyên T4 cho DN phi tài chính, nơi VLB vẫn kích hoạt đúng (thu nhập khác 348,2 tỷ so với trung vị 1,0 tỷ — thỏa cả hai điều kiện).
-3. Nó không thay đổi bất kỳ ngưỡng số nào BA đã khóa; chỉ thay toán tử giữa hai điều kiện đã có, và chỉ cho một ngành.
+Hai kết quả trái ngược trên cùng một dòng, cùng một phép kiểm tra: mẫu phi tài chính khớp 0,0, mẫu bảo hiểm lệch hàng trăm tỷ. Đó là ánh xạ, không phải ngưỡng.
 
----
+## 3. Bằng chứng mà đáng ra IT phải nhận ra sớm hơn
 
-## 5. IT đang làm gì trong khi chờ
+Hai kỳ T4 kích hoạt khi dòng đó **thấp hơn trung vị của chính nó**:
 
-**T4 được triển khai đúng đặc tả hiện tại** — phép HOẶC, không sửa. Kết quả chạy thật:
+| Mã | Kỳ | "Thu nhập khác" | Trung vị 8 quý |
+|---|---|---:|---:|
+| PGI | 2025-Q3 | 78,8 tỷ | 80,6 tỷ |
+| PTI | 2025-Q3 | 58,7 tỷ | 87,8 tỷ |
 
-| Mã | Kỳ | Trạng thái | Điều kiện kích hoạt |
-|---|---|---|---|
-| VLB | 2026-Q2 | `REVIEW_TRIGGERED` | **T1, T3, T4** |
-| VCG | 2025-Q3 | `REVIEW_TRIGGERED` | **T1, T3, T5** |
-| AIC, BHI, BLI, PGI, PTI | 2026-Q2 | `REVIEW_TRIGGERED` | T4 (BLI thêm T1) |
-| ABI, BIC, BMI, MIG | 2026-Q2 | `AUTO_NORMAL` | — |
+Không định nghĩa nào của "bất thường" bao gồm một giá trị dưới trung vị lịch sử. Bản trước IT dùng chi tiết này để lập luận về toán tử; thực ra nó đang chỉ ra rằng **dòng bị kiểm tra không phải dòng cần kiểm tra**.
 
-VCG kích hoạt **đúng T1, T3, T5** như BA dự đoán ở §4.2, và VLB kích hoạt T4 như §11.2 yêu cầu. Không mã nào bị tự động trừ điểm: cả hai đều dừng ở `REVIEW_TRIGGERED`, đúng §3.2.
+## 4. Đã sửa
 
-Nếu BA chọn phương án A, IT chỉ cần đổi một toán tử và chạy lại; không ảnh hưởng phần còn lại của vòng nghiệm thu.
+T4 nay **không đánh giá được** với mẫu bảo hiểm (`evaluable = False`), kèm lý do ghi rõ — chứ không kích hoạt trên một dòng mang nghĩa khác. Đây là "không có đầu vào", không phải "đã kiểm tra và không kích hoạt"; §3.5 phân biệt hai trạng thái đó.
 
----
+| | Trước (ánh xạ sai) | Sau (đã sửa) |
+|---|---:|---:|
+| T4 kích hoạt / 36 mã-kỳ | 16 | **0** |
+| T4 đánh giá được | 36 | **0** (đúng: nguồn không có dòng) |
+| `REVIEW_TRIGGERED` | 21 | **7** |
+| `AUTO_NORMAL` | 15 | **29** |
+| Mã kích hoạt tại **2026-Q2** | 5 | **1** (BLI, T1) |
 
-## 6. Bằng chứng bổ sung (đo sau khi chạy đủ 4 quý)
+**VLB và VCG không đổi** — VLB vẫn T1, T3, T4; VCG vẫn T1, T3, T5 đúng như §4.2 của BA. Bản sửa chỉ khoanh vào mẫu bảo hiểm.
 
-Chạy T1–T5 trên cả bốn quý cho thấy một trường hợp còn rõ hơn: **T4 kích hoạt ở kỳ mà thu nhập khác THẤP HƠN trung vị của chính nó.**
+Các mã còn kích hoạt sau khi sửa, không mã nào qua T4:
 
-| Mã | Kỳ | Thu nhập khác | Trung vị 8 quý | Kích hoạt |
-|---|---|---:|---:|---|
-| PGI | 2025-Q3 | **78,8 tỷ** | 80,6 tỷ | T4 |
-| PTI | 2025-Q3 | **58,7 tỷ** | 87,8 tỷ | T4 |
+| Mã | Kỳ | Điều kiện |
+|---|---|---|
+| ABI | 2025-Q3 | T2 |
+| BHI | 2025-Q4 | T3 |
+| BHI | 2026-Q1 | T2 |
+| BLI | 2025-Q3 | T2 |
+| **BLI** | **2026-Q2** | **T1** ← kỳ chấm điểm |
+| BMI | 2025-Q3 | T1 |
+| MIG | 2025-Q3 | T1 |
 
-2 trong 16 lần T4 kích hoạt là như vậy. Ở hai kỳ này, dòng đang bị kiểm tra **thấp hơn mức thông thường của chính doanh nghiệp**, nhưng điều kiện tỷ trọng vẫn thỏa vì LNTT quý đó nhỏ (PGI 46,2 tỷ; PTI 92,9 tỷ). Không có định nghĩa nào của "bất thường" bao gồm một giá trị dưới trung vị lịch sử.
+Đây là các kích hoạt dựa trên **LNTT**, dòng đã được đối chiếu và đúng nghĩa.
 
-Đây là cùng một nguyên nhân đã nêu ở mục 3 — điều kiện tỷ trọng đo **LNTT mỏng**, không đo **thu nhập khác bất thường** — nhưng ở dạng dễ kiểm chứng nhất. Phương án A (tỷ trọng **VÀ** trung vị) loại đúng hai kỳ này, vì cả hai đều không đạt điều kiện trung vị.
+## 5. Điều IT xin nêu để BA biết
+
+Nếu BA muốn T4 chạy được cho DN bảo hiểm, cần **một nguồn có dòng thu nhập ngoài hoạt động của mẫu bảo hiểm** — mẫu chuẩn hóa hiện tại không có. IT **không** đề xuất suy ra nó bằng phép trừ (`LNTT − LN bảo hiểm − LN tài chính`), vì đó là một số phái sinh chứ không phải dòng BCTC, và §3.6 điều kiện 3 yêu cầu dòng BCTC hoặc số thuyết minh.
+
+Trong lúc đó, T1, T2, T3 và T5 vẫn phủ được DN bảo hiểm: cả bốn đọc LNTT hoặc doanh thu tài chính, và cả hai dòng này đã được đối chiếu là đúng nghĩa trên mẫu bảo hiểm (lợi nhuận hoạt động tài chính của PGI = 41,8 − 7,3 = 34,5, khớp).
