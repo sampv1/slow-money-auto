@@ -54,6 +54,15 @@ T3_MEDIAN_MULTIPLE = 2.5
 #: §3.4 T4 — other income at 25% of |pre-tax profit|, or 3x its own 8Q median.
 T4_SHARE_OF_PBT = 0.25
 T4_MEDIAN_MULTIPLE = 3.0
+#: §8.2 T4 v2 — the go-forward rule, CONJUNCTIVE where v1 was disjunctive.
+#: v1 fired on materiality OR an unusual level; v2 requires materiality AND an
+#: unusual MOVE, and puts a 20 tỷ floor on the move itself so a large-but-steady
+#: other-income line stops triggering every quarter. Branch A is the 8Q-median
+#: jump, branch B the year-on-year jump; a non-positive median drops A and
+#: leaves B, exactly as v1's boundary rule drops the multiple.
+T4V2_YOY_GROWTH = 1.00
+T4_RULE_V1 = "V1_DISJUNCTIVE"   # the rule the 2026-Q2 round was screened under
+T4_RULE_V2 = "V2_CONJUNCTIVE"   # §8.2, locked for every automated run after it
 #: §3.4 T5 — financial income at 50% of |pre-tax profit| AND 2x its 8Q median.
 T5_SHARE_OF_PBT = 0.50
 T5_MEDIAN_MULTIPLE = 2.0
@@ -142,6 +151,14 @@ class TriggerInput:
     #: (PGI 2025-Q3, PTI 2025-Q3). That was a mapping fault, not a threshold
     #: fault, and it is why T4 is UNEVALUABLE here rather than retuned.
     other_income_is_pl_addend: bool = True
+    #: §8.2 branch B. The SAME quarter one year back, passed separately for the
+    #: reason `pbt_year_ago` is: `prior_8q_other_income[3]` is only q-4 when no
+    #: quarter in between is missing.
+    other_income_year_ago: float | None = None
+    #: Which T4 rule to apply. §8.2 locks V2 for every automated run from the
+    #: next one on; V1 stays reachable so the 2026-Q2 audit record can be
+    #: reproduced exactly, and so the two can be compared on one dataset.
+    t4_rule: str = T4_RULE_V2
 
 
 @dataclass
@@ -218,7 +235,7 @@ def evaluate_triggers(ti: TriggerInput) -> dict[str, TriggerResult]:
                    "không đánh giá được T4", evaluable=False)
     elif oth is None or pbt is None:
         out["T4"] = TriggerResult(False, "thiếu thu nhập khác hoặc LNTT", evaluable=False)
-    else:
+    elif ti.t4_rule == T4_RULE_V1:
         share = oth / abs(pbt) if pbt else None
         share_ok = share is not None and share >= T4_SHARE_OF_PBT
         if med_oth is not None and med_oth > 0:
@@ -234,6 +251,49 @@ def evaluate_triggers(ti: TriggerInput) -> dict[str, TriggerResult]:
             f"thu nhập khác {oth / 1e9:,.1f} tỷ = "
             f"{(share * 100 if share is not None else float('nan')):.2f}% |LNTT| "
             f"(ngưỡng {T4_SHARE_OF_PBT * 100:.0f}%) {basis}"))
+    else:
+        # §8.2 — materiality AND an unusual move, both required.
+        share = oth / abs(pbt) if pbt else None
+        floor_ok = oth >= MIN_ABS_VND
+        share_ok = share is not None and share >= T4_SHARE_OF_PBT
+        # Branch A — a jump away from the symbol's own eight-quarter level. The
+        # EXCESS carries the 20 tỷ floor, not the level: 3x a 1 tỷ median is a
+        # 2 tỷ move and materially nothing, which is what v1 could not say.
+        if med_oth is not None and med_oth > 0:
+            excess = oth - med_oth
+            branch_a = (oth >= T4_MEDIAN_MULTIPLE * med_oth
+                        and excess >= MIN_ABS_VND)
+            a_txt = (f"A: {oth / 1e9:,.1f} vs {T4_MEDIAN_MULTIPLE}x trung vị "
+                     f"({med_oth / 1e9:,.1f} tỷ), phần vượt {excess / 1e9:,.1f} tỷ"
+                     f" -> {'đạt' if branch_a else 'không đạt'}")
+        else:
+            branch_a = False
+            a_txt = "A: trung vị 8 quý <= 0 — không dùng nhánh A (§8.2)"
+        # Branch B — a jump against the same quarter last year. A non-positive
+        # base makes the ratio meaningless in the same way T1's does, so the
+        # absolute rise alone cannot carry it: both halves are required and the
+        # ratio needs a positive base to exist at all.
+        oya = ti.other_income_year_ago
+        if oya is not None and oya > 0:
+            yoy = oth / oya - 1.0
+            rise = oth - oya
+            branch_b = yoy >= T4V2_YOY_GROWTH and rise >= MIN_ABS_VND
+            b_txt = (f"B: YoY {yoy * 100:,.1f}% (ngưỡng {T4V2_YOY_GROWTH * 100:.0f}%), "
+                     f"tăng tuyệt đối {rise / 1e9:,.1f} tỷ"
+                     f" -> {'đạt' if branch_b else 'không đạt'}")
+        elif oya is None:
+            branch_b, b_txt = False, "B: thiếu thu nhập khác cùng kỳ năm trước"
+        else:
+            branch_b, b_txt = False, (
+                f"B: thu nhập khác cùng kỳ {oya / 1e9:,.1f} tỷ <= 0 — "
+                f"tỷ lệ YoY không có nghĩa")
+        fired = floor_ok and share_ok and (branch_a or branch_b)
+        out["T4"] = TriggerResult(fired, (
+            f"thu nhập khác {oth / 1e9:,.1f} tỷ "
+            f"(sàn {MIN_ABS_VND / 1e9:.0f} tỷ -> {'đạt' if floor_ok else 'không đạt'}) = "
+            f"{(share * 100 if share is not None else float('nan')):.2f}% |LNTT| "
+            f"(ngưỡng {T4_SHARE_OF_PBT * 100:.0f}% -> "
+            f"{'đạt' if share_ok else 'không đạt'}); {a_txt}; {b_txt}"))
 
     # ---- T5: abnormal financial income ----
     # BA writes T5 for non-financial issuers and says not to apply it as-is to

@@ -15,7 +15,7 @@
     {
       "symbol": "BLI",
       "period": "2026-Q2",
-      "trigger_codes": "T1",
+      "trigger_codes": "T1, T4",
       "classification": "CONFIRMED_NORMAL",
       "no_one_off_found": true,
       "one_off_amount": null,
@@ -37,6 +37,113 @@
         "Không đủ điều kiện §3.6 để xác nhận một khoản một lần: thuyết minh không nêu bản chất giao dịch riêng biệt nào. Theo §3.5, kết luận là CONFIRMED_NORMAL."
       ],
       "note_on_mapping": "Thuyết minh 31 của DN ghi thu nhập khác Quý 2 là 1,48 tỷ, KHÔNG phải 22,0 tỷ như dòng IS_OTHER_INCOME mà nguồn chuẩn hóa phục vụ. Đây là xác nhận độc lập từ chính BCTC của doanh nghiệp cho phát hiện ánh xạ nêu tại IT_phat_hien_T4_bao_hiem.md."
+    },
+    {
+      "symbol": "PGI",
+      "period": "2026-Q2",
+      "trigger_codes": "T4",
+      "classification": "CONFIRMED_NORMAL",
+      "no_one_off_found": true,
+      "one_off_amount": null,
+      "tax_basis": "PRE_TAX",
+      "penalty": 0,
+      "source_document": "Báo cáo tài chính Quý II năm 2026, Tổng CTCP Bảo hiểm Petrolimex (PJICO), ký số 28/07/2026",
+      "source_url": "https://www.pjico.com.vn/wp-content/uploads/2026/07/20260728-PGI-Bao-cao-Tai-chinh-quy-II-nam-2026.pdf",
+      "source_page_note": "Báo cáo kết quả kinh doanh Phần 1, trang 7 — dòng 4 'Thu nhập khác' (mã số 13) và dòng 10 'Tổng lợi nhuận kế toán trước thuế' (mã số 50)",
+      "reviewed_by": "IT",
+      "reviewed_date": "2026-09-28",
+      "rationale": [
+        "Tái tính mã 50 = 10+11+12+13-20-21-22-23-24 từ chính các dòng trong BCTC: 118.913.361.963 đồng, lệch 0 đồng so với số công bố.",
+        "Thu nhập khác Quý 2/2026 (mã 13) là 4.983.569.897 đồng, KHÔNG phải 93,91 tỷ như dòng nguồn chuẩn hóa phục vụ khi kích hoạt T4.",
+        "R_Q = 4.983.569.897 / 118.913.361.963 = 4,19% — dưới ngưỡng 10% của §3.9, điểm trừ bằng 0.",
+        "So cùng kỳ: 4.983.569.897 so với 4.742.878.071 (+5,1%) — mức thu nhập khác ổn định, không có dấu hiệu giao dịch một lần.",
+        "Lũy kế 6 tháng 9.969.421.529 so với 22.282.013.598 cùng kỳ: GIẢM 55,3%, tức không có khoản thu nhập bất thường làm tăng lợi nhuận.",
+        "Không có thuyết minh nào nêu giao dịch riêng biệt; theo §3.5 kết luận là CONFIRMED_NORMAL."
+      ],
+      "note_on_mapping": "Dòng IS_OTHER_INCOME mà nguồn chuẩn hóa phục vụ KHÔNG phải dòng 'Thu nhập khác' của báo cáo KQKD. Đây là xác nhận độc lập từ chính BCTC của doanh nghiệp cho phát hiện nêu tại IT_phat_hien_T4_bao_hiem.md. PGI: BCTC 4,98 tỷ so với dòng nguồn 93,91 tỷ."
+    },
+    {
+      "symbol": "PTI",
+      "period": "2026-Q2",
+      "trigger_codes": "T4",
+      "classification": "CONFIRMED_NORMAL",
+      "no_one_off_found": true,
+      "one_off_amount": null,
+      "tax_basis": "PRE_TAX",
+      "penalty": 0,
+      "source_document": "Báo cáo tài chính hợp nhất Quý II/2026, Tổng CTCP Bảo hiểm Bưu điện (PTI)",
+      "source_url": "https://www.pti.com.vn/wp-content/uploads/2026/07/VI_BaoCaoTaiChinhHopNhat_Q2_2026.pdf",
+      "source_page_note": "Kết quả hoạt động kinh doanh hợp nhất, Phần I, trang 7 — dòng 4 'Thu nhập khác' (mã số 13) và dòng 10.2 'Tổng lợi nhuận kế toán trước thuế' (mã số 50.2)",
+      "reviewed_by": "IT",
+      "reviewed_date": "2026-09-28",
+      "rationale": [
+        "Tái tính mã 50.2 từ chính các dòng trong BCTC: 165.592.706.671 đồng, lệch 0 đồng so với số công bố.",
+        "PTI chỉ công bố cột LŨY KẾ 6 tháng cho Phần I, không tách riêng cột quý — nên đánh giá theo giả định bất lợi nhất.",
+        "Thu nhập khác 6 tháng (mã 13) là 837.213.214 đồng, KHÔNG phải 135,42 tỷ như dòng nguồn chuẩn hóa phục vụ khi kích hoạt T4.",
+        "R_6T = 837.213.214 / 165.592.706.671 = 0,506%.",
+        "Giả định bất lợi nhất — TOÀN BỘ 837.213.214 đồng rơi vào quý 2, so với LNTT quý 2 (82.979.003.710 đồng): R_Q = 1,01%, vẫn dưới ngưỡng 10% của §3.9. Điểm trừ bằng 0 ở mọi cách phân bổ.",
+        "So cùng kỳ 6 tháng: 837.213.214 so với 5.304.100.228, GIẢM 84,2% — không có khoản thu nhập bất thường làm tăng lợi nhuận.",
+        "Theo §3.5 kết luận là CONFIRMED_NORMAL."
+      ],
+      "note_on_mapping": "Dòng IS_OTHER_INCOME mà nguồn chuẩn hóa phục vụ KHÔNG phải dòng 'Thu nhập khác' của báo cáo KQKD. Đây là xác nhận độc lập từ chính BCTC của doanh nghiệp cho phát hiện nêu tại IT_phat_hien_T4_bao_hiem.md. PTI: BCTC 0,84 tỷ (6 tháng) so với dòng nguồn 135,42 tỷ (quý 2)."
+    },
+    {
+      "symbol": "BHI",
+      "period": "2026-Q2",
+      "trigger_codes": "T4",
+      "classification": "CONFIRMED_NORMAL",
+      "no_one_off_found": true,
+      "one_off_amount": null,
+      "tax_basis": "PRE_TAX",
+      "penalty": 0,
+      "source_document": "Báo cáo tài chính hợp nhất Quý II và 6 tháng đầu năm 2026, Tổng CTCP Bảo hiểm Sài Gòn - Hà Nội (BSH)",
+      "source_url": "https://bshc.com.vn/wp-content/uploads/2020/05/BCTC-hop-nhat-30.6.26_0001_0001.pdf",
+      "source_page_note": "Báo cáo kết quả hoạt động kinh doanh hợp nhất, Phần II, trang 9 — dòng 19 'Lợi nhuận thuần từ hoạt động kinh doanh' (mã 30), dòng 20 'Thu nhập khác' (mã 31), dòng 21 'Chi phí khác' (mã 32)",
+      "reviewed_by": "IT",
+      "reviewed_date": "2026-09-28",
+      "rationale": [
+        "Tái tính LNTT quý 2 = mã 30 + mã 31 - mã 32 = (867.855.735) + (1.534.936.992) - 405.659.101 = (2.808.451.828) đồng, lệch 0 đồng so với dữ liệu chuẩn hóa.",
+        "Thu nhập khác quý 2/2026 (mã 31) là ÂM 1.534.936.992 đồng, KHÔNG phải 272,48 tỷ như dòng nguồn chuẩn hóa phục vụ khi kích hoạt T4.",
+        "Thu nhập khác ÂM nghĩa là khoản mục này LÀM GIẢM lợi nhuận. Theo §3.7, khoản chi phí hoặc lỗ một lần làm giảm lợi nhuận có thể lưu làm cảnh báo phân tích nhưng KHÔNG bị trừ thêm điểm FA. Điểm trừ bằng 0 bất kể bản chất khoản mục.",
+        "Doanh thu hoạt động tài chính quý 2 (mã 23) 23.038.166.897 đồng khớp dữ liệu chuẩn hóa, xác nhận đã đọc đúng cột quý 2.",
+        "BHI quý 2/2026 LỖ trước thuế 2,81 tỷ — không tồn tại khoản thu nhập bất thường nào làm tăng lợi nhuận để trừ điểm.",
+        "Theo §3.5 kết luận là CONFIRMED_NORMAL với điểm trừ 0."
+      ],
+      "note_on_mapping": "Dòng IS_OTHER_INCOME mà nguồn chuẩn hóa phục vụ KHÔNG phải dòng 'Thu nhập khác' của báo cáo KQKD. Đây là xác nhận độc lập từ chính BCTC của doanh nghiệp cho phát hiện nêu tại IT_phat_hien_T4_bao_hiem.md. BHI: BCTC ÂM 1,53 tỷ so với dòng nguồn 272,48 tỷ."
+    },
+    {
+      "symbol": "AIC",
+      "period": "2026-Q2",
+      "trigger_codes": "T4",
+      "classification": "SOURCE_INCOMPLETE",
+      "no_one_off_found": false,
+      "one_off_amount": null,
+      "tax_basis": "PRE_TAX",
+      "penalty": null,
+      "source_document": null,
+      "source_url": null,
+      "source_page_note": "KHÔNG đọc được BCTC gốc. Dòng cần xác minh: 'Thu nhập khác' và 'Tổng lợi nhuận kế toán trước thuế' trên Báo cáo kết quả hoạt động kinh doanh Quý II/2026 của Tổng CTCP Bảo hiểm DBV (trước đây là Bảo hiểm Hàng không), mã AIC — UPCoM. Doanh nghiệp đã công bố (23/07/2026, đính chính 03/08/2026, bán niên 17/08/2026); IT không lấy được tệp.",
+      "reviewed_by": "IT",
+      "reviewed_date": "2026-09-28",
+      "rationale": [
+        "§3.2 yêu cầu đọc BCTC gốc trước khi kết luận. IT KHÔNG lấy được tài liệu, nên KHÔNG kết luận CONFIRMED_NORMAL và KHÔNG áp bất kỳ điểm trừ nào.",
+        "Doanh nghiệp ĐÃ CÔNG BỐ. Tra cứu luồng công bố thông tin của chính nhà cung cấp dữ liệu đang dùng (VCI, qua thư viện vnstock) cho thấy ba mục liên quan: 'AIC: Báo cáo tài chính quý 2/2026' công bố 23/07/2026 10:29; 'AIC: Đính chính Báo cáo tài chính quý2/ 2026' công bố 03/08/2026 17:35; 'AIC: Báo cáo tài chính bán niên năm 2026' công bố 17/08/2026 16:25.",
+        "Vì vậy nguyên nhân là IT KHÔNG TIẾP CẬN ĐƯỢC tệp đính kèm, KHÔNG phải doanh nghiệp không công bố — hai việc này cần phân biệt rõ. Luồng tin của nhà cung cấp chỉ có tiêu đề và ngày, trường liên kết nguồn rỗng cho cả 50 mục, không kèm tệp.",
+        "LƯU Ý QUAN TRỌNG CHO BA: có một bản ĐÍNH CHÍNH BCTC quý 2/2026 công bố ngày 03/08/2026. Bản BA gửi cho IT phải là bản đã đính chính (hoặc kèm cả bản đính chính), vì số liệu bản công bố ngày 23/07 có thể đã bị sửa.",
+        "Doanh nghiệp đã ĐỔI TÊN: AIC nay là 'Tổng Công ty Cổ phần Bảo hiểm DBV' (nguồn: VietstockFinance, trang hồ sơ doanh nghiệp mã AIC), nên toàn bộ tên miền cũ đã ngừng hoạt động.",
+        "Đã thử và ghi nhận kết quả từng địa chỉ: aic.com.vn (không phân giải DNS), bhhk.com.vn (HTTP 502, thử lại hai lần), www.bhhk.com.vn (không kết nối), vni.com.vn và www.vni.com.vn (chứng thư TLS không hợp lệ / không kết nối), baohiemhangkhong.com.vn (không kết nối), dbv.com.vn, www.dbv.com.vn, baohiemdbv.vn, baohiemdbv.com.vn, dbvinsurance.com.vn, dbvinsurance.vn, dbv-insurance.vn (đều không kết nối).",
+        "dbv.vn trả về HTTP 200 nhưng là doanh nghiệp phân phối B2B không liên quan ('DBV Việt Nam - Tổng Kho Phân Phối & Chuỗi Cung Ứng B2B'), không phải công ty bảo hiểm.",
+        "baohiemdbv.com trả về HTTP 200 và đúng là 'Tập Đoàn Bảo Hiểm DBV', nhưng là trang bán sản phẩm: toàn bộ 91 liên kết trên trang chủ không có mục quan hệ cổ đông / công bố thông tin / báo cáo tài chính.",
+        "Các cổng công bố và nguồn dữ liệu đã thử, đều không trả về tài liệu: HNX (ModuleReportUpcom/Cbtt_Search trả rỗng; cbttdn và trang cbtt-cty-dc-qly.html không kết nối — toàn bộ hnx.vn không truy cập được từ môi trường chạy), congbothongtin.ssc.gov.vn (trang trống 6,8 KB), finance.vietstock.vn/AIC/tai-tai-lieu.htm (danh sách nạp bằng JavaScript, 0 liên kết PDF trong HTML; ba biến thể endpoint /data/... trả 404 hoặc chuyển hướng lỗi), api.simplize.vn (404), restv2.fireant.vn (404), api-finfo.vndirect.com.vn (FFv4-101 not found), cafef.vn trang dữ liệu AIC (nạp bằng JavaScript, 0 liên kết PDF).",
+        "Đã dò trực tiếp kho lưu trữ static2.vietstock.vn theo đúng mẫu đường dẫn quan sát được ở mã khác (AAA, KSB): 2 sàn (UPCOM, HNX) × 4 quy ước đặt tên cho Quý 2/2026 = 8 tổ hợp, tất cả HTTP 404. Sau khi biết ngày công bố chính xác (23/07/2026), đã dò thêm 10 tổ hợp tên tệp theo mẫu đường dẫn theo ngày của static2.vietstock.vn (/vietstock/2026/7/22 và /7/23) — tất cả HTTP 404.",
+        "Đã tìm kiếm web 3 lần, trong đó có lần giới hạn theo tên miền static2.vietstock.vn, cafef.vn, hnx.vn, congbothongtin.ssc.gov.vn: chỉ ra được các bài báo dẫn lại số liệu, KHÔNG ra được tệp BCTC gốc. Bài báo là nguồn thứ cấp nên không dùng để kết luận theo §3.2.",
+        "THÔNG TIN BỔ SUNG, không thay cho việc đọc BCTC: chính báo cáo KQKD chuẩn hóa quý 2/2026 của AIC cho thấy dòng kích hoạt T4 không phải là 'Thu nhập khác' cộng vào LNTT. Lợi nhuận gộp HĐKD bảo hiểm 102,46 tỷ + chi phí QLDN (151,12) tỷ = lợi nhuận thuần HĐKD bảo hiểm (48,66) tỷ, khớp đúng số lưu trữ; cộng lãi gộp hoạt động tài chính 64,50 tỷ được 15,84 tỷ, so với LNTT công bố 9,87 tỷ.",
+        "Nếu IS_OTHER_INCOME 423,19 tỷ là một số cộng vào LNTT thì LNTT phải từ 439,03 tỷ trở lên, tức GẤP 44,5 LẦN số công bố 9,87 tỷ.",
+        "Dòng đó cũng không nằm trong doanh thu thuần hoạt động bảo hiểm: 637,10 tỷ (phí bảo hiểm thuần) + 308,83 tỷ (hoa hồng nhượng tái và thu nhập bảo hiểm khác) = 945,93 tỷ, khớp CHÍNH XÁC tổng doanh thu thuần công bố, không còn chỗ cho 423,19 tỷ.",
+        "IT KHÔNG tự ý gỡ trạng thái này. Theo §14, không đổi luật giữa chừng để né việc đọc; IT báo cáo bằng chứng và để BA quyết định.",
+        "ĐỀ NGHỊ CỤ THỂ VỚI BA: xin bản mềm BCTC quý II/2026 của Bảo hiểm DBV ĐÃ BAO GỒM BẢN ĐÍNH CHÍNH NGÀY 03/08/2026 (hoặc BCTC bán niên soát xét công bố 17/08/2026, dùng được theo cách IT đã áp dụng cho PTI). Chỉ cần trang Báo cáo kết quả hoạt động kinh doanh có dòng 'Thu nhập khác' và 'Tổng lợi nhuận kế toán trước thuế'. Có tài liệu này IT kết luận được trong ngày."
+      ],
+      "note_on_mapping": "Dòng IS_OTHER_INCOME mà nguồn chuẩn hóa phục vụ KHÔNG phải dòng 'Thu nhập khác' của báo cáo KQKD. Đây là xác nhận độc lập từ chính BCTC của doanh nghiệp cho phát hiện nêu tại IT_phat_hien_T4_bao_hiem.md. AIC: dòng nguồn 423,19 tỷ trong khi LNTT công bố chỉ 9,87 tỷ (4.288,94%)."
     }
   ]
 }

@@ -1,0 +1,680 @@
+{
+  "scope": {
+    "symbols": [
+      "ABI",
+      "AIC",
+      "BHI",
+      "BIC",
+      "BLI",
+      "BMI",
+      "MIG",
+      "PGI",
+      "PTI"
+    ],
+    "quarters": [
+      "2024-Q3",
+      "2024-Q4",
+      "2025-Q1",
+      "2025-Q2",
+      "2025-Q3",
+      "2025-Q4",
+      "2026-Q1",
+      "2026-Q2"
+    ],
+    "symbol_quarters": 72,
+    "other_income_is_pl_addend": true,
+    "note": "threshold comparison only; live run passes False"
+  },
+  "summary": {
+    "v1_fired": 29,
+    "v2_fired": 10,
+    "dropped": 19,
+    "added": 0,
+    "control_symbol": "VLB",
+    "control_v2_detected_quarters": 1
+  },
+  "rows": [
+    {
+      "symbol": "ABI",
+      "period": "2024-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.0 tỷ = 0.17% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.1 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.0 tỷ (sàn 20 tỷ -> không đạt) = 0.17% |LNTT| (ngưỡng 25% -> không đạt); A: 0.0 vs 3.0x trung vị (0.1 tỷ), phần vượt -0.0 tỷ -> không đạt; B: YoY -57.8% (ngưỡng 100%), tăng tuyệt đối -0.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "ABI",
+      "period": "2024-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.0 tỷ = 0.05% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.1 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.0 tỷ (sàn 20 tỷ -> không đạt) = 0.05% |LNTT| (ngưỡng 25% -> không đạt); A: 0.0 vs 3.0x trung vị (0.1 tỷ), phần vượt -0.0 tỷ -> không đạt; B: YoY -64.5% (ngưỡng 100%), tăng tuyệt đối -0.1 tỷ -> không đạt"
+    },
+    {
+      "symbol": "ABI",
+      "period": "2025-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.0 tỷ = 0.03% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.1 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.0 tỷ (sàn 20 tỷ -> không đạt) = 0.03% |LNTT| (ngưỡng 25% -> không đạt); A: 0.0 vs 3.0x trung vị (0.1 tỷ), phần vượt -0.0 tỷ -> không đạt; B: YoY -56.0% (ngưỡng 100%), tăng tuyệt đối -0.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "ABI",
+      "period": "2025-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.0 tỷ = 0.05% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.1 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.0 tỷ (sàn 20 tỷ -> không đạt) = 0.05% |LNTT| (ngưỡng 25% -> không đạt); A: 0.0 vs 3.0x trung vị (0.1 tỷ), phần vượt -0.0 tỷ -> không đạt; B: YoY 172.1% (ngưỡng 100%), tăng tuyệt đối 0.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "ABI",
+      "period": "2025-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.0 tỷ = 0.06% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.0 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.0 tỷ (sàn 20 tỷ -> không đạt) = 0.06% |LNTT| (ngưỡng 25% -> không đạt); A: 0.0 vs 3.0x trung vị (0.0 tỷ), phần vượt -0.0 tỷ -> không đạt; B: YoY 23.7% (ngưỡng 100%), tăng tuyệt đối 0.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "ABI",
+      "period": "2025-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.0 tỷ = 0.07% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.0 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.0 tỷ (sàn 20 tỷ -> không đạt) = 0.07% |LNTT| (ngưỡng 25% -> không đạt); A: 0.0 vs 3.0x trung vị (0.0 tỷ), phần vượt 0.0 tỷ -> không đạt; B: YoY 0.9% (ngưỡng 100%), tăng tuyệt đối 0.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "ABI",
+      "period": "2026-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.1 tỷ = 0.05% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.0 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.1 tỷ (sàn 20 tỷ -> không đạt) = 0.05% |LNTT| (ngưỡng 25% -> không đạt); A: 0.1 vs 3.0x trung vị (0.0 tỷ), phần vượt 0.0 tỷ -> không đạt; B: YoY 86.4% (ngưỡng 100%), tăng tuyệt đối 0.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "ABI",
+      "period": "2026-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.1 tỷ = 0.05% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.0 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.1 tỷ (sàn 20 tỷ -> không đạt) = 0.05% |LNTT| (ngưỡng 25% -> không đạt); A: 0.1 vs 3.0x trung vị (0.0 tỷ), phần vượt 0.0 tỷ -> không đạt; B: YoY 28.3% (ngưỡng 100%), tăng tuyệt đối 0.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "AIC",
+      "period": "2024-Q3",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 246.2 tỷ = 557.56% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (122.3 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 246.2 tỷ (sàn 20 tỷ -> đạt) = 557.56% |LNTT| (ngưỡng 25% -> đạt); A: 246.2 vs 3.0x trung vị (122.3 tỷ), phần vượt 123.9 tỷ -> không đạt; B: YoY 82.6% (ngưỡng 100%), tăng tuyệt đối 111.4 tỷ -> không đạt"
+    },
+    {
+      "symbol": "AIC",
+      "period": "2024-Q4",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 315.8 tỷ = 874.31% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (130.1 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 315.8 tỷ (sàn 20 tỷ -> đạt) = 874.31% |LNTT| (ngưỡng 25% -> đạt); A: 315.8 vs 3.0x trung vị (130.1 tỷ), phần vượt 185.7 tỷ -> không đạt; B: YoY 90.6% (ngưỡng 100%), tăng tuyệt đối 150.2 tỷ -> không đạt"
+    },
+    {
+      "symbol": "AIC",
+      "period": "2025-Q1",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 180.8 tỷ = 1613.39% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (134.3 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 180.8 tỷ (sàn 20 tỷ -> đạt) = 1613.39% |LNTT| (ngưỡng 25% -> đạt); A: 180.8 vs 3.0x trung vị (134.3 tỷ), phần vượt 46.5 tỷ -> không đạt; B: YoY 35.2% (ngưỡng 100%), tăng tuyệt đối 47.1 tỷ -> không đạt"
+    },
+    {
+      "symbol": "AIC",
+      "period": "2025-Q2",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 120.5 tỷ = 591.06% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (150.2 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 120.5 tỷ (sàn 20 tỷ -> đạt) = 591.06% |LNTT| (ngưỡng 25% -> đạt); A: 120.5 vs 3.0x trung vị (150.2 tỷ), phần vượt -29.7 tỷ -> không đạt; B: YoY -4.8% (ngưỡng 100%), tăng tuyệt đối -6.1 tỷ -> không đạt"
+    },
+    {
+      "symbol": "AIC",
+      "period": "2025-Q3",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 196.1 tỷ = 1245.92% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (150.2 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 196.1 tỷ (sàn 20 tỷ -> đạt) = 1245.92% |LNTT| (ngưỡng 25% -> đạt); A: 196.1 vs 3.0x trung vị (150.2 tỷ), phần vượt 45.8 tỷ -> không đạt; B: YoY -20.4% (ngưỡng 100%), tăng tuyệt đối -50.1 tỷ -> không đạt"
+    },
+    {
+      "symbol": "AIC",
+      "period": "2025-Q4",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 609.0 tỷ = 2432.39% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (173.2 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 609.0 tỷ (sàn 20 tỷ -> đạt) = 2432.39% |LNTT| (ngưỡng 25% -> đạt); A: 609.0 vs 3.0x trung vị (173.2 tỷ), phần vượt 435.8 tỷ -> đạt; B: YoY 92.8% (ngưỡng 100%), tăng tuyệt đối 293.2 tỷ -> không đạt"
+    },
+    {
+      "symbol": "AIC",
+      "period": "2026-Q1",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 419.8 tỷ = 3775.98% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (188.4 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 419.8 tỷ (sàn 20 tỷ -> đạt) = 3775.98% |LNTT| (ngưỡng 25% -> đạt); A: 419.8 vs 3.0x trung vị (188.4 tỷ), phần vượt 231.3 tỷ -> không đạt; B: YoY 132.2% (ngưỡng 100%), tăng tuyệt đối 239.0 tỷ -> đạt"
+    },
+    {
+      "symbol": "AIC",
+      "period": "2026-Q2",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 423.2 tỷ = 4288.94% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (221.1 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 423.2 tỷ (sàn 20 tỷ -> đạt) = 4288.94% |LNTT| (ngưỡng 25% -> đạt); A: 423.2 vs 3.0x trung vị (221.1 tỷ), phần vượt 202.1 tỷ -> không đạt; B: YoY 251.1% (ngưỡng 100%), tăng tuyệt đối 302.7 tỷ -> đạt"
+    },
+    {
+      "symbol": "BHI",
+      "period": "2024-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác -57.3 tỷ = -99.61% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.3 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác -57.3 tỷ (sàn 20 tỷ -> không đạt) = -99.61% |LNTT| (ngưỡng 25% -> không đạt); A: -57.3 vs 3.0x trung vị (0.3 tỷ), phần vượt -57.5 tỷ -> không đạt; B: YoY -15,582.9% (ngưỡng 100%), tăng tuyệt đối -57.6 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BHI",
+      "period": "2024-Q4",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 376.6 tỷ = 1199.74% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.2 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 376.6 tỷ (sàn 20 tỷ -> đạt) = 1199.74% |LNTT| (ngưỡng 25% -> đạt); A: 376.6 vs 3.0x trung vị (0.2 tỷ), phần vượt 376.4 tỷ -> đạt; B: YoY 155.2% (ngưỡng 100%), tăng tuyệt đối 229.0 tỷ -> đạt"
+    },
+    {
+      "symbol": "BHI",
+      "period": "2025-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 6.1 tỷ = 91.95% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.3 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 6.1 tỷ (sàn 20 tỷ -> không đạt) = 91.95% |LNTT| (ngưỡng 25% -> đạt); A: 6.1 vs 3.0x trung vị (0.3 tỷ), phần vượt 5.9 tỷ -> không đạt; B: thu nhập khác cùng kỳ -49.0 tỷ <= 0 — tỷ lệ YoY không có nghĩa"
+    },
+    {
+      "symbol": "BHI",
+      "period": "2025-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 18.1 tỷ = 76.37% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.3 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 18.1 tỷ (sàn 20 tỷ -> không đạt) = 76.37% |LNTT| (ngưỡng 25% -> đạt); A: 18.1 vs 3.0x trung vị (0.3 tỷ), phần vượt 17.8 tỷ -> không đạt; B: thu nhập khác cùng kỳ -28.8 tỷ <= 0 — tỷ lệ YoY không có nghĩa"
+    },
+    {
+      "symbol": "BHI",
+      "period": "2025-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 13.0 tỷ = 42.76% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (3.3 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 13.0 tỷ (sàn 20 tỷ -> không đạt) = 42.76% |LNTT| (ngưỡng 25% -> đạt); A: 13.0 vs 3.0x trung vị (3.3 tỷ), phần vượt 9.7 tỷ -> không đạt; B: thu nhập khác cùng kỳ -57.3 tỷ <= 0 — tỷ lệ YoY không có nghĩa"
+    },
+    {
+      "symbol": "BHI",
+      "period": "2025-Q4",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 253.4 tỷ = 607.14% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (9.6 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 253.4 tỷ (sàn 20 tỷ -> đạt) = 607.14% |LNTT| (ngưỡng 25% -> đạt); A: 253.4 vs 3.0x trung vị (9.6 tỷ), phần vượt 243.8 tỷ -> đạt; B: YoY -32.7% (ngưỡng 100%), tăng tuyệt đối -123.2 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BHI",
+      "period": "2026-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 2.4 tỷ = 8.51% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (9.6 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 2.4 tỷ (sàn 20 tỷ -> không đạt) = 8.51% |LNTT| (ngưỡng 25% -> không đạt); A: 2.4 vs 3.0x trung vị (9.6 tỷ), phần vượt -7.2 tỷ -> không đạt; B: YoY -61.6% (ngưỡng 100%), tăng tuyệt đối -3.8 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BHI",
+      "period": "2026-Q2",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 272.5 tỷ = 9702.11% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (9.6 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 272.5 tỷ (sàn 20 tỷ -> đạt) = 9702.11% |LNTT| (ngưỡng 25% -> đạt); A: 272.5 vs 3.0x trung vị (9.6 tỷ), phần vượt 262.9 tỷ -> đạt; B: YoY 1,406.0% (ngưỡng 100%), tăng tuyệt đối 254.4 tỷ -> đạt"
+    },
+    {
+      "symbol": "BIC",
+      "period": "2024-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 4.1 tỷ = 4.95% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (2.8 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 4.1 tỷ (sàn 20 tỷ -> không đạt) = 4.95% |LNTT| (ngưỡng 25% -> không đạt); A: 4.1 vs 3.0x trung vị (2.8 tỷ), phần vượt 1.2 tỷ -> không đạt; B: YoY 217.2% (ngưỡng 100%), tăng tuyệt đối 2.8 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BIC",
+      "period": "2024-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 2.5 tỷ = 1.17% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (3.8 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 2.5 tỷ (sàn 20 tỷ -> không đạt) = 1.17% |LNTT| (ngưỡng 25% -> không đạt); A: 2.5 vs 3.0x trung vị (3.8 tỷ), phần vượt -1.3 tỷ -> không đạt; B: YoY -42.9% (ngưỡng 100%), tăng tuyệt đối -1.9 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BIC",
+      "period": "2025-Q1",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 70.4 tỷ = 36.29% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (3.8 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 70.4 tỷ (sàn 20 tỷ -> đạt) = 36.29% |LNTT| (ngưỡng 25% -> đạt); A: 70.4 vs 3.0x trung vị (3.8 tỷ), phần vượt 66.6 tỷ -> đạt; B: YoY -5.8% (ngưỡng 100%), tăng tuyệt đối -4.4 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BIC",
+      "period": "2025-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 7.7 tỷ = 3.48% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (3.8 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 7.7 tỷ (sàn 20 tỷ -> không đạt) = 3.48% |LNTT| (ngưỡng 25% -> không đạt); A: 7.7 vs 3.0x trung vị (3.8 tỷ), phần vượt 3.8 tỷ -> không đạt; B: YoY 112.3% (ngưỡng 100%), tăng tuyệt đối 4.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BIC",
+      "period": "2025-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 15.8 tỷ = 12.19% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (4.2 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 15.8 tỷ (sàn 20 tỷ -> không đạt) = 12.19% |LNTT| (ngưỡng 25% -> không đạt); A: 15.8 vs 3.0x trung vị (4.2 tỷ), phần vượt 11.5 tỷ -> không đạt; B: YoY 287.1% (ngưỡng 100%), tăng tuyệt đối 11.7 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BIC",
+      "period": "2025-Q4",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 38.2 tỷ = 28.30% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (6.0 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 38.2 tỷ (sàn 20 tỷ -> đạt) = 28.30% |LNTT| (ngưỡng 25% -> đạt); A: 38.2 vs 3.0x trung vị (6.0 tỷ), phần vượt 32.2 tỷ -> đạt; B: YoY 1,431.6% (ngưỡng 100%), tăng tuyệt đối 35.7 tỷ -> đạt"
+    },
+    {
+      "symbol": "BIC",
+      "period": "2026-Q1",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 56.4 tỷ = 47.32% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (11.7 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 56.4 tỷ (sàn 20 tỷ -> đạt) = 47.32% |LNTT| (ngưỡng 25% -> đạt); A: 56.4 vs 3.0x trung vị (11.7 tỷ), phần vượt 44.7 tỷ -> đạt; B: YoY -19.9% (ngưỡng 100%), tăng tuyệt đối -14.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BIC",
+      "period": "2026-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 3.7 tỷ = 2.15% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (11.7 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 3.7 tỷ (sàn 20 tỷ -> không đạt) = 2.15% |LNTT| (ngưỡng 25% -> không đạt); A: 3.7 vs 3.0x trung vị (11.7 tỷ), phần vượt -8.1 tỷ -> không đạt; B: YoY -52.3% (ngưỡng 100%), tăng tuyệt đối -4.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BLI",
+      "period": "2024-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.7 tỷ = 6.26% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (4.4 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.7 tỷ (sàn 20 tỷ -> không đạt) = 6.26% |LNTT| (ngưỡng 25% -> không đạt); A: 0.7 vs 3.0x trung vị (4.4 tỷ), phần vượt -3.7 tỷ -> không đạt; B: YoY -89.6% (ngưỡng 100%), tăng tuyệt đối -6.4 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BLI",
+      "period": "2024-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.3 tỷ = 1.17% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (3.0 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.3 tỷ (sàn 20 tỷ -> không đạt) = 1.17% |LNTT| (ngưỡng 25% -> không đạt); A: 0.3 vs 3.0x trung vị (3.0 tỷ), phần vượt -2.7 tỷ -> không đạt; B: YoY 1,536,043.9% (ngưỡng 100%), tăng tuyệt đối 0.3 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BLI",
+      "period": "2025-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.1 tỷ = 0.30% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (3.0 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.1 tỷ (sàn 20 tỷ -> không đạt) = 0.30% |LNTT| (ngưỡng 25% -> không đạt); A: 0.1 vs 3.0x trung vị (3.0 tỷ), phần vượt -2.9 tỷ -> không đạt; B: YoY -99.2% (ngưỡng 100%), tăng tuyệt đối -14.5 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BLI",
+      "period": "2025-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.2 tỷ = 8.92% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (3.0 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.2 tỷ (sàn 20 tỷ -> không đạt) = 8.92% |LNTT| (ngưỡng 25% -> không đạt); A: 0.2 vs 3.0x trung vị (3.0 tỷ), phần vượt -2.8 tỷ -> không đạt; B: YoY -96.5% (ngưỡng 100%), tăng tuyệt đối -5.1 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BLI",
+      "period": "2025-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.0 tỷ = 0.04% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.5 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.0 tỷ (sàn 20 tỷ -> không đạt) = 0.04% |LNTT| (ngưỡng 25% -> không đạt); A: 0.0 vs 3.0x trung vị (0.5 tỷ), phần vượt -0.5 tỷ -> không đạt; B: YoY -98.5% (ngưỡng 100%), tăng tuyệt đối -0.7 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BLI",
+      "period": "2025-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.3 tỷ = 1.05% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.2 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.3 tỷ (sàn 20 tỷ -> không đạt) = 1.05% |LNTT| (ngưỡng 25% -> không đạt); A: 0.3 vs 3.0x trung vị (0.2 tỷ), phần vượt 0.0 tỷ -> không đạt; B: YoY -2.7% (ngưỡng 100%), tăng tuyệt đối -0.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BLI",
+      "period": "2026-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.0 tỷ = 0.18% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.3 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.0 tỷ (sàn 20 tỷ -> không đạt) = 0.18% |LNTT| (ngưỡng 25% -> không đạt); A: 0.0 vs 3.0x trung vị (0.3 tỷ), phần vượt -0.3 tỷ -> không đạt; B: YoY -89.1% (ngưỡng 100%), tăng tuyệt đối -0.1 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BLI",
+      "period": "2026-Q2",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 22.0 tỷ = 69.39% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.2 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 22.0 tỷ (sàn 20 tỷ -> đạt) = 69.39% |LNTT| (ngưỡng 25% -> đạt); A: 22.0 vs 3.0x trung vị (0.2 tỷ), phần vượt 21.8 tỷ -> đạt; B: YoY 11,895.5% (ngưỡng 100%), tăng tuyệt đối 21.9 tỷ -> đạt"
+    },
+    {
+      "symbol": "BMI",
+      "period": "2024-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.3 tỷ = 0.80% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.7 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.3 tỷ (sàn 20 tỷ -> không đạt) = 0.80% |LNTT| (ngưỡng 25% -> không đạt); A: 0.3 vs 3.0x trung vị (0.7 tỷ), phần vượt -0.3 tỷ -> không đạt; B: YoY -93.1% (ngưỡng 100%), tăng tuyệt đối -4.3 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BMI",
+      "period": "2024-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.6 tỷ = 1.16% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.6 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.6 tỷ (sàn 20 tỷ -> không đạt) = 1.16% |LNTT| (ngưỡng 25% -> không đạt); A: 0.6 vs 3.0x trung vị (0.6 tỷ), phần vượt 0.0 tỷ -> không đạt; B: thu nhập khác cùng kỳ -2.2 tỷ <= 0 — tỷ lệ YoY không có nghĩa"
+    },
+    {
+      "symbol": "BMI",
+      "period": "2025-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.5 tỷ = 0.61% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.6 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.5 tỷ (sàn 20 tỷ -> không đạt) = 0.61% |LNTT| (ngưỡng 25% -> không đạt); A: 0.5 vs 3.0x trung vị (0.6 tỷ), phần vượt -0.1 tỷ -> không đạt; B: YoY 0.6% (ngưỡng 100%), tăng tuyệt đối 0.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BMI",
+      "period": "2025-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 2.6 tỷ = 2.72% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.5 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 2.6 tỷ (sàn 20 tỷ -> không đạt) = 2.72% |LNTT| (ngưỡng 25% -> không đạt); A: 2.6 vs 3.0x trung vị (0.5 tỷ), phần vượt 2.2 tỷ -> không đạt; B: YoY 985.3% (ngưỡng 100%), tăng tuyệt đối 2.4 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BMI",
+      "period": "2025-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 2.3 tỷ = 1.78% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.5 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 2.3 tỷ (sàn 20 tỷ -> không đạt) = 1.78% |LNTT| (ngưỡng 25% -> không đạt); A: 2.3 vs 3.0x trung vị (0.5 tỷ), phần vượt 1.8 tỷ -> không đạt; B: YoY 600.7% (ngưỡng 100%), tăng tuyệt đối 1.9 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BMI",
+      "period": "2025-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 15.2 tỷ = 425.72% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.5 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 15.2 tỷ (sàn 20 tỷ -> không đạt) = 425.72% |LNTT| (ngưỡng 25% -> đạt); A: 15.2 vs 3.0x trung vị (0.5 tỷ), phần vượt 14.7 tỷ -> không đạt; B: YoY 2,339.6% (ngưỡng 100%), tăng tuyệt đối 14.6 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BMI",
+      "period": "2026-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 9.8 tỷ = 12.92% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.6 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 9.8 tỷ (sàn 20 tỷ -> không đạt) = 12.92% |LNTT| (ngưỡng 25% -> không đạt); A: 9.8 vs 3.0x trung vị (0.6 tỷ), phần vượt 9.3 tỷ -> không đạt; B: YoY 1,935.1% (ngưỡng 100%), tăng tuyệt đối 9.3 tỷ -> không đạt"
+    },
+    {
+      "symbol": "BMI",
+      "period": "2026-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 9.0 tỷ = 5.98% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (1.4 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 9.0 tỷ (sàn 20 tỷ -> không đạt) = 5.98% |LNTT| (ngưỡng 25% -> không đạt); A: 9.0 vs 3.0x trung vị (1.4 tỷ), phần vượt 7.6 tỷ -> không đạt; B: YoY 242.1% (ngưỡng 100%), tăng tuyệt đối 6.4 tỷ -> không đạt"
+    },
+    {
+      "symbol": "MIG",
+      "period": "2024-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.9 tỷ = 2.80% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (4.8 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.9 tỷ (sàn 20 tỷ -> không đạt) = 2.80% |LNTT| (ngưỡng 25% -> không đạt); A: 0.9 vs 3.0x trung vị (4.8 tỷ), phần vượt -4.0 tỷ -> không đạt; B: YoY 43.8% (ngưỡng 100%), tăng tuyệt đối 0.3 tỷ -> không đạt"
+    },
+    {
+      "symbol": "MIG",
+      "period": "2024-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 10.2 tỷ = 10.16% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (4.8 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 10.2 tỷ (sàn 20 tỷ -> không đạt) = 10.16% |LNTT| (ngưỡng 25% -> không đạt); A: 10.2 vs 3.0x trung vị (4.8 tỷ), phần vượt 5.4 tỷ -> không đạt; B: YoY -5.6% (ngưỡng 100%), tăng tuyệt đối -0.6 tỷ -> không đạt"
+    },
+    {
+      "symbol": "MIG",
+      "period": "2025-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 1.1 tỷ = 0.88% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (4.8 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 1.1 tỷ (sàn 20 tỷ -> không đạt) = 0.88% |LNTT| (ngưỡng 25% -> không đạt); A: 1.1 vs 3.0x trung vị (4.8 tỷ), phần vượt -3.7 tỷ -> không đạt; B: YoY -37.6% (ngưỡng 100%), tăng tuyệt đối -0.7 tỷ -> không đạt"
+    },
+    {
+      "symbol": "MIG",
+      "period": "2025-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 10.8 tỷ = 10.19% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (4.8 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 10.8 tỷ (sàn 20 tỷ -> không đạt) = 10.19% |LNTT| (ngưỡng 25% -> không đạt); A: 10.8 vs 3.0x trung vị (4.8 tỷ), phần vượt 6.0 tỷ -> không đạt; B: YoY -35.4% (ngưỡng 100%), tăng tuyệt đối -5.9 tỷ -> không đạt"
+    },
+    {
+      "symbol": "MIG",
+      "period": "2025-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 1.2 tỷ = 0.78% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (6.0 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 1.2 tỷ (sàn 20 tỷ -> không đạt) = 0.78% |LNTT| (ngưỡng 25% -> không đạt); A: 1.2 vs 3.0x trung vị (6.0 tỷ), phần vượt -4.8 tỷ -> không đạt; B: YoY 38.3% (ngưỡng 100%), tăng tuyệt đối 0.3 tỷ -> không đạt"
+    },
+    {
+      "symbol": "MIG",
+      "period": "2025-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác -8.4 tỷ = -35.92% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (6.0 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác -8.4 tỷ (sàn 20 tỷ -> không đạt) = -35.92% |LNTT| (ngưỡng 25% -> không đạt); A: -8.4 vs 3.0x trung vị (6.0 tỷ), phần vượt -14.4 tỷ -> không đạt; B: YoY -182.3% (ngưỡng 100%), tăng tuyệt đối -18.7 tỷ -> không đạt"
+    },
+    {
+      "symbol": "MIG",
+      "period": "2026-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 1.0 tỷ = 0.76% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (1.5 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 1.0 tỷ (sàn 20 tỷ -> không đạt) = 0.76% |LNTT| (ngưỡng 25% -> không đạt); A: 1.0 vs 3.0x trung vị (1.5 tỷ), phần vượt -0.5 tỷ -> không đạt; B: YoY -11.8% (ngưỡng 100%), tăng tuyệt đối -0.1 tỷ -> không đạt"
+    },
+    {
+      "symbol": "MIG",
+      "period": "2026-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 1.6 tỷ = 1.35% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (1.1 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 1.6 tỷ (sàn 20 tỷ -> không đạt) = 1.35% |LNTT| (ngưỡng 25% -> không đạt); A: 1.6 vs 3.0x trung vị (1.1 tỷ), phần vượt 0.4 tỷ -> không đạt; B: YoY -85.4% (ngưỡng 100%), tăng tuyệt đối -9.2 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PGI",
+      "period": "2024-Q3",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 80.8 tỷ = 174.05% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (78.9 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 80.8 tỷ (sàn 20 tỷ -> đạt) = 174.05% |LNTT| (ngưỡng 25% -> đạt); A: 80.8 vs 3.0x trung vị (78.9 tỷ), phần vượt 1.9 tỷ -> không đạt; B: YoY -20.0% (ngưỡng 100%), tăng tuyệt đối -20.2 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PGI",
+      "period": "2024-Q4",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 80.3 tỷ = 165.25% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (80.1 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 80.3 tỷ (sàn 20 tỷ -> đạt) = 165.25% |LNTT| (ngưỡng 25% -> đạt); A: 80.3 vs 3.0x trung vị (80.1 tỷ), phần vượt 0.2 tỷ -> không đạt; B: YoY 2.5% (ngưỡng 100%), tăng tuyệt đối 2.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PGI",
+      "period": "2025-Q1",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 77.6 tỷ = 86.29% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (80.6 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 77.6 tỷ (sàn 20 tỷ -> đạt) = 86.29% |LNTT| (ngưỡng 25% -> đạt); A: 77.6 vs 3.0x trung vị (80.6 tỷ), phần vượt -3.0 tỷ -> không đạt; B: YoY -5.5% (ngưỡng 100%), tăng tuyệt đối -4.5 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PGI",
+      "period": "2025-Q2",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 53.1 tỷ = 48.64% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (80.6 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 53.1 tỷ (sàn 20 tỷ -> đạt) = 48.64% |LNTT| (ngưỡng 25% -> đạt); A: 53.1 vs 3.0x trung vị (80.6 tỷ), phần vượt -27.5 tỷ -> không đạt; B: YoY -53.0% (ngưỡng 100%), tăng tuyệt đối -60.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PGI",
+      "period": "2025-Q3",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 78.8 tỷ = 170.50% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (80.6 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 78.8 tỷ (sàn 20 tỷ -> đạt) = 170.50% |LNTT| (ngưỡng 25% -> đạt); A: 78.8 vs 3.0x trung vị (80.6 tỷ), phần vượt -1.8 tỷ -> không đạt; B: YoY -2.5% (ngưỡng 100%), tăng tuyệt đối -2.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PGI",
+      "period": "2025-Q4",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 104.2 tỷ = 171.23% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (79.5 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 104.2 tỷ (sàn 20 tỷ -> đạt) = 171.23% |LNTT| (ngưỡng 25% -> đạt); A: 104.2 vs 3.0x trung vị (79.5 tỷ), phần vượt 24.7 tỷ -> không đạt; B: YoY 29.8% (ngưỡng 100%), tăng tuyệt đối 24.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PGI",
+      "period": "2026-Q1",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 84.3 tỷ = 87.41% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (80.6 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 84.3 tỷ (sàn 20 tỷ -> đạt) = 87.41% |LNTT| (ngưỡng 25% -> đạt); A: 84.3 vs 3.0x trung vị (80.6 tỷ), phần vượt 3.7 tỷ -> không đạt; B: YoY 8.6% (ngưỡng 100%), tăng tuyệt đối 6.7 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PGI",
+      "period": "2026-Q2",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 93.9 tỷ = 78.97% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (80.6 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 93.9 tỷ (sàn 20 tỷ -> đạt) = 78.97% |LNTT| (ngưỡng 25% -> đạt); A: 93.9 vs 3.0x trung vị (80.6 tỷ), phần vượt 13.3 tỷ -> không đạt; B: YoY 77.0% (ngưỡng 100%), tăng tuyệt đối 40.8 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PTI",
+      "period": "2024-Q3",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 65.6 tỷ = 112.34% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (111.2 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 65.6 tỷ (sàn 20 tỷ -> đạt) = 112.34% |LNTT| (ngưỡng 25% -> đạt); A: 65.6 vs 3.0x trung vị (111.2 tỷ), phần vượt -45.6 tỷ -> không đạt; B: YoY -45.4% (ngưỡng 100%), tăng tuyệt đối -54.5 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PTI",
+      "period": "2024-Q4",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 84.3 tỷ = 97.38% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (105.7 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 84.3 tỷ (sàn 20 tỷ -> đạt) = 97.38% |LNTT| (ngưỡng 25% -> đạt); A: 84.3 vs 3.0x trung vị (105.7 tỷ), phần vượt -21.4 tỷ -> không đạt; B: YoY -7.7% (ngưỡng 100%), tăng tuyệt đối -7.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PTI",
+      "period": "2025-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 8.1 tỷ = 9.31% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (87.8 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 8.1 tỷ (sàn 20 tỷ -> không đạt) = 9.31% |LNTT| (ngưỡng 25% -> không đạt); A: 8.1 vs 3.0x trung vị (87.8 tỷ), phần vượt -79.8 tỷ -> không đạt; B: YoY -86.1% (ngưỡng 100%), tăng tuyệt đối -49.7 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PTI",
+      "period": "2025-Q2",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 132.5 tỷ = 121.92% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (87.8 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 132.5 tỷ (sàn 20 tỷ -> đạt) = 121.92% |LNTT| (ngưỡng 25% -> đạt); A: 132.5 vs 3.0x trung vị (87.8 tỷ), phần vượt 44.7 tỷ -> không đạt; B: YoY -34.7% (ngưỡng 100%), tăng tuyệt đối -70.5 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PTI",
+      "period": "2025-Q3",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 58.7 tỷ = 63.17% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (87.8 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 58.7 tỷ (sàn 20 tỷ -> đạt) = 63.17% |LNTT| (ngưỡng 25% -> đạt); A: 58.7 vs 3.0x trung vị (87.8 tỷ), phần vượt -29.1 tỷ -> không đạt; B: YoY -10.5% (ngưỡng 100%), tăng tuyệt đối -6.9 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PTI",
+      "period": "2025-Q4",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 92.0 tỷ = 108.58% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (74.9 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 92.0 tỷ (sàn 20 tỷ -> đạt) = 108.58% |LNTT| (ngưỡng 25% -> đạt); A: 92.0 vs 3.0x trung vị (74.9 tỷ), phần vượt 17.1 tỷ -> không đạt; B: YoY 9.1% (ngưỡng 100%), tăng tuyệt đối 7.7 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PTI",
+      "period": "2026-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 18.7 tỷ = 22.63% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (74.9 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 18.7 tỷ (sàn 20 tỷ -> không đạt) = 22.63% |LNTT| (ngưỡng 25% -> không đạt); A: 18.7 vs 3.0x trung vị (74.9 tỷ), phần vượt -56.2 tỷ -> không đạt; B: YoY 132.2% (ngưỡng 100%), tăng tuyệt đối 10.6 tỷ -> không đạt"
+    },
+    {
+      "symbol": "PTI",
+      "period": "2026-Q2",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 135.4 tỷ = 163.20% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (74.9 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 135.4 tỷ (sàn 20 tỷ -> đạt) = 163.20% |LNTT| (ngưỡng 25% -> đạt); A: 135.4 vs 3.0x trung vị (74.9 tỷ), phần vượt 60.5 tỷ -> không đạt; B: YoY 2.2% (ngưỡng 100%), tăng tuyệt đối 2.9 tỷ -> không đạt"
+    }
+  ],
+  "control_rows": [
+    {
+      "symbol": "VLB",
+      "period": "2024-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 1.6 tỷ = 2.51% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.6 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 1.6 tỷ (sàn 20 tỷ -> không đạt) = 2.51% |LNTT| (ngưỡng 25% -> không đạt); A: 1.6 vs 3.0x trung vị (0.6 tỷ), phần vượt 1.0 tỷ -> không đạt; B: YoY 982.9% (ngưỡng 100%), tăng tuyệt đối 1.4 tỷ -> không đạt"
+    },
+    {
+      "symbol": "VLB",
+      "period": "2024-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.4 tỷ = 0.50% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (1.1 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.4 tỷ (sàn 20 tỷ -> không đạt) = 0.50% |LNTT| (ngưỡng 25% -> không đạt); A: 0.4 vs 3.0x trung vị (1.1 tỷ), phần vượt -0.8 tỷ -> không đạt; B: YoY -96.8% (ngưỡng 100%), tăng tuyệt đối -11.9 tỷ -> không đạt"
+    },
+    {
+      "symbol": "VLB",
+      "period": "2025-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.1 tỷ = 0.13% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (1.1 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.1 tỷ (sàn 20 tỷ -> không đạt) = 0.13% |LNTT| (ngưỡng 25% -> không đạt); A: 0.1 vs 3.0x trung vị (1.1 tỷ), phần vượt -1.0 tỷ -> không đạt; B: YoY -64.6% (ngưỡng 100%), tăng tuyệt đối -0.2 tỷ -> không đạt"
+    },
+    {
+      "symbol": "VLB",
+      "period": "2025-Q2",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 3.2 tỷ = 3.22% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.5 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 3.2 tỷ (sàn 20 tỷ -> không đạt) = 3.22% |LNTT| (ngưỡng 25% -> không đạt); A: 3.2 vs 3.0x trung vị (0.5 tỷ), phần vượt 2.7 tỷ -> không đạt; B: YoY 436.9% (ngưỡng 100%), tăng tuyệt đối 2.6 tỷ -> không đạt"
+    },
+    {
+      "symbol": "VLB",
+      "period": "2025-Q3",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 10.8 tỷ = 13.65% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (0.5 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 10.8 tỷ (sàn 20 tỷ -> không đạt) = 13.65% |LNTT| (ngưỡng 25% -> không đạt); A: 10.8 vs 3.0x trung vị (0.5 tỷ), phần vượt 10.3 tỷ -> không đạt; B: YoY 575.2% (ngưỡng 100%), tăng tuyệt đối 9.2 tỷ -> không đạt"
+    },
+    {
+      "symbol": "VLB",
+      "period": "2025-Q4",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 1.4 tỷ = 1.08% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (1.1 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 1.4 tỷ (sàn 20 tỷ -> không đạt) = 1.08% |LNTT| (ngưỡng 25% -> không đạt); A: 1.4 vs 3.0x trung vị (1.1 tỷ), phần vượt 0.3 tỷ -> không đạt; B: YoY 248.6% (ngưỡng 100%), tăng tuyệt đối 1.0 tỷ -> không đạt"
+    },
+    {
+      "symbol": "VLB",
+      "period": "2026-Q1",
+      "v1_fired": false,
+      "v1_detail": "thu nhập khác 0.5 tỷ = 0.54% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (1.0 tỷ)",
+      "v2_fired": false,
+      "v2_detail": "thu nhập khác 0.5 tỷ (sàn 20 tỷ -> không đạt) = 0.54% |LNTT| (ngưỡng 25% -> không đạt); A: 0.5 vs 3.0x trung vị (1.0 tỷ), phần vượt -0.5 tỷ -> không đạt; B: YoY 418.8% (ngưỡng 100%), tăng tuyệt đối 0.4 tỷ -> không đạt"
+    },
+    {
+      "symbol": "VLB",
+      "period": "2026-Q2",
+      "v1_fired": true,
+      "v1_detail": "thu nhập khác 348.2 tỷ = 74.39% |LNTT| (ngưỡng 25%) hoặc >= 3.0x trung vị 8 quý (1.0 tỷ)",
+      "v2_fired": true,
+      "v2_detail": "thu nhập khác 348.2 tỷ (sàn 20 tỷ -> đạt) = 74.39% |LNTT| (ngưỡng 25% -> đạt); A: 348.2 vs 3.0x trung vị (1.0 tỷ), phần vượt 347.3 tỷ -> đạt; B: YoY 10,818.8% (ngưỡng 100%), tăng tuyệt đối 345.1 tỷ -> đạt"
+    }
+  ]
+}

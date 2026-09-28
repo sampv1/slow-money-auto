@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fa.one_off import (  # noqa: E402
+    T4_RULE_V1, T4_RULE_V2,
     MIN_ABS_VND, STATUS_AUTO_NORMAL, STATUS_CONFIRMED_NORMAL,
     STATUS_CONFIRMED_ONE_OFF, STATUS_COMPLETES_FA, STATUS_REVIEW_TRIGGERED,
     STATUS_SOURCE_INCOMPLETE, TAX_BASIS_POST, TAX_BASIS_PRE, TriggerInput,
@@ -158,27 +159,123 @@ def test_T3_boundary_rule_when_the_median_is_not_positive():
     check("still needs 20 tỷ of profit", not r2.fired)
 
 
-def test_T4_fires_on_either_the_share_or_the_multiple():
+def test_T4_v1_fires_on_either_the_share_or_the_multiple():
+    """§3.4's ORIGINAL disjunctive rule. Still reachable because it is what the
+    2026-Q2 audit record was screened under — an audit trail that cannot be
+    reproduced is not an audit trail. §8.2 replaces it going forward."""
+    v1 = dict(t4_rule=T4_RULE_V1)
     share = evaluate_triggers(ti(pbt=100 * B, other_income=30 * B,
-                                 prior_8q_other_income=[25 * B] * 8))["T4"]
+                                 prior_8q_other_income=[25 * B] * 8, **v1))["T4"]
     check("30% of |LNTT| fires on the share test", share.fired, share.detail)
     mult = evaluate_triggers(ti(pbt=1000 * B, other_income=30 * B,
-                                prior_8q_other_income=[5 * B] * 8))["T4"]
+                                prior_8q_other_income=[5 * B] * 8, **v1))["T4"]
     check("6x the median fires even at 3% of LNTT", mult.fired, mult.detail)
     tiny = evaluate_triggers(ti(pbt=40 * B, other_income=19 * B,
-                                prior_8q_other_income=[1 * B] * 8))["T4"]
+                                prior_8q_other_income=[1 * B] * 8, **v1))["T4"]
     check("under 20 tỷ never fires", not tiny.fired)
 
 
-def test_T4_drops_the_multiple_when_its_median_is_not_positive():
+def test_T4_v1_drops_the_multiple_when_its_median_is_not_positive():
     """§3.4 — "không dùng phép nhân ba"; only the 25% share test remains."""
+    v1 = dict(t4_rule=T4_RULE_V1)
     r = evaluate_triggers(ti(pbt=100 * B, other_income=30 * B,
-                             prior_8q_other_income=[0.0] * 8))["T4"]
+                             prior_8q_other_income=[0.0] * 8, **v1))["T4"]
     check("share test still fires", r.fired)
     check("and the multiple is stated as dropped", "nhân ba" in r.detail)
     r2 = evaluate_triggers(ti(pbt=1000 * B, other_income=30 * B,
-                              prior_8q_other_income=[0.0] * 8))["T4"]
+                              prior_8q_other_income=[0.0] * 8, **v1))["T4"]
     check("no multiple fallback at a low share", not r2.fired)
+
+
+def test_T4_v2_needs_materiality_AND_an_unusual_move():
+    """§8.2 — v1 fired on materiality OR an unusual level, which is why a large
+    but STEADY other-income line triggered every single quarter. v2 requires
+    both halves, so "big" alone is no longer a trigger."""
+    steady = evaluate_triggers(ti(pbt=100 * B, other_income=30 * B,
+                                  prior_8q_other_income=[28 * B] * 8,
+                                  other_income_year_ago=29 * B))["T4"]
+    check("30% of |LNTT| but flat vs its own history -> no fire", not steady.fired,
+          steady.detail)
+    # The identical row under v1 fires. That difference IS the change.
+    check("and v1 would have fired on it",
+          evaluate_triggers(ti(pbt=100 * B, other_income=30 * B,
+                               prior_8q_other_income=[28 * B] * 8,
+                               t4_rule=T4_RULE_V1))["T4"].fired)
+
+
+def test_T4_v2_branch_A_needs_the_EXCESS_to_be_material():
+    """3x a 1 tỷ median is a 2 tỷ move: arithmetically a tripling, materially
+    nothing. v1 had no floor on the move, only on the level."""
+    small = evaluate_triggers(ti(pbt=60 * B, other_income=21 * B,
+                                 prior_8q_other_income=[6.5 * B] * 8,
+                                 other_income_year_ago=20 * B))["T4"]
+    check("3.2x median but only 14.5 tỷ of excess -> no fire", not small.fired,
+          small.detail)
+    big = evaluate_triggers(ti(pbt=100 * B, other_income=60 * B,
+                               prior_8q_other_income=[10 * B] * 8,
+                               other_income_year_ago=55 * B))["T4"]
+    check("6x median with 50 tỷ of excess -> fires", big.fired, big.detail)
+
+
+def test_T4_v2_branch_B_carries_a_row_its_own_median_cannot():
+    """A line that is high across all eight prior quarters has no 8Q jump to
+    find, so branch A is blind to a step that happened a year ago and held."""
+    r = evaluate_triggers(ti(pbt=100 * B, other_income=90 * B,
+                             prior_8q_other_income=[85 * B] * 8,
+                             other_income_year_ago=30 * B))["T4"]
+    check("YoY +200% and +60 tỷ fires through branch B", r.fired, r.detail)
+    check("detail records branch A as not met", "A:" in r.detail and "B:" in r.detail)
+
+
+def test_T4_v2_branch_B_needs_both_halves():
+    ratio_only = evaluate_triggers(ti(pbt=100 * B, other_income=30 * B,
+                                      prior_8q_other_income=[29 * B] * 8,
+                                      other_income_year_ago=14 * B))["T4"]
+    check("+114% but only 16 tỷ absolute -> no fire", not ratio_only.fired,
+          ratio_only.detail)
+    rise_only = evaluate_triggers(ti(pbt=100 * B, other_income=90 * B,
+                                     prior_8q_other_income=[85 * B] * 8,
+                                     other_income_year_ago=60 * B))["T4"]
+    check("+30 tỷ but only +50% -> no fire", not rise_only.fired, rise_only.detail)
+
+
+def test_T4_v2_drops_branch_A_when_the_median_is_not_positive():
+    """§8.2 repeats §3.4's boundary rule: no multiple against a median <= 0."""
+    r = evaluate_triggers(ti(pbt=100 * B, other_income=40 * B,
+                             prior_8q_other_income=[0.0] * 8,
+                             other_income_year_ago=15 * B))["T4"]
+    check("branch B still carries it", r.fired, r.detail)
+    check("and branch A says it was dropped", "không dùng nhánh A" in r.detail)
+    # With no usable year-ago base either, nothing can fire.
+    r2 = evaluate_triggers(ti(pbt=100 * B, other_income=40 * B,
+                              prior_8q_other_income=[0.0] * 8,
+                              other_income_year_ago=0.0))["T4"]
+    check("no branch A and no usable YoY base -> no fire", not r2.fired, r2.detail)
+
+
+def test_T4_v2_keeps_the_20_ty_floor_and_the_25_percent_share():
+    tiny = evaluate_triggers(ti(pbt=40 * B, other_income=19 * B,
+                                prior_8q_other_income=[1 * B] * 8,
+                                other_income_year_ago=1 * B))["T4"]
+    check("under 20 tỷ never fires however unusual", not tiny.fired, tiny.detail)
+    low_share = evaluate_triggers(ti(pbt=1000 * B, other_income=30 * B,
+                                     prior_8q_other_income=[5 * B] * 8,
+                                     other_income_year_ago=5 * B))["T4"]
+    check("3% of |LNTT| never fires however unusual", not low_share.fired,
+          low_share.detail)
+    # v1 DID fire that second row on the multiple alone — the exact
+    # over-triggering §8.2 was written to stop.
+    check("and v1 fired on it",
+          evaluate_triggers(ti(pbt=1000 * B, other_income=30 * B,
+                               prior_8q_other_income=[5 * B] * 8,
+                               t4_rule=T4_RULE_V1))["T4"].fired)
+
+
+def test_T4_v2_is_the_default_rule():
+    """§8.2 locks v2 for every automated run after the 2026-Q2 round, so a
+    caller that says nothing must get v2 — a default of v1 would mean the new
+    rule only applied where someone remembered to ask for it."""
+    check("TriggerInput defaults to v2", ti().t4_rule == T4_RULE_V2)
 
 
 def test_T5_needs_all_three_conditions():
@@ -361,7 +458,8 @@ def test_T4_is_UNEVALUABLE_where_other_income_is_not_a_PL_addend():
     check("reason names the cause", "không phải số cộng vào LNTT" in r.detail)
     # The same figures WOULD have fired under the old mapping — that is the point.
     r2 = evaluate_triggers(ti(pbt=9.9 * B, other_income=423.2 * B,
-                              prior_8q_other_income=[221.1 * B] * 8))["T4"]
+                              prior_8q_other_income=[221.1 * B] * 8,
+                              t4_rule=T4_RULE_V1))["T4"]
     check("the same inputs fire when the line IS a P&L addend", r2.fired)
 
 
