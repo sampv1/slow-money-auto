@@ -43,7 +43,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fa.nonlife_scope import (USED as SCOPE_USED, ControlEvent,
                               resolve_series)
-from fa.one_off import (STATUS_REVIEW_TRIGGERED, TriggerInput,
+from fa.one_off import (CHECK_ONE_OFF_TIER2_CURRENT, COMPLETION_COMPLETED,
+                        STATUS_REVIEW_TRIGGERED, STATUS_SOURCE_INCOMPLETE,
+                        TriggerInput, check_tier2_current, completion_status,
                         screen as one_off_screen)
 from ta.common import get_supabase_client, safe_execute
 
@@ -150,6 +152,76 @@ def load(client, symbols, periods, statement, keys, ptype="quarter"):
                 k: (float(r[a]) if r.get(a) is not None else None)
                 for a, k in alias.items()}
     return out
+
+
+#: §9.2 — the four words that may stand in for a number, each answering a
+#: DIFFERENT question. BA bans a shared "N/A" precisely because it collapses
+#: them: a measured zero, a field that does not apply, a score BA has not
+#: authorised yet, and a document we could not obtain are four separate facts
+#: and call for four different actions.
+NOT_APPLICABLE = "NOT_APPLICABLE"
+NOT_SCORED_BY_DESIGN = "NOT_SCORED_BY_DESIGN"
+SOURCE_INCOMPLETE = "SOURCE_INCOMPLETE"
+
+
+def _oo_amount(oo):
+    """§9.2 item 11. An amount exists only for CONFIRMED_ONE_OFF; §4.2 forbids
+    estimating one anywhere else, so every other state says so rather than
+    printing a 0 that would read as "we looked and it was zero đồng"."""
+    st = oo.get("one_off_review_status")
+    if st == STATUS_SOURCE_INCOMPLETE:
+        return SOURCE_INCOMPLETE
+    if oo.get("one_off_amount") is not None:
+        return f"{oo['one_off_amount']:,.0f}"
+    return NOT_APPLICABLE
+
+
+def _oo_basis(oo):
+    """§9.2 item 12. The basis is a property of a CONFIRMED amount; with no
+    amount there is no basis to state, and asserting PRE_TAX would claim a
+    measurement was taken on it."""
+    st = oo.get("one_off_review_status")
+    if st == STATUS_SOURCE_INCOMPLETE:
+        return SOURCE_INCOMPLETE
+    return oo.get("tax_basis") or NOT_APPLICABLE
+
+
+def _oo_ratio(oo, key):
+    """§9.2 item 13. R is amount ÷ profit, so with no amount there is no ratio —
+    not a ratio of zero."""
+    st = oo.get("one_off_review_status")
+    if st == STATUS_SOURCE_INCOMPLETE:
+        return SOURCE_INCOMPLETE
+    v = oo.get(key)
+    return NOT_APPLICABLE if v is None else f"{v * 100:,.2f}%"
+
+
+def _oo_penalty(oo):
+    """§9.2 item 14, and the one place a plain 0 is right. A filing that was
+    read and found ordinary carries a MEASURED deduction of zero; that is a
+    result, not an absence. Where the filing could not be read, the deduction is
+    unknown and must not render as 0 (§4.2)."""
+    st = oo.get("one_off_review_status")
+    if st == STATUS_SOURCE_INCOMPLETE:
+        return SOURCE_INCOMPLETE
+    if st == STATUS_REVIEW_TRIGGERED:
+        return "CHỜ TẦNG 2"
+    v = oo.get("one_off_penalty")
+    return 0 if v is None else v
+
+
+def _incomplete_reason(g, oo):
+    """§9.2 item 18. Names the condition, never "thiếu dữ liệu"."""
+    if not g.get("eligible_for_total"):
+        return g.get("blocking_reason") or "P1–P5 chưa đủ điều kiện"
+    st = oo.get("one_off_review_status")
+    if st == STATUS_REVIEW_TRIGGERED:
+        return "chờ tầng 2 đọc BCTC gốc (§3.2)"
+    if st == STATUS_SOURCE_INCOMPLETE:
+        return (oo.get("tier2_incomplete_reason")
+                or "đã kiểm tra nguồn nhưng không lấy được BCTC gốc (§3.2)")
+    # §7.1 — P1-P5 and the one-off are done; the FA score is not, by design.
+    return "vòng dữ liệu hoàn tất; điểm FA chờ BA khóa thang điểm (§5.1)"
 
 
 def resolve_universe(client):
@@ -1032,8 +1104,20 @@ def main() -> int:
             tier2[(v["symbol"], v["period"])] = v
     for r_ in one_off_rows:
         v = tier2.get((r_["symbol"], r_["period"]))
-        if not v or r_["one_off_review_status"] != STATUS_REVIEW_TRIGGERED:
+        if not v:
             continue
+        # A RECORDED READING OUTRANKS A TIER-1 SCREEN, INCLUDING WHEN TIER 1 NO
+        # LONGER FIRES. BA ordered the five 2026-Q2 filings read while T4 was
+        # still fed the insurance other-income line; correcting that mapping
+        # makes T4 unevaluable, so those rows now screen AUTO_NORMAL on their
+        # own. Applying the verdict only to a REVIEW_TRIGGERED row would then
+        # discard all five readings — and AIC's unresolved one would disappear
+        # from the workbook entirely, which is precisely the outcome §14 forbids
+        # ("không đổi luật giữa chừng để né việc đọc năm mã đã kích hoạt").
+        # For the four CONFIRMED_NORMAL rows this changes nothing but the
+        # provenance; for AIC it is the difference between a reported gap and a
+        # silent one.
+        r_["tier1_status_before_tier2"] = r_["one_off_review_status"]
         # §3.6 requires the source reference; without it the verdict does not
         # apply and the symbol stays REVIEW_TRIGGERED.
         if not v.get("source_page_note"):
@@ -1046,6 +1130,12 @@ def main() -> int:
         r_["tier2_source_page_note"] = v.get("source_page_note")
         r_["tier2_reviewed_by"] = v.get("reviewed_by")
         r_["tier2_reviewed_date"] = v.get("reviewed_date")
+        # §9.2 items 11-13 — carried only where tier 2 actually established
+        # them. §4.2 forbids deriving any of these from tier 1.
+        for k_ in ("one_off_amount", "tax_basis", "r_q", "r_ttm", "r_used",
+                   "tier2_incomplete_reason", "source_url"):
+            if v.get(k_) is not None:
+                r_[k_] = v[k_]
     print(f"tier 2 (§3.2): {len(tier2)} phán quyết đã đọc từ "
           f"one_off_tier2_results.json; "
           f"{sum(1 for r_ in one_off_rows if r_['one_off_review_status'] == STATUS_REVIEW_TRIGGERED)}"
@@ -1199,13 +1289,20 @@ def main() -> int:
 
     # §11.1.5 / §8 — the program must READ the new table, not merely write it.
     # Proved by reading back and comparing to what was resolved in memory.
+    # A read-back that never ran is UNKNOWN, not a violation — the same rule
+    # §5.2 states for scope. Reporting it as FAIL under --no-persist inflated
+    # the failure count with a check nobody had performed, which is the
+    # unmeasured-condition mistake in the other direction.
     checks.append(fails(
-        "CHECK_SCOPE_073", [] if scope_db_rows == len(scope_rows)
+        "CHECK_SCOPE_073",
+        [] if scope_db_rows is None or scope_db_rows == len(scope_rows)
         else [f"ghi {len(scope_rows)} nhưng đọc lại {scope_db_rows}"],
         "migration 073 đã áp và số dòng phạm vi đọc lại khớp số dòng đã ghi",
+        pending=(None if scope_db_rows is not None
+                 else ["chưa ghi — chạy không có --no-persist để kiểm tra"]),
         note=(f"đọc lại {scope_db_rows} dòng từ fa_insurance_report_scope"
               if scope_db_rows is not None else
-              "chưa ghi (chạy với --persist-scope để kiểm tra)")))
+              "chưa ghi (bản chạy --no-persist không kiểm tra được vòng ghi/đọc)")))
 
     # §5.2 — the rule, verbatim: unknown on either side is PENDING, never PASS.
     bad, pend = [], []
@@ -1435,8 +1532,38 @@ def main() -> int:
                  if r["metric_result_id"] not in lin_by)
     checks.append(fails("CHECK_LINEAGE_09", bad, "không có metric_result_id mồ côi"))
 
-    # ---------- §14 summary table ----------
+    # ---------- §6 — the tier-2 check -----------------------------------
+    # Deliberately NOT a `fails(...)`: every other check here asks whether the
+    # arithmetic is self-consistent, and all of them can pass while not one
+    # filing has been read. §6.1 says so outright — "38 PASS" proves the
+    # numbers ran, never that the round is finished. This check is the only one
+    # that answers the second question, so it is built and reported separately.
     latest = QUARTERS[-1]
+    tier2_check = check_tier2_current(
+        [r_["one_off_review_status"] for r_ in one_off_rows
+         if r_["period"] == latest])
+    _t2_out = sorted(f"{r_['symbol']} {r_['one_off_review_status']}"
+                     for r_ in one_off_rows if r_["period"] == latest
+                     and completion_status(r_["one_off_review_status"])
+                     != COMPLETION_COMPLETED)
+    checks.append({
+        "check": CHECK_ONE_OFF_TIER2_CURRENT,
+        "quy_tac": ("PASS khi mọi mã kỳ hiện tại có one_off_review_status thuộc "
+                    "AUTO_NORMAL / CONFIRMED_NORMAL / CONFIRMED_ONE_OFF; PENDING "
+                    "khi còn REVIEW_TRIGGERED hoặc SOURCE_INCOMPLETE (§6)"),
+        # A PENDING here is NOT a violation of an arithmetic rule, so it is
+        # counted in the unverified column rather than the violation one —
+        # otherwise the FAIL total would grow for work that is merely unfinished.
+        "so_vi_pham": 0,
+        "so_chua_xac_dinh": tier2_check["outstanding"],
+        "ket_qua": tier2_check["result"],
+        "chi_tiet": ", ".join(_t2_out) or "—",
+        "ghi_chu": (f"{tier2_check['total']} mã kỳ {latest}; "
+                    f"chờ tầng 2 {tier2_check['pending_review']}; "
+                    f"không lấy được nguồn {tier2_check['source_incomplete']}"),
+    })
+
+    # ---------- §14 summary table ----------
     by = {(r["symbol"], r["period"]): r for r in rows}
     p5_by = {r["symbol"]: r for r in p5}
     table = []
@@ -1447,7 +1574,7 @@ def main() -> int:
         g = gate_by.get((s, latest), {})
         oo = one_off_by.get((s, latest), {})
         table.append({
-            "Mã": s, "Tên": names.get(s), "Kỳ": latest,
+            "Mã": s, "Tên": names.get(s), "data_period": latest,
             # §10.1 — the report type the source recorded, what the system
             # selected, and the evidence grade, as three separate columns.
             "Loại BC nguồn ghi": sc.get("provider_report_type"),
@@ -1459,36 +1586,55 @@ def main() -> int:
             "P2 trạng thái": r.get("p2_scoring_eligibility"),
             "P3 TTM (%)": f(r.get("p3_investment_yield_net_ttm_pct")),
             "P3 trạng thái": r.get("p3_scoring_eligibility"),
-            # §11.2 of the prior round / §10.4 — the flag appears ONLY at the
-            # symbol-period that triggered it. A column reading "NORMAL" down
-            # every row made an ordinary reading look like a warning.
+            # The prior round blanked this unless HIGH_VARIATION, so a column of
+            # "NORMAL" would not read as a column of warnings. §9.2 now forbids
+            # an unexplained blank, and the two rules point opposite ways here —
+            # so the AUDIT export prints the measured value and the dashboard
+            # keeps the sparse rendering. A measured NORMAL is a result, and
+            # none of §9.2's four stand-in words can say that; blanking it would
+            # make "we measured this and it was ordinary" look identical to
+            # "nothing was measured", which is the distinction §9.2 exists for.
             "Cờ biến động P3": (r.get("investment_income_volatility_flag")
-                                if r.get("investment_income_volatility_flag")
-                                == "HIGH_VARIATION" else None),
+                                or NOT_APPLICABLE),
             "P4 gộp (lần)": f(r.get("p4_gross_coverage_x")),
             "P4 trạng thái": r.get("p4_scoring_eligibility"),
             "P5 (lần)": f(v.get("p5_pb_relative_x"), 3),
             "P5 trạng thái": v.get("p5_scoring_eligibility"),
             "Số quý P/B": v.get("pb_observation_count"),
-            "company_metric_eligibility": ("ELIGIBLE" if g.get("eligible_for_total")
+            # §5 — DATA_READY / BLOCKED, which is a statement about P1-P5 only.
+            # It used to read ELIGIBLE, a word the one-off and FA layers also
+            # use, so one glance could not tell which question had been answered.
+            "company_metric_eligibility": ("DATA_READY"
+                                           if g.get("eligible_for_total")
                                            else "BLOCKED"),
-            "Chỉ tiêu đang chặn": g.get("blocking_criteria"),
-            "Điều kiện T1–T5 kích hoạt": oo.get("triggers_fired"),
+            "Chỉ tiêu đang chặn": g.get("blocking_criteria") or NOT_APPLICABLE,
+            "Điều kiện T1–T5 kích hoạt": oo.get("triggers_fired") or "KHÔNG",
             "one_off_review_status": oo.get("one_off_review_status"),
-            "one_off_penalty": oo.get("one_off_penalty"),
-            # §10.1 asks for these; they are filled by tier 2 and by the score
-            # pass, which this data round does not run — so they are present and
-            # empty rather than absent, and the reason says which.
-            "Khoản one-off xác nhận": None,
-            "Cơ sở trước/sau thuế": None,
-            "R_Q": None, "R_TTM": None, "R sử dụng": None,
-            "Điểm FA thô": None, "Điểm FA cuối": None,
-            "Kỳ FA": latest,
-            "Lý do chưa hoàn thành": (
-                g.get("blocking_reason") if not g.get("eligible_for_total")
-                else ("chờ tier 2 đọc BCTC gốc (§3.2)"
-                      if oo.get("one_off_review_status") == "REVIEW_TRIGGERED"
-                      else None)),
+            # §9.2 items 10-14. A verdict with no one-off has no amount, no
+            # ratio and no deduction to state — but the DEDUCTION is a measured
+            # 0, while the amount and the ratios do not apply. §9.2 forbids one
+            # blank standing for both, so they take different values.
+            "Tài liệu tầng 2 đã đọc": (oo.get("tier2_source_document")
+                                       or NOT_APPLICABLE),
+            "Trang/thuyết minh đã đọc": (oo.get("tier2_source_page_note")
+                                         or NOT_APPLICABLE),
+            "Khoản one-off xác nhận": _oo_amount(oo),
+            "Cơ sở trước/sau thuế": _oo_basis(oo),
+            "R_Q": _oo_ratio(oo, "r_q"),
+            "R_TTM": _oo_ratio(oo, "r_ttm"),
+            "R sử dụng": _oo_ratio(oo, "r_used"),
+            "Điểm trừ one-off": _oo_penalty(oo),
+            # §5 — the process state, separate from the verdict above.
+            "one_off_completion_status": completion_status(
+                oo.get("one_off_review_status") or STATUS_REVIEW_TRIGGERED),
+            # §7 — three fields, not one "Kỳ FA". The data round has a data
+            # period; it does NOT have a completed FA period, because BA has not
+            # locked the P1-P5 thresholds and nothing has been scored.
+            "fa_completion_status": NOT_SCORED_BY_DESIGN,
+            "fa_completed_period": NOT_SCORED_BY_DESIGN,
+            "Điểm FA thô": NOT_SCORED_BY_DESIGN,
+            "Điểm FA cuối": NOT_SCORED_BY_DESIGN,
+            "Lý do chưa hoàn thành": _incomplete_reason(g, oo),
         })
 
     # ---------- distributions (§14, items 1-8) ----------
@@ -1601,6 +1747,39 @@ def main() -> int:
             ["Điểm trừ one-off"], "REVIEW_TRIGGERED",
             "fa_vnstock_statements (LNTT, thu nhập khác, DT tài chính)",
             "prompt mở BCTC gốc + thuyết minh trên website DN; chưa trừ điểm"))
+    # §9.3 — a symbol whose source could not be obtained is an OPEN issue and
+    # must appear here. It is deliberately a separate row from REVIEW_TRIGGERED:
+    # "nobody has read it yet" is closed by reading, while "we tried and could
+    # not get the document" is closed by someone supplying it, and one row for
+    # both would hide which action is needed.
+    incomplete = [r for r in one_off_rows
+                  if r["one_off_review_status"] == STATUS_SOURCE_INCOMPLETE]
+    if incomplete:
+        issues.append(_issue(
+            "Đã chạy tầng 2 nhưng KHÔNG lấy được BCTC gốc — cần BA cung cấp "
+            "bản mềm (§3.2)",
+            [r["symbol"] for r in incomplete], [r["period"] for r in incomplete],
+            ["Điểm trừ one-off"], STATUS_SOURCE_INCOMPLETE,
+            "website doanh nghiệp (12 tên miền), HNX, SSC, Vietstock, CafeF, "
+            "Simplize, Fireant, VNDirect, kho static2.vietstock.vn, tìm kiếm web",
+            "BA gửi BCTC quý II/2026 (kèm bản đính chính 03/08/2026); xem "
+            "rationale trong one_off_tier2_results.json"))
+    # §9.3 — "giữ lại lịch sử vấn đề và thêm kết quả đóng, không xóa dấu vết".
+    # These five DID trigger and WERE read; correcting the T4 input means tier 1
+    # no longer raises them, so without this row the workbook would show no
+    # trace that the round's largest piece of work ever happened.
+    closed = [r for r in one_off_rows
+              if r.get("tier1_status_before_tier2")
+              and r["one_off_review_status"] != STATUS_SOURCE_INCOMPLETE]
+    if closed:
+        issues.append(_issue(
+            "ĐÃ ĐÓNG — T4 kích hoạt theo ánh xạ cũ, đã đọc BCTC gốc và xác nhận "
+            "bình thường (§3.5)",
+            [r["symbol"] for r in closed], [r["period"] for r in closed],
+            ["Điểm trừ one-off"], "CONFIRMED_NORMAL · điểm trừ 0",
+            "BCTC gốc + thuyết minh của từng doanh nghiệp (xem cột 'Tài liệu "
+            "tầng 2 đã đọc')",
+            "không còn hành động; giữ dòng này làm dấu vết theo §9.3"))
     unlabelled = [v for v in scope_res.values()
                   if v["scope_status"] in ("SCOPE_AS_PROVIDED_CONTINUOUS",
                                            "SCOPE_AS_PROVIDED_BASELINE")]
@@ -1668,9 +1847,27 @@ def main() -> int:
          "gia_tri": "KHÔNG. classification_usage_status quyết định (ACTIVE/BLOCKED); "
                     "mã ICB rõ ràng là ACTIVE dù chưa BA xác minh thủ công"},
         {"muc": "— nghiệm thu —", "gia_tri": ""},
-        {"muc": "kiểm tra tự động", "gia_tri":
+        # §9.1 — SEVEN separate numbers, because one "38 PASS" line described
+        # the arithmetic and was then read as describing the whole process. The
+        # arithmetic checks can all pass while not one filing has been read.
+        {"muc": "kiểm tra số học", "gia_tri":
             f"PASS {len(checks) - len(failed) - len(pending_checks)} · "
             f"PENDING {len(pending_checks)} · FAIL {len(failed)} / {len(checks)}"},
+        {"muc": "số mã P1–P5 DATA_READY", "gia_tri":
+            f"{sum(1 for t in table if t['company_metric_eligibility'] == 'DATA_READY')}"
+            f"/{len(table)}"},
+        {"muc": "số mã one-off hoàn thành", "gia_tri":
+            f"{sum(1 for t in table if t['one_off_completion_status'] == COMPLETION_COMPLETED)}"
+            f"/{len(table)}"},
+        {"muc": "số mã one-off chờ tầng 2", "gia_tri":
+            f"{tier2_check['pending_review']} chờ đọc · "
+            f"{tier2_check['source_incomplete']} không lấy được nguồn"},
+        {"muc": CHECK_ONE_OFF_TIER2_CURRENT, "gia_tri":
+            f"{tier2_check['result']} — {tier2_check['outstanding']} mã chưa hoàn tất"},
+        {"muc": "số mã FA đã chấm chính thức", "gia_tri":
+            f"0/{len(table)} — {NOT_SCORED_BY_DESIGN} (BA chưa khóa thang điểm P1–P5)"},
+        {"muc": "trạng thái vòng chấm điểm", "gia_tri":
+            f"{NOT_SCORED_BY_DESIGN} — vòng này chỉ là vòng DỮ LIỆU (§2.1)"},
         {"muc": "kiểm tra PENDING", "gia_tri":
             ", ".join(c["check"] for c in pending_checks) or "—"},
         {"muc": "kiểm tra FAIL", "gia_tri":
@@ -1683,8 +1880,34 @@ def main() -> int:
             "CHƯA HOÀN TẤT — chưa áp migration 072/073" if universe
             and universe[0]["classification_read_from"].startswith("FALLBACK")
             else ("CHƯA HOÀN TẤT — còn kiểm tra FAIL" if failed
-                  else "CHƯA HOÀN TẤT — còn kiểm tra PENDING" if pending_checks
-                  else "HOÀN TẤT")}]
+                  # §6.2 — the tier-2 check is named separately rather than
+                  # folded into "còn kiểm tra PENDING", because it is the one
+                  # that decides whether the ROUND is done; the others are
+                  # arithmetic. §12 item 5 and item 10 both hang off it.
+                  else (f"CHƯA HOÀN TẤT — {CHECK_ONE_OFF_TIER2_CURRENT} = PENDING, "
+                        f"{tier2_check['outstanding']} mã chưa hoàn tất one-off "
+                        f"(§6.2)" if tier2_check["result"] != "PASS"
+                        else "CHƯA HOÀN TẤT — còn kiểm tra PENDING" if pending_checks
+                        else "HOÀN TẤT"))},
+        # §9.5 — the workbook holds no Excel formulas; the numbers are computed
+        # in code and exported. BA accepts that ONLY if it is declared, so that
+        # nobody edits an input cell expecting a score to follow.
+        {"muc": "— bản xuất (§9.5) —", "gia_tri": ""},
+        {"muc": "Workbook type", "gia_tri": "STATIC_AUDIT_EXPORT"},
+        {"muc": "ý nghĩa", "gia_tri":
+            "Không chứa công thức Excel. Công thức khóa trong mã nguồn; sửa số "
+            "trong file này KHÔNG làm điểm tự cập nhật. Cùng dữ liệu + cùng "
+            "phiên bản mã nguồn tái tạo cùng kết quả."},
+        {"muc": "truy vết", "gia_tri":
+            "METRIC_RESULT = kết quả chỉ tiêu · METRIC_SOURCE_LINEAGE = các "
+            "dòng nguồn tạo ra kết quả (không có sheet TRUY_VET)"},
+        # §11 — the 072 columns answer the question BA withdrew. They stay for
+        # database compatibility and must never be read as business state.
+        {"muc": "— trường cũ (§11) —", "gia_tri": ""},
+        {"muc": "selected_report_scope, scope_review_status, "
+                "scope_selection_reason (migration 072)",
+         "gia_tri": "LEGACY_DO_NOT_USE_FOR_SCORING — giữ để tương thích CSDL. "
+                    "Trường nghiệp vụ chính thức là scope_status (§2.4)."}]
 
     from export_fa_scanner import write_xlsx
     out = Path(args.out)

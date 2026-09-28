@@ -89,6 +89,55 @@ STATUS_CONFIRMED_NORMAL = "CONFIRMED_NORMAL"    # filing read, ordinary; penalty
 STATUS_CONFIRMED_ONE_OFF = "CONFIRMED_ONE_OFF"  # filing read, amount known
 STATUS_SOURCE_INCOMPLETE = "SOURCE_INCOMPLETE"  # issuer has not published enough
 
+#: §5 — the one-off PROCESS's own state, which is a different question from the
+#: review verdict. `one_off_review_status` says what the filing showed;
+#: `one_off_completion_status` says whether the step is finished. BA separates
+#: them because a single "đủ điều kiện" column is what let 4 of 9 finished rows
+#: read as if the whole round were done.
+COMPLETION_COMPLETED = "COMPLETED"
+COMPLETION_PENDING = "PENDING_REVIEW"
+COMPLETION_SOURCE_INCOMPLETE = "SOURCE_INCOMPLETE"
+
+#: §6 — the acceptance check. PASS only when every current symbol-period has a
+#: verdict; a symbol still waiting on a filing, or one whose filing could not be
+#: obtained, both leave the round PENDING. They are NOT merged: "nobody has read
+#: it yet" and "we tried and could not get it" call for different actions.
+CHECK_ONE_OFF_TIER2_CURRENT = "CHECK_ONE_OFF_TIER2_CURRENT"
+
+
+def completion_status(review_status: str) -> str:
+    """§5 — map a review verdict onto the process state it implies."""
+    if review_status in (STATUS_AUTO_NORMAL, STATUS_CONFIRMED_NORMAL,
+                         STATUS_CONFIRMED_ONE_OFF):
+        return COMPLETION_COMPLETED
+    if review_status == STATUS_SOURCE_INCOMPLETE:
+        return COMPLETION_SOURCE_INCOMPLETE
+    return COMPLETION_PENDING
+
+
+def check_tier2_current(review_statuses) -> dict:
+    """§6 — PASS / PENDING over the CURRENT period's symbols.
+
+    Returns the count of unfinished symbols alongside the verdict, because §6.1
+    asks for it by name: "38 PASS" on the arithmetic checks says nothing about
+    whether any filing was read, and the number outstanding is what tells the
+    two apart at a glance.
+    """
+    outstanding = [r for r in review_statuses
+                   if completion_status(r) != COMPLETION_COMPLETED]
+    return {
+        "check": CHECK_ONE_OFF_TIER2_CURRENT,
+        "result": "PASS" if not outstanding else "PENDING",
+        "outstanding": len(outstanding),
+        "total": len(review_statuses),
+        "pending_review": sum(1 for r in review_statuses
+                              if completion_status(r) == COMPLETION_PENDING),
+        "source_incomplete": sum(1 for r in review_statuses
+                                 if completion_status(r)
+                                 == COMPLETION_SOURCE_INCOMPLETE),
+    }
+
+
 #: §6.2 — which statuses let a new quarter's FA score complete. SOURCE_INCOMPLETE
 #: deliberately does NOT: the previous completed score is held instead, because a
 #: score locked before the filing could be read is a score nobody can defend.
