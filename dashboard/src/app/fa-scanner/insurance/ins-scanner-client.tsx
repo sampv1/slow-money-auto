@@ -19,6 +19,7 @@ import {
 } from "@/lib/fa-insurance";
 import { formatDateDmy, formatNumber, formatPercent } from "@/lib/format";
 import { FaSubnav } from "../fa-subnav";
+import { InsTabs } from "./ins-tabs";
 import { TABLE, THEAD_STICKY, TH, TH_NUM, TR, TD_NUM, TD_SYMBOL } from "@/lib/table";
 import { PinButton } from "@/components/pin-button";
 import { usePinnedSymbols, floatPinned } from "@/lib/pinned-symbols";
@@ -179,6 +180,7 @@ export function InsuranceScannerClient({
     <main className="px-4 py-6 max-w-[1600px] mx-auto">
       <h1 className="text-h1 mb-1">{title}</h1>
       <FaSubnav locale={locale} />
+      <InsTabs locale={locale} />
 
       {/* §1 and §20 — the page says what 50 points is before showing any of it. */}
       <p className="text-body-lg text-fg-muted max-w-[68ch] mb-4">

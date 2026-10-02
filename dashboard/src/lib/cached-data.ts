@@ -5,6 +5,7 @@ import { CHART_ONLY_SYMBOLS } from "./chart-only-symbols";
 import type { FaScore, FaQuarterlyRaw } from "./fa";
 import type { ReScore } from "./fa-re";
 import type { InsuranceScore, InsuranceWatchRow } from "./fa-insurance";
+import type { HoldingDeepRow } from "./fa-holding";
 import { buildQuarterlyFacts, faNpat, yearAgoPeriod } from "./fa";
 import type { DailyLog, Recommendation } from "./types";
 import type { IcbLabel, SymbolMeta } from "./symbol-meta";
@@ -804,6 +805,70 @@ export const getRealEstateSymbols = unstable_cache(
  * scored.
  */
 export const INS_SCORE_VERSION = "INS_TOAN_NGANH_50_V1";
+
+/**
+ * The Holding deep layer (/38), pinned to the scoring version the app reads.
+ *
+ * Same reason as every other version pin here: the table keys on the version so
+ * a rescore inserts BESIDE the old rows, and an unpinned read would return each
+ * quarter once per version ever scored.
+ *
+ * A missing table is the one legitimate empty — the code is PGRST205, not
+ * Postgres's 42P01, because PostgREST answers from its schema cache first. We
+ * return [] for that and rethrow anything else, so a real outage still surfaces
+ * instead of being cached as "no data" for an hour.
+ */
+export const HOLDING_SCORING_VERSION = "HOLDING_SCORING_1.0";
+
+function isMissingTable(e: unknown): boolean {
+  const code = (e as { code?: string })?.code;
+  const msg = String((e as { message?: string })?.message ?? e);
+  return code === "PGRST205" || msg.includes("schema cache");
+}
+
+export const getHoldingDeepQuarters = unstable_cache(
+  async (): Promise<string[]> => {
+    try {
+      const rows = await fetchAllPaged<{ period: string }>((from, to, withCount) =>
+        supabase
+          .from("fa_insurance_deep_scores")
+          .select("period", withCount ? { count: "exact" } : undefined)
+          .eq("scoring_version", HOLDING_SCORING_VERSION)
+          .order("period", { ascending: false })
+          .range(from, to),
+      );
+      return [...new Set(rows.map((r) => r.period))].sort().reverse();
+    } catch (e) {
+      if (isMissingTable(e)) return [];
+      throw e;
+    }
+  },
+  ["fa-holding-deep-quarters"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
+/** Every stored metric row for one quarter, at the pinned scoring version. */
+export const getHoldingDeepRows = unstable_cache(
+  async (period: string): Promise<HoldingDeepRow[]> => {
+    try {
+      return await fetchAllPaged<HoldingDeepRow>((from, to, withCount) =>
+        supabase
+          .from("fa_insurance_deep_scores")
+          .select("*", withCount ? { count: "exact" } : undefined)
+          .eq("scoring_version", HOLDING_SCORING_VERSION)
+          .eq("period", period)
+          .order("symbol", { ascending: true })
+          .order("metric_code", { ascending: true })
+          .range(from, to),
+      );
+    } catch (e) {
+      if (isMissingTable(e)) return [];
+      throw e;
+    }
+  },
+  ["fa-holding-deep-rows"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
 
 export const getInsuranceQuarters = unstable_cache(
   async (): Promise<string[]> => {

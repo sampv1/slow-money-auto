@@ -395,6 +395,61 @@ export const translations = {
     insGateGrowthGap2Q: "revenue outgrew equity by more than {v} pp for two consecutive quarters",
     faSubnavInsurance: "Insurance",
     faSubnavHintInsurance: "5 common criteria · 50 points · insurers and reinsurers",
+    // --- Insurance: Chuyên sâu (Holding/Hỗn hợp, BVH & PVI) ---------------
+    insTabIndustry: "Industry-wide /50",
+    insTabDeep: "Deep /38",
+    insTabIndustryHint: "5 common criteria, one yardstick across all insurers",
+    insTabDeepHint: "4 company-specific drivers, scored against each company's own history",
+    deepTitle: "Insurance — deep (Holding/Mixed)",
+    deepIntro:
+      "Four drivers specific to each company, scored against that company's OWN history. BVH and PVI run different engines, so the two totals are not comparable with each other.",
+    deepNotComparable:
+      "The deep score shows where a company's own economic drivers sit today relative to its own history. BVH and PVI use different deep engines; the /38 score must not be used on its own to compare the two companies.",
+    deepColMetric: "Driver",
+    deepColValue: "Current value",
+    deepColPercentile: "Historical percentile",
+    deepColScore: "Score",
+    deepColWeight: "Weight",
+    deepTotal: "Deep total",
+    deepEngine: "Engine",
+    deepEngineLife: "Life-led holding",
+    deepEngineNonlife: "Non-life / reinsurance holding",
+    deepHistory: "History",
+    deepHistoryOf: "{n} quarters, {first} to {last}",
+    deepValidFrom: "Valid from {p}",
+    deepQuarter: "Quarter",
+    deepNoData: "No deep score stored for this quarter yet.",
+    deepNoTable:
+      "The deep-score table has not been created yet — apply supabase/074 and run export_insurance_deep.py --write.",
+    // Status wording. A blocked metric is ABSENCE, never a zero.
+    deepStatusPending: "Not scored — pending data review",
+    deepStatusPendingTip:
+      "The provider's reserve field failed the data-mapping guard for this quarter, so no score is published. This is not a zero: a zero would claim the driver was measured and came out worst.",
+    deepStatusInsufficient: "Not scored — too little own history",
+    deepStatusInsufficientTip:
+      "Fewer than 12 usable quarters of this driver's own history, so a percentile would not mean anything yet.",
+    deepStatusInvalid: "Not scored — current quarter incomplete",
+    deepStatusInvalidTip:
+      "This quarter's value could not be formed from four consecutive quarters of filings.",
+    deepTotalWithheld: "Withheld",
+    deepTotalWithheldTip:
+      "At least one driver is unscored, so the total is withheld rather than summed from part of the rubric.",
+    deepAlert: "Data-mapping alert",
+    deepPercentileTip:
+      "Rank of the current value inside this company's own history: (average rank − 1) / (N − 1). 0% is the company's own historical low, 100% its own high. Neither is an error.",
+    deepUnitPpt: "percentage points",
+    deepMetricB1Tip:
+      "Financial activity result over the last four quarters, divided by the average investable assets at the two ends of that window.",
+    deepMetricB2Tip:
+      "This quarter's Financial Efficiency minus the same figure four quarters ago, in percentage points. Not a growth rate.",
+    deepMetricB3Tip:
+      "Investable assets divided by the insurance reserve line, as filed. A coverage ratio, not a regulatory solvency measure.",
+    deepMetricB4Tip:
+      "Equity divided by the insurance reserve line, as filed. A capital buffer level, not a regulatory solvency or capital-adequacy ratio.",
+    deepMetricP1Tip:
+      "Gross insurance operating profit over the last four quarters, divided by net insurance revenue over the same four quarters.",
+    deepMetricP2Tip:
+      "This quarter's Insurance Margin minus the same figure four quarters ago, in percentage points. Not a growth rate.",
     insTitle: "Insurance — industry-wide",
     insIntro:
       "Five criteria that apply to every insurance model, worth 50 points. This is the COMMON half of the rubric: the per-type deep 50 points are not built yet, so this is not a company's final FA score.",
@@ -1971,6 +2026,60 @@ export const translations = {
     insGateGrowthGap2Q: "doanh thu tăng nhanh hơn vốn trên {v} đpt trong hai quý liên tiếp",
     faSubnavInsurance: "Bảo hiểm",
     faSubnavHintInsurance: "5 tiêu chí chung · 50 điểm · doanh nghiệp bảo hiểm và tái bảo hiểm",
+    // --- Bảo hiểm: Chuyên sâu (Holding/Hỗn hợp, BVH & PVI) ----------------
+    insTabIndustry: "Toàn ngành /50",
+    insTabDeep: "Chuyên sâu /38",
+    insTabIndustryHint: "5 tiêu chí chung, một thước đo cho mọi doanh nghiệp bảo hiểm",
+    insTabDeepHint: "4 chỉ tiêu riêng, chấm theo lịch sử của chính doanh nghiệp",
+    deepTitle: "Bảo hiểm — Chuyên sâu (Holding/Hỗn hợp)",
+    deepIntro:
+      "Bốn chỉ tiêu đặc thù của từng doanh nghiệp, chấm theo lịch sử của CHÍNH doanh nghiệp đó. BVH và PVI dùng hai engine khác nhau nên hai tổng điểm không so sánh được với nhau.",
+    deepNotComparable:
+      "Điểm chuyên sâu phản ánh vị trí hiện tại của các động lực kinh tế đặc thù so với lịch sử của chính doanh nghiệp. BVH và PVI sử dụng các engine chuyên sâu khác nhau; không sử dụng riêng điểm /38 để so sánh trực tiếp hai doanh nghiệp.",
+    deepColMetric: "Chỉ tiêu",
+    deepColValue: "Giá trị hiện tại",
+    deepColPercentile: "Phân vị lịch sử",
+    deepColScore: "Điểm",
+    deepColWeight: "Trọng số",
+    deepTotal: "Tổng điểm chuyên sâu",
+    deepEngine: "Engine",
+    deepEngineLife: "Holding thiên nhân thọ",
+    deepEngineNonlife: "Holding phi nhân thọ / tái bảo hiểm",
+    deepHistory: "Lịch sử",
+    deepHistoryOf: "{n} quý, {first} đến {last}",
+    deepValidFrom: "Hiệu lực từ {p}",
+    deepQuarter: "Quý",
+    deepNoData: "Chưa có điểm chuyên sâu được lưu cho quý này.",
+    deepNoTable:
+      "Bảng điểm chuyên sâu chưa được tạo — hãy chạy supabase/074 rồi export_insurance_deep.py --write.",
+    deepStatusPending: "Chưa chấm — chờ rà soát dữ liệu",
+    deepStatusPendingTip:
+      "Trường dự phòng của nhà cung cấp không qua được guard ánh xạ dữ liệu ở quý này nên không công bố điểm. Đây không phải điểm 0: điểm 0 sẽ khẳng định chỉ tiêu đã được đo và ở mức xấu nhất.",
+    deepStatusInsufficient: "Chưa chấm — lịch sử riêng chưa đủ",
+    deepStatusInsufficientTip:
+      "Chỉ tiêu này có chưa đến 12 quý lịch sử dùng được, nên một phân vị chưa có ý nghĩa.",
+    deepStatusInvalid: "Chưa chấm — quý hiện tại chưa đủ dữ liệu",
+    deepStatusInvalidTip:
+      "Không dựng được giá trị quý này từ bốn quý báo cáo liên tiếp.",
+    deepTotalWithheld: "Chưa công bố",
+    deepTotalWithheldTip:
+      "Có ít nhất một chỉ tiêu chưa chấm được, nên tổng điểm được giữ lại thay vì cộng từ một phần bộ tiêu chí.",
+    deepAlert: "Cảnh báo ánh xạ dữ liệu",
+    deepPercentileTip:
+      "Vị trí của giá trị hiện tại trong lịch sử của chính doanh nghiệp: (hạng trung bình − 1) / (N − 1). 0% là đáy lịch sử của chính doanh nghiệp, 100% là đỉnh. Cả hai đều không phải lỗi.",
+    deepUnitPpt: "điểm phần trăm",
+    deepMetricB1Tip:
+      "Kết quả hoạt động tài chính bốn quý gần nhất, chia cho bình quân tài sản đầu tư ở hai đầu cửa sổ đó.",
+    deepMetricB2Tip:
+      "Hiệu quả tài chính quý này trừ đi chính nó bốn quý trước, đơn vị điểm phần trăm. Không phải tốc độ tăng trưởng.",
+    deepMetricB3Tip:
+      "Tài sản đầu tư chia cho dòng dự phòng nghiệp vụ bảo hiểm theo báo cáo. Là tỷ lệ bao phủ đầu tư, không phải chỉ tiêu an toàn vốn theo quy định.",
+    deepMetricB4Tip:
+      "Vốn chủ sở hữu chia cho dòng dự phòng nghiệp vụ bảo hiểm theo báo cáo. Là mức đệm vốn, không phải Solvency Ratio hay hệ số an toàn vốn theo quy định.",
+    deepMetricP1Tip:
+      "Lợi nhuận gộp hoạt động bảo hiểm bốn quý gần nhất, chia cho doanh thu thuần hoạt động bảo hiểm cùng bốn quý đó.",
+    deepMetricP2Tip:
+      "Biên lợi nhuận bảo hiểm quý này trừ đi chính nó bốn quý trước, đơn vị điểm phần trăm. Không phải tốc độ tăng trưởng.",
     insTitle: "Bảo hiểm — Toàn ngành",
     insIntro:
       "Năm tiêu chí áp dụng được cho mọi mô hình bảo hiểm, tổng 50 điểm. Đây là phần CHUNG của bộ tiêu chí: 50 điểm chuyên sâu theo từng loại hình chưa được xây, nên đây chưa phải điểm FA cuối cùng của doanh nghiệp.",
