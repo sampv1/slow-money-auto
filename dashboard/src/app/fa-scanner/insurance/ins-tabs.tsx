@@ -12,10 +12,12 @@ import { type Locale, t } from "@/lib/i18n";
  * type — it is the view across all of them — so it leads rather than sits among
  * its own members.
  *
- * Active is a filled navy chip with white semibold text; inactive is white with
- * a hairline border (§3). That is the opposite weighting from `FaSubnav` above
- * it, which uses an inked underline — deliberately, so a page never shows two
- * controls claiming to be "where you are" in the same treatment.
+ * Active is a filled chip in the house ink; inactive is the panel surface with
+ * a hairline border. That is the opposite weighting from `FaSubnav` above it,
+ * which uses an inked underline — deliberately, so a page never shows two
+ * controls claiming to be "where you are" in the same treatment. The colours
+ * are the app's own tokens: BA's prototype asks for a navy-on-white palette,
+ * but one industry tab must not introduce a second visual language.
  *
  * The strip scrolls horizontally rather than wrapping on a phone (§3): a
  * wrapped tab row changes the page's vertical rhythm at exactly the width
@@ -43,9 +45,9 @@ export function InsTabs({ locale }: { locale: Locale }) {
               key={tab.href}
               href={tab.href}
               aria-current={active ? "page" : undefined}
-              className={`rounded-md border px-5 py-2.5 text-body-lg whitespace-nowrap transition-colors duration-100 ${
+              className={`border px-4 py-1.5 text-body-lg whitespace-nowrap transition-colors duration-100 ${
                 active
-                  ? "border-accent bg-accent text-white font-semibold"
+                  ? "border-fg bg-fg text-canvas font-semibold"
                   : "border-line bg-panel text-fg-muted hover:border-fg-muted hover:bg-panel-2 hover:text-fg"
               }`}
             >

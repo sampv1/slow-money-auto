@@ -1,4 +1,4 @@
-import { getLocale, t } from "@/lib/i18n";
+import { getLocale } from "@/lib/i18n";
 import { DataError } from "@/components/data-error";
 import { InsPageClient } from "./ins-page-client";
 import { loadInsTab } from "./ins-load";
@@ -30,8 +30,7 @@ export default async function FaScannerInsurancePage({
 
   return (
       <InsPageClient
-        locale={locale} basePath="/fa-scanner/insurance"
-        title={t(locale, "insTitle")} quarters={d.quarters} selected={d.selected}
+        locale={locale} basePath="/fa-scanner/insurance" quarters={d.quarters} selected={d.selected}
         minScore={d.minScore} ticker={d.ticker} rows={d.rows}
       />
   );

@@ -4,7 +4,6 @@ import { type Locale, t, type TranslationKey } from "@/lib/i18n";
 import type { InsRow, InsuranceTypeCode } from "@/lib/fa-insurance-tab";
 import { DEEP_METRICS } from "@/lib/fa-insurance-tab";
 import { applyInsFilters } from "@/lib/ins-rows";
-import { FaSubnav } from "../fa-subnav";
 import { InsTabs } from "./ins-tabs";
 import { InsFilters, InsInfoStrip } from "./ins-chrome";
 import { InsTable, type DeepColumn } from "./ins-table";
@@ -18,12 +17,11 @@ import { InsTable, type DeepColumn } from "./ins-table";
  * deep column set and whether the tab can form a Total — both passed in.
  */
 export function InsPageClient({
-  locale, basePath, title, typeCode, quarters, selected, minScore, ticker,
+  locale, basePath, typeCode, quarters, selected, minScore, ticker,
   rows, pendingNote,
 }: {
   locale: Locale;
   basePath: string;
-  title: string;
   /** undefined on Toàn ngành, which shows every type. */
   typeCode?: InsuranceTypeCode;
   quarters: string[];
@@ -67,10 +65,10 @@ export function InsPageClient({
     : undefined;
 
   return (
-    <main className="px-4 py-6 max-w-[1600px] mx-auto">
-      <h1 className="text-h1 mb-1">{title}</h1>
-      <FaSubnav locale={locale} />
-      <p className="text-body-lg text-fg-muted mb-4">{t(locale, "insLede")}</p>
+    // NO <h1> and NO <FaSubnav> here: `fa-scanner/layout.tsx` already renders
+    // both, and rendering them again is what printed the industry strip twice.
+    <div>
+      <p className="text-body-lg text-fg-muted mb-3">{t(locale, "insLede")}</p>
       <InsTabs locale={locale} />
 
       <InsFilters
@@ -89,6 +87,6 @@ export function InsPageClient({
         locale={locale} rows={shown} deepColumns={deepColumns}
         deepGroupLabel={groupLabel} showTotalBlock={showTotalBlock}
       />
-    </main>
+    </div>
   );
 }

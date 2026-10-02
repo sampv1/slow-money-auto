@@ -25,8 +25,8 @@ function strip(text: string) {
 
 export function InsInfoStrip({ locale, deep }: { locale: Locale; deep: boolean }) {
   return (
-    <div className="flex items-start gap-2 border border-accent-soft bg-accent-soft/60 px-3 py-2 mb-4">
-      <span aria-hidden className="text-accent font-bold leading-5">i</span>
+    <div className="flex items-start gap-2 border border-line bg-panel-2 px-3 py-2 mb-3">
+      <span aria-hidden className="label leading-5">i</span>
       <p className="text-body text-fg-muted leading-5">
         {strip(t(locale, deep ? "insStripDeep" : "insStripAll"))}
       </p>

@@ -6,6 +6,9 @@ import {
   type InsRow, COMMON_METRICS, INSURANCE_TYPE_LABEL,
   deltaArrow, deltaTone, defaultSortKey, sortValue,
 } from "@/lib/fa-insurance-tab";
+import {
+  TABLE, TABLE_SCROLL, THEAD_STICKY, TH, TH_NUM, TR, TD, TD_NUM, TD_SYMBOL,
+} from "@/lib/table";
 import { formatDateDmy, formatNumber, formatPercent } from "@/lib/format";
 
 /**
@@ -18,38 +21,32 @@ import { formatDateDmy, formatNumber, formatPercent } from "@/lib/format";
  * frontend may not hard-code its metric names or weights and instead renders
  * whatever the active version sends.
  *
+ * IT WEARS THE HOUSE TABLE TREATMENT, not the mockup's. BA's prototype asks for
+ * a white sheet, 58-68px rows and 16-18px tickers; this app is warm paper with
+ * 26px rows and 12px figures, and five other scanners already use it. Inventing
+ * a second visual language for one industry would make the Insurance tab the
+ * odd one out of the thing it sits inside — so the classes come from
+ * `lib/table.ts` and the only thing taken from the mockup is the LAYOUT: which
+ * columns exist, their order, and the two grouped header bands.
+ *
  * A SCORE AND AN ABSENCE ARE DIFFERENT CELLS. §19 forbids rendering
  * `NOT_SCORED` as 0, because 0 is a score a weak company legitimately earns.
- * Every numeric cell here goes through `cell()`, which prints a figure when
- * there is one and a short reason when there is not — so the two can never
- * collapse into each other by accident.
- *
- * The left block (date · ticker · total · FA · valuation · ΔFA) is sticky on
- * wide screens so the deep metrics can scroll under it (§8.1, §17); on a phone
- * nothing is pinned, because a frozen column on a 390px screen leaves no room
- * for the column it is meant to help you read.
+ * Every numeric cell goes through `cell()`, which prints a figure when there is
+ * one and a short reason when there is not, so the two cannot collapse.
  */
 
 export type DeepColumn = { code: string; label: string; max: number };
 
-const ROW_H = "h-[62px]";            // §12.2 — 58-68px
-const TH = "px-3 py-2 text-left align-bottom font-semibold text-accent " +
-  "text-[12px] uppercase tracking-wide leading-tight";
-const TH_NUM = `${TH} text-right`;
-const TD = "px-3 align-middle text-body-lg";
-const TD_NUM = `${TD} text-right tabular-nums`;
-
 function SortBtn({
-  label, active, asc, onClick, numeric,
-}: { label: string; active: boolean; asc: boolean; onClick: () => void; numeric?: boolean }) {
+  label, active, asc, numeric,
+}: { label: string; active: boolean; asc: boolean; numeric?: boolean }) {
   return (
-    <button type="button" onClick={onClick}
-      className={`flex items-center gap-1 w-full ${numeric ? "justify-end" : ""} hover:text-fg`}>
+    <span className={`flex items-center gap-1 ${numeric ? "justify-end" : ""}`}>
       <span>{label}</span>
       <span aria-hidden className={active ? "text-fg" : "text-fg-faint"}>
         {active ? (asc ? "▲" : "▼") : "⌃"}
       </span>
-    </button>
+    </span>
   );
 }
 
@@ -90,36 +87,34 @@ export function InsTable({
   };
 
   /** A figure, or the reason there is none — never a 0 standing in for absence. */
-  const cell = (score: number | null, reason?: string | null, digits = 0) =>
+  const cell = (score: number | null, reason?: string | null) =>
     score === null ? (
-      <span className="text-body text-amber-700" title={t(locale, "insNotScoredTip")}>
+      <span className="text-fg-muted" title={t(locale, "insNotScoredTip")}>
         {reason || t(locale, "insNotScored")}
       </span>
     ) : (
-      <span>{formatNumber(score, digits)}</span>
+      formatNumber(score, 0)
     );
 
   const deltaCell = (r: InsRow) => {
     if (r.delta_fa_status === "ZERO_BASE") {
-      return <span className="text-body text-fg-muted">
+      return <span className="text-fg-muted">
         {t(locale, "insDeltaZeroBase").replace("{n}", formatNumber(r.fa_score ?? 0, 0))}
       </span>;
     }
     if (r.delta_fa_pct === null) {
-      return <span className="text-body text-fg-muted">{t(locale, "insNoDelta")}</span>;
+      return <span className="text-fg-muted">{t(locale, "insNoDelta")}</span>;
     }
     const tone = deltaTone(r.delta_fa_pct);
     return (
-      <>
-        <span className={`block font-semibold ${tone}`}>
-          {deltaArrow(r.delta_fa_pct)} {formatPercent(Math.abs(r.delta_fa_pct), 1)}
-        </span>
+      <span className={tone}>
+        {deltaArrow(r.delta_fa_pct)} {formatPercent(Math.abs(r.delta_fa_pct), 1)}
         {r.delta_fa_points !== null && (
-          <span className={`block text-body ${tone}`}>
-            {r.delta_fa_points > 0 ? "+" : ""}{formatNumber(r.delta_fa_points, 0)} {t(locale, "insPoints")}
+          <span className="text-fg-muted">
+            {" "}({r.delta_fa_points > 0 ? "+" : ""}{formatNumber(r.delta_fa_points, 0)})
           </span>
         )}
-      </>
+      </span>
     );
   };
 
@@ -127,60 +122,69 @@ export function InsTable({
     return <p className="text-body-lg text-fg-muted py-6">{t(locale, "insNoRows")}</p>;
   }
 
-  const stickyL = "md:sticky md:z-10 bg-panel";
-
   return (
-    <div className="overflow-x-auto border border-line">
-      <table className="min-w-full w-max border-collapse">
-        <thead className="bg-accent-soft border-b-2 border-line-strong">
+    <div className={`bg-panel border border-line ${TABLE_SCROLL}`}>
+      <table className={TABLE}>
+        <thead className={THEAD_STICKY}>
           <tr>
-            <th className={TH} rowSpan={2}>{t(locale, "insColReportDate")}</th>
-            <th className={TH} rowSpan={2}>
-              <SortBtn label={t(locale, "insColTickerType")} active={sortKey === "ticker"}
-                       asc={asc} onClick={() => onSort("ticker")} />
+            <th className={TH} rowSpan={2}
+                onClick={() => onSort("report_date")}>
+              <SortBtn label={t(locale, "insColReportDate")}
+                       active={sortKey === "report_date"} asc={asc} />
             </th>
-            {showTotalBlock && (
+            <th className={TH} rowSpan={2} onClick={() => onSort("ticker")}>
+              <SortBtn label={t(locale, "insColTickerType")}
+                       active={sortKey === "ticker"} asc={asc} />
+            </th>
+            {showTotalBlock ? (
               <>
-                <th className={TH_NUM} rowSpan={2}>
-                  <SortBtn numeric label={t(locale, "insColTotal")} active={sortKey === "total"}
-                           asc={asc} onClick={() => onSort("total")} />
+                <th className={TH_NUM} rowSpan={2} onClick={() => onSort("total")}>
+                  <SortBtn numeric label={t(locale, "insColTotal")}
+                           active={sortKey === "total"} asc={asc} />
                 </th>
-                <th className={TH_NUM} rowSpan={2}>
-                  <SortBtn numeric label={t(locale, "insColValuation")} active={sortKey === "valuation"}
-                           asc={asc} onClick={() => onSort("valuation")} />
+                <th className={TH_NUM} rowSpan={2} onClick={() => onSort("fa")}>
+                  <SortBtn numeric label={t(locale, "insColFa")}
+                           active={sortKey === "fa"} asc={asc} />
+                </th>
+                <th className={TH_NUM} rowSpan={2} onClick={() => onSort("valuation")}>
+                  <SortBtn numeric label={t(locale, "insColValuation")}
+                           active={sortKey === "valuation"} asc={asc} />
                 </th>
               </>
-            )}
-            {!showTotalBlock && (
-              <th className={TH_NUM} rowSpan={2}>
-                <SortBtn numeric label={t(locale, "insColCommon")} active={sortKey === "common"}
-                         asc={asc} onClick={() => onSort("common")} />
+            ) : (
+              <th className={TH_NUM} rowSpan={2} onClick={() => onSort("common")}>
+                <SortBtn numeric label={t(locale, "insColCommon")}
+                         active={sortKey === "common"} asc={asc} />
               </th>
             )}
-            <th className={TH_NUM} rowSpan={2}>
-              <SortBtn numeric label={t(locale, "insColDelta")} active={sortKey === "delta"}
-                       asc={asc} onClick={() => onSort("delta")} />
+            <th className={TH_NUM} rowSpan={2} onClick={() => onSort("delta")}>
+              <SortBtn numeric label={t(locale, "insColDelta")}
+                       active={sortKey === "delta"} asc={asc} />
             </th>
-            <th className={`${TH} text-center border-l border-line`} colSpan={COMMON_METRICS.length}>
+            <th className={`label row-h px-2 font-normal text-center border-l border-line`}
+                colSpan={COMMON_METRICS.length}>
               {t(locale, "insGroupCommon")}
             </th>
             {deepColumns.length > 0 && (
-              <th className={`${TH} text-center border-l border-line`} colSpan={deepColumns.length}>
+              <th className={`label row-h px-2 font-normal text-center border-l border-line`}
+                  colSpan={deepColumns.length}>
                 {deepGroupLabel ? t(locale, deepGroupLabel) : ""}
               </th>
             )}
           </tr>
           <tr>
             {COMMON_METRICS.map((m, i) => (
-              <th key={m.code} className={`${TH_NUM} ${i === 0 ? "border-l border-line" : ""}`}>
+              <th key={m.code} onClick={() => onSort(m.code)}
+                  className={`${TH_NUM} ${i === 0 ? "border-l border-line" : ""}`}>
                 <SortBtn numeric label={`${t(locale, m.label as TranslationKey)} (${m.max})`}
-                         active={sortKey === m.code} asc={asc} onClick={() => onSort(m.code)} />
+                         active={sortKey === m.code} asc={asc} />
               </th>
             ))}
             {deepColumns.map((m, i) => (
-              <th key={m.code} className={`${TH_NUM} ${i === 0 ? "border-l border-line" : ""}`}>
+              <th key={m.code} onClick={() => onSort(m.code)}
+                  className={`${TH_NUM} ${i === 0 ? "border-l border-line" : ""}`}>
                 <SortBtn numeric label={`${m.label} (${m.max})`}
-                         active={sortKey === m.code} asc={asc} onClick={() => onSort(m.code)} />
+                         active={sortKey === m.code} asc={asc} />
               </th>
             ))}
           </tr>
@@ -188,48 +192,39 @@ export function InsTable({
 
         <tbody>
           {sorted.map((r) => (
-            <tr key={r.ticker}
-                className={`${ROW_H} border-b border-line-faint hover:bg-accent-soft/40`}>
-              <td className={`${TD} text-fg-muted whitespace-nowrap`}>
+            <tr key={r.ticker} className={TR}>
+              <td className={`${TD} whitespace-nowrap`}>
                 {r.report_date ? formatDateDmy(r.report_date) : "—"}
               </td>
 
-              <td className={`${TD} ${stickyL} md:left-0 whitespace-nowrap`}>
-                <span className="block text-[16px] font-semibold text-accent">{r.ticker}</span>
-                <span className="block text-body text-fg-muted">
-                  {t(locale, INSURANCE_TYPE_LABEL[r.insurance_type] as TranslationKey)}
+              <td className={TD_SYMBOL}>
+                {r.ticker}
+                <span className="font-sans font-normal text-fg-muted">
+                  {" · "}{t(locale, INSURANCE_TYPE_LABEL[r.insurance_type] as TranslationKey)}
                 </span>
               </td>
 
               {showTotalBlock ? (
                 <>
+                  <td className={`${TD_NUM} font-semibold`}>
+                    {r.total_score === null
+                      ? <span className="font-sans font-normal text-fg-muted">
+                          {t(locale, "insPartial")}
+                        </span>
+                      : `${formatNumber(r.total_score, 0)} / 100`}
+                  </td>
                   <td className={TD_NUM}>
-                    {r.total_score === null ? (
-                      <span className="text-body text-amber-700">{t(locale, "insPartial")}</span>
-                    ) : (
-                      <>
-                        <span className="block text-[18px] font-bold text-accent">
-                          {formatNumber(r.total_score, 0)} / 100
-                        </span>
-                        {/* §8.4 — FA and valuation on one sub-line, in the
-                            CURRENT structure. Never the retired /80 + /20. */}
-                        <span className="block text-body text-fg-muted">
-                          FA {formatNumber(r.fa_score ?? 0, 0)}/88 · {formatNumber(r.valuation_score ?? 0, 0)}/12
-                        </span>
-                      </>
-                    )}
+                    {r.fa_score === null ? "—" : `${formatNumber(r.fa_score, 0)} / 88`}
                   </td>
                   <td className={TD_NUM}>{cell(r.valuation_score)}</td>
                 </>
               ) : (
-                <td className={TD_NUM}>
-                  {r.common_score === null ? (
-                    <span className="text-body text-amber-700">{t(locale, "insPartial")}</span>
-                  ) : (
-                    <span className="text-[18px] font-bold text-accent">
-                      {formatNumber(r.common_score, 0)} / 50
-                    </span>
-                  )}
+                <td className={`${TD_NUM} font-semibold`}>
+                  {r.common_score === null
+                    ? <span className="font-sans font-normal text-fg-muted">
+                        {t(locale, "insPartial")}
+                      </span>
+                    : `${formatNumber(r.common_score, 0)} / 50`}
                 </td>
               )}
 

@@ -1,6 +1,5 @@
 import { getLocale, t, type TranslationKey } from "@/lib/i18n";
 import { DEEP_METRICS } from "@/lib/fa-insurance-tab";
-import { FaSubnav } from "../../fa-subnav";
 import { InsTabs } from "../ins-tabs";
 
 export const revalidate = 0;
@@ -23,10 +22,8 @@ export default async function Page() {
   const rubric = DEEP_METRICS.LIFE ?? [];
 
   return (
-    <main className="px-4 py-6 max-w-[1600px] mx-auto">
-      <h1 className="text-h1 mb-1">{t(locale, "insTitle")}</h1>
-      <FaSubnav locale={locale} />
-      <p className="text-body-lg text-fg-muted mb-4">{t(locale, "insLede")}</p>
+    <div>
+      <p className="text-body-lg text-fg-muted mb-3">{t(locale, "insLede")}</p>
       <InsTabs locale={locale} />
 
       <section className="border border-line bg-panel px-6 py-10 text-center">
@@ -56,6 +53,6 @@ export default async function Page() {
       <p className="text-body text-fg-muted mt-3">
         LIFE-1 … LIFE-4 → Internal /38 · LIFE-5 → Valuation /12
       </p>
-    </main>
+    </div>
   );
 }
