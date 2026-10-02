@@ -820,6 +820,52 @@ export const INS_SCORE_VERSION = "INS_TOAN_NGANH_50_V1";
  */
 export const HOLDING_SCORING_VERSION = "HOLDING_SCORING_1.0";
 
+/**
+ * The assembled insurance tab score (migration 076): Common/50 + Internal/38 +
+ * Valuation/12. Not pinned to one version — each insurance type carries its own
+ * `formula_version`, and the row itself says which produced it.
+ */
+export type InsuranceTabScore = {
+  symbol: string;
+  period: string;
+  insurance_type_code: string;
+  common_score: number | null;
+  internal_change_score: number | null;
+  valuation_score: number | null;
+  fa_score: number | null;
+  total_score: number | null;
+  criteria: Record<string, { value: number | null; band: string | null; score: number | null }>;
+  previous_period: string | null;
+  previous_fa_score: number | null;
+  fa_change_pct: number | null;
+  fa_change_status: string;
+  score_status: string;
+  blocked_reason: string | null;
+  blocked_metrics: string | null;
+  formula_version: string;
+  band_version: string;
+};
+
+export const getInsuranceTabScores = unstable_cache(
+  async (period: string): Promise<InsuranceTabScore[]> => {
+    try {
+      return await fetchAllPaged<InsuranceTabScore>((from, to, withCount) =>
+        supabase
+          .from("fa_insurance_tab_scores")
+          .select("*", withCount ? { count: "exact" } : undefined)
+          .eq("period", period)
+          .order("symbol", { ascending: true })
+          .range(from, to),
+      );
+    } catch (e) {
+      if (isMissingTable(e)) return [];
+      throw e;
+    }
+  },
+  ["fa-insurance-tab-scores"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
 function isMissingTable(e: unknown): boolean {
   const code = (e as { code?: string })?.code;
   const msg = String((e as { message?: string })?.message ?? e);

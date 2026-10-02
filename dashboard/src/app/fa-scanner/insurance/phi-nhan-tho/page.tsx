@@ -6,12 +6,11 @@ import { loadInsTab } from "../ins-load";
 export const revalidate = 0;
 
 /**
- * Bảo hiểm → Holding / Hỗn hợp (§10).
- *
- * THE COLUMNS COME FROM THE DATA, NOT FROM THIS FILE. More than one Holding
- * `formula_version` exists, so §10 forbids the frontend hard-coding metric
- * names or weights: the table reads whatever the active version stored, which
- * is why switching version needs no change here.
+ * Bảo hiểm → Phi nhân thọ (§8). P1–P5 are scored against the frozen bands
+ * (`NONLIFE_P1_P5_SCORE_BANDS_V1`) and stored in `fa_insurance_tab_scores`, so
+ * this tab carries a real Total /100. 2025-Q3 is the exception and shows its
+ * reason rather than a zero: the common layer cannot be scored there, because
+ * C2 needs seven contiguous EPS quarters and the source begins at 2024-Q2.
  */
 export default async function Page({
   searchParams,
@@ -23,7 +22,7 @@ export default async function Page({
   let d: Awaited<ReturnType<typeof loadInsTab>> | null = null;
   let loadError: unknown = null;
   try {
-    d = await loadInsTab(params, "HOLDING_MIXED");
+    d = await loadInsTab(params, "NON_LIFE");
   } catch (e) {
     loadError = e;
   }
@@ -31,10 +30,10 @@ export default async function Page({
 
   return (
       <InsPageClient
-        locale={locale} basePath="/fa-scanner/insurance/holding"
-        title={t(locale, "insTitle")} typeCode="HOLDING_MIXED"
+        locale={locale} basePath="/fa-scanner/insurance/phi-nhan-tho"
+        title={t(locale, "insTitle")} typeCode="NON_LIFE"
         quarters={d.quarters} selected={d.selected} minScore={d.minScore}
-        ticker={d.ticker} rows={d.rows} pendingNote="insPendingValuation"
+        ticker={d.ticker} rows={d.rows}
       />
   );
 }

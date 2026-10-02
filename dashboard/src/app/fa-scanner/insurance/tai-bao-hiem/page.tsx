@@ -6,12 +6,10 @@ import { loadInsTab } from "../ins-load";
 export const revalidate = 0;
 
 /**
- * Bảo hiểm → Holding / Hỗn hợp (§10).
- *
- * THE COLUMNS COME FROM THE DATA, NOT FROM THIS FILE. More than one Holding
- * `formula_version` exists, so §10 forbids the frontend hard-coding metric
- * names or weights: the table reads whatever the active version stored, which
- * is why switching version needs no change here.
+ * Bảo hiểm → Tái bảo hiểm (§9). R1–R5 are computed and their bands are frozen
+ * are specified, but BA has not yet approved their bands (Giai đoạn C), so
+ * no score is published — the columns render with a stated reason rather
+ * than a zero, which §9 and §19 both require.
  */
 export default async function Page({
   searchParams,
@@ -23,7 +21,7 @@ export default async function Page({
   let d: Awaited<ReturnType<typeof loadInsTab>> | null = null;
   let loadError: unknown = null;
   try {
-    d = await loadInsTab(params, "HOLDING_MIXED");
+    d = await loadInsTab(params, "REINSURANCE");
   } catch (e) {
     loadError = e;
   }
@@ -31,10 +29,10 @@ export default async function Page({
 
   return (
       <InsPageClient
-        locale={locale} basePath="/fa-scanner/insurance/holding"
-        title={t(locale, "insTitle")} typeCode="HOLDING_MIXED"
+        locale={locale} basePath="/fa-scanner/insurance/tai-bao-hiem"
+        title={t(locale, "insTitle")} typeCode="REINSURANCE"
         quarters={d.quarters} selected={d.selected} minScore={d.minScore}
-        ticker={d.ticker} rows={d.rows} pendingNote="insPendingValuation"
+        ticker={d.ticker} rows={d.rows} pendingNote="insPendingBands"
       />
   );
 }

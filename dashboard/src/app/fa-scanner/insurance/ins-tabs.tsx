@@ -5,47 +5,55 @@ import { usePathname } from "next/navigation";
 import { type Locale, t } from "@/lib/i18n";
 
 /**
- * The two insurance score layers, as tabs under the FA sub-nav.
+ * The five insurance business types, as tabs under the FA sub-nav (BA §3).
  *
- * A second strip rather than two more entries in `FaSubnav`: these are two
- * LAYERS of one rubric for the same industry, not two industries, and BA §2 is
- * explicit that the deep engines must not become extra public menu entries.
- * Nesting keeps "which industry" and "which layer" as separate questions.
+ * Order is FIXED by the spec and is not alphabetical: Toàn ngành first because
+ * it is the summary screen, then the four types. "Toàn ngành" is not a business
+ * type — it is the view across all of them — so it leads rather than sits among
+ * its own members.
  *
- * The /50 and /38 are in the labels because the two numbers are not on the same
- * scale and never add up to anything — 50 is the common half of a 100-point
- * model, 38 is a self-relative position in a company's own history.
+ * Active is a filled navy chip with white semibold text; inactive is white with
+ * a hairline border (§3). That is the opposite weighting from `FaSubnav` above
+ * it, which uses an inked underline — deliberately, so a page never shows two
+ * controls claiming to be "where you are" in the same treatment.
+ *
+ * The strip scrolls horizontally rather than wrapping on a phone (§3): a
+ * wrapped tab row changes the page's vertical rhythm at exactly the width
+ * where vertical space is scarcest.
  */
 const TABS = [
-  { href: "/fa-scanner/insurance", label: "insTabIndustry", hint: "insTabIndustryHint" },
-  { href: "/fa-scanner/insurance/holding", label: "insTabDeep", hint: "insTabDeepHint" },
+  { href: "/fa-scanner/insurance", label: "insTabAll" },
+  { href: "/fa-scanner/insurance/nhan-tho", label: "insTabLife" },
+  { href: "/fa-scanner/insurance/phi-nhan-tho", label: "insTabNonLife" },
+  { href: "/fa-scanner/insurance/tai-bao-hiem", label: "insTabReins" },
+  { href: "/fa-scanner/insurance/holding", label: "insTabHolding" },
 ] as const;
 
 export function InsTabs({ locale }: { locale: Locale }) {
   const pathname = usePathname();
   return (
-    <nav className="flex flex-wrap items-stretch gap-1 mb-4">
-      {TABS.map((tab) => {
-        // Exact match, not startsWith: "/fa-scanner/insurance" is a prefix of
-        // the deep route, so a prefix test would light both tabs on the deep
-        // page and tell the reader they are in two places at once.
-        const active = pathname === tab.href;
-        return (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            title={t(locale, tab.hint)}
-            aria-current={active ? "page" : undefined}
-            className={`border px-3 py-1.5 text-body-lg font-semibold transition-colors duration-100 ${
-              active
-                ? "border-fg bg-fg text-canvas"
-                : "border-line text-fg-muted hover:border-fg-muted hover:bg-panel-2 hover:text-fg"
-            }`}
-          >
-            {t(locale, tab.label)}
-          </Link>
-        );
-      })}
+    <nav className="-mx-4 px-4 mb-4 overflow-x-auto">
+      <div className="flex items-stretch gap-2 w-max">
+        {TABS.map((tab) => {
+          // Exact match, never a prefix: "/fa-scanner/insurance" is a prefix of
+          // all four others, so a prefix test lights two tabs at once.
+          const active = pathname === tab.href;
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              aria-current={active ? "page" : undefined}
+              className={`rounded-md border px-5 py-2.5 text-body-lg whitespace-nowrap transition-colors duration-100 ${
+                active
+                  ? "border-accent bg-accent text-white font-semibold"
+                  : "border-line bg-panel text-fg-muted hover:border-fg-muted hover:bg-panel-2 hover:text-fg"
+              }`}
+            >
+              {t(locale, tab.label)}
+            </Link>
+          );
+        })}
+      </div>
     </nav>
   );
 }

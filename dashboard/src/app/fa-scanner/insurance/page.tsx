@@ -1,65 +1,38 @@
-import {
-  getInsuranceQuarters,
-  getInsuranceRows,
-  getInsuranceWatchlist,
-  INS_SCORE_VERSION,
-} from "@/lib/cached-data";
-import type { InsuranceScore, InsuranceWatchRow } from "@/lib/fa-insurance";
 import { getLocale, t } from "@/lib/i18n";
-import { InsuranceScannerClient } from "./ins-scanner-client";
 import { DataError } from "@/components/data-error";
+import { InsPageClient } from "./ins-page-client";
+import { loadInsTab } from "./ins-load";
 
 export const revalidate = 0;
 
 /**
- * The insurance Toàn ngành tab — BA's 50-point COMMON layer.
+ * Bảo hiểm → Toàn ngành. The summary view across every insurance type.
  *
- * NO LIQUIDITY FILTER and no minimum-profit filter, unlike the other three FA
- * tabs. Measured before deciding: 12 of the 13 insurers trade below the 200k
- * default those tabs use (BHI 280, AIC 515, PGI 790 shares a session), so the
- * usual filter would open this page on a single row. The universe is thirteen
- * companies — small enough that filtering it adds nothing and hides almost
- * everything.
+ * It shows the COMMON block only (§7.2): the deep metrics differ by type and a
+ * column that means P1 on one row and R1 on the next would be comparing two
+ * different measurements under one heading.
  */
 export default async function FaScannerInsurancePage({
   searchParams,
-}: {
-  searchParams: Promise<{ [key: string]: string | undefined }>;
-}) {
+}: { searchParams: Promise<{ [key: string]: string | undefined }> }) {
   const locale = await getLocale();
   const params = await searchParams;
-
-  let quarters: string[] = [];
-  let selected: string | undefined;
-  let rows: InsuranceScore[] = [];
-  let watchlist: InsuranceWatchRow[] = [];
+  // The load is awaited OUTSIDE the JSX: a component constructed inside a
+  // try/catch is not covered by it, because React renders it later.
+  let d: Awaited<ReturnType<typeof loadInsTab>> | null = null;
   let loadError: unknown = null;
   try {
-    quarters = await getInsuranceQuarters();
-    selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
-    if (selected) {
-      [rows, watchlist] = await Promise.all([
-        getInsuranceRows(selected),
-        getInsuranceWatchlist(),
-      ]);
-    }
+    d = await loadInsTab(params);
   } catch (e) {
     loadError = e;
   }
-
-  if (loadError) return <DataError error={loadError} locale={locale} />;
+  if (loadError || !d) return <DataError error={loadError} locale={locale} />;
 
   return (
-    <InsuranceScannerClient
-      locale={locale}
-      quarters={quarters}
-      selected={selected}
-      rows={rows}
-      watchlist={watchlist}
-      scoreVersion={INS_SCORE_VERSION}
-      epsVersion={rows[0]?.eps_norm_version ?? "—"}
-      thresholdSet={rows[0]?.threshold_set ?? "—"}
-      title={t(locale, "insTitle")}
-    />
+      <InsPageClient
+        locale={locale} basePath="/fa-scanner/insurance"
+        title={t(locale, "insTitle")} quarters={d.quarters} selected={d.selected}
+        minScore={d.minScore} ticker={d.ticker} rows={d.rows}
+      />
   );
 }
