@@ -1,6 +1,7 @@
 import {
   getHoldingDeepRows, getInsuranceQuarters, getInsuranceRows,
-  getInsuranceTabScores, type InsuranceTabScore,
+  getInsuranceRegistry, getInsuranceTabScores,
+  type InsRegistryRow, type InsuranceTabScore,
 } from "@/lib/cached-data";
 import type { HoldingDeepRow } from "@/lib/fa-holding";
 import type { InsRow, InsuranceTypeCode } from "@/lib/fa-insurance-tab";
@@ -14,22 +15,32 @@ export async function loadInsTab(
   params: { [key: string]: string | undefined },
   typeCode?: InsuranceTypeCode,
 ): Promise<{
-  quarters: string[]; selected?: string; minScore: number; ticker: string; rows: InsRow[];
+  quarters: string[]; selected?: string; minScore: number; ticker: string;
+  rows: InsRow[];
+  /** Raw deep rows per ticker — the Holding blocks need the percentile, the
+   *  history window and the version stamps, which `InsRow` does not carry. */
+  deepByTicker: Record<string, HoldingDeepRow[]>;
+  /** Criterion metadata for the tooltips (BA §21). */
+  registry: InsRegistryRow[];
 }> {
   const quarters = await getInsuranceQuarters();
   const selected = params.q && quarters.includes(params.q) ? params.q : quarters[0];
   const minScore = Number(params.min ?? 0) || 0;
   const ticker = (params.s ?? "").toUpperCase();
 
-  if (!selected) return { quarters, selected, minScore, ticker, rows: [] };
+  if (!selected) {
+    return { quarters, selected, minScore, ticker, rows: [],
+             deepByTicker: {}, registry: [] };
+  }
 
-  const [scores, deep, assembledRows] = await Promise.all([
+  const [scores, deep, assembledRows, registry] = await Promise.all([
     getInsuranceRows(selected),
     // Only the Holding tab and the industry view need the deep rows.
     typeCode === undefined || typeCode === "HOLDING_MIXED"
       ? getHoldingDeepRows(selected)
       : Promise.resolve([] as HoldingDeepRow[]),
     getInsuranceTabScores(selected),
+    getInsuranceRegistry(),
   ]);
 
   const byTicker: Record<string, HoldingDeepRow[]> = {};
@@ -39,7 +50,8 @@ export async function loadInsTab(
   for (const a of assembledRows) assembled[a.symbol] = a;
 
   return {
-    quarters, selected, minScore, ticker,
+    quarters, selected, minScore, ticker, registry,
+    deepByTicker: byTicker,
     rows: buildInsRows(scores, byTicker, typeCode, assembled),
   };
 }

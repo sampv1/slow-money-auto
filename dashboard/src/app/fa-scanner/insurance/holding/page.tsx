@@ -46,6 +46,7 @@ export default async function Page({
         locale={locale} basePath="/fa-scanner/insurance/holding" typeCode="HOLDING_MIXED"
         quarters={d.quarters} selected={d.selected} minScore={d.minScore}
         ticker={d.ticker} rows={d.rows}
+        deepByTicker={d.deepByTicker} registry={d.registry}
       />
   );
 }

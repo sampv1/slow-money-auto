@@ -838,6 +838,59 @@ export const HOLDING_SCORING_VERSION = "HOLDING_SCORING_1.0";
  * rows stay in the table untouched, which is what makes the change auditable.
  * V2 moved the R4 bands only — the formula version is unchanged.
  */
+/**
+ * One criterion's metadata, as the Master Registry holds it (migration 078).
+ *
+ * THE TOOLTIPS READ THIS AND NOTHING ELSE for formula, unit and thresholds. BA
+ * §21.4 forbids a copy of any threshold in a React component, under the rule
+ * "SCORER SOURCE OF TRUTH = TOOLTIP SOURCE OF TRUTH" — a tooltip listing bands
+ * the engine does not apply is a wrong answer presented as documentation.
+ */
+export type InsRegistryRow = {
+  insurance_type_code: string;
+  metric_code: string;
+  metric_name_vi: string;
+  metric_group: string;
+  weight: number;
+  unit: string | null;
+  economic_meaning: string | null;
+  formula_text: string | null;
+  period_basis: string | null;
+  /** ABSOLUTE_BAND · FIXED_TABLE · SELF_HISTORY_PERCENTILE · NOT_RELEASED */
+  scoring_method: string | null;
+  /** One band per line. NULL for a percentile-scored criterion, by constraint. */
+  threshold_text: string | null;
+  engine_profile: string | null;
+  source_fields: string | null;
+  minimum_history_required: number | null;
+  formula_version: string | null;
+  band_version: string | null;
+  implementation_status: string;
+};
+
+export const getInsuranceRegistry = unstable_cache(
+  async (): Promise<InsRegistryRow[]> => {
+    try {
+      return await fetchAllPaged<InsRegistryRow>((from, to, withCount) =>
+        supabase
+          .from("insurance_scoring_master_registry")
+          .select("*", withCount ? { count: "exact" } : undefined)
+          .is("effective_to", null)
+          .order("insurance_type_code", { ascending: true })
+          .order("metric_code", { ascending: true })
+          .range(from, to),
+      );
+    } catch (e) {
+      // A missing table is the one legitimate empty: the tooltips degrade to
+      // the fields the scored row itself carries rather than the page failing.
+      if (isMissingTable(e)) return [];
+      throw e;
+    }
+  },
+  ["insurance-scoring-registry"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
 export const INS_ACTIVE_BAND_VERSIONS = [
   "NONLIFE_P1_P5_SCORE_BANDS_V1",
   "REINSURANCE_R1_R5_THRESHOLD_V2",

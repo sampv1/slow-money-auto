@@ -200,6 +200,69 @@ THRESHOLDS = {
     },
 }
 
+#: BA 04/10 §21 — the threshold list the C1-C5 tooltip must show, as TEXT.
+#:
+#: GENERATED FROM `THRESHOLDS`, THE SAME TABLES `_band` SCORES WITH. Typing the
+#: bands out again beside them is how a tooltip comes to describe a rule the
+#: engine does not apply, which §21 names as the thing to avoid
+#: ("SCORER SOURCE OF TRUTH = TOOLTIP SOURCE OF TRUTH"). The operator is printed
+#: as the table carries it, because `>= 0` and `> 0` are different boundaries
+#: and three of them moved the one time these tables were transcribed by hand.
+C_UNIT = {"C1": "%", "C2": "quý", "C3": "%", "C4": "%", "C5": "%"}
+
+#: The sign cases of C1 are part of its rule, not a footnote: a still-negative
+#: EPS scores 0 whatever the percentage says, so a tooltip listing only the
+#: percentage bands would describe a different criterion.
+C1_SIGN_TEXT = [
+    "Lỗ sang lãi: 10 điểm",
+    "EPS cùng kỳ = 0 và kỳ này có lãi: 10 điểm",
+    "EPS kỳ này còn âm: 0 điểm (kể cả khi mức lỗ đã thu hẹp)",
+]
+
+
+def band_text(code: str, threshold_set: str = "ba_v2") -> list[str]:
+    """One line per band, highest score first, in the closure the scorer uses."""
+    code = code.upper()
+    if code == "C2":
+        # A lookup on a COUNT, not a range — so it is written as counts.
+        return [f"{q}/3 quý EPS tăng: {pts} điểm"
+                for q, pts in sorted(C2_POINTS.items(), reverse=True)]
+    bands = THRESHOLDS[threshold_set][code.lower()]
+    u = C_UNIT[code]
+    out, upper = [], None
+    for op, floor, pts in bands:
+        hi = "" if upper is None else f" và < {upper:g}{u}"
+        out.append(f"{op} {floor:g}{u}{hi}: {pts} điểm")
+        upper = floor
+    out.append(f"< {upper:g}{u}: 0 điểm" if bands[-1][0] == ">="
+               else f"<= {upper:g}{u}: 0 điểm")
+    if code == "C1":
+        out = C1_SIGN_TEXT + ["Cả hai kỳ đều có lãi — chấm theo mức tăng:"] + out
+    return out
+
+
+def audit_band_text(threshold_set: str = "ba_v2") -> list[str]:
+    """Every line re-scored through `_band`, so the text cannot drift from the
+    table it claims to describe."""
+    issues = []
+    for code in ("C1", "C3", "C4", "C5"):
+        bands = THRESHOLDS[threshold_set][code.lower()]
+        lines = [l for l in band_text(code, threshold_set)
+                 if l[0] in ">=<"]
+        if len(lines) != len(bands) + 1:
+            issues.append(f"{code}: {len(lines)} lines for {len(bands)} bands")
+        for (op, floor, pts), line in zip(bands, lines):
+            if not line.startswith(f"{op} {floor:g}"):
+                issues.append(f"{code}: line {line!r} != ({op}, {floor})")
+            got = _band(floor, bands)
+            want = pts if op == ">=" else _band(floor, bands)
+            if op == ">=" and got != pts:
+                issues.append(f"{code}: text claims {pts} at {floor}, scorer gives {got}")
+    if sorted(C2_POINTS) != [0, 1, 2, 3]:
+        issues.append(f"C2 table is not 0..3: {sorted(C2_POINTS)}")
+    return issues
+
+
 #: §5.1 — label a growth rate computed on a base too small to mean anything.
 #: 100 đồng/cp is the 7th percentile of |EPS| over the insurance history; it
 #: catches BLI's 18,1 without labelling ordinary quarters. PROPOSED.

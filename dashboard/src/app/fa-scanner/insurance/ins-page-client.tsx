@@ -6,8 +6,10 @@ import {
   INTERNAL_METRICS, VALUATION_METRIC, INTERNAL_GROUP_LABEL,
 } from "@/lib/fa-insurance-tab";
 import { applyInsFilters } from "@/lib/ins-rows";
-import { translations } from "@/lib/i18n";
+import type { HoldingDeepRow } from "@/lib/fa-holding";
+import type { InsRegistryRow } from "@/lib/cached-data";
 import { TapTooltips } from "@/components/tap-tooltip";
+import { InsHoldingBlocks, type HoldingBlock } from "./ins-holding";
 import { InsTabs } from "./ins-tabs";
 import { InsFilters } from "./ins-chrome";
 import { InsTable } from "./ins-table";
@@ -29,7 +31,7 @@ import { InsTable } from "./ins-table";
  */
 export function InsPageClient({
   locale, basePath, typeCode, quarters, selected, minScore, ticker,
-  rows, emptyNote,
+  rows, emptyNote, deepByTicker = {}, registry = [],
 }: {
   locale: Locale;
   basePath: string;
@@ -40,6 +42,8 @@ export function InsPageClient({
   minScore: number;
   ticker: string;
   rows: InsRow[];
+  deepByTicker?: Record<string, HoldingDeepRow[]>;
+  registry?: InsRegistryRow[];
   /**
    * What to say when the tab has no rows AT ALL — a universe fact, not a
    * filter result. §2.12.A requires the Nhân thọ tab to keep its full header
@@ -48,64 +52,36 @@ export function InsPageClient({
    */
   emptyNote?: TranslationKey;
 }) {
-  /**
-   * Holding takes its columns from the DATA, merged by MEASUREMENT.
-   *
-   * More than one `formula_version` is live for this type and the two engines
-   * do not share a criterion set, so a hard-coded list would be wrong for one
-   * of the two companies. Merging by the metric NAME the engine stored is what
-   * keeps one column to one measurement: B1 and P3 are the same ratio, as are
-   * B4 and P4, so the union is six columns rather than eight.
-   */
-  const holdingColumns: InsColumn[] = (() => {
-    if (typeCode !== "HOLDING_MIXED") return [];
-    const byName = new Map<string, { codes: string[]; max: number }>();
-    for (const r of rows) {
-      for (const m of r.metrics) {
-        if (m.code.startsWith("C")) continue;
-        const e = byName.get(m.name) ?? { codes: [], max: m.max_score };
-        if (!e.codes.includes(m.code)) e.codes.push(m.code);
-        byName.set(m.name, e);
-      }
-    }
-    /**
-     * The stored metric name is ENGLISH PROSE, so it is translated through the
-     * stored CODE and only falls back to the stored text for a code we have no
-     * name for. Without this the Vietnamese page printed "Financial Efficiency
-     * TTM" and "Capital Buffer Level" in its own column headers — the same leak
-     * `fa/real_estate.py` caused with `breakdown.note`.
-     */
-    const named = (codes: string[], stored: string) => {
-      for (const c of codes) {
-        const key = `insHold${c}` as TranslationKey;
-        if (key in translations.en) return t(locale, key);
-      }
-      return stored;
-    };
-    return [...byName.entries()]
-      .map(([name, e]) => ({
-        code: e.codes.join("/"),
-        codes: e.codes,
-        head: e.codes.join("/"),
-        shortText: named(e.codes, name),
-        labelText: named(e.codes, name),
-        short: "insNotScored" as TranslationKey,
-        label: "insNotScored" as TranslationKey,
-        max: e.max,
-      }))
-      // Stable order by the first code, so the columns do not reshuffle
-      // between quarters as the row set changes.
-      .sort((a, b) => a.codes[0].localeCompare(b.codes[0]));
-  })();
-
-  const internalColumns: InsColumn[] = typeCode === "HOLDING_MIXED"
-    ? holdingColumns
-    : typeCode ? (INTERNAL_METRICS[typeCode] ?? []) : [];
+  const internalColumns: InsColumn[] =
+    typeCode && typeCode !== "HOLDING_MIXED" ? (INTERNAL_METRICS[typeCode] ?? []) : [];
 
   const valuationColumn = typeCode ? VALUATION_METRIC[typeCode] : undefined;
   const showTotalBlock = Boolean(typeCode);
   const headline = showTotalBlock ? "total" : "common";
   const shown = applyInsFilters(rows, minScore, ticker, headline);
+
+  /**
+   * HOLDING IS NOT A TABLE (BA 04/10 §2, §3). BVH and PVI run two different
+   * deep engines, so they are rendered as two independent vertical blocks
+   * instead of two rows of one deep-metric table. §17 sets the order: by Total
+   * /100 where both have one, otherwise by the common + deep subtotal — a
+   * fallback used ONLY for sorting and never labelled as a score.
+   */
+  const holdingBlocks: HoldingBlock[] =
+    typeCode === "HOLDING_MIXED"
+      ? shown
+          .map((r) => ({ row: r, deep: deepByTicker[r.ticker] ?? [] }))
+          .sort((a, b) => {
+            const key = (x: HoldingBlock) =>
+              x.row.total_score ??
+              ((x.row.common_score ?? 0) + (x.row.internal_score ?? 0));
+            const both = a.row.total_score !== null && b.row.total_score !== null;
+            return both
+              ? (b.row.total_score! - a.row.total_score!)
+              : key(b) - key(a);
+          })
+      : [];
+
 
   return (
     // NO <h1> and NO <FaSubnav> here: `fa-scanner/layout.tsx` already renders
@@ -128,13 +104,18 @@ export function InsPageClient({
         </p>
       )}
 
-      <InsTable
-        locale={locale} rows={shown}
-        internalColumns={internalColumns}
-        valuationColumn={valuationColumn}
-        internalGroupLabel={typeCode ? INTERNAL_GROUP_LABEL[typeCode] : undefined}
-        showTotalBlock={showTotalBlock}
-      />
+      {typeCode === "HOLDING_MIXED" ? (
+        <InsHoldingBlocks locale={locale} blocks={holdingBlocks}
+                          registry={registry} period={selected} />
+      ) : (
+        <InsTable
+          locale={locale} rows={shown}
+          internalColumns={internalColumns}
+          valuationColumn={valuationColumn}
+          internalGroupLabel={typeCode ? INTERNAL_GROUP_LABEL[typeCode] : undefined}
+          showTotalBlock={showTotalBlock}
+        />
+      )}
 
       {/* §2.17's tooltips are the only place the formula, unit and thresholds
           appear. A native `title` is inert on a touch screen, so the delegated

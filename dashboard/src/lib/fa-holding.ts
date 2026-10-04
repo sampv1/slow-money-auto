@@ -48,6 +48,8 @@ export type HoldingDeepRow = {
   formula_version: string;
   mapping_version: string;
   ui_spec_version: string | null;
+  /** §10.19 — the tooltip must say when the row was computed. */
+  calculated_at: string | null;
 };
 
 export const DEEP_MAX_SCORE = 38;
