@@ -1,58 +1,50 @@
-import { getLocale, t, type TranslationKey } from "@/lib/i18n";
-import { DEEP_METRICS } from "@/lib/fa-insurance-tab";
-import { InsTabs } from "../ins-tabs";
+import { getLocale } from "@/lib/i18n";
+import { DataError } from "@/components/data-error";
+import { InsPageClient } from "../ins-page-client";
+import { loadInsTab } from "../ins-load";
 
 export const revalidate = 0;
 
 /**
- * Bảo hiểm → Nhân thọ (§11). The universe is EMPTY, which is not the same as a
- * data failure, and the page has to say so in those words: "Hiện chưa có doanh
- * nghiệp nhân thọ thuần túy niêm yết" rather than "no data", which a reader
- * would take for a broken pipeline.
+ * Bảo hiểm → Nhân thọ.
  *
- * The tab exists and the rubric is shown even with nothing to score, because
- * the criteria ARE the answer to "what would be measured here" — and because
- * §11 forbids the alternative of moving BVH or PVI across to fill it.
+ * IT USES THE SHARED LAYOUT EVEN THOUGH ITS UNIVERSE IS EMPTY. §2.12.A is
+ * explicit about all four halves: show the header, Nền tảng chung /50, Năng
+ * lực Nhân thọ /38 and Định giá /12; say "Hiện chưa có mã Nhân thọ trong
+ * universe chấm điểm"; and do NOT hide the tab, drop the header, invent NA rows
+ * or score anything 0.
  *
- * No table is rendered at all: an empty grid with headers reads as a load that
- * failed. There is nothing to put in it, so there is no grid.
+ * That replaces the card grid this page used to be. The reasoning for the cards
+ * was that an empty grid reads as a failed load — which §2.12.A answers better:
+ * the structure stays, and one sentence says the absence is a universe fact.
+ * Keeping a second layout for the one tab with no rows is also precisely what
+ * §2.1 forbids.
+ *
+ * There is no listed pure-play life insurer in Vietnam; life exposure exists
+ * only inside BVH, which is scored on the Holding rubric. So this tab fills in
+ * by itself when one lists — nothing here names a symbol.
  */
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: { searchParams: Promise<{ [key: string]: string | undefined }> }) {
   const locale = await getLocale();
-  const rubric = DEEP_METRICS.LIFE ?? [];
+  const params = await searchParams;
+  // The load is awaited OUTSIDE the JSX: a component constructed inside a
+  // try/catch is not covered by it, because React renders it later.
+  let d: Awaited<ReturnType<typeof loadInsTab>> | null = null;
+  let loadError: unknown = null;
+  try {
+    d = await loadInsTab(params, "LIFE");
+  } catch (e) {
+    loadError = e;
+  }
+  if (loadError || !d) return <DataError error={loadError} locale={locale} />;
 
   return (
-    <div>
-      <p className="text-body-lg text-fg-muted mb-3">{t(locale, "insLede")}</p>
-      <InsTabs locale={locale} />
-
-      <section className="border border-line bg-panel px-6 py-10 text-center">
-        <h2 className="text-h2 mb-2">{t(locale, "insLifeEmptyTitle")}</h2>
-        <p className="text-body-lg text-fg-muted max-w-[62ch] mx-auto">
-          {t(locale, "insLifeEmptyBody")}
-        </p>
-      </section>
-
-      <h3 className="text-h2 mt-6 mb-3">{t(locale, "insLifeRubricTitle")}</h3>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {rubric.map((m) => (
-          <article key={m.code} className="border border-line bg-panel p-4">
-            {/* The i18n label already opens with the code ("LIFE-1 …"), so a
-                separate eyebrow would print it twice. */}
-            <p className="text-body-lg font-semibold text-accent">
-              {t(locale, m.label as TranslationKey)}
-            </p>
-            <p className="text-body text-fg-muted mt-2">
-              {m.max} {t(locale, "insPoints")}
-            </p>
-          </article>
-        ))}
-      </div>
-      {/* The split the rest of the system uses, stated once so this tab is not
-          the one place a reader has to infer it. */}
-      <p className="text-body text-fg-muted mt-3">
-        LIFE-1 … LIFE-4 → Internal /38 · LIFE-5 → Valuation /12
-      </p>
-    </div>
+    <InsPageClient
+      locale={locale} basePath="/fa-scanner/insurance/nhan-tho" typeCode="LIFE"
+      quarters={d.quarters} selected={d.selected} minScore={d.minScore}
+      ticker={d.ticker} rows={d.rows} emptyNote="insLifeEmptyUniverse"
+    />
   );
 }

@@ -59,6 +59,12 @@ CHANGE_NO_PREV = "NO_COMPARABLE_PREVIOUS_FA"
 CHANGE_CURRENT_INCOMPLETE = "CURRENT_FA_INCOMPLETE"
 CHANGE_NA = "NOT_APPLICABLE"
 
+#: Which figure ΔFA differences. `TOTAL_BASIS` is what the interface shows
+#: (§2.10); `FA_BASIS` survives only to keep migration 077's audit column
+#: populated, and must never reach the frontend.
+TOTAL_BASIS = "TOTAL_100"
+FA_BASIS = "FA_88"
+
 
 @dataclass
 class TabScore:
@@ -131,20 +137,39 @@ def assemble(symbol: str, period: str, type_code: str,
     return s
 
 
-def fa_change(current: TabScore, previous: TabScore | None) -> tuple[float | None, str]:
-    """ΔFA on FA/88, never including valuation (BA §4, §8.2).
+def fa_change(current: TabScore, previous: TabScore | None,
+              basis: str = TOTAL_BASIS) -> tuple[float | None, str]:
+    """ΔFA between two quarters, on the basis BA's current spec displays.
 
-    Four outcomes, and they are NOT interchangeable: a percentage, a zero base,
+    THE BASIS MOVED, AND THE TWO ANSWERS GENUINELY DIFFER. BA
+    `YEU_CAU_IT_CHOT_R4_V2...2026-10-04.md` §2.2 collapses the displayed score
+    to one figure, `Tổng điểm FA /100`, and §2.10 requires ΔFA to be the change
+    in THAT ("Không tính Δ trên subtotal /88"). FA/88 needs Common and Internal;
+    Total/100 additionally needs Valuation — so a symbol with no valuation block
+    has a /88 delta and no /100 delta. Holding is that case right now. Returning
+    the /88 number because it happens to exist would answer a question nobody
+    asked.
+
+    `basis` is kept so the /88 figure stays computable for the audit column
+    migration 077 preserves; the default is what the interface shows.
+
+    FOUR OUTCOMES, AND THEY ARE NOT INTERCHANGEABLE: a percentage, a zero base,
     no comparable previous quarter, and an incomplete current one. Collapsing
     any pair of them is what makes a reader think a company got worse when the
     truth is that we could not compare.
     """
-    if current.fa_score is None:
+    pick = (lambda s: s.total_score) if basis == TOTAL_BASIS \
+        else (lambda s: s.fa_score)
+    now = pick(current)
+    if now is None:
         return None, CHANGE_CURRENT_INCOMPLETE
-    if previous is None or previous.fa_score is None:
+    if previous is None:
         return None, CHANGE_NO_PREV
-    if previous.fa_score == 0:
+    before = pick(previous)
+    if before is None:
+        return None, CHANGE_NO_PREV
+    if before == 0:
         # Never divide by zero and never print an infinity.
         return None, CHANGE_ZERO_BASE
-    pct = (current.fa_score - previous.fa_score) / abs(previous.fa_score) * 100.0
+    pct = (now - before) / abs(before) * 100.0
     return pct, CHANGE_CALCULATED

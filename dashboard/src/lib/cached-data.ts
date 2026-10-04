@@ -825,6 +825,24 @@ export const HOLDING_SCORING_VERSION = "HOLDING_SCORING_1.0";
  * Valuation/12. Not pinned to one version — each insurance type carries its own
  * `formula_version`, and the row itself says which produced it.
  */
+/**
+ * The engine versions the insurance tabs read, one pair per type.
+ *
+ * `fa_insurance_tab_scores` keys on `(symbol, period, formula_version,
+ * band_version)` so a rescore under a new threshold set inserts BESIDE the old
+ * rows. An unpinned read therefore returns a symbol once per version ever
+ * scored, and `assembled[symbol] = row` keeps whichever arrived last — the
+ * exact defect `SEC_ACTIVE_MODEL` exists to prevent on the securities tab.
+ *
+ * REINSURANCE IS ON V2 OF ITS THRESHOLDS as of BA's 04/10/2026 ruling; the V1
+ * rows stay in the table untouched, which is what makes the change auditable.
+ * V2 moved the R4 bands only — the formula version is unchanged.
+ */
+export const INS_ACTIVE_BAND_VERSIONS = [
+  "NONLIFE_P1_P5_SCORE_BANDS_V1",
+  "REINSURANCE_R1_R5_THRESHOLD_V2",
+] as const;
+
 export type InsuranceTabScore = {
   symbol: string;
   period: string;
@@ -834,11 +852,25 @@ export type InsuranceTabScore = {
   valuation_score: number | null;
   fa_score: number | null;
   total_score: number | null;
-  criteria: Record<string, { value: number | null; band: string | null; score: number | null }>;
+  /**
+   * Per-criterion detail for display. `formula`, `unit` and `bands` are the
+   * §2.17 tooltip fields, written by the engine that applied them — the
+   * frontend holds no copy of any threshold (§2.19).
+   */
+  criteria: Record<string, {
+    value: number | null; band: string | null; score: number | null;
+    formula?: string | null; unit?: string | null; max?: number | null;
+    bands?: string[] | null;
+  }>;
   previous_period: string | null;
-  previous_fa_score: number | null;
-  fa_change_pct: number | null;
-  fa_change_status: string;
+  /**
+   * ΔFA on Total /100 — what the interface shows (BA §2.10). The /88-basis
+   * `fa_change_pct` is still stored for audit and is deliberately NOT typed
+   * here, so no component can reach for it.
+   */
+  previous_total_score: number | null;
+  total_change_pct: number | null;
+  total_change_status: string;
   score_status: string;
   blocked_reason: string | null;
   blocked_metrics: string | null;
@@ -854,6 +886,7 @@ export const getInsuranceTabScores = unstable_cache(
           .from("fa_insurance_tab_scores")
           .select("*", withCount ? { count: "exact" } : undefined)
           .eq("period", period)
+          .in("band_version", INS_ACTIVE_BAND_VERSIONS as unknown as string[])
           .order("symbol", { ascending: true })
           .range(from, to),
       );

@@ -125,7 +125,17 @@ def build(client):
             criteria, statuses = {}, {}
             for code in ("R1", "R2", "R3", "R4", "R5"):
                 score, status = RB.score_one(code, r.get(code))
-                criteria[code] = {"value": r.get(code), "band": None, "score": score}
+                # §2.17 — the tooltip's seven fields travel ON THE ROW. The
+                # frontend may not hold a copy of a threshold (§2.19), and a
+                # tooltip listing bands the engine did not apply is worse than
+                # no tooltip at all.
+                criteria[code] = {
+                    "value": r.get(code), "band": None, "score": score,
+                    "formula": RB.FORMULA_TEXT[code],
+                    "unit": RB.UNIT_TEXT[code],
+                    "max": RB.CRITERION_MAX[code],
+                    "bands": RB.band_text(code),
+                }
                 statuses[code] = status
             s = T.assemble(sym, p, "REINSURANCE", common.get((sym, p)), criteria)
             assembled[(sym, p)] = s
@@ -137,7 +147,11 @@ def rows_for_write(assembled, detail):
     out = []
     for (sym, p), s in sorted(assembled.items()):
         prev = assembled.get((sym, D.shift(p, 1)))
-        pct, dstatus = T.fa_change(s, prev)
+        # Two bases, deliberately both stored (migration 077): the /100 delta
+        # is what the interface shows (BA §2.10) and the /88 one survives as
+        # the audit subtotal it was. They differ wherever Valuation is absent.
+        pct, dstatus = T.fa_change(s, prev, T.TOTAL_BASIS)
+        fa_pct, fa_dstatus = T.fa_change(s, prev, T.FA_BASIS)
         st = detail[(sym, p)]["status"]
         flags = sorted({v for v in st.values() if v == RB.STATUS_REVIEW})
         out.append({
@@ -149,7 +163,9 @@ def rows_for_write(assembled, detail):
             "criteria": s.criteria,
             "previous_period": D.shift(p, 1) if prev else None,
             "previous_fa_score": prev.fa_score if prev else None,
-            "fa_change_pct": pct, "fa_change_status": dstatus,
+            "fa_change_pct": fa_pct, "fa_change_status": fa_dstatus,
+            "previous_total_score": prev.total_score if prev else None,
+            "total_change_pct": pct, "total_change_status": dstatus,
             "score_status": s.score_status,
             "blocked_reason": s.blocked_reason or (flags[0] if flags else None),
             "blocked_metrics": s.blocked_metrics,
@@ -160,6 +176,33 @@ def rows_for_write(assembled, detail):
             "source_run_id": None,
         })
     return out
+
+
+def score_distribution(rows, code="R4"):
+    """§1.10.7 — the observation count at EVERY reachable score, including the
+    ones that stay empty.
+
+    Printing only the levels that occurred would hide the finding: V1's whole
+    defect was that one level held all 46 observations, and a histogram of the
+    occupied levels alone reads as a perfectly healthy single bar. The 4-point
+    level is absent from R4 by design (§1.5), so it is listed as `n/a` rather
+    than as a zero — "no band awards this" and "no company landed here" are
+    different facts.
+    """
+    levels = sorted({pts for _, pts in RB.R4_BANDS} | {0}) if code == "R4" \
+        else sorted(range(RB.CRITERION_MAX[code] + 1))
+    counts = {k: 0 for k in levels}
+    not_scored = review = 0
+    for r in rows:
+        sc = r["criteria"][code]["score"]
+        if sc is None:
+            if r["blocked_reason"] and RB.STATUS_REVIEW in str(r["blocked_reason"]):
+                review += 1
+            else:
+                not_scored += 1
+        else:
+            counts[int(sc)] = counts.get(int(sc), 0) + 1
+    return counts, not_scored, review
 
 
 def reconcile(rows):
@@ -175,6 +218,16 @@ def reconcile(rows):
             bad.append((r["symbol"], r["period"], "Total != FA+Valuation"))
         if r["total_score"] is not None and not 0 <= r["total_score"] <= 100:
             bad.append((r["symbol"], r["period"], "total range"))
+        # §2.10 — the displayed delta must reconcile against the two Totals it
+        # names, and must exist exactly when it was CALCULATED.
+        tp, ts = r["total_change_pct"], r["total_change_status"]
+        if (tp is not None) != (ts == "CALCULATED"):
+            bad.append((r["symbol"], r["period"], "delta pct/status disagree"))
+        if ts == "CALCULATED":
+            want = (r["total_score"] - r["previous_total_score"]) \
+                / abs(r["previous_total_score"]) * 100.0
+            if abs(tp - want) > 1e-6:
+                bad.append((r["symbol"], r["period"], "delta arithmetic"))
     return bad
 
 
@@ -193,7 +246,7 @@ def backtest(rows, detail, path):
                           r["fa_score"], r["total_score"], r["score_status"],
                           r["blocked_reason"] or ""])
     # §13 — raw distribution per metric, for QA only. It never moves a band.
-    print(f"\nraw distribution (QA only — does not change V1 thresholds)")
+    print(f"\nraw distribution (QA only — a distribution never moves a locked band)")
     print(f"   {'metric':6} {'n':>3} {'min':>9} {'P25':>9} {'median':>9} {'P75':>9} {'max':>9}")
     for code in ("R1", "R2", "R3", "R4", "R5"):
         vals = sorted(r["criteria"][code]["value"] for r in rows
@@ -224,6 +277,16 @@ def main() -> int:
         raise SystemExit(f"FAIL_RECONCILIATION on {len(bad)}: {bad[:5]}")
     print(f"§14.2 reconciliation: PASS on all {len(rows)} rows")
 
+    counts, ns, rv = score_distribution(rows, "R4")
+    print(f"\n§1.10.7 R4 score distribution ({RB.THRESHOLD_VERSION})")
+    for pts in range(0, 9):
+        if pts in counts:
+            print(f"   R4 = {pts}/8 : {counts[pts]:>3} observations")
+        else:
+            print(f"   R4 = {pts}/8 :  n/a  (no band awards {pts} — §1.5)")
+    print(f"   NOT_SCORED      : {ns:>3}")
+    print(f"   REVIEW_TRIGGERED: {rv:>3}")
+
     done = [r for r in rows if r["score_status"] == "SCORING_COMPLETE"]
     print(f"\n{len(rows)} symbol-quarters · {len(done)} with a complete Total /100")
     for r in sorted(done, key=lambda x: (x["symbol"], x["period"]))[-6:]:
@@ -231,9 +294,10 @@ def main() -> int:
         print(f"   {r['symbol']} {r['period']}: "
               f"R1 {c['R1']['score']}/12 R2 {c['R2']['score']}/10 "
               f"R3 {c['R3']['score']}/8 R4 {c['R4']['score']}/8 "
-              f"→ Int {r['internal_change_score']:.0f}/38 + Com {r['common_score']:.0f}/50 "
-              f"= FA {r['fa_score']:.0f}/88 + R5 {c['R5']['score']}/12 "
-              f"= {r['total_score']:.0f}/100")
+              f"→ Nền tảng {r['common_score']:.0f}/50 "
+              f"+ Năng lực {r['internal_change_score']:.0f}/38 "
+              f"+ Định giá {c['R5']['score']}/12 "
+              f"= Tổng FA {r['total_score']:.0f}/100")
 
     if a.backtest:
         backtest(rows, detail, a.backtest)
@@ -248,9 +312,18 @@ def main() -> int:
             rows[i:i + 200],
             on_conflict="symbol,period,formula_version,band_version"),
             label="reinsurance upsert")
+    # THE READ-BACK MUST PIN THE BAND VERSION, NOT JUST THE FORMULA.
+    # V2 changed only the thresholds, so `formula_version` is identical on the
+    # V1 rows this table deliberately keeps — an unpinned read returns each
+    # symbol-quarter TWICE and whichever arrived last wins the comparison dict.
+    # It reported three PRE mismatches against a write that was entirely
+    # correct, which is the same defect `SEC_ACTIVE_MODEL` exists to prevent on
+    # the dashboard side.
     back = safe_execute(client.table(TABLE)
                         .select("symbol,period,total_score,score_status")
-                        .eq("formula_version", RB.FORMULA_VERSION), label="readback").data or []
+                        .eq("formula_version", RB.FORMULA_VERSION)
+                        .eq("band_version", RB.THRESHOLD_VERSION),
+                        label="readback").data or []
     want = {(r["symbol"], r["period"]): r["total_score"] for r in rows}
     got = {(r["symbol"], r["period"]): r["total_score"] for r in back}
     miss = [k for k in want if k not in got

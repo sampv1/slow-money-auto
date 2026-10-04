@@ -132,6 +132,21 @@
   --color-floor: #136a76; /* 5.3:1 — sàn   (limit down) */
   --color-reference: #7d5806; /* 5.4:1 — tham chiếu · cảnh báo · Pro */
 
+  /* --- Soft tints of the locked semantics ---------------------------------
+     Header-band grounds, NOT text or mark colours. `accent-soft` already
+     existed; these two complete the family so a grouped table header can be
+     separated by HUE without any band changing lightness — all three sit within
+     0.02 relative luminance of `panel-2`, the header surface they replace, so
+     the header still reads as one block and `fg-label` stays above 7.9:1 on
+     every one of them (measured: 7.93 / 8.09 / 8.13 against panel-2's 8.08).
+
+     They are tints of tokens whose MEANING is locked, so they inherit it: a
+     soft ground never appears where its parent semantic would be wrong. Use
+     them for a band over a group of columns, never to tint a figure — a number
+     takes `up` / `down` / `reference` itself. */
+  --color-up-soft: #e3eee7;
+  --color-reference-soft: #f3ebdc;
+
   /* --- Type scale ---------------------------------------------------------
      Data sizes drop to Halo's 12px and their line-heights tighten hard, because
      row height is what density actually is. Prose keeps generous leading — it

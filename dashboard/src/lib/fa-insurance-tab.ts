@@ -1,49 +1,64 @@
 /**
- * The insurance scanner's five tabs — shared contract and display rules.
+ * The insurance scanner's tabs — shared contract and display rules.
  *
- * BA `DAC_TA_GIAO_DIEN_TAB_BAO_HIEM_GUI_IT_2026-10-02.md`.
+ * BA `DAC_TA_GIAO_DIEN_TAB_BAO_HIEM_GUI_IT_2026-10-02.md`, superseded on the
+ * score architecture and the column order by
+ * `YEU_CAU_IT_CHOT_R4_V2_VA_CHUAN_HOA_GIAO_DIEN_BAO_HIEM_2026-10-04.md`.
  *
- * ONE SCORE STRUCTURE FOR EVERY TAB, and the tabs differ only in which deep
- * metrics fill the middle block:
+ * ONE SCORE, NOT TWO. §2.2 collapses what used to be a /88 subtotal shown
+ * beside a /12 valuation into a single figure:
  *
- *     Common /50  +  Internal /38  =  FA /88
- *     FA /88      +  Valuation /12 =  Total /100
+ *     Tổng điểm FA /100 = Nền tảng chung /50 + Năng lực đặc thù /38
+ *                                            + Định giá /12
  *
- * THE MOCKUP AND THE SPEC DISAGREE ON THIS, AND THE SPEC WINS. The approved
- * PNG still shows `FA 69/80 · Giá 15/20` and "ΔFA … điểm FA /80", but §5, §21
- * and the §22 checklist all forbid the old /80 + /20 split by name, and the
- * mockup is captioned "Dữ liệu minh họa giao diện". So the layout comes from
- * the image and the arithmetic from the text. The same applies to the mockup's
- * column headers (EPS ĐC YoY (15) · CHUỖI 3 QUÝ (10) · GIA TỐC LN (10) …):
- * §7.2 names C1–C5 at 10 points each, which is what the backend actually
- * stores, so those are the headers.
+ * §2.20.1 forbids the string "FA /88" anywhere on the interface, so `FA_MAX` is
+ * deliberately NOT exported from this module. The backend still stores that
+ * subtotal for audit (migration 077 says so on the column), and the only way to
+ * keep a forbidden figure off the screen reliably is for the frontend to have
+ * no constant for it.
  *
- * THE FRONTEND NEVER COMPUTES A SCORE (§18, §21). Every number here is read
- * from the backend; this module holds shapes, labels, ordering and formatting
- * only. Where a block is absent it stays absent — §19 forbids rendering
- * `NOT_SCORED` as 0, because 0 is a legitimate score a weak company can earn.
+ * FOUR SPECIAL COLUMNS AND THEN VALUATION, IN THAT ORDER. §2.3 fixes the column
+ * order and §2.11 fixes the reason: a reader goes quality → type capability →
+ * price. Valuation is part of the /100 and still sits last. That is why the
+ * five deep metrics of each type are split here into `INTERNAL_METRICS` (the
+ * four that make /38) and `VALUATION_METRIC` (the one that makes /12) rather
+ * than being one list of five — under one list the valuation column cannot be
+ * moved past the special block without the table knowing which of the five it
+ * is, and "the last one" is not a rule, it is a coincidence of the current
+ * ordering.
+ *
+ * THE FRONTEND NEVER COMPUTES A SCORE (§2.19). Every number is read from the
+ * backend; this module holds shapes, labels, ordering and formatting only.
+ * Where a block is absent it stays absent — §0 forbids rendering an absence as
+ * 0, because 0 is a legitimate score a weak company can earn.
  */
+
+import type { TranslationKey } from "./i18n";
 
 export const COMMON_MAX = 50;
 export const INTERNAL_MAX = 38;
-export const FA_MAX = 88;
 export const VALUATION_MAX = 12;
 export const TOTAL_MAX = 100;
 
 export type InsuranceTypeCode =
   | "LIFE" | "NON_LIFE" | "REINSURANCE" | "HOLDING_MIXED";
 
-/** §19 — the states the table must keep apart. */
+/** The states the table must keep apart (§0, §1.8). */
 export type InsRowStatus =
   | "OK" | "PARTIAL_NOT_RATED" | "NOT_SCORED" | "REVIEW_TRIGGERED";
 
-/** One scored criterion, exactly as §18's contract defines it. */
+/** One scored criterion as the backend's contract defines it. */
 export type InsMetric = {
   code: string;
   name: string;
   raw_value: number | null;
   score: number | null;
   max_score: number;
+  /** Unit of `raw_value`: '%' or 'ppt' or 'lần'. Never inferred from the code. */
+  unit?: string | null;
+  /** §2.17 tooltip fields, supplied by the engine that scored the criterion. */
+  formula?: string | null;
+  bands?: string[] | null;
   /** Set when `score` is null, so the cell can say WHY rather than show 0. */
   blocked_reason?: string | null;
 };
@@ -57,25 +72,23 @@ export type InsRow = {
 
   common_score: number | null;
   internal_score: number | null;
-  fa_score: number | null;
   valuation_score: number | null;
   total_score: number | null;
 
-  delta_fa_points: number | null;
-  delta_fa_pct: number | null;
+  delta_points: number | null;
+  delta_pct: number | null;
   /** CALCULATED · ZERO_BASE · NO_COMPARABLE_PREVIOUS_FA · CURRENT_FA_INCOMPLETE */
-  delta_fa_status: string;
+  delta_status: string;
 
   metrics: InsMetric[];
   formula_version: string | null;
   band_version: string | null;
   status: InsRowStatus;
   flags: string[];
-  /** Free-text reason for a non-OK row; rendered instead of a score. */
   status_reason?: string | null;
 };
 
-export const INSURANCE_TYPE_LABEL: Record<InsuranceTypeCode, string> = {
+export const INSURANCE_TYPE_LABEL: Record<InsuranceTypeCode, TranslationKey> = {
   LIFE: "insTypeLife",
   NON_LIFE: "insTypeNonLife",
   REINSURANCE: "insTypeReinsurance",
@@ -91,59 +104,149 @@ export const TYPE_CODE_BY_LABEL: Record<string, InsuranceTypeCode> = {
 };
 
 /**
- * The five common criteria, in BA's §7.2 order. Names come from the spec text,
- * not the mockup — the mockup predates the C1–C5 lock.
+ * A criterion column.
+ *
+ * THE HEADER IS THREE SEPARATE PIECES, not one string, because §2.6 requires it
+ * to wrap onto 2-4 short lines and forbids a long single line ("Không viết
+ * header dài một dòng"). A pre-joined label can only be wrapped by the browser,
+ * which breaks it wherever the width happens to fall — the measured failure on
+ * the securities detail tab was "Hiệu quả hoạt / động", a two-word Vietnamese
+ * compound split mid-phrase. Giving the header its own lines puts every break
+ * where the spec marks it, in both locales, with no per-locale break map.
+ *
+ *   `head`  line 1 — the code the reader and the spec both use ("C1", "R4")
+ *   `short` line 2-3 — 1-3 words naming what it measures
+ *   `/max`  line 4 — rendered by the table from `max`
+ *
+ * `label` is the FULL criterion name and appears only in the tooltip (§2.17).
  */
-export const COMMON_METRICS: { code: string; label: string; max: number }[] = [
-  { code: "C1", label: "insC1", max: 10 },
-  { code: "C2", label: "insC2", max: 10 },
-  { code: "C3", label: "insC3", max: 10 },
-  { code: "C4", label: "insC4", max: 10 },
-  { code: "C5", label: "insC5", max: 10 },
+export type InsColumn = {
+  /** Sort key. For a merged column (see `codes`) this is the codes joined by "/". */
+  code: string;
+  /**
+   * Every backend code this column accepts.
+   *
+   * ONE COLUMN MUST MEAN ONE MEASUREMENT, and on the Holding tab that is only
+   * achievable by merging codes. BVH is scored on B1-B4 and PVI on P1-P4, and
+   * the two sets OVERLAP by measurement rather than by position: B1 and P3 are
+   * both "TTM financial result over average investable assets", B4 and P4 are
+   * both the capital buffer. Eight separate columns would leave each company's
+   * half empty and push the table past a 1,280px viewport; four positional
+   * columns would put two different measurements under one heading, which is
+   * the fault the Toàn ngành tab exists to avoid. Merging by measurement gives
+   * six columns, each with one meaning and one weight.
+   */
+  codes?: string[];
+  /** Literal when the code is the heading; an i18n key for "Định giá". */
+  head: string;
+  headKey?: TranslationKey;
+  short: TranslationKey;
+  label: TranslationKey;
+  /** Literal name, for a column whose label comes from the DATA (Holding). */
+  shortText?: string;
+  labelText?: string;
+  max: number;
+};
+
+/** C1–C5, the common foundation (§2.4 Nhóm 1). 10 points each. */
+export const COMMON_METRICS: InsColumn[] = [
+  { code: "C1", head: "C1", short: "insC1Short", label: "insC1", max: 10 },
+  { code: "C2", head: "C2", short: "insC2Short", label: "insC2", max: 10 },
+  { code: "C3", head: "C3", short: "insC3Short", label: "insC3", max: 10 },
+  { code: "C4", head: "C4", short: "insC4Short", label: "insC4", max: 10 },
+  { code: "C5", head: "C5", short: "insC5Short", label: "insC5", max: 10 },
 ];
 
 /**
- * Deep metric headers per tab (§8.3, §9, §11). Holding is deliberately ABSENT:
- * §10 forbids the frontend hard-coding its metric names or weights because
- * more than one `formula_version` exists, so that tab renders whatever the
- * backend's active version sends.
+ * The four special criteria per type — §2.4 Nhóm 2, 38 points.
+ *
+ * HOLDING IS ABSENT ON PURPOSE and that has not changed: more than one
+ * `formula_version` exists for it and the two live engines do not even share a
+ * criterion set (BVH scores B1-B4, PVI scores P1-P4), so the tab takes its
+ * columns from the rows it was served. See `ins-page-client.tsx`.
  */
-export const DEEP_METRICS: Partial<Record<InsuranceTypeCode,
-  { code: string; label: string; max: number }[]>> = {
+export const INTERNAL_METRICS: Partial<Record<InsuranceTypeCode, InsColumn[]>> = {
   NON_LIFE: [
-    { code: "P1", label: "insP1", max: 12 },
-    { code: "P2", label: "insP2", max: 10 },
-    { code: "P3", label: "insP3", max: 8 },
-    { code: "P4", label: "insP4", max: 8 },
-    { code: "P5", label: "insP5", max: 12 },
+    { code: "P1", head: "P1", short: "insP1Short", label: "insP1", max: 12 },
+    { code: "P2", head: "P2", short: "insP2Short", label: "insP2", max: 10 },
+    { code: "P3", head: "P3", short: "insP3Short", label: "insP3", max: 8 },
+    { code: "P4", head: "P4", short: "insP4Short", label: "insP4", max: 8 },
   ],
   REINSURANCE: [
-    { code: "R1", label: "insR1", max: 12 },
-    { code: "R2", label: "insR2", max: 10 },
-    { code: "R3", label: "insR3", max: 8 },
-    { code: "R4", label: "insR4", max: 8 },
-    { code: "R5", label: "insR5", max: 12 },
+    { code: "R1", head: "R1", short: "insR1Short", label: "insR1", max: 12 },
+    { code: "R2", head: "R2", short: "insR2Short", label: "insR2", max: 10 },
+    { code: "R3", head: "R3", short: "insR3Short", label: "insR3", max: 8 },
+    { code: "R4", head: "R4", short: "insR4Short", label: "insR4", max: 8 },
   ],
   LIFE: [
-    { code: "LIFE-1", label: "insLife1", max: 10 },
-    { code: "LIFE-2", label: "insLife2", max: 10 },
-    { code: "LIFE-3", label: "insLife3", max: 8 },
-    { code: "LIFE-4", label: "insLife4", max: 10 },
-    { code: "LIFE-5", label: "insLife5", max: 12 },
+    { code: "LIFE-1", head: "N1", short: "insLife1Short", label: "insLife1", max: 10 },
+    { code: "LIFE-2", head: "N2", short: "insLife2Short", label: "insLife2", max: 10 },
+    { code: "LIFE-3", head: "N3", short: "insLife3Short", label: "insLife3", max: 8 },
+    { code: "LIFE-4", head: "N4", short: "insLife4Short", label: "insLife4", max: 10 },
   ],
 };
+
+/**
+ * The valuation criterion per type — §2.4 Nhóm 3, 12 points, last column.
+ *
+ * Its heading is "Định giá", not the criterion code: §2.6 spells that column's
+ * header out as `Định giá / P/B lịch sử / /12`, so the code (P5, R5) lives in
+ * the tooltip with the rest of the criterion's detail.
+ *
+ * LIFE and HOLDING_MIXED have no entry because BA has not locked their
+ * valuation bands. The column is still RENDERED on those tabs (§2.12.A, D
+ * forbid hiding it) and says so.
+ */
+export const VALUATION_METRIC: Partial<Record<InsuranceTypeCode, InsColumn>> = {
+  NON_LIFE: {
+    code: "P5", head: "", headKey: "insGroupValuationHead",
+    short: "insP5Short", label: "insP5", max: 12,
+  },
+  REINSURANCE: {
+    code: "R5", head: "", headKey: "insGroupValuationHead",
+    short: "insR5Short", label: "insR5", max: 12,
+  },
+};
+
+/** The §2.4 Nhóm 2 band title per tab. */
+export const INTERNAL_GROUP_LABEL: Record<InsuranceTypeCode, TranslationKey> = {
+  LIFE: "insGroupLife",
+  NON_LIFE: "insGroupNonLife",
+  REINSURANCE: "insGroupReins",
+  HOLDING_MIXED: "insGroupHolding",
+};
+
+/**
+ * §2.14 column widths, as the pixel targets BA published.
+ *
+ * They are applied through a `<colgroup>` with `table-fixed`, because under
+ * `auto` layout the longest unbreakable word still sets a min-content floor and
+ * these numbers would be advisory only — the lesson the securities detail table
+ * records. The sum is what makes §2.5 achievable: 4 lead columns + 5 common +
+ * n special + 1 valuation, which is 1,032px for a four-criterion tab against
+ * 1,216px of content at a 1,280px viewport.
+ */
+export const INS_COL_W = {
+  reportDate: 88,
+  ticker: 60,
+  total: 78,
+  delta: 108,
+  criterion: 68,
+  valuation: 86,
+} as const;
 
 /** §4.1 — the minimum-score filter's options. */
 export const MIN_SCORE_OPTIONS = [0, 40, 50, 60, 70, 80];
 
 /**
- * ΔFA colour (§7.3): green up, red down, grey flat. Applied to the figure
- * only — §16 forbids tinting a whole row.
+ * ΔFA colour: green up, red down, grey flat — the house board semantics, which
+ * a Vietnamese reader already reads pre-attentively. Applied to the FIGURE
+ * only; tinting a whole row is forbidden.
  */
 export function deltaTone(pct: number | null): string {
   if (pct === null) return "text-fg-muted";
-  if (pct > 0) return "text-emerald-700";
-  if (pct < 0) return "text-rose-700";
+  if (pct > 0) return "text-up";
+  if (pct < 0) return "text-down";
   return "text-fg-muted";
 }
 
@@ -158,22 +261,24 @@ export function sortValue(row: InsRow, key: string): number | string | null {
     case "ticker": return row.ticker;
     case "report_date": return row.report_date ?? null;
     case "total": return row.total_score;
-    case "fa": return row.fa_score;
     case "common": return row.common_score;
     case "internal": return row.internal_score;
     case "valuation": return row.valuation_score;
-    case "delta": return row.delta_fa_pct;
+    case "delta": return row.delta_pct;
     default: {
-      const m = row.metrics.find((x) => x.code === key);
+      // A merged column's key is its codes joined by "/", so a row matches on
+      // whichever of them it actually carries.
+      const accepted = key.split("/");
+      const m = row.metrics.find((x) => accepted.includes(x.code));
       return m ? m.score : null;
     }
   }
 }
 
 /**
- * The headline figure a tab sorts on by default (§13): Total where the tab has
- * one, otherwise Common. A tab that cannot form a Total must not sort on an
- * empty column.
+ * The headline figure a tab sorts on by default: Total where the tab has one,
+ * otherwise Common. A tab that cannot form a Total must not sort on an empty
+ * column.
  */
 export function defaultSortKey(rows: InsRow[]): "total" | "common" {
   return rows.some((r) => r.total_score !== null) ? "total" : "common";

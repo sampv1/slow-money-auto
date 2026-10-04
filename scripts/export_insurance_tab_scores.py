@@ -74,9 +74,15 @@ def build(client, workbook: str) -> list[dict]:
         criteria = {}
         for code in NB.CRITERION_MAX:
             lo = code.lower()
+            # §2.17 — the tooltip's seven fields travel ON THE ROW, because
+            # §2.19 forbids the frontend holding a copy of any threshold.
             criteria[code] = {"value": num(d.get(f"{lo}_value")),
                               "band": d.get(f"{lo}_band"),
-                              "score": num(d.get(f"{lo}_score"))}
+                              "score": num(d.get(f"{lo}_score")),
+                              "formula": NB.FORMULA_TEXT[code],
+                              "unit": NB.UNIT_TEXT[code],
+                              "max": NB.CRITERION_MAX[code],
+                              "bands": NB.band_text(code)}
         s = T.assemble(sym, per, "NON_LIFE", num(d.get("common_score_50")), criteria)
         assembled[(sym, per)] = s
         detail[(sym, per)] = d
@@ -95,7 +101,11 @@ def build(client, workbook: str) -> list[dict]:
     payload = []
     for (sym, per), s in sorted(assembled.items()):
         prev = assembled.get((sym, _shift(per, 1)))
-        pct, status = T.fa_change(s, prev)
+        # Two bases, deliberately both stored (migration 077): the /100 delta
+        # is what the interface shows (BA §2.10) and the /88 one survives as
+        # the audit subtotal it was. They differ wherever Valuation is absent.
+        pct, status = T.fa_change(s, prev, T.TOTAL_BASIS)
+        fa_pct, fa_status = T.fa_change(s, prev, T.FA_BASIS)
         d = detail[(sym, per)]
         payload.append({
             "symbol": sym, "period": per,
@@ -108,8 +118,11 @@ def build(client, workbook: str) -> list[dict]:
             "criteria": {k: v for k, v in s.criteria.items()},
             "previous_period": _shift(per, 1) if prev else None,
             "previous_fa_score": prev.fa_score if prev else None,
-            "fa_change_pct": pct,
-            "fa_change_status": status,
+            "fa_change_pct": fa_pct,
+            "fa_change_status": fa_status,
+            "previous_total_score": prev.total_score if prev else None,
+            "total_change_pct": pct,
+            "total_change_status": status,
             "score_status": s.score_status,
             "blocked_reason": s.blocked_reason,
             "blocked_metrics": s.blocked_metrics,
@@ -141,9 +154,14 @@ def main() -> int:
     print(f"assembled {len(payload)} symbol-quarters · "
           f"{len(complete)} with a complete Total /100")
     for p in sorted(complete, key=lambda x: -x["total_score"])[:5]:
-        print(f"   {p['symbol']} {p['period']}: Common {p['common_score']:.0f}/50 + "
-              f"Internal {p['internal_change_score']:.0f}/38 = FA {p['fa_score']:.0f}/88 "
-              f"+ Val {p['valuation_score']:.0f}/12 = {p['total_score']:.0f}/100")
+        # The /88 subtotal is deliberately absent from this line too. It is a
+        # stored audit figure, not a reportable score (BA §2.2), and a log that
+        # keeps printing it is how it gets quoted back in a handover.
+        print(f"   {p['symbol']} {p['period']}: "
+              f"Nền tảng {p['common_score']:.0f}/50 "
+              f"+ Năng lực {p['internal_change_score']:.0f}/38 "
+              f"+ Định giá {p['valuation_score']:.0f}/12 "
+              f"= Tổng FA {p['total_score']:.0f}/100")
 
     if not a.write:
         print("\ndry run: nothing written")

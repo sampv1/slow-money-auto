@@ -271,3 +271,29 @@ def fa_delta(current, previous, previous_pending=False, previous_exists=True):
         out["fa_delta_status"] = DELTA_NO_CHANGE_FROM_ZERO
         out["fa_delta_display"] = f"0,{'0' * DELTA_DISPLAY_DP}%"
     return out
+
+
+#: §2.17 of BA's 04/10/2026 UI spec — the tooltip's formula line and unit.
+#:
+#: P2 is a difference of two percentages, so its unit is "điểm %" (percentage
+#: POINTS). Printing '%' on it would state something false.
+FORMULA_TEXT = {
+    "P1": "Lợi nhuận hoạt động bảo hiểm gộp / Doanh thu bảo hiểm thuần × 100",
+    "P2": "P1 kỳ này − P1 cùng kỳ năm trước",
+    "P3": "Lợi nhuận hoạt động tài chính TTM / Tài sản đầu tư bình quân × 100",
+    "P4": "Vốn chủ sở hữu / Dự phòng nghiệp vụ bảo hiểm",
+    "P5": "P/B hiện tại / P/B trung vị lịch sử của chính mã đó",
+}
+UNIT_TEXT = {"P1": "%", "P2": "điểm %", "P3": "%", "P4": "lần", "P5": "lần"}
+
+
+#: §2.17 of BA's 04/10/2026 UI spec — the threshold list the tooltip must show.
+#:
+#: BUILT FROM THE SAME `Band` OBJECTS THE SCORER READS. Each band already
+#: carries the label BA wrote for it, so this is a re-ordering, not a second
+#: transcription of the table — the only way a tooltip can be guaranteed to
+#: describe the bands actually applied.
+def band_text(code: str) -> list[str]:
+    """One line per band, highest score first."""
+    bands = sorted(BANDS[code], key=lambda b: -b.points)
+    return [f"{b.label}: {b.points} điểm" for b in bands]

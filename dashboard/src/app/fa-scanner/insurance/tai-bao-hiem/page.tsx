@@ -6,10 +6,13 @@ import { loadInsTab } from "../ins-load";
 export const revalidate = 0;
 
 /**
- * Bảo hiểm → Tái bảo hiểm (§9). R1–R5 are computed and their bands are frozen
- * are specified, but BA has not yet approved their bands (Giai đoạn C), so
- * no score is published — the columns render with a stated reason rather
- * than a zero, which §9 and §19 both require.
+ * Bảo hiểm → Tái bảo hiểm — the tab BA made the layout model for all four
+ * (§2.1, §2.12.C).
+ *
+ * R1-R4 form Năng lực tái bảo hiểm /38 and R5 is Định giá /12, scored against
+ * `REINSURANCE_R1_R5_THRESHOLD_V2`. V2 changed R4's thresholds only: V1's top
+ * band opened at >= 5.0%, below the 5.60% minimum ever observed for VNR/PRE, so
+ * every measurable observation scored 8/8 and the criterion separated nobody.
  */
 export default async function Page({
   searchParams,

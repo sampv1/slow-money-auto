@@ -1,21 +1,22 @@
 /**
  * Build the insurance scanner's rows from what the backend actually stores.
  *
- * NOTHING HERE SCORES (BA §18, §21). It maps stored columns onto the row shape
- * the table renders, and where a block has not been persisted yet it produces
- * an ABSENCE with a reason — never a zero (§19).
+ * NOTHING HERE SCORES (BA §2.19). It maps stored columns onto the row shape the
+ * table renders, and where a block has not been persisted yet it produces an
+ * ABSENCE with a reason — never a zero (§0, §2.20.7).
  *
- * WHY THE THREE TABS READ DIFFERENT TABLES TODAY. The common layer lives in
- * `fa_insurance_scores` for every insurer; the holding deep layer lives in
- * `fa_insurance_deep_scores`; non-life and reinsurance deep scores are computed
- * but have no table until `supabase/076` is applied. Rather than hide those two
- * tabs, they render their real columns with a stated reason, which is exactly
- * what §9 asks for: "giao diện vẫn render đúng cột; không gán điểm giả".
+ * WHY THE TABS READ DIFFERENT TABLES. The common layer lives in
+ * `fa_insurance_scores` for every insurer; the Holding deep layer lives in
+ * `fa_insurance_deep_scores`; non-life and reinsurance are assembled into
+ * `fa_insurance_tab_scores`. An assembled row WINS wherever one exists — the
+ * backend already summed the blocks and §2.19 forbids the frontend re-adding
+ * them. The per-symbol fallback below covers only types whose assembly is not
+ * stored.
  */
 
 import {
   type InsMetric, type InsRow, type InsuranceTypeCode,
-  DEEP_METRICS, TYPE_CODE_BY_LABEL,
+  INTERNAL_METRICS, VALUATION_METRIC, TYPE_CODE_BY_LABEL,
 } from "./fa-insurance-tab";
 import type { InsuranceScore } from "./fa-insurance";
 import type { HoldingDeepRow } from "./fa-holding";
@@ -34,15 +35,21 @@ function commonMetrics(s: InsuranceScore): InsMetric[] {
     C1: s.c1_points, C2: s.c2_points, C3: s.c3_points,
     C4: s.c4_points, C5: s.c5_points,
   };
+  // C2 counts quarters; the rest are percentages. Printing '%' on a count
+  // would state something false, so the unit travels with the metric.
+  const units: Record<string, string> = {
+    C1: "%", C2: "", C3: "%", C4: "%", C5: "%",
+  };
   return (["C1", "C2", "C3", "C4", "C5"] as const).map((code) => ({
-    code, name: code, raw_value: raws[code], score: pts[code], max_score: 10,
+    code, name: code, raw_value: raws[code], score: pts[code],
+    max_score: 10, unit: units[code],
   }));
 }
 
 /**
  * Deep metrics for Holding, read from the row rather than from a hard-coded
- * list — §10 forbids the frontend knowing which `formula_version` is active or
- * what its metrics weigh.
+ * list — the frontend may not know which `formula_version` is active or what
+ * its criteria weigh, and BVH and PVI do not even share a criterion set.
  */
 function holdingMetrics(rows: HoldingDeepRow[]): InsMetric[] {
   return rows.map((r) => ({
@@ -51,7 +58,7 @@ function holdingMetrics(rows: HoldingDeepRow[]): InsMetric[] {
     raw_value: r.current_value,
     score: r.score,
     max_score: r.weight,
-    blocked_reason: r.score === null ? null : undefined,
+    unit: r.unit ?? null,
   }));
 }
 
@@ -59,12 +66,6 @@ export function buildInsRows(
   scores: InsuranceScore[],
   deepByTicker: Record<string, HoldingDeepRow[]>,
   typeFilter?: InsuranceTypeCode,
-  /**
-   * Assembled rows from `fa_insurance_tab_scores`. Where one exists it WINS:
-   * the backend already summed the blocks and the frontend must not re-add
-   * them (§18). The per-symbol fallback below only covers types whose deep
-   * scores are not stored yet.
-   */
   assembled: Record<string, InsuranceTabScore> = {},
 ): InsRow[] {
   const out: InsRow[] = [];
@@ -79,20 +80,25 @@ export function buildInsRows(
 
     const asm = assembled[s.symbol];
     if (asm) {
-      // Read, never recompute. The criteria map carries the deep metrics the
-      // engine actually scored, so the columns come from the data too.
       // The stored criteria map carries value/band/score but not the weight,
-      // so the maximum comes from the type's metric list — the same list the
-      // column headers use, which keeps "7/8" in the cell and "(8)" in the
-      // header from ever disagreeing.
-      const maxByCode = new Map(
-        (DEEP_METRICS[code] ?? []).map((m) => [m.code, m.max] as const),
-      );
-      for (const [code2, v] of Object.entries(asm.criteria ?? {})) {
+      // so the maximum comes from the type's column list — the same list the
+      // headers use, which keeps "7/8" in the cell and "/8" in the header from
+      // ever disagreeing.
+      const spec = [
+        ...(INTERNAL_METRICS[code] ?? []),
+        ...(VALUATION_METRIC[code] ? [VALUATION_METRIC[code]!] : []),
+      ];
+      const maxByCode = new Map(spec.map((m) => [m.code, m.max] as const));
+      for (const [metricCode, v] of Object.entries(asm.criteria ?? {})) {
         metrics.push({
-          code: code2, name: code2,
+          code: metricCode, name: metricCode,
           raw_value: v?.value ?? null, score: v?.score ?? null,
-          max_score: maxByCode.get(code2) ?? 0,
+          // The weight comes from the column list, not from the row: it is a
+          // property of the rubric and must match the header's "/8" exactly.
+          max_score: maxByCode.get(metricCode) ?? v?.max ?? 0,
+          unit: v?.unit ?? null,
+          formula: v?.formula ?? null,
+          bands: v?.bands ?? null,
         });
       }
       internal = asm.internal_change_score;
@@ -110,10 +116,12 @@ export function buildInsRows(
     }
 
     const common = asm ? asm.common_score : (s.score_50 ?? null);
-    const fa = asm ? asm.fa_score
-      : common !== null && internal !== null ? common + internal : null;
+    // Total is the ONLY displayed score (§2.2). It needs all three blocks —
+    // which is also why a tab with no valuation bands shows no total, rather
+    // than showing the /88 subtotal under a /100 heading.
     const total = asm ? asm.total_score
-      : fa !== null && valuation !== null ? fa + valuation : null;
+      : common !== null && internal !== null && valuation !== null
+        ? common + internal + valuation : null;
 
     out.push({
       ticker: s.symbol,
@@ -122,17 +130,25 @@ export function buildInsRows(
       report_date: s.release_date,
       common_score: common,
       internal_score: internal,
-      fa_score: fa,
       valuation_score: valuation,
       total_score: total,
-      // ΔFA on FA/88 where the assembled row has it; the common-only fallback
-      // keeps its own basis rather than mixing the two (BA §4).
-      delta_fa_points: asm
-        ? (asm.fa_score !== null && asm.previous_fa_score !== null
-            ? asm.fa_score - asm.previous_fa_score : null)
-        : s.delta_fa_points,
-      delta_fa_pct: asm ? asm.fa_change_pct : s.delta_fa_pct,
-      delta_fa_status: asm ? asm.fa_change_status
+      // ΔFA on Total /100 (§2.10).
+      //
+      // ON A TYPE TAB WITHOUT AN ASSEMBLED ROW THERE IS NO DELTA AT ALL, and
+      // that matters: the fallback carries the /50 common delta, and showing it
+      // under a column headed "ΔFA so với quý trước" beside a headline reading
+      // "chưa chấm" states a change in a score the row does not have. Measured
+      // on the live reinsurance rows while V2 was unwritten — PRE showed
+      // "▲ 8,1% (+3)" next to an empty Total. Only Toàn ngành, whose headline
+      // IS the /50, may use that figure.
+      delta_points: asm
+        ? (asm.total_score !== null && asm.previous_total_score !== null
+            ? asm.total_score - asm.previous_total_score : null)
+        : typeFilter ? null : s.delta_fa_points,
+      delta_pct: asm ? asm.total_change_pct
+        : typeFilter ? null : s.delta_fa_pct,
+      delta_status: asm ? asm.total_change_status
+        : typeFilter ? "CURRENT_FA_INCOMPLETE"
         : s.delta_fa_points === null ? "NO_COMPARABLE_PREVIOUS_FA" : "CALCULATED",
       metrics,
       formula_version: asm ? asm.formula_version : null,

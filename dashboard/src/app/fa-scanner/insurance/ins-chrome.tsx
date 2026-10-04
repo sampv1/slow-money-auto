@@ -7,33 +7,15 @@ import { MIN_SCORE_OPTIONS } from "@/lib/fa-insurance-tab";
 import { formatNumber } from "@/lib/format";
 
 /**
- * The filter row and the info strip — shared by all five tabs (BA §4, §5).
+ * The filter row shared by every insurance tab (§4).
  *
- * The strip exists so a reader does not have to open a tooltip to learn how
- * the score is built (§5). It renders `**bold**` segments only; anything
- * richer would turn a one-line explainer into the long analysis §1 rules out.
+ * THE INFO STRIP THAT USED TO SIT BELOW IT IS GONE. It read "COMMON /50 +
+ * INTERNAL /38 + VALUATION /12 + TOTAL /100 = FA /88 + Valuation /12", which
+ * §2.8 removes and §2.20.2 forbids outright — four English block names on a
+ * Vietnamese page, plus the "FA /88" figure §2.2 retired. The table's three
+ * group bands now carry the same structure in Vietnamese and cost no extra
+ * vertical height, which is what §2.8 asks for.
  */
-function strip(text: string) {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-    part.startsWith("**") && part.endsWith("**") ? (
-      <strong key={i} className="font-semibold text-fg">{part.slice(2, -2)}</strong>
-    ) : (
-      <span key={i}>{part}</span>
-    ),
-  );
-}
-
-export function InsInfoStrip({ locale, deep }: { locale: Locale; deep: boolean }) {
-  return (
-    <div className="flex items-start gap-2 border border-line bg-panel-2 px-3 py-2 mb-3">
-      <span aria-hidden className="label leading-5">i</span>
-      <p className="text-body text-fg-muted leading-5">
-        {strip(t(locale, deep ? "insStripDeep" : "insStripAll"))}
-      </p>
-    </div>
-  );
-}
-
 export function InsFilters({
   locale, basePath, quarters, selected, minScore, ticker, count,
 }: {

@@ -111,12 +111,67 @@ def test_R3_boundaries_at_each_zone_edge():
 
 # --- R4 ---------------------------------------------------------------------
 
-def test_R4_edges():
-    for raw, want in ((5.0, 8), (4.0, 7), (3.0, 5), (2.0, 3), (0.0, 1)):
+#: BA `YEU_CAU_IT_CHOT_R4_V2...2026-10-04.md` §1.6 — the mandatory test table,
+#: transcribed verbatim including the values just below each edge, which is the
+#: half that catches a closure flipped the wrong way.
+R4_V2_CASES = (
+    (-0.01, 0), (0.00, 1), (2.9999, 1), (3.00, 2), (3.9999, 2),
+    (4.00, 3), (4.9999, 3), (5.00, 5), (5.9999, 5), (6.00, 6),
+    (6.9999, 6), (7.00, 7), (7.9999, 7), (8.00, 8), (10.89, 8),
+)
+
+
+def test_R4_V2_spec_table():
+    for raw, want in R4_V2_CASES:
         check(f"R4 {raw}", RB.score_r4(raw)[0], want)
-    for raw, want in ((5 - EPS, 7), (4 - EPS, 5), (3 - EPS, 3),
-                      (2 - EPS, 1), (-EPS, 0)):
+
+
+def test_R4_V2_edges_are_lower_closed():
+    """Each floor takes the HIGHER band, and the value one epsilon below it
+    takes the lower one. Asserting only the floors would pass an upper-closed
+    table too."""
+    for floor, want in RB.R4_BANDS:
+        check(f"R4 {floor}", RB.score_r4(floor)[0], want)
+    for raw, want in ((8 - EPS, 7), (7 - EPS, 6), (6 - EPS, 5),
+                      (5 - EPS, 3), (4 - EPS, 2), (3 - EPS, 1), (-EPS, 0)):
         check(f"R4 {raw}", RB.score_r4(raw)[0], want)
+
+
+def test_R4_V2_has_no_four_point_band():
+    """§1.5: 'Không có mức 4/8. Đây là chủ đích, không phải lỗi.' A future
+    reader filling the gap to even out the distribution breaks this."""
+    awarded = {pts for _, pts in RB.R4_BANDS} | {0}
+    check("R4 reachable scores", sorted(awarded), [0, 1, 2, 3, 5, 6, 7, 8])
+    check("R4 never awards 4", 4 in awarded, False)
+
+
+def test_R4_V2_separates_the_observed_range():
+    """The whole point of V2. V1's top band opened at 5.0%, below the observed
+    minimum of 5.60%, so every real observation scored 8/8. Under V2 the
+    published distribution spans four distinct scores."""
+    observed = (5.60, 6.60, 7.05, 7.91, 10.89)      # §1.4 min/P25/median/P75/max
+    scores = sorted({RB.score_r4(v)[0] for v in observed})
+    check("R4 V2 separates min..max", scores, [5, 6, 7, 8])
+
+
+def test_R4_V2_version_stamps():
+    check("threshold version", RB.THRESHOLD_VERSION,
+          "REINSURANCE_R1_R5_THRESHOLD_V2")
+    check("formula unchanged", RB.FORMULA_VERSION,
+          "REINSURANCE_R1_R5_FORMULA_V1")
+    check("changelog names R4 only",
+          "R4" in RB.THRESHOLD_CHANGELOG[RB.THRESHOLD_VERSION], True)
+
+
+def test_V2_left_R1_R2_R3_R5_alone():
+    """§1.9 requires the changelog to say V2 touched R4 only, so the other four
+    tables are pinned here by value. An edit to any of them fails this."""
+    check("R1 bands", RB.R1_BANDS, ((15.0, 12), (10.0, 10), (5.0, 8), (0.0, 5)))
+    check("R2 bands", RB.R2_BANDS,
+          ((5.0, 10), (2.0, 8), (0.0, 6), (-2.0, 4), (-5.0, 2)))
+    check("R5 bands", RB.R5_BANDS,
+          ((0.70, 12), (0.85, 10), (1.00, 8), (1.15, 6), (1.30, 3)))
+    check("R3 zone top", RB.score_r3(70.0)[0], 8)
 
 
 # --- R5: closes on the OPPOSITE side from R1/R2/R4 --------------------------
@@ -155,7 +210,8 @@ def test_no_score_can_exceed_its_weight():
 
 def test_versions_are_pinned():
     check("formula", RB.FORMULA_VERSION, "REINSURANCE_R1_R5_FORMULA_V1")
-    check("threshold", RB.THRESHOLD_VERSION, "REINSURANCE_R1_R5_THRESHOLD_V1")
+    # V2 (R4 thresholds only) — see test_R4_V2_version_stamps.
+    check("threshold", RB.THRESHOLD_VERSION, "REINSURANCE_R1_R5_THRESHOLD_V2")
 
 
 def main():
