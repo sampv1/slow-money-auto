@@ -31,7 +31,7 @@ export default async function Page({
       <InsPageClient
         locale={locale} basePath="/fa-scanner/insurance/tai-bao-hiem" typeCode="REINSURANCE"
         quarters={d.quarters} selected={d.selected} minScore={d.minScore}
-        ticker={d.ticker} rows={d.rows} pendingNote="insPendingBands"
+        ticker={d.ticker} rows={d.rows}
       />
   );
 }
