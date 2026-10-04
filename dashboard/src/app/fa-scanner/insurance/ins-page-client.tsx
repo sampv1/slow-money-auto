@@ -4,6 +4,7 @@ import { type Locale, t, type TranslationKey } from "@/lib/i18n";
 import {
   type InsColumn, type InsRow, type InsuranceTypeCode,
   INTERNAL_METRICS, VALUATION_METRIC, INTERNAL_GROUP_LABEL,
+  OVERVIEW_DEEP_COLUMN, OVERVIEW_VALUATION_COLUMN,
 } from "@/lib/fa-insurance-tab";
 import { applyInsFilters } from "@/lib/ins-rows";
 import type { HoldingDeepRow } from "@/lib/fa-holding";
@@ -52,12 +53,27 @@ export function InsPageClient({
    */
   emptyNote?: TranslationKey;
 }) {
+  /**
+   * TOÀN NGÀNH ENDS WITH TWO BLOCK TOTALS, NOT WITH CRITERIA (BA 04/10 §18).
+   *
+   * The four type tabs show their own four criteria because every row on them
+   * shares one rubric. Toàn ngành mixes three rubrics in one table, so a column
+   * headed "R1" would mean something different on a non-life row — the exact
+   * fault this tab was built to avoid. What IS comparable across types is each
+   * row's /38 and /12 as its own engine summed them, so those are the columns,
+   * with §23's tooltip saying the /38 comes from different rubrics.
+   */
   const internalColumns: InsColumn[] =
-    typeCode && typeCode !== "HOLDING_MIXED" ? (INTERNAL_METRICS[typeCode] ?? []) : [];
+    typeCode === undefined ? [OVERVIEW_DEEP_COLUMN]
+    : typeCode !== "HOLDING_MIXED" ? (INTERNAL_METRICS[typeCode] ?? [])
+    : [];
 
-  const valuationColumn = typeCode ? VALUATION_METRIC[typeCode] : undefined;
-  const showTotalBlock = Boolean(typeCode);
-  const headline = showTotalBlock ? "total" : "common";
+  const valuationColumn = typeCode
+    ? VALUATION_METRIC[typeCode] : OVERVIEW_VALUATION_COLUMN;
+  // Toàn ngành now carries a real Total /100 for every type, so it sorts and
+  // filters on the same figure as the type tabs (§20).
+  const showTotalBlock = true;
+  const headline = "total" as const;
   const shown = applyInsFilters(rows, minScore, ticker, headline);
 
   /**
@@ -112,8 +128,10 @@ export function InsPageClient({
           locale={locale} rows={shown}
           internalColumns={internalColumns}
           valuationColumn={valuationColumn}
-          internalGroupLabel={typeCode ? INTERNAL_GROUP_LABEL[typeCode] : undefined}
+          internalGroupLabel={typeCode ? INTERNAL_GROUP_LABEL[typeCode]
+                                       : "insGroupDeepOverview"}
           showTotalBlock={showTotalBlock}
+          showTypeColumn={typeCode === undefined}
         />
       )}
 

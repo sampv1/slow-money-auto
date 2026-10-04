@@ -894,6 +894,10 @@ export const getInsuranceRegistry = unstable_cache(
 export const INS_ACTIVE_BAND_VERSIONS = [
   "NONLIFE_P1_P5_SCORE_BANDS_V1",
   "REINSURANCE_R1_R5_THRESHOLD_V2",
+  // Holding joined this table once BA released its valuation thresholds; the
+  // deep engine's own version identifies the row, and the valuation's two
+  // versions live on `fa_insurance_valuation_scores` beside the working.
+  "HOLDING_SCORING_1.0",
 ] as const;
 
 export type InsuranceTabScore = {
@@ -914,6 +918,11 @@ export type InsuranceTabScore = {
     value: number | null; band: string | null; score: number | null;
     formula?: string | null; unit?: string | null; max?: number | null;
     bands?: string[] | null;
+    /** Valuation working (BA §6): the two figures `value` divides, and n. */
+    current_pb?: number | null; median_pb_20q?: number | null;
+    n_valid?: number | null;
+    /** Holding deep extras, so the block can show a percentile. */
+    percentile?: number | null; status?: string | null;
   }>;
   previous_period: string | null;
   /**

@@ -225,6 +225,49 @@ function HoldingCard({
 
   const deepTotal = deep.find((d) => d.deep_total !== null)?.deep_total ?? null;
 
+  /**
+   * The valuation criterion, read from the assembled row rather than recomputed.
+   * Its code is per company (BVH -> B5, PVI -> P5), so it is found by NOT being
+   * one of the deep metric codes rather than by naming it — which keeps this
+   * working if BA ever renames it.
+   */
+  const deepCodes = new Set(deep.map((d) => d.metric_code));
+  const val = (() => {
+    const m = row.metrics.find(
+      (x) => !x.code.startsWith("C") && !deepCodes.has(x.code));
+    if (!m) return null;
+    return {
+      value: m.raw_value, score: m.score, bands: m.bands ?? null,
+      formula: m.formula ?? null,
+      current_pb: m.current_pb ?? null,
+      median_pb_20q: m.median_pb_20q ?? null,
+      n_valid: m.n_valid ?? null,
+      band: m.band ?? null,
+    };
+  })();
+
+  /** §7 — the valuation tooltip's twelve fields, all read from the row. */
+  const valuationTip = () => {
+    if (!val) return undefined;
+    return [
+      t(locale, "insValTipTitle"),
+      val.formula ? `${t(locale, "insTipFormula")}: ${val.formula}` : null,
+      `${t(locale, "insValPbCurrent")}: ${fmt(val.current_pb, "lần")}`,
+      `${t(locale, "insValPbMedian")}: ${fmt(val.median_pb_20q, "lần")}`,
+      `${t(locale, "insValPbRelative")}: ${fmt(val.value, "lần")}`,
+      `${t(locale, "insTipNQuarters")}: ${val.n_valid ?? "—"}`,
+      `${t(locale, "insTipScore")}: ${
+        val.score === null ? t(locale, "insNotScored")
+          : `${formatNumber(val.score, 0)}/12`}`,
+      val.bands?.length
+        ? `${t(locale, "insTipBands")}:\n  ${val.bands.join("\n  ")}` : null,
+      row.report_date
+        ? `${t(locale, "insTipAsOf")}: ${formatDateDmy(row.report_date)}` : null,
+      `${t(locale, "insTipFormulaVersion")}: HOLDING_PB_RELATIVE_20Q_FORMULA_V1`,
+      `${t(locale, "insTipThresholdVersion")}: HOLDING_PB_RELATIVE_20Q_THRESHOLD_V1`,
+    ].filter(Boolean).join("\n");
+  };
+
   // The header already says "Tổng điểm FA /100", so the VALUE must not repeat
   // it — "Tổng điểm FA /100: Chưa có Tổng FA /100" reads as a stutter. The
   // full sentence stays in the summary row, where it stands on its own.
@@ -419,20 +462,55 @@ function HoldingCard({
           <h3 className={`${SECTION_HEAD} ${SECTION_VALUATION}`}>
             {t(locale, "insGroupValuation")}
           </h3>
-          <div className="px-3 py-2.5">
-            {row.valuation_score === null ? (
-              // §14.1 — no approved thresholds means a stated status, never a
-              // 0/12 and never a score invented from P/B here.
-              <p className="text-body text-fg-muted">
-                {t(locale, "insHoldValuationNotReleased")}
-              </p>
-            ) : (
-              <p className="text-body">
-                <span className="font-mono font-semibold">
-                  {formatNumber(row.valuation_score, 2)} / 12
-                </span>
-              </p>
-            )}
+          {/* §14 — once the 20-quarter median exists, the block shows the
+              WORKING and not just the points: current P/B, the median it is
+              measured against, the ratio, then the score. A reader asking why
+              the valuation moved is asking about the first two. */}
+          <div className={TABLE_BOX}>
+          <table className="w-full border-collapse min-w-[420px]">
+            <tbody>
+              {val && val.score !== null ? (
+                <>
+                  <tr className={TR} title={valuationTip()}>
+                    <td className={TD}>{t(locale, "insValPbCurrent")}</td>
+                    <td className={TD_NUM}>{fmt(val.current_pb, "lần")}</td>
+                  </tr>
+                  <tr className={TR} title={valuationTip()}>
+                    <td className={TD}>{t(locale, "insValPbMedian")}</td>
+                    <td className={TD_NUM}>{fmt(val.median_pb_20q, "lần")}</td>
+                  </tr>
+                  <tr className={TR} title={valuationTip()}>
+                    <td className={TD}>{t(locale, "insValPbRelative")}</td>
+                    <td className={TD_NUM}>
+                      {fmt(val.value, "lần")}
+                      {val.band && (
+                        <span className="font-sans text-fg-muted"> · {val.band}</span>
+                      )}
+                    </td>
+                  </tr>
+                  <tr className="border-t border-line" title={valuationTip()}>
+                    <td className={`${TD} font-semibold`}>
+                      {t(locale, "insHoldColScore")}
+                    </td>
+                    <td className={`${TD_NUM} font-semibold`}>
+                      {formatNumber(val.score, 0)} / 12
+                    </td>
+                  </tr>
+                </>
+              ) : (
+                <tr className={TR}>
+                  <td className={TD} colSpan={2}>
+                    {/* The two absences are different facts (§3.3 vs §3.4) and
+                        neither is a 0/12. */}
+                    {val && val.n_valid !== null && val.n_valid < 20
+                      ? t(locale, "insValTooFewQuarters")
+                          .replace("{n}", String(val.n_valid))
+                      : t(locale, "insHoldValuationNotReleased")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
           </div>
 
           {/* --- §15 TỔNG KẾT --------------------------------------------- */}

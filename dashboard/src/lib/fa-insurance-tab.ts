@@ -59,6 +59,11 @@ export type InsMetric = {
   /** §2.17 tooltip fields, supplied by the engine that scored the criterion. */
   formula?: string | null;
   bands?: string[] | null;
+  /** Valuation working, where the criterion is a P/B-relative one (BA §6). */
+  current_pb?: number | null;
+  median_pb_20q?: number | null;
+  n_valid?: number | null;
+  band?: string | null;
   /** Set when `score` is null, so the cell can say WHY rather than show 0. */
   blocked_reason?: string | null;
 };
@@ -146,6 +151,34 @@ export type InsColumn = {
   shortText?: string;
   labelText?: string;
   max: number;
+  /**
+   * Where the cell's figure comes from when it is a BLOCK TOTAL rather than a
+   * criterion — the Toàn ngành tab's "Tổng điểm đặc thù /38" and "Định giá /12"
+   * (BA 04/10 §23, §24). Without this the table would have to recognise those
+   * two columns by their code, which is the kind of special case that stops
+   * being true the moment a code is renamed.
+   */
+  from?: "internal" | "valuation";
+};
+
+/**
+ * The two block-total columns the Toàn ngành tab ends with (§18).
+ *
+ * The /38 is NOT one criterion set: it is whichever deep engine the row's type
+ * uses, already summed by the backend. §23's tooltip has to say so, because a
+ * reader comparing a non-life /38 against a Holding /38 is comparing two
+ * different rubrics.
+ */
+export const OVERVIEW_DEEP_COLUMN: InsColumn = {
+  code: "__deep_total__", from: "internal",
+  head: "", headKey: "insDeepTotalHead", short: "insDeepTotalShort",
+  label: "insDeepTotalLabel", max: INTERNAL_MAX,
+};
+
+export const OVERVIEW_VALUATION_COLUMN: InsColumn = {
+  code: "__valuation_total__", from: "valuation",
+  head: "", headKey: "insGroupValuationHead", short: "insValuationShort",
+  label: "insColValuation", max: VALUATION_MAX,
 };
 
 /** C1–C5, the common foundation (§2.4 Nhóm 1). 10 points each. */
@@ -229,9 +262,21 @@ export const INTERNAL_GROUP_LABEL: Record<InsuranceTypeCode, TranslationKey> = {
 export const INS_COL_W = {
   reportDate: 88,
   ticker: 60,
+  /** Toàn ngành only (§19): the business type, which is three words at most. */
+  type: 104,
   total: 78,
   delta: 108,
   criterion: 68,
+  /**
+   * The Toàn ngành block-total columns, wider than a criterion column.
+   *
+   * A criterion cell holds "10"; these hold "20,45 / 38". Measured at 1,024
+   * where the table compresses to its colgroup: at 68px the figure clipped AND
+   * the heading "ĐẶC THÙ" wrapped, which pushed its "/38" line 14px below every
+   * other column's — the three header lines stop sharing a baseline. One width
+   * fixes both, because both were the same column being too narrow.
+   */
+  blockTotal: 92,
   valuation: 86,
 } as const;
 
@@ -265,6 +310,9 @@ export function sortValue(row: InsRow, key: string): number | string | null {
     case "internal": return row.internal_score;
     case "valuation": return row.valuation_score;
     case "delta": return row.delta_pct;
+    case OVERVIEW_DEEP_COLUMN.code: return row.internal_score;
+    case OVERVIEW_VALUATION_COLUMN.code: return row.valuation_score;
+    case "type": return row.insurance_type;
     default: {
       // A merged column's key is its codes joined by "/", so a row matches on
       // whichever of them it actually carries.

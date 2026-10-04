@@ -99,7 +99,15 @@ export function buildInsRows(
           unit: v?.unit ?? null,
           formula: v?.formula ?? null,
           bands: v?.bands ?? null,
-        });
+          // The valuation criterion carries its own working (§6): the two
+          // figures the ratio divides and how many quarters stood behind the
+          // median. Passed through untouched — the block renders them, it does
+          // not re-derive the ratio from them.
+          current_pb: v?.current_pb ?? null,
+          median_pb_20q: v?.median_pb_20q ?? null,
+          n_valid: v?.n_valid ?? null,
+          band: v?.band ?? null,
+        } as InsMetric);
       }
       internal = asm.internal_change_score;
       valuation = asm.valuation_score;

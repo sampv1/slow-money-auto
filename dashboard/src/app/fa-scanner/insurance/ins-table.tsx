@@ -77,7 +77,8 @@ const BAND_INTERNAL = "bg-up-soft";
 const BAND_VALUATION = "bg-reference-soft";
 
 const TH_BAND =
-  "label row-h px-2 font-semibold text-center border-l border-line text-fg";
+  "label h-auto py-1 px-2 font-semibold text-center border-l border-line " +
+  "text-fg whitespace-normal leading-tight break-words";
 /** A criterion header: three stacked lines, right-aligned over its figures. */
 const TH_CRIT =
   "label h-auto py-1 px-1 font-normal align-top whitespace-normal leading-tight " +
@@ -90,7 +91,7 @@ const TH_LEAD_NUM = TH_LEAD.replace("text-left", "text-right");
 
 export function InsTable({
   locale, rows, internalColumns, valuationColumn, internalGroupLabel,
-  showTotalBlock,
+  showTotalBlock, showTypeColumn = false,
 }: {
   locale: Locale;
   rows: InsRow[];
@@ -101,6 +102,12 @@ export function InsTable({
   internalGroupLabel?: TranslationKey;
   /** Toàn ngành has no Total; the four type tabs do. */
   showTotalBlock: boolean;
+  /**
+   * Toàn ngành adds the business type as column 3 (§18, §19) and ends with two
+   * BLOCK TOTALS rather than individual criteria — the /38 of whichever deep
+   * engine the row's type uses, then the /12.
+   */
+  showTypeColumn?: boolean;
 }) {
   const [sortKey, setSortKey] = useState<string>(() => defaultSortKey(rows));
   const [asc, setAsc] = useState(false);
@@ -189,12 +196,26 @@ export function InsTable({
   );
 
   const critCell = (r: InsRow, col: InsColumn, first: boolean) => {
+    const cls = `${TD_NUM} ${first ? "border-l border-line-faint" : ""}`;
+    // A BLOCK TOTAL, not a criterion: the backend already summed it and §23
+    // forbids the frontend re-adding it.
+    if (col.from) {
+      const v = col.from === "internal" ? r.internal_score : r.valuation_score;
+      return (
+        <td key={col.code} className={cls}
+            title={`${t(locale, col.label)} — ${t(locale, "insDeepTotalTip")}`}>
+          {v === null
+            ? <span className="font-sans text-fg-muted">
+                {t(locale, "insNotScoredMark")}
+              </span>
+            : `${formatNumber(v, v % 1 === 0 ? 0 : 2)} / ${col.max}`}
+        </td>
+      );
+    }
     const accepted = col.codes ?? [col.code];
     const m = r.metrics.find((x) => accepted.includes(x.code));
     return (
-      <td key={col.code}
-          className={`${TD_NUM} ${first ? "border-l border-line-faint" : ""}`}
-          title={tip(col, m)}>
+      <td key={col.code} className={cls} title={tip(col, m)}>
         {cell(m?.score ?? null, m?.blocked_reason)}
       </td>
     );
@@ -253,8 +274,10 @@ export function InsTable({
   // the table use a wide desktop rather than leaving dead space on the right.
   const tableMinW =
     INS_COL_W.reportDate + INS_COL_W.ticker + INS_COL_W.total + INS_COL_W.delta
+    + (showTypeColumn ? INS_COL_W.type : 0)
     + COMMON_METRICS.length * INS_COL_W.criterion
-    + internalColumns.length * INS_COL_W.criterion
+    + internalColumns.reduce(
+        (a, m) => a + (m.from ? INS_COL_W.blockTotal : INS_COL_W.criterion), 0)
     + (valCol ? INS_COL_W.valuation : 0);
 
   return (
@@ -264,13 +287,16 @@ export function InsTable({
         <colgroup>
           <col style={{ width: INS_COL_W.reportDate }} />
           <col style={{ width: INS_COL_W.ticker }} />
+          {showTypeColumn && <col style={{ width: INS_COL_W.type }} />}
           <col style={{ width: INS_COL_W.total }} />
           <col style={{ width: INS_COL_W.delta }} />
           {COMMON_METRICS.map((m) => (
             <col key={m.code} style={{ width: INS_COL_W.criterion }} />
           ))}
           {internalColumns.map((m) => (
-            <col key={m.code} style={{ width: INS_COL_W.criterion }} />
+            <col key={m.code} style={{
+              width: m.from ? INS_COL_W.blockTotal : INS_COL_W.criterion,
+            }} />
           ))}
           {valCol && <col style={{ width: INS_COL_W.valuation }} />}
         </colgroup>
@@ -285,6 +311,12 @@ export function InsTable({
               {t(locale, "insColTicker")}{" "}
               <SortMark active={sortKey === "ticker"} asc={asc} />
             </th>
+            {showTypeColumn && (
+              <th className={TH_LEAD} rowSpan={2} onClick={() => onSort("type")}>
+                {t(locale, "insColType")}{" "}
+                <SortMark active={sortKey === "type"} asc={asc} />
+              </th>
+            )}
             <th className={TH_LEAD_NUM} rowSpan={2}
                 onClick={() => onSort(showTotalBlock ? "total" : "common")}>
               {t(locale, showTotalBlock ? "insColTotal" : "insColCommon")}{" "}
@@ -340,8 +372,8 @@ export function InsTable({
           {sorted.length === 0 && (
             <tr className={TR}>
               <td className={`${TD} text-center`}
-                  colSpan={4 + COMMON_METRICS.length + internalColumns.length
-                           + (valCol ? 1 : 0)}>
+                  colSpan={4 + (showTypeColumn ? 1 : 0) + COMMON_METRICS.length
+                           + internalColumns.length + (valCol ? 1 : 0)}>
                 {t(locale, rows.length === 0 ? "insNoRows" : "insNoFilterMatch")}
               </td>
             </tr>
@@ -356,6 +388,12 @@ export function InsTable({
                   title={t(locale, INSURANCE_TYPE_LABEL[r.insurance_type])}>
                 {r.ticker}
               </td>
+
+              {showTypeColumn && (
+                <td className={TD}>
+                  {t(locale, INSURANCE_TYPE_LABEL[r.insurance_type])}
+                </td>
+              )}
 
               <td className={`${TD_NUM} font-semibold`}>
                 {showTotalBlock

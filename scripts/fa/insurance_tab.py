@@ -44,7 +44,11 @@ INTERNAL_CRITERIA = {
 VALUATION_CRITERIA = {
     "NON_LIFE": ("P5",),
     "REINSURANCE": ("R5",),
-    "HOLDING_MIXED": (),        # not yet locked by BA
+    # Holding's valuation criterion is per COMPANY (BVH -> B5, PVI -> P5 of its
+    # own engine), so the export passes `valuation_codes` explicitly rather
+    # than relying on this lookup. Left empty deliberately: a type-level
+    # constant here could only name one of the two companies' codes.
+    "HOLDING_MIXED": (),
     "LIFE": (),                 # P/EV, future
 }
 
@@ -84,14 +88,21 @@ class TabScore:
 
 def assemble(symbol: str, period: str, type_code: str,
              common: float | None, criteria: dict[str, dict],
-             pending_blocks: tuple[str, ...] = ()) -> TabScore:
+             pending_blocks: tuple[str, ...] = (),
+             internal_codes: tuple[str, ...] | None = None,
+             valuation_codes: tuple[str, ...] | None = None) -> TabScore:
     """One symbol-quarter.
 
     `criteria` maps criterion code -> {"value", "band", "score"}; a criterion
     whose `score` is None is UNSCORED and blocks its block. `pending_blocks`
-    names blocks this TYPE has not had built yet (e.g. Holding valuation), so
-    "we have not built it" is reported differently from "this company's data
-    failed".
+    names blocks this TYPE has not had built yet, so "we have not built it" is
+    reported differently from "this company's data failed".
+
+    `internal_codes` / `valuation_codes` OVERRIDE the per-type lookup, and
+    Holding is why they exist: BVH is scored on B1-B4 and PVI on P1-P4, so the
+    criterion set is a property of the COMPANY there, not of the type. A
+    type-level constant can only name one of the two, and naming B1-B4 for both
+    would score PVI's block as entirely missing.
     """
     s = TabScore(symbol, period, type_code, criteria=criteria)
     missing: list[str] = []
@@ -111,8 +122,12 @@ def assemble(symbol: str, period: str, type_code: str,
         # Sum UNROUNDED; rounding happens at display only.
         return float(sum(criteria[c]["score"] for c in codes))
 
-    s.internal_change_score = block(INTERNAL_CRITERIA.get(type_code, ()), "internal")
-    s.valuation_score = block(VALUATION_CRITERIA.get(type_code, ()), "valuation")
+    s.internal_change_score = block(
+        internal_codes if internal_codes is not None
+        else INTERNAL_CRITERIA.get(type_code, ()), "internal")
+    s.valuation_score = block(
+        valuation_codes if valuation_codes is not None
+        else VALUATION_CRITERIA.get(type_code, ()), "valuation")
     s.common_score = None if common is None else float(common)
     if s.common_score is None:
         missing.append("common:NOT_SCORED")
