@@ -135,6 +135,7 @@ export function FinancialPanels({
   latestClose = null,
   latestCloseDate = null,
   financialFiler = false,
+  insuranceFiler = false,
   shareAdjustments = [],
 }: {
   rows: VnstockStatementRow[];
@@ -145,6 +146,8 @@ export function FinancialPanels({
   latestCloseDate?: string | null;
   /** A bank, broker or insurer — see the note on FinancialChart's own prop. */
   financialFiler?: boolean;
+  /** An insurance filer: these specs read lines its statements do not carry. */
+  insuranceFiler?: boolean;
   /** Per-quarter IAS 33 share factors for chart 11 — see FinancialChart. */
   shareAdjustments?: ShareAdjustmentRow[];
 }) {
@@ -214,6 +217,7 @@ export function FinancialPanels({
             latestClose={latestClose}
             latestCloseDate={latestCloseDate}
             financialFiler={financialFiler}
+            insuranceFiler={insuranceFiler}
             zoomed
           />
         </div>
@@ -239,6 +243,7 @@ export function FinancialPanels({
                 latestClose={latestClose}
                 latestCloseDate={latestCloseDate}
                 financialFiler={financialFiler}
+                insuranceFiler={insuranceFiler}
               />
             </Card>
           );

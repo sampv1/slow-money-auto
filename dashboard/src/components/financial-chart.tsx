@@ -238,6 +238,7 @@ export function FinancialChart({
   latestCloseDate = null,
   zoomed = false,
   financialFiler = false,
+  insuranceFiler = false,
   shareAdjustments = [],
 }: {
   spec: ChartSpec;
@@ -265,6 +266,8 @@ export function FinancialChart({
    * the card says so instead of drawing a bar of solid grey.
    */
   financialFiler?: boolean;
+  /** An insurance filer: these specs read lines its statements do not carry. */
+  insuranceFiler?: boolean;
 }) {
   // Quarters where the chart has them, then TTM (smoother than raw quarters),
   // then annual — the reverse of the old preference, see the note on
@@ -559,7 +562,18 @@ export function FinancialChart({
   // a bank has no net revenue, gross profit or customer-advance lines. The same
   // message covers an ordinary company that happens to carry no backlog.
   if (live.length === 0) {
-    return <p className="text-body text-fg-muted py-10 text-center">{t(locale, "finNoSeries")}</p>;
+    // AND "this company reports nothing here" is itself WRONG for an insurer.
+    // These ten charts read a non-financial income statement, so chart 1 looks
+    // for `IS_NET_REVENUE` while an insurer reports its revenue on
+    // `IS_TOTAL_NET_REVENUE_FROM_INSURANCE_BUSINESS` — the figure exists, this
+    // chart just does not read that line. Telling a reader the company has no
+    // revenue when the insurance tab shows 10.703,9 tỷ for the same quarter is
+    // the false message BA §19 rules out.
+    return (
+      <p className="text-body text-fg-muted py-10 text-center">
+        {t(locale, insuranceFiler ? "finNotBuiltForInsurance" : "finNoSeries")}
+      </p>
+    );
   }
 
   // A decomposition whose balancing segment swamps the named ones is not

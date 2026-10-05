@@ -311,6 +311,7 @@ export const translations = {
     finYoy: "YoY",
     finNoData: "No financial statements for this symbol yet.",
     finNoSeries: "This company reports nothing on these lines.",
+    finNotBuiltForInsurance: "This chart has not been built for insurers yet — their statements carry these figures on different lines.",
     finRubricMismatch:
       "These line items do not fit this company's statements — banks and securities firms report a different balance sheet.",
     finSource: "Source: vnstock",
@@ -2074,6 +2075,7 @@ export const translations = {
     finYoy: "Tăng trưởng YoY",
     finNoData: "Chưa có báo cáo tài chính cho mã này.",
     finNoSeries: "Doanh nghiệp không có số liệu ở các chỉ tiêu này.",
+    finNotBuiltForInsurance: "Chưa triển khai biểu đồ cho loại hình bảo hiểm — doanh nghiệp bảo hiểm ghi nhận các số liệu này ở những khoản mục khác.",
     finRubricMismatch:
       "Các chỉ tiêu này không phù hợp với báo cáo của doanh nghiệp — ngân hàng và công ty chứng khoán có cấu trúc bảng cân đối khác.",
     finSource: "Nguồn: vnstock",

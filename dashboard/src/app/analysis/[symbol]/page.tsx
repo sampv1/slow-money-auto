@@ -345,6 +345,7 @@ export default async function SymbolDrillDown({
                    residual alone, because BA withdrew that guard for the
                    filers this chart set is specified for. */
                 financialFiler={FINANCIAL_COM_TYPES.has(profile?.com_type_code ?? "")}
+                insuranceFiler={isInsurance}
               />
             </section>
           )}
