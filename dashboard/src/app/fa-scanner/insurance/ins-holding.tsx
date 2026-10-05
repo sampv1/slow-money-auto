@@ -74,7 +74,15 @@ const SECTION_COMMON = "bg-accent-soft";
 const SECTION_DEEP = "bg-up-soft";
 const SECTION_VALUATION = "bg-reference-soft";
 
-const SECTION_HEAD = "label px-3 py-1.5 font-semibold text-fg border-y border-line";
+/**
+ * §9 — colour lives on the GROUP HEADER and nowhere else. Tinting each block's
+ * body would make four bands of colour read as four separate cards, which is
+ * exactly the impression this layout exists to remove.
+ */
+const SECTION_SUMMARY = "bg-panel-2";
+const TH_GROUP =
+  "label px-2 py-2 font-semibold text-fg text-center align-middle " +
+  "border-y border-line whitespace-normal leading-tight break-words";
 /**
  * Each sub-table scrolls INSIDE its own box.
  *
@@ -88,8 +96,10 @@ const SECTION_HEAD = "label px-3 py-1.5 font-semibold text-fg border-y border-li
  * shrink below its content.
  */
 const TABLE_BOX = "overflow-x-auto min-w-0";
-const TH_L = "label px-3 py-1.5 font-normal text-left border-b border-line";
-const TH_R = "label px-3 py-1.5 font-normal text-right border-b border-line";
+const TH_L =
+  "label px-2 py-1.5 font-normal text-left align-middle border-b border-line " +
+  "whitespace-normal leading-tight [overflow-wrap:anywhere]";
+const TH_R = TH_L.replace("text-left", "text-right");
 
 export function InsHoldingBlocks({
   locale, blocks, registry, period,
@@ -223,7 +233,6 @@ function HoldingCard({
     : row.delta_pct > 0 ? "insHoldTrendUp"
     : row.delta_pct < 0 ? "insHoldTrendDown" : "insHoldTrendFlat";
 
-  const deepTotal = deep.find((d) => d.deep_total !== null)?.deep_total ?? null;
 
   /**
    * The valuation criterion, read from the assembled row rather than recomputed.
@@ -271,6 +280,51 @@ function HoldingCard({
   // The header already says "Tổng điểm FA /100", so the VALUE must not repeat
   // it — "Tổng điểm FA /100: Chưa có Tổng FA /100" reads as a stutter. The
   // full sentence stays in the summary row, where it stands on its own.
+  /**
+   * The table is driven by ROW INDEX: five rows, each taking one item from
+   * every group or leaving its cells empty. Five is the longest group (C1-C5
+   * and the five-line summary); deep has four and valuation four.
+   *
+   * §4 and §5 ask each block for a closing subtotal and §2.1's layout puts
+   * those in the summary column instead — which is where they are, so each
+   * figure appears once. Repeating them inside their own block as well would
+   * reintroduce the raggedness this refactor removes.
+   */
+  const valuationRows: ({ label: string; value: string; strong?: boolean } | undefined)[] =
+    val && val.score !== null
+      ? [
+          { label: t(locale, "insValPbCurrent"), value: fmt(val.current_pb, "lần") },
+          { label: t(locale, "insValPbMedian"), value: fmt(val.median_pb_20q, "lần") },
+          { label: t(locale, "insValPbRelative"), value: fmt(val.value, "lần") },
+          { label: t(locale, "insHoldColScore"),
+            value: `${formatNumber(val.score, 0)} / 12`, strong: true },
+        ]
+      : [{ label: t(locale, "insGroupValuationHead"),
+           value: val && val.n_valid !== null && val.n_valid < 20
+             ? t(locale, "insValTooFewQuartersShort").replace("{n}", String(val.n_valid))
+             : t(locale, "insHoldValuationShort") }];
+
+  const deepTotalForSummary = deep.find((d) => d.deep_total !== null)?.deep_total ?? null;
+  const summaryRows: ({ label: string; value: string; strong?: boolean } | undefined)[] = [
+    { label: t(locale, "insHoldSubtotalCommon"),
+      value: row.common_score === null ? "—" : `${formatNumber(row.common_score, 0)} / 50` },
+    { label: t(locale, "insHoldSubtotalDeep"),
+      value: deepTotalForSummary === null ? "—"
+        : `${formatNumber(deepTotalForSummary, 2)} / 38` },
+    { label: t(locale, "insGroupValuationHead"),
+      value: row.valuation_score === null ? t(locale, "insHoldValuationShort")
+        : `${formatNumber(row.valuation_score, 2)} / 12` },
+    // §7 — the Total is the most prominent figure in this group.
+    { label: t(locale, "insColTotal"),
+      value: row.total_score === null ? t(locale, "insHoldNoTotalShort")
+        : `${formatNumber(row.total_score, 0)} / 100`, strong: true },
+    { label: t(locale, "insColDelta"),
+      value: row.delta_pct === null ? t(locale, "insHoldNoDelta")
+        : `${deltaArrow(row.delta_pct)} ${formatPercent(Math.abs(row.delta_pct), 1)}` },
+  ];
+
+  const ROWS = [0, 1, 2, 3, 4];
+
   const headlineScore = row.total_score !== null
     ? `${formatNumber(row.total_score, 0)} / 100`
     : t(locale, "insHoldNoTotalShort");
@@ -336,231 +390,154 @@ function HoldingCard({
       </div>
 
       {open && (
-        <div>
-          {/* --- NỀN TẢNG CHUNG /50 --------------------------------------- */}
-          <h3 className={`${SECTION_HEAD} ${SECTION_COMMON}`}>
-            {t(locale, "insGroupCommon")}
-          </h3>
-          <div className={TABLE_BOX}>
-          <table className="w-full border-collapse min-w-[420px]">
+        <div className={TABLE_BOX}>
+          {/* ONE TABLE PER TICKER, FOUR GROUPS SIDE BY SIDE (BA §2.1).
+              It replaces four stacked blocks: the data was right but a reader
+              had to scroll through four of them to see one company, and the
+              four were visually four tables rather than one. The groups differ
+              in how many rows and how many inner columns they need, so the body
+              is driven by ROW INDEX — each group contributes its cells for row
+              i, or empty cells where it has run out. A group laid out as its
+              own <table> beside the others cannot share row heights, which is
+              what made the old layout read as separate cards. */}
+          <table className="w-full border-collapse min-w-[1172px] table-fixed">
+            <colgroup>
+              {/* §8's proportions, as pixels so the four groups keep their
+                  relationship at every width rather than redistributing. */}
+              <col style={{ width: 40 }} /><col style={{ width: 156 }} />
+              <col style={{ width: 90 }} /><col style={{ width: 70 }} />
+              <col style={{ width: 44 }} /><col style={{ width: 142 }} />
+              <col style={{ width: 80 }} /><col style={{ width: 62 }} />
+              {/* The deep score is the widest figure in the table: "10,00 / 10"
+                  is ten monospaced characters, measured at 80px including
+                  padding. At 62 it ran flush into the next group's rule. */}
+              <col style={{ width: 80 }} />
+              <col style={{ width: 120 }} /><col style={{ width: 86 }} />
+              <col style={{ width: 114 }} /><col style={{ width: 88 }} />
+            </colgroup>
+
             <thead>
               <tr>
-                <th className={`${TH_L} w-[72px]`}>{t(locale, "insHoldColCode")}</th>
+                <th className={`${TH_GROUP} ${SECTION_COMMON}`} colSpan={4}>
+                  {t(locale, "insGroupCommon")}
+                </th>
+                <th className={`${TH_GROUP} ${SECTION_DEEP}`} colSpan={5}>
+                  {t(locale, "insGroupHolding")}
+                </th>
+                <th className={`${TH_GROUP} ${SECTION_VALUATION}`} colSpan={2}>
+                  {t(locale, "insGroupValuation")}
+                </th>
+                <th className={`${TH_GROUP} ${SECTION_SUMMARY}`} colSpan={2}>
+                  {t(locale, "insColTotal")}
+                </th>
+              </tr>
+              <tr>
+                <th className={TH_L}>{t(locale, "insHoldColCode")}</th>
                 <th className={TH_L}>{t(locale, "insHoldColCriterion")}</th>
-                <th className={`${TH_R} w-[150px]`}>{t(locale, "insHoldColValue")}</th>
-                <th className={`${TH_R} w-[110px]`}>{t(locale, "insHoldColScore")}</th>
+                <th className={TH_R}>{t(locale, "insHoldColValue")}</th>
+                <th className={TH_R}>{t(locale, "insHoldColScore")}</th>
+
+                <th className={`${TH_L} border-l border-line`}>
+                  {t(locale, "insHoldColCode")}
+                </th>
+                <th className={TH_L}>{t(locale, "insHoldColCriterion")}</th>
+                <th className={TH_R}>{t(locale, "insHoldColValue")}</th>
+                <th className={TH_R}>{t(locale, "insHoldColPercentile")}</th>
+                <th className={TH_R}>{t(locale, "insHoldColScore")}</th>
+
+                <th className={`${TH_L} border-l border-line`}>
+                  {t(locale, "insHoldColItem")}
+                </th>
+                <th className={TH_R}>{t(locale, "insHoldColValue")}</th>
+
+                <th className={`${TH_L} border-l border-line`}>
+                  {t(locale, "insHoldColComponent")}
+                </th>
+                <th className={TH_R}>{t(locale, "insHoldColScore")}</th>
               </tr>
             </thead>
+
             <tbody>
-              {COMMON_METRICS.map((c) => {
-                const m = row.metrics.find((x) => x.code === c.code);
-                const r = common(c.code);
+              {ROWS.map((i) => {
+                const c = COMMON_METRICS[i];
+                const cm = c ? row.metrics.find((x) => x.code === c.code) : undefined;
+                const cr = c ? common(c.code) : undefined;
+                const d = deep[i];
+                const v = valuationRows[i];
+                const sm = summaryRows[i];
+                const last = i === ROWS.length - 1;
                 return (
-                  <tr key={c.code} className={TR} title={m ? commonTip(m) : undefined}>
-                    <td className={`${TD} font-mono`}>{c.code}</td>
-                    <td className={TD}>{r?.metric_name_vi ?? t(locale, c.label)}</td>
+                  <tr key={i} className={last ? "" : TR}>
+                    {/* --- Nền tảng chung /50 --- */}
+                    <td className={`${TD} font-mono`}>{c?.code ?? ""}</td>
+                    <td className={TD} title={c && cm ? commonTip(cm) : undefined}>
+                      {c ? (cr?.metric_name_vi ?? t(locale, c.label)) : ""}
+                    </td>
                     <td className={TD_NUM}>
-                      {m && m.raw_value !== null
-                        ? fmt(m.raw_value, r?.unit ?? m.unit)
-                        : <span className="font-sans text-fg-muted">{t(locale, "insNotScored")}</span>}
+                      {cm && cm.raw_value !== null
+                        ? fmt(cm.raw_value, cr?.unit ?? cm.unit)
+                        : c ? <span className="font-sans text-fg-muted">
+                                {t(locale, "insNotScored")}
+                              </span> : ""}
                     </td>
                     <td className={`${TD_NUM} font-semibold`}>
-                      {m && m.score !== null
-                        ? `${formatNumber(m.score, 0)} / ${c.max}`
-                        : <span className="font-sans font-normal text-fg-muted">
+                      {cm && cm.score !== null
+                        ? `${formatNumber(cm.score, 0)} / ${c!.max}`
+                        : c ? <span className="font-sans font-normal text-fg-muted">
+                                {t(locale, "insNotScored")}
+                              </span> : ""}
+                    </td>
+
+                    {/* --- Năng lực chuyên sâu /38 --- */}
+                    <td className={`${TD} font-mono border-l border-line`}>
+                      {d?.metric_code ?? ""}
+                    </td>
+                    <td className={TD} title={d ? deepTip(d) : undefined}>
+                      {d ? (deepMeta(d.metric_code)?.metric_name_vi ?? d.metric_name) : ""}
+                    </td>
+                    {/* §13 of the 04/10 spec — the current value shows even at
+                        0 points; a 0 or a full mark is a reading, not an error. */}
+                    <td className={TD_NUM}>
+                      {d ? (d.current_value !== null
+                        ? fmt(d.current_value, d.unit)
+                        : <span className="font-sans text-fg-muted">
                             {t(locale, "insNotScored")}
-                          </span>}
+                          </span>) : ""}
+                    </td>
+                    <td className={TD_NUM}>
+                      {d ? (d.history_percentile !== null
+                        ? formatPercent(d.history_percentile * 100, 0)
+                        : <span className="font-sans text-fg-muted">—</span>) : ""}
+                    </td>
+                    <td className={`${TD_NUM} font-semibold`}>
+                      {d ? (d.score !== null
+                        ? `${formatNumber(d.score, 2)} / ${d.weight}`
+                        : <span className="font-sans font-normal text-fg-muted">
+                            {t(locale, STATUS_LABEL[d.data_status] ?? "insNotScored")}
+                          </span>) : ""}
+                    </td>
+
+                    {/* --- Định giá /12 --- */}
+                    <td className={`${TD} border-l border-line`}
+                        title={v ? valuationTip() : undefined}>
+                      {v?.label ?? ""}
+                    </td>
+                    <td className={`${TD_NUM} ${v?.strong ? "font-semibold" : ""}`}>
+                      {v?.value ?? ""}
+                    </td>
+
+                    {/* --- Tổng điểm FA /100 --- */}
+                    <td className={`${TD} border-l border-line ${sm?.strong ? "font-semibold" : ""}`}>
+                      {sm?.label ?? ""}
+                    </td>
+                    <td className={`${TD_NUM} ${sm?.strong ? "font-semibold text-body" : ""}`}>
+                      {sm?.value ?? ""}
                     </td>
                   </tr>
                 );
               })}
-              <tr className="border-t border-line">
-                <td className={`${TD} font-semibold`} colSpan={3}>
-                  {t(locale, "insHoldSubtotalCommon")}
-                </td>
-                <td className={`${TD_NUM} font-semibold`}>
-                  {row.common_score === null ? "—"
-                    : `${formatNumber(row.common_score, 0)} / 50`}
-                </td>
-              </tr>
             </tbody>
           </table>
-          </div>
-
-          {/* --- NĂNG LỰC CHUYÊN SÂU /38 ---------------------------------- */}
-          <h3 className={`${SECTION_HEAD} ${SECTION_DEEP}`}>
-            {t(locale, "insGroupHolding")}
-          </h3>
-          {/* §11 — the note sits INSIDE each block, so a reader of one block
-              cannot miss it. The two /38 scores are measured against different
-              companies' own histories and are not comparable to each other. */}
-          <p className="text-body text-fg-muted px-3 py-2 border-b border-line-faint">
-            {t(locale, "insHoldDeepNote")}
-          </p>
-          <div className={TABLE_BOX}>
-          <table className="w-full border-collapse min-w-[560px]">
-            <thead>
-              <tr>
-                <th className={`${TH_L} w-[72px]`}>{t(locale, "insHoldColCode")}</th>
-                <th className={TH_L}>{t(locale, "insHoldColCriterion")}</th>
-                <th className={`${TH_R} w-[150px]`}>{t(locale, "insHoldColValue")}</th>
-                <th className={`${TH_R} w-[150px]`}>{t(locale, "insHoldColPercentile")}</th>
-                <th className={`${TH_R} w-[110px]`}>{t(locale, "insHoldColScore")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* §23 / §29.6 — only this company's OWN metrics are rendered.
-                  A metric belonging to the other engine is absent entirely, not
-                  shown as an empty "Chưa chấm" cell. */}
-              {deep.map((d) => (
-                <tr key={d.metric_code} className={TR} title={deepTip(d)}>
-                  <td className={`${TD} font-mono`}>{d.metric_code}</td>
-                  <td className={TD}>
-                    {deepMeta(d.metric_code)?.metric_name_vi ?? d.metric_name}
-                  </td>
-                  {/* §13 — the current value is shown even at 0 points, and a
-                      0 or a full mark is a real reading, never an error. */}
-                  <td className={TD_NUM}>
-                    {d.current_value !== null
-                      ? fmt(d.current_value, d.unit)
-                      : <span className="font-sans text-fg-muted">
-                          {t(locale, "insNotScored")}
-                        </span>}
-                  </td>
-                  <td className={TD_NUM}>
-                    {d.history_percentile !== null
-                      ? formatPercent(d.history_percentile * 100, 0)
-                      : <span className="font-sans text-fg-muted">—</span>}
-                  </td>
-                  <td className={`${TD_NUM} font-semibold`}>
-                    {d.score !== null
-                      ? `${formatNumber(d.score, 2)} / ${d.weight}`
-                      : <span className="font-sans font-normal text-fg-muted">
-                          {t(locale, STATUS_LABEL[d.data_status] ?? "insNotScored")}
-                        </span>}
-                  </td>
-                </tr>
-              ))}
-              {deep.length === 0 && (
-                <tr className={TR}>
-                  <td className={TD} colSpan={5}>{t(locale, "insHoldNoDeep")}</td>
-                </tr>
-              )}
-              <tr className="border-t border-line">
-                <td className={`${TD} font-semibold`} colSpan={4}>
-                  {t(locale, "insHoldSubtotalDeep")}
-                </td>
-                <td className={`${TD_NUM} font-semibold`}>
-                  {deepTotal === null ? "—" : `${formatNumber(deepTotal, 2)} / 38`}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          </div>
-
-          {/* --- ĐỊNH GIÁ /12 --------------------------------------------- */}
-          <h3 className={`${SECTION_HEAD} ${SECTION_VALUATION}`}>
-            {t(locale, "insGroupValuation")}
-          </h3>
-          {/* §14 — once the 20-quarter median exists, the block shows the
-              WORKING and not just the points: current P/B, the median it is
-              measured against, the ratio, then the score. A reader asking why
-              the valuation moved is asking about the first two. */}
-          <div className={TABLE_BOX}>
-          <table className="w-full border-collapse min-w-[420px]">
-            <tbody>
-              {val && val.score !== null ? (
-                <>
-                  <tr className={TR} title={valuationTip()}>
-                    <td className={TD}>{t(locale, "insValPbCurrent")}</td>
-                    <td className={TD_NUM}>{fmt(val.current_pb, "lần")}</td>
-                  </tr>
-                  <tr className={TR} title={valuationTip()}>
-                    <td className={TD}>{t(locale, "insValPbMedian")}</td>
-                    <td className={TD_NUM}>{fmt(val.median_pb_20q, "lần")}</td>
-                  </tr>
-                  <tr className={TR} title={valuationTip()}>
-                    <td className={TD}>{t(locale, "insValPbRelative")}</td>
-                    <td className={TD_NUM}>
-                      {fmt(val.value, "lần")}
-                      {val.band && (
-                        <span className="font-sans text-fg-muted"> · {val.band}</span>
-                      )}
-                    </td>
-                  </tr>
-                  <tr className="border-t border-line" title={valuationTip()}>
-                    <td className={`${TD} font-semibold`}>
-                      {t(locale, "insHoldColScore")}
-                    </td>
-                    <td className={`${TD_NUM} font-semibold`}>
-                      {formatNumber(val.score, 0)} / 12
-                    </td>
-                  </tr>
-                </>
-              ) : (
-                <tr className={TR}>
-                  <td className={TD} colSpan={2}>
-                    {/* The two absences are different facts (§3.3 vs §3.4) and
-                        neither is a 0/12. */}
-                    {val && val.n_valid !== null && val.n_valid < 20
-                      ? t(locale, "insValTooFewQuarters")
-                          .replace("{n}", String(val.n_valid))
-                      : t(locale, "insHoldValuationNotReleased")}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </div>
-
-          {/* --- §15 TỔNG KẾT --------------------------------------------- */}
-          <h3 className={`${SECTION_HEAD} bg-panel-2`}>
-            {t(locale, "insHoldSummary")}
-          </h3>
-          <div className={TABLE_BOX}>
-          <table className="w-full border-collapse min-w-[320px]">
-            <tbody>
-              {[
-                ["insHoldSubtotalCommon",
-                 row.common_score === null ? "—" : `${formatNumber(row.common_score, 0)} / 50`],
-                ["insHoldSubtotalDeep",
-                 deepTotal === null ? "—" : `${formatNumber(deepTotal, 2)} / 38`],
-                ["insGroupValuationHead",
-                 row.valuation_score === null
-                   ? t(locale, "insHoldValuationShort")
-                   : `${formatNumber(row.valuation_score, 2)} / 12`],
-              ].map(([k, v]) => (
-                <tr key={k as string} className={TR}>
-                  <td className={TD}>{t(locale, k as TranslationKey)}</td>
-                  <td className={TD_NUM}>{v}</td>
-                </tr>
-              ))}
-              <tr className="border-t border-line">
-                <td className={`${TD} font-semibold`}>{t(locale, "insColTotal")}</td>
-                <td className={`${TD_NUM} font-semibold`}>
-                  {row.total_score === null
-                    ? <span className="font-sans font-normal text-fg-muted">
-                        {t(locale, "insHoldNoTotal")}
-                      </span>
-                    : `${formatNumber(row.total_score, 0)} / 100`}
-                </td>
-              </tr>
-              <tr className={TR}>
-                <td className={TD}>{t(locale, "insColDelta")}</td>
-                <td className={TD_NUM}>
-                  {row.delta_pct === null
-                    ? <span className="font-sans text-fg-muted">
-                        {t(locale, "insHoldNoDelta")}
-                      </span>
-                    : <span className={deltaTone(row.delta_pct)}>
-                        {deltaArrow(row.delta_pct)}{" "}
-                        {formatPercent(Math.abs(row.delta_pct), 1)}
-                      </span>}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          </div>
         </div>
       )}
     </section>

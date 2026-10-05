@@ -225,7 +225,7 @@ export const OVERVIEW_KQKD_COLUMNS: InsColumn[] = [
 
 export const OVERVIEW_VALUATION_COLUMN: InsColumn = {
   code: "__valuation_total__", from: "valuation",
-  head: "", headKey: "insGroupValuationHead", short: "insValuationShort",
+  head: "", headKey: "insColValuationHead", short: "insValuationShort",
   label: "insColValuation", max: VALUATION_MAX,
 };
 
@@ -280,11 +280,11 @@ export const INTERNAL_METRICS: Partial<Record<InsuranceTypeCode, InsColumn[]>> =
  */
 export const VALUATION_METRIC: Partial<Record<InsuranceTypeCode, InsColumn>> = {
   NON_LIFE: {
-    code: "P5", head: "", headKey: "insGroupValuationHead",
+    code: "P5", head: "", headKey: "insColValuationHead",
     short: "insP5Short", label: "insP5", max: 12,
   },
   REINSURANCE: {
-    code: "R5", head: "", headKey: "insGroupValuationHead",
+    code: "R5", head: "", headKey: "insColValuationHead",
     short: "insR5Short", label: "insR5", max: 12,
   },
 };

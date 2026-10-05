@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { type Locale, t, type TranslationKey } from "@/lib/i18n";
 import {
   type InsColumn, type InsMetric, type InsRow,
-  COMMON_METRICS, INSURANCE_TYPE_LABEL, INSURANCE_TYPE_SHORT, INS_COL_W,
+  COMMON_METRICS, COMMON_MAX, TOTAL_MAX,
+  INSURANCE_TYPE_LABEL, INSURANCE_TYPE_SHORT, INS_COL_W,
   deltaArrow, deltaTone, defaultSortKey, sortValue,
 } from "@/lib/fa-insurance-tab";
 import { THEAD_STICKY, TABLE_SCROLL, TR, TD, TD_NUM, TD_SYMBOL } from "@/lib/table";
@@ -70,6 +71,18 @@ function SortMark({ active, asc }: { active: boolean; asc: boolean }) {
  * horizontal clipping check cannot see that — it is a vertical overflow — so
  * the harness now asserts `scrollHeight` as well.
  */
+/**
+ * Reserved height for the header's CODE line — the two-line worst case.
+ *
+ * Fixed for the same reason `NAME_H` is. "ĐỊNH GIÁ" wraps to two lines in a
+ * 69px column once the sort caret sits beside it, and without a reserve that
+ * pushed its "/12" seven pixels below every other column's "/10" — measured,
+ * and exactly the misalignment BA §11 complains about. Reserving the worst case
+ * costs 14px of header height once and makes the baseline independent of how
+ * long any one label happens to be.
+ */
+const CODE_H = "h-[28px]";
+
 const NAME_H = "h-[42px]";
 
 const BAND_COMMON = "bg-accent-soft";
@@ -82,19 +95,27 @@ const BAND_VALUATION = "bg-reference-soft";
  * been graded.
  */
 const BAND_KQKD = "bg-panel-2";
+/** §15 — the lead block is neutral: it carries identity, not a scored result. */
+const BAND_INFO = "bg-panel-2";
 
+/**
+ * §14 — every group band shares one height, one baseline and one bottom rule.
+ * `items-center` on a fixed two-line box is what makes a one-line band sit level
+ * with a band whose title wraps, which `align-bottom` cannot do.
+ */
 const TH_BAND =
-  "label h-auto py-1 px-2 font-semibold text-center border-l border-line " +
-  "text-fg whitespace-normal leading-tight break-words";
-/** A criterion header: three stacked lines, right-aligned over its figures. */
+  "label h-auto py-2 px-2 font-semibold text-center align-middle border-l " +
+  "border-line text-fg whitespace-normal leading-tight break-words";
+/**
+ * EVERY tier-2 header cell, lead column and criterion alike (§13, §14).
+ *
+ * One class rather than three is the point: the separate lead-column classes
+ * this replaces were `align-bottom` while the criteria were `align-top`, which
+ * is a large part of why the header read as uneven.
+ */
 const TH_CRIT =
-  "label h-auto py-1 px-1 font-normal align-top whitespace-normal leading-tight " +
-  "transition-colors hover:text-fg cursor-pointer";
-/** A lead column header, wrapping onto two short lines rather than one long one. */
-const TH_LEAD =
-  "label h-auto py-1 px-2 font-normal text-left align-bottom whitespace-normal " +
-  "leading-tight transition-colors hover:text-fg hover:bg-line-faint cursor-pointer";
-const TH_LEAD_NUM = TH_LEAD.replace("text-left", "text-right");
+  "label h-auto py-1 px-1 font-normal align-middle whitespace-normal " +
+  "leading-tight transition-colors hover:text-fg cursor-pointer";
 
 export function InsTable({
   locale, rows, internalColumns, valuationColumn, internalGroupLabel,
@@ -191,18 +212,63 @@ export function InsTable({
     return lines.filter(Boolean).join("\n");
   };
 
-  const critHead = (col: InsColumn, align: "right" = "right") => (
-    <span className={`flex flex-col ${align === "right" ? "items-end" : ""}`}>
-      <span className="flex items-center gap-1">
-        <span>{col.headKey ? t(locale, col.headKey) : col.head}</span>
-        <SortMark active={sortKey === col.code} asc={asc} />
+  /**
+   * EVERY tier-2 header cell, score column or lead column alike.
+   *
+   * Three stacked slots of fixed geometry — code, name, "/max" — so that the
+   * "/10", "/38" and "/12" land on ONE baseline across the whole row and no
+   * column sits visibly higher or lower than its neighbours (BA §13, §14). A
+   * lead column passes an empty code and no max, which leaves its label in the
+   * name slot at the same height as every criterion's name; without the shared
+   * slots a two-line "NGÀY BCTC" and a three-line "C2 / Số quý EPS tăng / /10"
+   * have nothing holding them level.
+   *
+   * There is deliberately NO third header row for the weights. §13 rules it
+   * out, and the weight belongs to the column it qualifies.
+   */
+  const critHead = (col: InsColumn) => {
+    const code = col.headKey ? t(locale, col.headKey) : col.head;
+    return (
+      <span className="flex flex-col items-center text-center">
+        <span className={`${CODE_H} flex items-end justify-center gap-1`}>
+          {code && <span className="text-center">{code}</span>}
+          <SortMark active={sortKey === col.code} asc={asc} />
+        </span>
+        {/* `overflow-wrap: anywhere`, NOT `break-words`. They look alike and
+            differ in exactly the way that matters here: `break-word` lets a
+            long word wrap but does NOT reduce the element's min-content width,
+            so the cell still reported itself too narrow and clipped. `anywhere`
+            participates in intrinsic sizing. Below 1,280 the columns sit at
+            their base width and "Reinsurance" alone exceeds 68px. */}
+        <span className={`${NAME_H} flex items-start justify-center font-sans normal-case text-center text-fg-muted [overflow-wrap:anywhere]`}>
+          {col.shortText ?? t(locale, col.short)}
+        </span>
+        {/* The third slot is ALWAYS rendered, empty where a column has no
+            weight. With `align-middle` a two-slot cell centres 7px off a
+            three-slot one, so every column keeps the same three slots and the
+            whole row sits on one set of baselines. */}
+        <span className="text-fg-label">{col.max > 0 ? `/${col.max}` : "\u00A0"}</span>
       </span>
-      <span className={`${NAME_H} flex items-start justify-end font-sans normal-case text-right text-fg-muted`}>
-        {col.shortText ?? t(locale, col.short)}
-      </span>
-      {col.max > 0 && <span className="text-fg-label">/{col.max}</span>}
-    </span>
-  );
+    );
+  };
+
+  /** The lead columns, expressed as columns so they share the renderer. */
+  const leadColumns: InsColumn[] = ([
+    { code: "report_date", head: "", short: "insColReportDate",
+      label: "insColReportDate", max: 0 },
+    { code: "ticker", head: "", short: "insColTicker",
+      label: "insColTicker", max: 0 },
+    ...(showTypeColumn
+      ? [{ code: "type", head: "", short: "insColType",
+           label: "insColType", max: 0 } as InsColumn]
+      : []),
+    { code: showTotalBlock ? "total" : "common", head: "",
+      short: showTotalBlock ? "insColTotalShort" : "insColCommonShort",
+      label: showTotalBlock ? "insColTotal" : "insColCommon",
+      max: showTotalBlock ? TOTAL_MAX : COMMON_MAX },
+    { code: "delta", head: "", short: "insColDeltaShort",
+      label: showTotalBlock ? "insColDelta" : "insColDeltaCommon", max: 0 },
+  ] as InsColumn[]);
 
   /**
    * §7.4 — where a YoY could not be formed, the cell says WHICH case it was.
@@ -322,7 +388,7 @@ export function InsTable({
   // say why they are empty.
   const valCol: InsColumn | undefined = showTotalBlock
     ? valuationColumn ?? {
-        code: "__valuation__", head: "", headKey: "insGroupValuationHead",
+        code: "__valuation__", head: "", headKey: "insColValuationHead",
         short: "insValuationPending", label: "insColValuation", max: 12,
       }
     : undefined;
@@ -373,30 +439,14 @@ export function InsTable({
         </colgroup>
 
         <thead className={THEAD_STICKY}>
+          {/* TIER 1 — five group bands, every column under one of them. The
+              lead columns used to be rowSpan=2 with nothing above them, which
+              left the top-left of the header blank and gave the eye no anchor
+              for "which block am I in" (§11). */}
           <tr>
-            <th className={TH_LEAD} rowSpan={2} onClick={() => onSort("report_date")}>
-              {t(locale, "insColReportDate")}{" "}
-              <SortMark active={sortKey === "report_date"} asc={asc} />
-            </th>
-            <th className={TH_LEAD} rowSpan={2} onClick={() => onSort("ticker")}>
-              {t(locale, "insColTicker")}{" "}
-              <SortMark active={sortKey === "ticker"} asc={asc} />
-            </th>
-            {showTypeColumn && (
-              <th className={TH_LEAD} rowSpan={2} onClick={() => onSort("type")}>
-                {t(locale, "insColType")}{" "}
-                <SortMark active={sortKey === "type"} asc={asc} />
-              </th>
-            )}
-            <th className={TH_LEAD_NUM} rowSpan={2}
-                onClick={() => onSort(showTotalBlock ? "total" : "common")}>
-              {t(locale, showTotalBlock ? "insColTotal" : "insColCommon")}{" "}
-              <SortMark active={sortKey === (showTotalBlock ? "total" : "common")}
-                        asc={asc} />
-            </th>
-            <th className={TH_LEAD_NUM} rowSpan={2} onClick={() => onSort("delta")}>
-              {t(locale, showTotalBlock ? "insColDelta" : "insColDeltaCommon")}{" "}
-              <SortMark active={sortKey === "delta"} asc={asc} />
+            <th className={`${TH_BAND} ${BAND_INFO} border-l-0`}
+                colSpan={leadColumns.length}>
+              {t(locale, "insGroupInfo")}
             </th>
             <th className={`${TH_BAND} ${BAND_COMMON}`} colSpan={COMMON_METRICS.length}>
               {t(locale, "insGroupCommon")}
@@ -417,7 +467,14 @@ export function InsTable({
               </th>
             )}
           </tr>
+          {/* TIER 2 — one cell per column, weight included in the cell. */}
           <tr>
+            {leadColumns.map((m, i) => (
+              <th key={m.code} onClick={() => onSort(m.code)}
+                  className={`${TH_CRIT} ${BAND_INFO} ${i === 0 ? "border-l-0" : ""}`}>
+                {critHead(m)}
+              </th>
+            ))}
             {COMMON_METRICS.map((m, i) => (
               <th key={m.code} onClick={() => onSort(m.code)}
                   className={`${TH_CRIT} ${BAND_COMMON} ${i === 0 ? "border-l border-line" : ""}`}>
