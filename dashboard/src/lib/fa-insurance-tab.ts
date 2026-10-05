@@ -331,7 +331,7 @@ export const INS_COL_W = {
    */
   type: 64,
   total: 72,
-  delta: 110,
+  delta: 116,
   criterion: 64,
   /**
    * The Toàn ngành block-total columns, wider than a criterion column.

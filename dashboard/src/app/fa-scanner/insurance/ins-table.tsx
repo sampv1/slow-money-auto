@@ -359,8 +359,13 @@ export function InsTable({
    * carries, and does so identically in both locales because the track widths
    * are not derived from the text.
    */
-  const DELTA_GRID = "grid grid-cols-[12px_54px_42px] items-center gap-1 " +
-    "justify-end ml-auto w-[112px]";
+  // The middle track FLEXES (`1fr`) rather than carrying a fixed width, and
+  // the whole grid fills the cell rather than being pinned at 112px. A fixed
+  // total cannot know what the column ends up being — once the table went
+  // back to full-width the grid needed 120px in a 112px cell and clipped every
+  // row. The icon track is still a fixed 10px at the cell's left edge, which is
+  // what actually holds the triangles on one axis.
+  const DELTA_GRID = "grid grid-cols-[10px_1fr_40px] items-center gap-1 w-full";
 
   const deltaCell = (r: InsRow) => {
     if (r.delta_status === "ZERO_BASE") {
@@ -425,13 +430,15 @@ export function InsTable({
           ? INS_COL_W.kqkdValue : INS_COL_W.kqkdYoy), 0);
 
   return (
-    /* §7.1/§7.2 — a frame with a visible end. The table sizes to its own
-       colgroup (`w-max`) instead of stretching to the viewport, so on a 1920
-       monitor the number columns stay together rather than being pulled apart
-       across 500px of empty sheet, and the container shows where the data
-       stops. `max-w-full` keeps the narrow case scrolling inside the frame. */
-    <div className={`bg-panel border border-line rounded-sm w-max max-w-full ${TABLE_SCROLL}`}>
-      <table className="border-collapse table-fixed"
+    /* A FRAME, BUT FULL-WIDTH — the same container every other scanner tab
+       uses (`bg-panel border border-line` + a `w-full` table).
+       `w-max` was tried here to stop the table stretching, and it did, but it
+       left all the slack on ONE side: at a 1,640px window the table ended
+       370px short of the content edge and the page read as broken rather than
+       compact. Filling the width is what the rest of the app does, and the
+       border still gives the block the clear end the frame was added for. */
+    <div className={`bg-panel border border-line rounded-sm ${TABLE_SCROLL}`}>
+      <table className="w-full border-collapse table-fixed"
              style={{ minWidth: tableMinW }}>
         <colgroup>
           <col style={{ width: INS_COL_W.reportDate }} />

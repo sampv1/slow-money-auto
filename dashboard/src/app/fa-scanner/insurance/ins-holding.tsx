@@ -330,7 +330,7 @@ function HoldingCard({
     : t(locale, "insHoldNoTotalShort");
 
   return (
-    <section className="border border-line rounded-sm bg-panel min-w-0 overflow-hidden w-max max-w-full">
+    <section className="border border-line rounded-sm bg-panel min-w-0 overflow-hidden">
       {/* --- §18 collapsed header: ticker, model, period, total, ΔFA, status --- */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 border-b border-line bg-panel-2">
         <button
@@ -400,7 +400,7 @@ function HoldingCard({
               i, or empty cells where it has run out. A group laid out as its
               own <table> beside the others cannot share row heights, which is
               what made the old layout read as separate cards. */}
-          <table className="border-collapse min-w-[1172px] table-fixed">
+          <table className="w-full border-collapse min-w-[1172px] table-fixed">
             <colgroup>
               {/* §8's proportions, as pixels so the four groups keep their
                   relationship at every width rather than redistributing. */}
