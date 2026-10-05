@@ -15,6 +15,8 @@ import { TechnicalAnalysis } from "@/components/technical-analysis";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { FaSummary } from "./fa-summary";
 import { ReSummary } from "./re-summary";
+import { InsSummary } from "./ins-summary";
+import { loadInsuranceAnalysis } from "@/lib/ins-analysis";
 import { TaSearch } from "../ta-search";
 import { TradeActions } from "../../signal-pro/trade-actions";
 import { DataError } from "@/components/data-error";
@@ -147,11 +149,29 @@ export default async function SymbolDrillDown({
   // falling back to a manufacturing number the FA Scanner already stopped
   // showing for it.
   const isRealEstate = industry === "real_estate";
+  /**
+   * INSURANCE IS ITS OWN RUBRIC AND WAS FALLING THROUGH TO MANUFACTURING.
+   *
+   * The branch below tested only real estate, so all thirteen insurers rendered
+   * a 9-criterion manufacturing score and a badge reading "Bộ tiêu chí: Sản
+   * xuất" — criteria an insurance income statement does not report in the same
+   * sense. Migration 070 already removed their Final Score and the FA Scanner
+   * already moved them to their own tab; this page never got the message.
+   *
+   * The data comes from the SAME readers and the SAME builder the Toàn ngành
+   * tab uses, so the two pages agree by construction rather than by two
+   * implementations happening to match.
+   */
+  const isInsurance = industry === "insurance";
+  const ins = isInsurance ? await loadInsuranceAnalysis(symbol, fq) : null;
   const twoColumn = vnstockStatements.length > 0 && businessReports.length > 0;
-  const faQuarters = (isRealEstate ? reRows : faRows).map((r) => r.as_of_period);
+  const faQuarters = isInsurance
+    ? (ins?.quarters ?? [])
+    : (isRealEstate ? reRows : faRows).map((r) => r.as_of_period);
   const selectedFq = fq && faQuarters.includes(fq) ? fq : faQuarters[0];
   const faRow: FaScore | null =
-    !isRealEstate && selectedFq ? faRows.find((r) => r.as_of_period === selectedFq) ?? null : null;
+    !isRealEstate && !isInsurance && selectedFq
+      ? faRows.find((r) => r.as_of_period === selectedFq) ?? null : null;
   const reRow: ReScore | null =
     isRealEstate && selectedFq ? reRows.find((r) => r.as_of_period === selectedFq) ?? null : null;
 
@@ -165,7 +185,11 @@ export default async function SymbolDrillDown({
   // failure here must not take the page down the way a missing score would.
   let faFacts: QuarterlyFacts | undefined;
   let rePb: RePb | undefined;
-  if (selectedFq) {
+  // Insurance is skipped: its panel carries the quarter's revenue and profit
+  // from `fa_insurance_quarter_results`, which is net INSURANCE revenue and
+  // parent NPAT — a different scope from `fa_quarterly`'s. Fetching both would
+  // put two "quarterly revenue" figures on one page.
+  if (selectedFq && !isInsurance) {
     try {
       // Both rubrics need the quarter's revenue/NPAT; only real estate needs
       // P/B, and only manufacturing has a P/E on its score row. Fetched through
@@ -261,7 +285,22 @@ export default async function SymbolDrillDown({
         </div>
       </div>
 
-      {isRealEstate ? (
+      {isInsurance ? (
+        ins ? (
+          <InsSummary row={ins.row} locale={locale} quarters={ins.quarters}
+                      selectedQuarter={ins.selected} deep={ins.deep}
+                      registry={ins.registry} kqkd={ins.kqkd} />
+        ) : (
+          <section className="mt-6">
+            <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
+              {t(locale, "faSection")}
+            </h2>
+            <div className="bg-panel rounded-lg border border-line p-6 text-center text-fg-muted">
+              {t(locale, "faNoData")}
+            </div>
+          </section>
+        )
+      ) : isRealEstate ? (
         <ReSummary row={reRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} facts={faFacts} pb={rePb} />
       ) : (
         <FaSummary row={faRow} locale={locale} quarters={faQuarters} selectedQuarter={selectedFq ?? null} facts={faFacts} />

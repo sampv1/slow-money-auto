@@ -349,6 +349,19 @@ export function InsTable({
     );
   };
 
+  /**
+   * §2 — the ▲/▼ must stand on ONE vertical axis down the whole column.
+   *
+   * Right-aligning the cell put the icon wherever the text happened to start,
+   * so "▲ 3,8% (+3)" and "▲ 53,2% (+25)" placed their triangles 20px apart and
+   * the column read as ragged. A three-slot grid with fixed tracks — icon,
+   * percentage, point change — pins each part regardless of how many digits it
+   * carries, and does so identically in both locales because the track widths
+   * are not derived from the text.
+   */
+  const DELTA_GRID = "grid grid-cols-[12px_54px_42px] items-center gap-1 " +
+    "justify-end ml-auto w-[112px]";
+
   const deltaCell = (r: InsRow) => {
     if (r.delta_status === "ZERO_BASE") {
       return <span className="font-sans text-fg-muted">
@@ -371,13 +384,13 @@ export function InsTable({
       </span>;
     }
     return (
-      <span className={deltaTone(r.delta_pct)}>
-        {deltaArrow(r.delta_pct)} {formatPercent(Math.abs(r.delta_pct), 1)}
-        {r.delta_points !== null && (
-          <span className="text-fg-muted">
-            {" "}({r.delta_points > 0 ? "+" : ""}{formatNumber(r.delta_points, 0)})
-          </span>
-        )}
+      <span className={`${DELTA_GRID} ${deltaTone(r.delta_pct)}`}>
+        <span className="text-center">{deltaArrow(r.delta_pct)}</span>
+        <span className="text-right">{formatPercent(Math.abs(r.delta_pct), 1)}</span>
+        <span className="text-right text-fg-muted">
+          {r.delta_points === null ? ""
+            : `(${r.delta_points > 0 ? "+" : ""}${formatNumber(r.delta_points, 0)})`}
+        </span>
       </span>
     );
   };
@@ -412,8 +425,13 @@ export function InsTable({
           ? INS_COL_W.kqkdValue : INS_COL_W.kqkdYoy), 0);
 
   return (
-    <div className={`bg-panel border border-line ${TABLE_SCROLL}`}>
-      <table className="w-full border-collapse table-fixed"
+    /* §7.1/§7.2 — a frame with a visible end. The table sizes to its own
+       colgroup (`w-max`) instead of stretching to the viewport, so on a 1920
+       monitor the number columns stay together rather than being pulled apart
+       across 500px of empty sheet, and the container shows where the data
+       stops. `max-w-full` keeps the narrow case scrolling inside the frame. */
+    <div className={`bg-panel border border-line rounded-sm w-max max-w-full ${TABLE_SCROLL}`}>
+      <table className="border-collapse table-fixed"
              style={{ minWidth: tableMinW }}>
         <colgroup>
           <col style={{ width: INS_COL_W.reportDate }} />
