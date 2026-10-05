@@ -85,6 +85,18 @@ export type InsRow = {
   /** CALCULATED · ZERO_BASE · NO_COMPARABLE_PREVIOUS_FA · CURRENT_FA_INCOMPLETE */
   delta_status: string;
 
+  /**
+   * KẾT QUẢ KINH DOANH QUÝ (BA 05/10 Phần II) — display figures, not scores.
+   * Revenue and profit are in đồng as the provider reports them; the cell
+   * divides by 1e9, so the YoY stays checkable against the source.
+   */
+  quarter_revenue: number | null;
+  quarter_revenue_yoy: number | null;
+  quarter_revenue_status: string | null;
+  quarter_net_profit: number | null;
+  quarter_net_profit_yoy: number | null;
+  quarter_net_profit_status: string | null;
+
   metrics: InsMetric[];
   formula_version: string | null;
   band_version: string | null;
@@ -98,6 +110,19 @@ export const INSURANCE_TYPE_LABEL: Record<InsuranceTypeCode, TranslationKey> = {
   NON_LIFE: "insTypeNonLife",
   REINSURANCE: "insTypeReinsurance",
   HOLDING_MIXED: "insTypeHolding",
+};
+
+/**
+ * The SHORT form for the Toàn ngành type column (§11), with the full name in
+ * the tooltip. Four more columns had to fit 1,280 without horizontal scroll and
+ * this is the trade BA names: "Có thể hiển thị ngắn … Tooltip hiển thị tên đầy
+ * đủ." It is used nowhere else — every other surface has room for the full name.
+ */
+export const INSURANCE_TYPE_SHORT: Record<InsuranceTypeCode, TranslationKey> = {
+  LIFE: "insTypeLifeShort",
+  NON_LIFE: "insTypeNonLifeShort",
+  REINSURANCE: "insTypeReinsuranceShort",
+  HOLDING_MIXED: "insTypeHoldingShort",
 };
 
 /** Maps the stored Vietnamese label to the stable code (migration 072). */
@@ -158,7 +183,8 @@ export type InsColumn = {
    * two columns by their code, which is the kind of special case that stops
    * being true the moment a code is renamed.
    */
-  from?: "internal" | "valuation";
+  from?: "internal" | "valuation"
+        | "revenue" | "revenueYoy" | "profit" | "profitYoy";
 };
 
 /**
@@ -174,6 +200,28 @@ export const OVERVIEW_DEEP_COLUMN: InsColumn = {
   head: "", headKey: "insDeepTotalHead", short: "insDeepTotalShort",
   label: "insDeepTotalLabel", max: INTERNAL_MAX,
 };
+
+/**
+ * The four KẾT QUẢ KINH DOANH QUÝ columns (§6, §8), in BA's fixed order.
+ *
+ * They carry no `max`, because nothing here is scored out of anything — §0 and
+ * §17 keep this round clear of the rubric. `max: 0` is a placeholder the header
+ * renderer skips rather than printing "/0".
+ */
+export const OVERVIEW_KQKD_COLUMNS: InsColumn[] = [
+  { code: "__revenue__", from: "revenue",
+    head: "", headKey: "insKqkdRevenueHead", short: "insKqkdUnitBillion",
+    label: "insKqkdRevenueLabel", max: 0 },
+  { code: "__revenue_yoy__", from: "revenueYoy",
+    head: "", headKey: "insKqkdRevenueYoyHead", short: "insKqkdYoyShort",
+    label: "insKqkdRevenueYoyLabel", max: 0 },
+  { code: "__profit__", from: "profit",
+    head: "", headKey: "insKqkdProfitHead", short: "insKqkdUnitBillion",
+    label: "insKqkdProfitLabel", max: 0 },
+  { code: "__profit_yoy__", from: "profitYoy",
+    head: "", headKey: "insKqkdProfitYoyHead", short: "insKqkdYoyShort",
+    label: "insKqkdProfitYoyLabel", max: 0 },
+];
 
 export const OVERVIEW_VALUATION_COLUMN: InsColumn = {
   code: "__valuation_total__", from: "valuation",
@@ -260,13 +308,31 @@ export const INTERNAL_GROUP_LABEL: Record<InsuranceTypeCode, TranslationKey> = {
  * 1,216px of content at a 1,280px viewport.
  */
 export const INS_COL_W = {
+  /**
+   * Measured against content, not guessed. "23/07/2026" is ten monospaced
+   * characters and clipped at 80; "▲ 53,2% (+25)" is thirteen and clipped at
+   * 100. Four new KQKD columns had to fit 1,280 — where the content box is
+   * 1,212px — so the budget came out of the columns with slack rather than out
+   * of the two that were already at their content's width.
+   */
   reportDate: 88,
-  ticker: 60,
-  /** Toàn ngành only (§19): the business type, which is three words at most. */
-  type: 104,
-  total: 78,
-  delta: 108,
-  criterion: 68,
+  /**
+   * The HEADER sizes this column, not the data. "ABI" is three characters; the
+   * English heading "TICKER" is six at 11px uppercase and clipped at 52px while
+   * the Vietnamese "MÃ CP" fitted — English the wider locale again. The 12px
+   * came back out of four columns measured to have slack, not out of the two
+   * that already sat at their content's width.
+   */
+  ticker: 64,
+  /**
+   * Toàn ngành only (§19). §11 permits the SHORT form here ("Phi NT", "Tái BH",
+   * "Holding") with the full name in the tooltip, which is what buys the room
+   * the four KQKD columns need at 1,280.
+   */
+  type: 64,
+  total: 72,
+  delta: 110,
+  criterion: 64,
   /**
    * The Toàn ngành block-total columns, wider than a criterion column.
    *
@@ -276,8 +342,11 @@ export const INS_COL_W = {
    * other column's — the three header lines stop sharing a baseline. One width
    * fixes both, because both were the same column being too narrow.
    */
-  blockTotal: 92,
-  valuation: 86,
+  blockTotal: 88,
+  valuation: 68,
+  /** KQKD: a figure in tỷ ("10.703,9") and a signed percentage ("+1.935,3%"). */
+  kqkdValue: 76,
+  kqkdYoy: 82,
 } as const;
 
 /** §4.1 — the minimum-score filter's options. */
@@ -312,6 +381,10 @@ export function sortValue(row: InsRow, key: string): number | string | null {
     case "delta": return row.delta_pct;
     case OVERVIEW_DEEP_COLUMN.code: return row.internal_score;
     case OVERVIEW_VALUATION_COLUMN.code: return row.valuation_score;
+    case "__revenue__": return row.quarter_revenue;
+    case "__revenue_yoy__": return row.quarter_revenue_yoy;
+    case "__profit__": return row.quarter_net_profit;
+    case "__profit_yoy__": return row.quarter_net_profit_yoy;
     case "type": return row.insurance_type;
     default: {
       // A merged column's key is its codes joined by "/", so a row matches on

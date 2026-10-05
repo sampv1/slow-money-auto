@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { type Locale, t, type TranslationKey } from "@/lib/i18n";
 import {
   type InsColumn, type InsMetric, type InsRow,
-  COMMON_METRICS, INSURANCE_TYPE_LABEL, INS_COL_W,
+  COMMON_METRICS, INSURANCE_TYPE_LABEL, INSURANCE_TYPE_SHORT, INS_COL_W,
   deltaArrow, deltaTone, defaultSortKey, sortValue,
 } from "@/lib/fa-insurance-tab";
 import { THEAD_STICKY, TABLE_SCROLL, TR, TD, TD_NUM, TD_SYMBOL } from "@/lib/table";
@@ -75,6 +75,13 @@ const NAME_H = "h-[42px]";
 const BAND_COMMON = "bg-accent-soft";
 const BAND_INTERNAL = "bg-up-soft";
 const BAND_VALUATION = "bg-reference-soft";
+/**
+ * KQKD is FACTS, not a scored block, so it takes the neutral header surface
+ * rather than a fourth semantic tint. §29 locks blue/green/orange to the three
+ * SCORE blocks; giving reported revenue a colour of its own would imply it had
+ * been graded.
+ */
+const BAND_KQKD = "bg-panel-2";
 
 const TH_BAND =
   "label h-auto py-1 px-2 font-semibold text-center border-l border-line " +
@@ -91,7 +98,7 @@ const TH_LEAD_NUM = TH_LEAD.replace("text-left", "text-right");
 
 export function InsTable({
   locale, rows, internalColumns, valuationColumn, internalGroupLabel,
-  showTotalBlock, showTypeColumn = false,
+  showTotalBlock, showTypeColumn = false, kqkdColumns = [],
 }: {
   locale: Locale;
   rows: InsRow[];
@@ -108,6 +115,8 @@ export function InsTable({
    * engine the row's type uses, then the /12.
    */
   showTypeColumn?: boolean;
+  /** The four KẾT QUẢ KINH DOANH QUÝ columns, Toàn ngành only (§6, §8). */
+  kqkdColumns?: InsColumn[];
 }) {
   const [sortKey, setSortKey] = useState<string>(() => defaultSortKey(rows));
   const [asc, setAsc] = useState(false);
@@ -191,9 +200,62 @@ export function InsTable({
       <span className={`${NAME_H} flex items-start justify-end font-sans normal-case text-right text-fg-muted`}>
         {col.shortText ?? t(locale, col.short)}
       </span>
-      <span className="text-fg-label">/{col.max}</span>
+      {col.max > 0 && <span className="text-fg-label">/{col.max}</span>}
     </span>
   );
+
+  /**
+   * §7.4 — where a YoY could not be formed, the cell says WHICH case it was.
+   * A loss base inverts an ordinary growth ratio, so "+" and "−" would both be
+   * lies; these states are the honest reading and are deliberately neutral in
+   * colour, since neither green nor red is true of them.
+   */
+  const KQKD_STATE: Record<string, TranslationKey> = {
+    LOSS_TO_PROFIT: "insKqkdLossToProfit",
+    PROFIT_TO_LOSS: "insKqkdProfitToLoss",
+    NOT_MEANINGFUL: "insKqkdNotMeaningful",
+    NO_PRIOR_PERIOD: "insKqkdNoPrior",
+    NO_CURRENT_PERIOD: "insNotScoredMark",
+  };
+
+  const kqkdCell = (r: InsRow, col: InsColumn, first: boolean) => {
+    const cls = `${TD_NUM} ${first ? "border-l border-line" : ""}`;
+    const isYoy = col.from === "revenueYoy" || col.from === "profitYoy";
+    const value = col.from === "revenue" ? r.quarter_revenue
+      : col.from === "profit" ? r.quarter_net_profit
+      : col.from === "revenueYoy" ? r.quarter_revenue_yoy
+      : r.quarter_net_profit_yoy;
+    const status = col.from === "revenue" || col.from === "revenueYoy"
+      ? r.quarter_revenue_status : r.quarter_net_profit_status;
+
+    if (!isYoy) {
+      return (
+        <td key={col.code} className={cls} title={t(locale, col.label)}>
+          {value === null
+            ? <span className="font-sans text-fg-muted">
+                {t(locale, "insNotScoredMark")}
+              </span>
+            // Reported in đồng; shown in tỷ, which is what §9's format asks for.
+            : formatNumber(value / 1e9, 1)}
+        </td>
+      );
+    }
+    if (value === null) {
+      const key = KQKD_STATE[status ?? ""] ?? "insNotScoredMark";
+      return (
+        <td key={col.code} className={cls} title={t(locale, "insKqkdStateTip")}>
+          <span className="font-sans text-fg-muted">{t(locale, key)}</span>
+        </td>
+      );
+    }
+    return (
+      <td key={col.code} className={cls} title={t(locale, col.label)}>
+        <span className={deltaTone(value)}>
+          {value > 0 ? "+" : ""}{formatPercent(value, 1)}
+        </span>
+      </td>
+    );
+  };
 
   const critCell = (r: InsRow, col: InsColumn, first: boolean) => {
     const cls = `${TD_NUM} ${first ? "border-l border-line-faint" : ""}`;
@@ -278,7 +340,10 @@ export function InsTable({
     + COMMON_METRICS.length * INS_COL_W.criterion
     + internalColumns.reduce(
         (a, m) => a + (m.from ? INS_COL_W.blockTotal : INS_COL_W.criterion), 0)
-    + (valCol ? INS_COL_W.valuation : 0);
+    + (valCol ? INS_COL_W.valuation : 0)
+    + kqkdColumns.reduce((a, m) => a + (
+        m.from === "revenue" || m.from === "profit"
+          ? INS_COL_W.kqkdValue : INS_COL_W.kqkdYoy), 0);
 
   return (
     <div className={`bg-panel border border-line ${TABLE_SCROLL}`}>
@@ -299,6 +364,12 @@ export function InsTable({
             }} />
           ))}
           {valCol && <col style={{ width: INS_COL_W.valuation }} />}
+          {kqkdColumns.map((m) => (
+            <col key={m.code} style={{
+              width: m.from === "revenue" || m.from === "profit"
+                ? INS_COL_W.kqkdValue : INS_COL_W.kqkdYoy,
+            }} />
+          ))}
         </colgroup>
 
         <thead className={THEAD_STICKY}>
@@ -340,6 +411,11 @@ export function InsTable({
                 {t(locale, "insGroupValuation")}
               </th>
             )}
+            {kqkdColumns.length > 0 && (
+              <th className={`${TH_BAND} ${BAND_KQKD}`} colSpan={kqkdColumns.length}>
+                {t(locale, "insGroupKqkd")}
+              </th>
+            )}
           </tr>
           <tr>
             {COMMON_METRICS.map((m, i) => (
@@ -360,6 +436,12 @@ export function InsTable({
                 {critHead(valCol)}
               </th>
             )}
+            {kqkdColumns.map((m, i) => (
+              <th key={m.code} onClick={() => onSort(m.code)}
+                  className={`${TH_CRIT} ${BAND_KQKD} ${i === 0 ? "border-l border-line" : ""}`}>
+                {critHead(m)}
+              </th>
+            ))}
           </tr>
         </thead>
 
@@ -373,7 +455,8 @@ export function InsTable({
             <tr className={TR}>
               <td className={`${TD} text-center`}
                   colSpan={4 + (showTypeColumn ? 1 : 0) + COMMON_METRICS.length
-                           + internalColumns.length + (valCol ? 1 : 0)}>
+                           + internalColumns.length + (valCol ? 1 : 0)
+                           + kqkdColumns.length}>
                 {t(locale, rows.length === 0 ? "insNoRows" : "insNoFilterMatch")}
               </td>
             </tr>
@@ -390,8 +473,9 @@ export function InsTable({
               </td>
 
               {showTypeColumn && (
-                <td className={TD}>
-                  {t(locale, INSURANCE_TYPE_LABEL[r.insurance_type])}
+                <td className={TD}
+                    title={t(locale, INSURANCE_TYPE_LABEL[r.insurance_type])}>
+                  {t(locale, INSURANCE_TYPE_SHORT[r.insurance_type])}
                 </td>
               )}
 
@@ -415,6 +499,10 @@ export function InsTable({
 
               {COMMON_METRICS.map((m, i) => critCell(r, m, i === 0))}
               {internalColumns.map((m, i) => critCell(r, m, i === 0))}
+              {/* ORDER IS THE HEADER'S ORDER. The colgroup and both header
+                  rows put Định giá before KQKD (§8), so the body must too —
+                  rendered the other way round, every figure sat under the wrong
+                  heading while the table still looked well-formed. */}
               {valCol && (
                 valCol.code === "__valuation__"
                   ? <td className={TD_NUM} title={t(locale, "insValuationNoBands")}>
@@ -422,6 +510,7 @@ export function InsTable({
                     </td>
                   : critCell(r, valCol, true)
               )}
+              {kqkdColumns.map((m, i) => kqkdCell(r, m, i === 0))}
             </tr>
           ))}
         </tbody>

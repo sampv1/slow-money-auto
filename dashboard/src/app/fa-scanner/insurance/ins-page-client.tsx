@@ -4,7 +4,7 @@ import { type Locale, t, type TranslationKey } from "@/lib/i18n";
 import {
   type InsColumn, type InsRow, type InsuranceTypeCode,
   INTERNAL_METRICS, VALUATION_METRIC, INTERNAL_GROUP_LABEL,
-  OVERVIEW_DEEP_COLUMN, OVERVIEW_VALUATION_COLUMN,
+  OVERVIEW_DEEP_COLUMN, OVERVIEW_VALUATION_COLUMN, OVERVIEW_KQKD_COLUMNS,
 } from "@/lib/fa-insurance-tab";
 import { applyInsFilters } from "@/lib/ins-rows";
 import type { HoldingDeepRow } from "@/lib/fa-holding";
@@ -132,6 +132,7 @@ export function InsPageClient({
                                        : "insGroupDeepOverview"}
           showTotalBlock={showTotalBlock}
           showTypeColumn={typeCode === undefined}
+          kqkdColumns={typeCode === undefined ? OVERVIEW_KQKD_COLUMNS : []}
         />
       )}
 

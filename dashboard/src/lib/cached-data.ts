@@ -891,6 +891,41 @@ export const getInsuranceRegistry = unstable_cache(
   { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
 );
 
+/** Quarterly business results for the overview (migration 080). */
+export type InsuranceQuarterResult = {
+  symbol: string;
+  period: string;
+  quarter_revenue: number | null;
+  quarter_revenue_yoy: number | null;
+  quarter_revenue_status: string;
+  quarter_net_profit: number | null;
+  quarter_net_profit_yoy: number | null;
+  quarter_net_profit_status: string;
+  kqkd_source_period: string | null;
+};
+
+export const getInsuranceQuarterResults = unstable_cache(
+  async (period: string): Promise<InsuranceQuarterResult[]> => {
+    try {
+      return await fetchAllPaged<InsuranceQuarterResult>((from, to, withCount) =>
+        supabase
+          .from("fa_insurance_quarter_results")
+          .select("*", withCount ? { count: "exact" } : undefined)
+          .eq("period", period)
+          .order("symbol", { ascending: true })
+          .range(from, to),
+      );
+    } catch (e) {
+      // A missing table is the one legitimate empty: the four columns render
+      // their absence rather than the page failing.
+      if (isMissingTable(e)) return [];
+      throw e;
+    }
+  },
+  ["fa-insurance-quarter-results"],
+  { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+);
+
 export const INS_ACTIVE_BAND_VERSIONS = [
   "NONLIFE_P1_P5_SCORE_BANDS_V1",
   "REINSURANCE_R1_R5_THRESHOLD_V2",

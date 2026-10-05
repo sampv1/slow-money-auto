@@ -1,7 +1,7 @@
 import {
   getHoldingDeepRows, getInsuranceQuarters, getInsuranceRows,
-  getInsuranceRegistry, getInsuranceTabScores,
-  type InsRegistryRow, type InsuranceTabScore,
+  getInsuranceRegistry, getInsuranceQuarterResults, getInsuranceTabScores,
+  type InsRegistryRow, type InsuranceQuarterResult, type InsuranceTabScore,
 } from "@/lib/cached-data";
 import type { HoldingDeepRow } from "@/lib/fa-holding";
 import type { InsRow, InsuranceTypeCode } from "@/lib/fa-insurance-tab";
@@ -33,7 +33,7 @@ export async function loadInsTab(
              deepByTicker: {}, registry: [] };
   }
 
-  const [scores, deep, assembledRows, registry] = await Promise.all([
+  const [scores, deep, assembledRows, registry, kqkdRows] = await Promise.all([
     getInsuranceRows(selected),
     // Only the Holding tab and the industry view need the deep rows.
     typeCode === undefined || typeCode === "HOLDING_MIXED"
@@ -41,6 +41,7 @@ export async function loadInsTab(
       : Promise.resolve([] as HoldingDeepRow[]),
     getInsuranceTabScores(selected),
     getInsuranceRegistry(),
+    getInsuranceQuarterResults(selected),
   ]);
 
   const byTicker: Record<string, HoldingDeepRow[]> = {};
@@ -49,9 +50,12 @@ export async function loadInsTab(
   const assembled: Record<string, InsuranceTabScore> = {};
   for (const a of assembledRows) assembled[a.symbol] = a;
 
+  const kqkd: Record<string, InsuranceQuarterResult> = {};
+  for (const k of kqkdRows) kqkd[k.symbol] = k;
+
   return {
     quarters, selected, minScore, ticker, registry,
     deepByTicker: byTicker,
-    rows: buildInsRows(scores, byTicker, typeCode, assembled),
+    rows: buildInsRows(scores, byTicker, typeCode, assembled, kqkd),
   };
 }

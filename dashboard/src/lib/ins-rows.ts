@@ -20,7 +20,7 @@ import {
 } from "./fa-insurance-tab";
 import type { InsuranceScore } from "./fa-insurance";
 import type { HoldingDeepRow } from "./fa-holding";
-import type { InsuranceTabScore } from "./cached-data";
+import type { InsuranceQuarterResult, InsuranceTabScore } from "./cached-data";
 
 /** C1–C5: the stored points plus the raw figure behind each. */
 function commonMetrics(s: InsuranceScore): InsMetric[] {
@@ -67,6 +67,8 @@ export function buildInsRows(
   deepByTicker: Record<string, HoldingDeepRow[]>,
   typeFilter?: InsuranceTypeCode,
   assembled: Record<string, InsuranceTabScore> = {},
+  /** Quarterly business results — display only, no rubric reads them. */
+  kqkd: Record<string, InsuranceQuarterResult> = {},
 ): InsRow[] {
   const out: InsRow[] = [];
   for (const s of scores) {
@@ -158,6 +160,13 @@ export function buildInsRows(
       delta_status: asm ? asm.total_change_status
         : typeFilter ? "CURRENT_FA_INCOMPLETE"
         : s.delta_fa_points === null ? "NO_COMPARABLE_PREVIOUS_FA" : "CALCULATED",
+      quarter_revenue: kqkd[s.symbol]?.quarter_revenue ?? null,
+      quarter_revenue_yoy: kqkd[s.symbol]?.quarter_revenue_yoy ?? null,
+      quarter_revenue_status: kqkd[s.symbol]?.quarter_revenue_status ?? null,
+      quarter_net_profit: kqkd[s.symbol]?.quarter_net_profit ?? null,
+      quarter_net_profit_yoy: kqkd[s.symbol]?.quarter_net_profit_yoy ?? null,
+      quarter_net_profit_status: kqkd[s.symbol]?.quarter_net_profit_status ?? null,
+
       metrics,
       formula_version: asm ? asm.formula_version : null,
       band_version: asm ? asm.band_version : (s.score_version ?? null),
