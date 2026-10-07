@@ -53,6 +53,13 @@ import { t, type Locale } from "@/lib/i18n";
 /** The chart the large panel shows until the reader picks another. */
 const DEFAULT_FEATURED = FINANCIAL_CHARTS[0]?.id ?? "";
 
+/**
+ * The promoted-card id for the extra card, which has no `ChartSpec` to take an
+ * id from. A sentinel rather than an index, so it cannot collide with a real
+ * chart id if the arrays ever change length.
+ */
+const EXTRA_CARD_ID = "__extra_card__";
+
 /** Corners pointing outward — "show this one big". */
 function ExpandIcon() {
   return (
@@ -140,6 +147,7 @@ export function FinancialPanels({
   shareAdjustments = [],
   chartSet = "default",
   extraCard = null,
+  extraCardZoomed = null,
   extraCardTitle = "",
 }: {
   rows: VnstockStatementRow[];
@@ -174,10 +182,16 @@ export function FinancialPanels({
    * no readout — so it cannot go through `FinancialChart`. It still belongs IN
    * the grid rather than in a section of its own: BA numbers it as one of the
    * ten, and a tenth card sitting alone below the other nine reads as an
-   * afterthought. It is deliberately NOT promotable to the large panel, which
-   * is a per-spec affordance.
+   * afterthought.
+   *
+   * TWO NODES, NOT A RENDER FUNCTION. The large panel needs a taller plot, and
+   * the obvious `(zoomed) => <Matrix zoomed={zoomed} />` cannot be passed: a
+   * function does not cross the Server/Client Component boundary — the same
+   * rule that made `charts={BANK_CHARTS}` return HTTP 500. Both variants are
+   * ordinary elements, so the page renders each once and this picks one.
    */
   extraCard?: React.ReactNode;
+  extraCardZoomed?: React.ReactNode;
   extraCardTitle?: string;
 }) {
   const [featuredId, setFeaturedId] = useState<string>(DEFAULT_FEATURED);
@@ -209,10 +223,13 @@ export function FinancialPanels({
     .pop();
 
   const charts = chartSet === "bank" ? BANK_CHARTS : FINANCIAL_CHARTS;
-  const featuredIndex = charts.findIndex((c) => c.id === featuredId);
+  const extraIndex = extraCard ? charts.length : -1;
+  const extraFeatured = Boolean(extraCard) && featuredId === EXTRA_CARD_ID;
+  const specIndex = charts.findIndex((c) => c.id === featuredId);
   // A bank opens on ITS first card, not on a non-financial id that is not
   // in this set at all — the default `featuredId` belongs to the other array.
-  const featured = featuredIndex >= 0 ? charts[featuredIndex] : charts[0];
+  const featured = extraFeatured ? null : specIndex >= 0 ? charts[specIndex] : charts[0];
+  const featuredNumber = extraFeatured ? extraIndex + 1 : (specIndex >= 0 ? specIndex : 0) + 1;
 
   return (
     // @container, not viewport breakpoints: this section sits in a ~57% column
@@ -221,12 +238,16 @@ export function FinancialPanels({
     // column is 767px — one pixel under @3xl — so the third column has to come
     // in at @2xl (672px) or it never arrives at the width people actually use.
     <div className="@container flex flex-col gap-3">
-      {featured && (
+      {(featured || extraFeatured) && (
         <div ref={featuredRef} className="bg-panel rounded-lg border border-line p-3 flex flex-col min-w-0">
           <div className="mb-1.5">
             <h3 className="text-label font-semibold tracking-wide uppercase leading-tight text-fg">
-              <span className="font-mono tabular-nums mr-1">{featuredIndex + 1}.</span>
-              {locale === "vi" ? featured.title_vi : featured.title_en}
+              <span className="font-mono tabular-nums mr-1">{featuredNumber}.</span>
+              {extraFeatured
+                ? extraCardTitle
+                : locale === "vi"
+                  ? featured!.title_vi
+                  : featured!.title_en}
             </h3>
           </div>
           {/* KEYED ON THE CHART ID so React REMOUNTS instead of reusing the
@@ -240,18 +261,22 @@ export function FinancialPanels({
               quarters, which Valuation does not even offer — so the same leak
               would strand it on a layer it has no data for. The legend's hidden
               series leaked across the swap the same way. */}
-          <FinancialChart
-            shareAdjustments={shareAdjustments}
-            key={featured.id}
-            spec={featured}
-            rows={rows}
-            locale={locale}
-            latestClose={latestClose}
-            latestCloseDate={latestCloseDate}
-            financialFiler={financialFiler}
-            insuranceFiler={insuranceFiler}
-            zoomed
-          />
+          {extraFeatured ? (
+            extraCardZoomed ?? extraCard
+          ) : (
+            <FinancialChart
+              shareAdjustments={shareAdjustments}
+              key={featured!.id}
+              spec={featured!}
+              rows={rows}
+              locale={locale}
+              latestClose={latestClose}
+              latestCloseDate={latestCloseDate}
+              financialFiler={financialFiler}
+              insuranceFiler={insuranceFiler}
+              zoomed
+            />
+          )}
         </div>
       )}
 
@@ -281,21 +306,18 @@ export function FinancialPanels({
           );
         })}
         {extraCard && (
-          <div
-            data-fin-card={charts.length + 1}
-            className="bg-panel rounded-lg border border-line p-3 flex flex-col min-w-0"
+          /* The SAME `Card` as every other tile, so the extra card gets the
+             expand button, the featured border and the hover states from one
+             place rather than a hand-rolled copy that drifts. */
+          <Card
+            index={extraIndex + 1}
+            title={extraCardTitle}
+            featured={extraFeatured}
+            onSelect={() => select(EXTRA_CARD_ID)}
+            selectLabel={t(locale, extraFeatured ? "finFeatured" : "finShowLarge")}
           >
-            <div className="flex items-start gap-2 mb-1.5">
-              <h3
-                className="text-label font-semibold tracking-wide uppercase leading-tight text-fg min-w-0 flex-1"
-                title={extraCardTitle}
-              >
-                <span className="font-mono tabular-nums mr-1">{charts.length + 1}.</span>
-                {extraCardTitle}
-              </h3>
-            </div>
             {extraCard}
-          </div>
+          </Card>
         )}
       </div>
 

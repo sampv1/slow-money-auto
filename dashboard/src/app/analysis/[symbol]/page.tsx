@@ -382,6 +382,15 @@ export default async function SymbolDrillDown({
                     <BankValuationMatrix rows={bankMatrix} symbol={symbol} locale={locale} />
                   ) : null
                 }
+                /* A second instance rather than a render function: a function
+                   cannot cross the Server/Client boundary (the HTTP 500 that
+                   `charts={BANK_CHARTS}` produced), so the taller variant is
+                   passed as its own element. */
+                extraCardZoomed={
+                  isBank && bankMatrix.length > 0 ? (
+                    <BankValuationMatrix rows={bankMatrix} symbol={symbol} locale={locale} zoomed />
+                  ) : null
+                }
                 rows={isBank ? bankRows : vnstockStatements}
                 shareAdjustments={shareAdjustments}
                 locale={locale}

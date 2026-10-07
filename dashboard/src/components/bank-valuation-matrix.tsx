@@ -58,10 +58,15 @@ export function BankValuationMatrix({
   rows,
   symbol,
   locale,
+  zoomed = false,
 }: {
   rows: BankValuationRow[];
   symbol: string;
   locale: Locale;
+  /** Rendered in the large panel rather than a grid card. Only the plot height
+   *  changes — a scatter has no layer toggle or span control to reveal, so the
+   *  promotion buys room to separate 29 points rather than extra chrome. */
+  zoomed?: boolean;
 }) {
   const { points, sector, labelled } = useMemo(() => {
     const drawn = rows.filter((r) => r.plottable);
@@ -92,7 +97,7 @@ export function BankValuationMatrix({
 
   return (
     <div className="flex flex-col gap-2 min-w-0">
-      <div className="h-[260px] min-w-0">
+      <div className={`${zoomed ? "h-[460px]" : "h-[260px]"} min-w-0`}>
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 8, right: 16, bottom: 26, left: 4 }}>
             <CartesianGrid stroke={CHART_LITERAL.grid} strokeDasharray="2 3" />
