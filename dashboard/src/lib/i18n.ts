@@ -312,6 +312,22 @@ export const translations = {
     finNoData: "No financial statements for this symbol yet.",
     finNoSeries: "This company reports nothing on these lines.",
     finNotBuiltForInsurance: "This chart has not been built for insurers yet — their statements carry these figures on different lines.",
+
+    // --- Bank charts (BANK_CHARTS_DESIGN.md) ---------------------------------
+    /* CAR is filed once a year, so a quarterly point is the last published
+       figure carried forward. BA forbade interpolating one: it moves
+       non-linearly with capital raises and dividends, so an average between two
+       filings would be invented data. */
+    bankCarCarried: "Carried forward from the latest annual filing — not interpolated.",
+    /* NOT the regulatory SML. BA's wording, round 6: the filings publish no
+       maturity split of funding, so this is deliberately conservative. */
+    bankSmlProxy:
+      "Proxy SML, not the SBV ratio: filings publish no maturity split of funding, so all customer deposits are treated as short-term and issued paper as stable long-term funding. The 40% line (Circular 08/2020) is shown for reference.",
+    /* The omission has to be stated: a reader comparing this to a published
+       hidden-NPL figure would otherwise take the gap for a measurement. */
+    bankHiddenNoVamc: "Excludes VAMC special bonds — the filings do not separate them.",
+    bankNoCar: "This bank publishes no CAR; the chart shows the equity / total assets leverage ratio instead.",
+    bankBelowBasel: "Below the Basel III standard",
     finRubricMismatch:
       "These line items do not fit this company's statements — banks and securities firms report a different balance sheet.",
     finSource: "Source: vnstock",
@@ -2076,6 +2092,14 @@ export const translations = {
     finNoData: "Chưa có báo cáo tài chính cho mã này.",
     finNoSeries: "Doanh nghiệp không có số liệu ở các chỉ tiêu này.",
     finNotBuiltForInsurance: "Chưa triển khai biểu đồ cho loại hình bảo hiểm — doanh nghiệp bảo hiểm ghi nhận các số liệu này ở những khoản mục khác.",
+
+    // --- Biểu đồ ngân hàng (BANK_CHARTS_DESIGN.md) ---------------------------
+    bankCarCarried: "Lấy theo số công bố năm gần nhất — không nội suy.",
+    bankSmlProxy:
+      "Proxy SML, không phải tỷ lệ SML theo quy định NHNN. Báo cáo tài chính không công bố phân kỳ hạn của nguồn vốn huy động, nên tỷ lệ này được tính theo phương pháp thẩm định bảo thủ: coi toàn bộ tiền gửi khách hàng là nguồn vốn ngắn hạn, và coi giấy tờ có giá đã phát hành là nguồn vốn dài hạn ổn định. Đường trần 40% theo Thông tư 08/2020/TT-NHNN được vẽ để tham chiếu.",
+    bankHiddenNoVamc: "Chưa bao gồm trái phiếu đặc biệt VAMC — báo cáo không tách riêng khoản này.",
+    bankNoCar: "Ngân hàng này không công bố CAR; biểu đồ hiển thị tỷ lệ đòn bẩy VCSH / Tổng tài sản thay thế.",
+    bankBelowBasel: "Dưới chuẩn Basel III",
     finRubricMismatch:
       "Các chỉ tiêu này không phù hợp với báo cáo của doanh nghiệp — ngân hàng và công ty chứng khoán có cấu trúc bảng cân đối khác.",
     finSource: "Nguồn: vnstock",

@@ -78,6 +78,25 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python refresh_fa_release_dates.py
 
+      # Bank thuyết minh (VCI section=NOTE) for the ten bank charts. Best-effort
+      # for the same reason as the release dates above: it feeds DISPLAY ONLY —
+      # no score reads it — so a provider blip must not turn the scoring run red.
+      #
+      # The figures are quarterly, so most days this rewrites what is already
+      # there; 29 symbols at ~0.4s is seconds, which is cheaper than reasoning
+      # about when a filing lands. Every period is re-validated before it is
+      # written, and the script exits non-zero only on a FAILED CALL — a period
+      # that fails an identity check is dropped with a ::warning:: and the rest
+      # still load. See scripts/fa/bank_notes.py for why that split exists.
+      - name: Refresh bank notes
+        continue-on-error: true
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python refresh_bank_notes.py
+
       # Expire the dashboard's server-side data cache so the next page view
       # shows today's scores immediately (see dashboard /api/revalidate).
       # Non-fatal: if it fails, the cache TTL still refreshes within the hour.

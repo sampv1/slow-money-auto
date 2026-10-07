@@ -36,7 +36,15 @@ import { CHART_LITERAL, SERIES_FIN as C, SERIES_RESIDUAL } from "@/lib/chart-the
 import type { VnstockStatementRow } from "@/lib/cached-data";
 import type { TranslationKey } from "@/lib/i18n";
 
-export type StatementKind = "income" | "balance" | "cashflow" | "ratio";
+/**
+ * `note` is the THUYẾT MINH (migration 081), loaded for banks only.
+ *
+ * It is a statement kind rather than a separate store because every figure it
+ * carries is read beside the primary statements — chart 3's NPL ratio divides a
+ * note figure by a note figure and cross-checks against a `ratio` one — and a
+ * second loader would be a second way for a period to go missing.
+ */
+export type StatementKind = "income" | "balance" | "cashflow" | "ratio" | "note";
 
 /** Which time base a layer puts on the x-axis. */
 export type Layer = "quarter" | "ttm" | "year";
@@ -69,6 +77,9 @@ export type Frame = {
   balance: Record<string, number>;
   cashflow: Record<string, number>;
   ratio: Record<string, number>;
+  /** Thuyết minh; empty for every non-bank, which is why no chart outside
+   *  `BANK_CHARTS` reads it. */
+  note: Record<string, number>;
 };
 
 /**
@@ -86,7 +97,7 @@ export function buildFrames(
     if (r.period_type !== periodType) continue;
     let f = byPeriod.get(r.period);
     if (!f) {
-      f = { period: r.period, income: {}, balance: {}, cashflow: {}, ratio: {} };
+      f = { period: r.period, income: {}, balance: {}, cashflow: {}, ratio: {}, note: {} };
       byPeriod.set(r.period, f);
     }
     const bucket = f[r.statement as StatementKind];
@@ -156,7 +167,7 @@ export type Ctx = {
   q0: string | null;
 };
 
-const val = (f: Frame | null, st: StatementKind, id: string): number | null => {
+export const val = (f: Frame | null, st: StatementKind, id: string): number | null => {
   if (!f) return null;
   const v = f[st][id];
   return typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -164,7 +175,7 @@ const val = (f: Frame | null, st: StatementKind, id: string): number | null => {
 
 /** Sum of ids at one period, null only if EVERY id is missing. Absent ≠ 0, but
  *  a component that genuinely reported nothing must not void its siblings. */
-function at(f: Frame | null, st: StatementKind, ids: string[]): number | null {
+export function at(f: Frame | null, st: StatementKind, ids: string[]): number | null {
   if (!f) return null;
   let sum = 0;
   let seen = false;
@@ -179,7 +190,7 @@ function at(f: Frame | null, st: StatementKind, ids: string[]): number | null {
 }
 
 /** One figure read off one period — the unit every window helper below sums. */
-type Pick = (f: Frame) => number | null;
+export type Pick = (f: Frame) => number | null;
 
 const items = (st: StatementKind, ids: string[]): Pick => (f) => at(f, st, ids);
 
@@ -190,7 +201,7 @@ const items = (st: StatementKind, ids: string[]): Pick => (f) => at(f, st, ids);
  * figure, and it would draw a step down at the left edge of every chart that a
  * reader would take for a collapse in the business.
  */
-function sumFrames(frames: Frame[], pick: Pick, need: number): number | null {
+export function sumFrames(frames: Frame[], pick: Pick, need: number): number | null {
   if (frames.length !== need) return null;
   let sum = 0;
   for (const f of frames) {
@@ -202,11 +213,11 @@ function sumFrames(frames: Frame[], pick: Pick, need: number): number | null {
 }
 
 /** A FLOW at this x-position, on the layer's own basis. */
-const flow = (ctx: Ctx, pick: Pick): number | null =>
+export const flow = (ctx: Ctx, pick: Pick): number | null =>
   ctx.layer === "ttm" ? sumFrames(ctx.window, pick, 4) : pick(ctx.cur);
 
 /** The same, one year back — the denominator for every growth series. */
-const flowYearAgo = (ctx: Ctx, pick: Pick): number | null =>
+export const flowYearAgo = (ctx: Ctx, pick: Pick): number | null =>
   ctx.layer === "ttm"
     ? sumFrames(ctx.yearAgoWindow, pick, 4)
     : ctx.yearAgo
@@ -214,7 +225,7 @@ const flowYearAgo = (ctx: Ctx, pick: Pick): number | null =>
       : null;
 
 /** The TWELVE MONTHS ending here, whatever the layer is showing. */
-const ttm = (ctx: Ctx, pick: Pick): number | null =>
+export const ttm = (ctx: Ctx, pick: Pick): number | null =>
   sumFrames(ctx.trailing4, pick, ctx.layer === "year" ? 1 : 4);
 
 /**
@@ -224,7 +235,7 @@ const ttm = (ctx: Ctx, pick: Pick): number | null =>
  * the backlog, CIP and both structure charts are point-in-time by the same
  * ruling.
  */
-function avg(ctx: Ctx, pick: Pick): number | null {
+export function avg(ctx: Ctx, pick: Pick): number | null {
   const n = ctx.avgWindow.length;
   if (n === 0) return null;
   const sum = sumFrames(ctx.avgWindow, pick, n);
@@ -232,7 +243,7 @@ function avg(ctx: Ctx, pick: Pick): number | null {
 }
 
 /** A STOCK at the period end — never summed, never averaged. */
-const stock = (ctx: Ctx, ids: string[]): number | null => at(ctx.cur, "balance", ids);
+export const stock = (ctx: Ctx, ids: string[]): number | null => at(ctx.cur, "balance", ids);
 
 /**
  * Growth against the same period a year earlier.
@@ -242,25 +253,25 @@ const stock = (ctx: Ctx, ids: string[]): number | null => at(ctx.cur, "balance",
  * collapse), and a near-zero base produces a spike that flattens every other
  * point on the axis.
  */
-function growth(now: number | null, before: number | null): number | null {
+export function growth(now: number | null, before: number | null): number | null {
   if (now === null || before === null || before <= 0) return null;
   const g = ((now - before) / before) * 100;
   return Number.isFinite(g) ? g : null;
 }
 
-function ratio(a: number | null, b: number | null): number | null {
+export function ratio(a: number | null, b: number | null): number | null {
   if (a === null || b === null || b === 0) return null;
   const r = a / b;
   return Number.isFinite(r) ? r : null;
 }
 
 /** A margin, expressed in PERCENT (25.09), not as a fraction. */
-function pct(a: number | null, b: number | null): number | null {
+export function pct(a: number | null, b: number | null): number | null {
   const r = ratio(a, b);
   return r === null ? null : r * 100;
 }
 
-const minus = (a: number | null, b: number | null): number | null =>
+export const minus = (a: number | null, b: number | null): number | null =>
   a === null || b === null ? null : a - b;
 
 // --- Metric ids -------------------------------------------------------------

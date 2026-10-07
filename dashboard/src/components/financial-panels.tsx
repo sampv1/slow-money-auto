@@ -46,6 +46,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { ShareAdjustmentRow, VnstockStatementRow } from "@/lib/cached-data";
 import { FINANCIAL_CHARTS, shortPeriod } from "@/lib/financial-metrics";
+import { BANK_CHARTS } from "@/lib/bank-metrics";
 import { FinancialChart } from "@/components/financial-chart";
 import { t, type Locale } from "@/lib/i18n";
 
@@ -137,6 +138,7 @@ export function FinancialPanels({
   financialFiler = false,
   insuranceFiler = false,
   shareAdjustments = [],
+  chartSet = "default",
 }: {
   rows: VnstockStatementRow[];
   locale: Locale;
@@ -150,6 +152,19 @@ export function FinancialPanels({
   insuranceFiler?: boolean;
   /** Per-quarter IAS 33 share factors for chart 11 — see FinancialChart. */
   shareAdjustments?: ShareAdjustmentRow[];
+  /**
+   * Which card set to render. Banks get `BANK_CHARTS`
+   * (BANK_CHARTS_DESIGN.md) — a different set of SPECS over the same
+   * machinery, since a bank's statements differ while "what does TTM mean"
+   * does not.
+   *
+   * A DISCRIMINATOR, NOT THE ARRAY ITSELF. `ChartSpec` carries `compute`
+   * functions, and a function cannot cross the Server/Client Component
+   * boundary — passing the array compiled, type-checked and built cleanly,
+   * then returned HTTP 500 on every bank page at request time. The client
+   * component imports the set it needs.
+   */
+  chartSet?: "default" | "bank";
 }) {
   const [featuredId, setFeaturedId] = useState<string>(DEFAULT_FEATURED);
   const featuredRef = useRef<HTMLDivElement>(null);
@@ -179,8 +194,11 @@ export function FinancialPanels({
     .sort()
     .pop();
 
-  const featuredIndex = FINANCIAL_CHARTS.findIndex((c) => c.id === featuredId);
-  const featured = featuredIndex >= 0 ? FINANCIAL_CHARTS[featuredIndex] : FINANCIAL_CHARTS[0];
+  const charts = chartSet === "bank" ? BANK_CHARTS : FINANCIAL_CHARTS;
+  const featuredIndex = charts.findIndex((c) => c.id === featuredId);
+  // A bank opens on ITS first card, not on a non-financial id that is not
+  // in this set at all — the default `featuredId` belongs to the other array.
+  const featured = featuredIndex >= 0 ? charts[featuredIndex] : charts[0];
 
   return (
     // @container, not viewport breakpoints: this section sits in a ~57% column
@@ -224,7 +242,7 @@ export function FinancialPanels({
       )}
 
       <div className="grid grid-cols-1 @md:grid-cols-2 @4xl:grid-cols-3 gap-3">
-        {FINANCIAL_CHARTS.map((spec, i) => {
+        {charts.map((spec, i) => {
           const isFeatured = featuredId === spec.id;
           return (
             <Card

@@ -17,6 +17,7 @@ import { FaSummary } from "./fa-summary";
 import { ReSummary } from "./re-summary";
 import { InsSummary } from "./ins-summary";
 import { loadInsuranceAnalysis } from "@/lib/ins-analysis";
+import { prepareBankRows } from "@/lib/bank-metrics";
 import { TaSearch } from "../ta-search";
 import { TradeActions } from "../../signal-pro/trade-actions";
 import { DataError } from "@/components/data-error";
@@ -164,7 +165,38 @@ export default async function SymbolDrillDown({
    */
   const isInsurance = industry === "insurance";
   const ins = isInsurance ? await loadInsuranceAnalysis(symbol, fq) : null;
-  const twoColumn = vnstockStatements.length > 0 && businessReports.length > 0;
+
+  /**
+   * BANKS GET THEIR OWN TEN CARDS (BANK_CHARTS_DESIGN.md).
+   *
+   * Driven by `com_type_code`, not by `fa_industry`: this switches which CHART
+   * SET describes the statements, which is a property of the filing format, and
+   * `fa_industry` answers a different question (which scoring rubric applies).
+   * The non-financial specs read gross profit, inventory and a cost of sales a
+   * bank's income statement does not carry at all, so without this branch a
+   * bank renders ten cards of near-empty plots.
+   *
+   * `prepareBankRows` carries the annual CAR forward onto each quarter — see
+   * its own note for why that cannot live inside a series.
+   */
+  /**
+   * THE CHART SECTION NEEDS A PRIMARY STATEMENT, NOT MERELY A ROW.
+   *
+   * Migration 081 put the thuyết minh in `fa_vnstock_statements` as
+   * `statement='note'`, and SCB — under special control — files notes but no
+   * balance sheet, income statement or cash flow. Counting rows therefore
+   * flipped it from "no chart section at all" to a section where six of nine
+   * cards are empty and chart 2 draws nothing but its two reference lines,
+   * which reads as a broken page rather than as an absence of filings.
+   *
+   * BA's rule is to flag such a bank rather than drop it (round 5); showing it
+   * nine blank cards is not flagging it.
+   */
+  const hasPrimaryStatements = vnstockStatements.some((r) => r.statement !== "note");
+
+  const isBank = profile?.com_type_code === "NH";
+  const bankRows = isBank ? prepareBankRows(vnstockStatements) : vnstockStatements;
+  const twoColumn = hasPrimaryStatements && businessReports.length > 0;
   const faQuarters = isInsurance
     ? (ins?.quarters ?? [])
     : (isRealEstate ? reRows : faRows).map((r) => r.as_of_period);
@@ -317,7 +349,7 @@ export default async function SymbolDrillDown({
           survives takes the full width rather than leaving a hole — hence the
           grid is only applied when BOTH are present. */}
       {/* Both halves present decides the layout AND how the panel is sized. */}
-      {(vnstockStatements.length > 0 || businessReports.length > 0) && (
+      {(hasPrimaryStatements || businessReports.length > 0) && (
         <div
           className={`mt-8 grid gap-6 items-stretch ${
             twoColumn
@@ -325,13 +357,14 @@ export default async function SymbolDrillDown({
               : "grid-cols-1"
           }`}
         >
-          {vnstockStatements.length > 0 && (
+          {hasPrimaryStatements && (
             <section className="min-w-0">
               <h2 className="text-title font-semibold border-b border-line pb-1 mb-3">
                 {t(locale, "finTitle")}
               </h2>
               <FinancialPanels
-                rows={vnstockStatements}
+                chartSet={isBank ? "bank" : "default"}
+                rows={isBank ? bankRows : vnstockStatements}
                 shareAdjustments={shareAdjustments}
                 locale={locale}
                 /* The newest traded close, so chart 10's current quarter
