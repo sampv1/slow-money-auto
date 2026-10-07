@@ -1,5 +1,6 @@
 import { SEC_ACTIVE_MODEL, type SecScore } from "@/lib/fa-securities";
 import { unstable_cache } from "next/cache";
+import type { BankValuationRow } from "@/lib/bank-valuation";
 import { supabase } from "./supabase";
 import { CHART_ONLY_SYMBOLS } from "./chart-only-symbols";
 import type { FaScore, FaQuarterlyRaw } from "./fa";
@@ -1762,6 +1763,52 @@ export type ShareAdjustmentRow = {
   data_ok: boolean;
   reason: string;
 };
+
+/**
+ * Chart 10's whole peer snapshot: every bank's coordinates on the newest date.
+ *
+ * ONE READ FOR THE WHOLE SECTOR, not one per symbol. The scatter plots all 29
+ * banks whichever one the page is for, so caching it per symbol would hold 29
+ * identical copies and refetch the same rows on every bank page. ~29 rows of
+ * scalars is a few KB — nowhere near the 2 MB ceiling Vercel silently drops.
+ */
+export async function getBankValuationMatrix(): Promise<BankValuationRow[]> {
+  return unstable_cache(
+    async (): Promise<BankValuationRow[]> => {
+      const latest = await supabase
+        .from("fa_bank_valuation")
+        .select("as_of_date")
+        .order("as_of_date", { ascending: false })
+        .limit(1);
+      // Migration 082 not yet applied is a legitimate empty — the card then
+      // renders its own "no data" note rather than taking the page down.
+      // Same two codes as getShareAdjustments: PostgREST answers from its
+      // schema cache first, so PGRST205 is the one that actually fires.
+      if (latest.error) {
+        if (latest.error.code === "PGRST205" || latest.error.code === "42P01") return [];
+        throw new Error(`fa_bank_valuation(date): ${latest.error.message}`);
+      }
+      const asOf = latest.data?.[0]?.as_of_date;
+      if (!asOf) return [];
+
+      const { data, error } = await supabase
+        .from("fa_bank_valuation")
+        .select(
+          "symbol,as_of_date,price,price_date,total_assets,sustainable_roe,adjusted_pb," +
+            "bvps,adjusted_bvps,roe_ttm,hidden_npl_unprovisioned,accrued_overdue," +
+            "beta_blume,beta_status,ke,target_pb,target_pb_reason,plottable,sector,reasons",
+        )
+        .eq("as_of_date", asOf)
+        .order("symbol", { ascending: true });
+      if (error) throw new Error(`fa_bank_valuation: ${error.message}`);
+      // Via `unknown`: the generated row type widens the two jsonb columns
+      // (`sector`, `reasons`) in a way that does not structurally overlap.
+      return (data ?? []) as unknown as BankValuationRow[];
+    },
+    ["bank-valuation-matrix"],
+    { revalidate: CACHE_TTL_SECONDS, tags: [TAG_FA] },
+  )();
+}
 
 export async function getShareAdjustments(symbol: string): Promise<ShareAdjustmentRow[]> {
   return unstable_cache(

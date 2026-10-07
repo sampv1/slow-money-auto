@@ -261,6 +261,32 @@ Price from `ta_ohlcv` (28/29 banks current; SCB has none). Shares from
 `RT_VALUE_OUTSTANDING_SHARES`. Benchmark from `macro_series.vnindex`, **never**
 `ta_ohlcv.VNINDEX` (`CLAUDE.md`).
 
+**BUILT** — `scripts/fa/bank_valuation.py` + migration **082**, stored as one row
+per (symbol, as_of_date) and read by `getBankValuationMatrix()`. Three decisions
+are load-bearing:
+
+* **Parent equity, not total**, for BVPS. Measured against the provider's own
+  `RT_VALUE_PB` using *its* market cap, so the price date cannot confound the
+  comparison: parent lands within 2% on **23 of 27** banks while total misses
+  every bank with material minority interest (VPB 0.96 against a published 1.24).
+* **`target_pb` is NULL**, with `target_pb_reason = NO_DIVIDEND_PAYOUT_SOURCE`.
+  `g_i` needs a cash payout ratio and `RT_VALUE_DIVIDEND_YIELD` is **0 on all 27
+  banks**. The quadrant dividers use the SECTOR constants, so the diagonal, the
+  median and all four quadrants are unaffected — only the per-bank target line
+  is withheld, and the card says so.
+* **`ExtraProvision` is the YEAR'S MOVEMENT in the unprovisioned shortfall, not
+  its level.** BA's term is an expense (a flow); the shortfall is a stock, and
+  subtracting it from an annual return put HDB — the sector's best reported ROE
+  at 25.8% — at **−29.5%**, with a sector median of −5.3%. The stock is already
+  carried by the BVPS adjustment. Model owner's choice, 2026-10-07.
+* **A negative adjusted book is not plotted.** It is a bank whose adjusted equity
+  is wiped out, and price ÷ it is a negative P/B that would sit below the axis
+  looking like the best value on the chart. Such a bank also leaves the MEDIAN,
+  which is v6's own `S_valid` rule.
+
+Needs migrations **082** (table) and **083** (the anon read policy 082 omitted —
+without it the dashboard reads 200 with zero rows while the data is there).
+
 ---
 
 ## 6. Build order

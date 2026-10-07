@@ -139,6 +139,8 @@ export function FinancialPanels({
   insuranceFiler = false,
   shareAdjustments = [],
   chartSet = "default",
+  extraCard = null,
+  extraCardTitle = "",
 }: {
   rows: VnstockStatementRow[];
   locale: Locale;
@@ -165,6 +167,18 @@ export function FinancialPanels({
    * component imports the set it needs.
    */
   chartSet?: "default" | "bank";
+  /**
+   * A card appended after the mapped specs, in the same grid.
+   *
+   * Chart 10 is cross-sectional and has no `ChartSpec` — no layers, no span,
+   * no readout — so it cannot go through `FinancialChart`. It still belongs IN
+   * the grid rather than in a section of its own: BA numbers it as one of the
+   * ten, and a tenth card sitting alone below the other nine reads as an
+   * afterthought. It is deliberately NOT promotable to the large panel, which
+   * is a per-spec affordance.
+   */
+  extraCard?: React.ReactNode;
+  extraCardTitle?: string;
 }) {
   const [featuredId, setFeaturedId] = useState<string>(DEFAULT_FEATURED);
   const featuredRef = useRef<HTMLDivElement>(null);
@@ -266,6 +280,23 @@ export function FinancialPanels({
             </Card>
           );
         })}
+        {extraCard && (
+          <div
+            data-fin-card={charts.length + 1}
+            className="bg-panel rounded-lg border border-line p-3 flex flex-col min-w-0"
+          >
+            <div className="flex items-start gap-2 mb-1.5">
+              <h3
+                className="text-label font-semibold tracking-wide uppercase leading-tight text-fg min-w-0 flex-1"
+                title={extraCardTitle}
+              >
+                <span className="font-mono tabular-nums mr-1">{charts.length + 1}.</span>
+                {extraCardTitle}
+              </h3>
+            </div>
+            {extraCard}
+          </div>
+        )}
       </div>
 
       <p className="text-data text-fg-faint flex items-center gap-2 flex-wrap">

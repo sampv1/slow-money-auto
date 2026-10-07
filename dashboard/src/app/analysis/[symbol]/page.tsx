@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import type { RePb, ShareAdjustmentRow } from "@/lib/cached-data";
-import { getBusinessAnalyses, getFaQuarterlyFacts, getRePbMetrics, getSymbolMeta, getShareAdjustments, getSymbolProfile, getVnstockStatements, getChartSymbols } from "@/lib/cached-data";
+import { getBusinessAnalyses, getFaQuarterlyFacts, getRePbMetrics, getSymbolMeta, getShareAdjustments, getSymbolProfile, getVnstockStatements, getChartSymbols,
+  getBankValuationMatrix,
+} from "@/lib/cached-data";
 import { FinancialPanels } from "@/components/financial-panels";
 import { BusinessPanel } from "@/components/business-panel";
 import { buildChartProps, getSymbolData } from "@/lib/chart-payload";
@@ -18,6 +20,7 @@ import { ReSummary } from "./re-summary";
 import { InsSummary } from "./ins-summary";
 import { loadInsuranceAnalysis } from "@/lib/ins-analysis";
 import { prepareBankRows } from "@/lib/bank-metrics";
+import { BankValuationMatrix } from "@/components/bank-valuation-matrix";
 import { TaSearch } from "../ta-search";
 import { TradeActions } from "../../signal-pro/trade-actions";
 import { DataError } from "@/components/data-error";
@@ -196,6 +199,9 @@ export default async function SymbolDrillDown({
 
   const isBank = profile?.com_type_code === "NH";
   const bankRows = isBank ? prepareBankRows(vnstockStatements) : vnstockStatements;
+  // Chart 10's peer snapshot: ALL banks at the newest date, fetched once for
+  // the sector rather than per symbol (see getBankValuationMatrix).
+  const bankMatrix = isBank ? await getBankValuationMatrix() : [];
   const twoColumn = hasPrimaryStatements && businessReports.length > 0;
   const faQuarters = isInsurance
     ? (ins?.quarters ?? [])
@@ -364,6 +370,18 @@ export default async function SymbolDrillDown({
               </h2>
               <FinancialPanels
                 chartSet={isBank ? "bank" : "default"}
+                extraCardTitle={
+                  isBank && bankMatrix.length > 0
+                    ? locale === "vi"
+                      ? "Ma trận định giá & Thu nhập thặng dư"
+                      : "Valuation & Excess Return Matrix"
+                    : ""
+                }
+                extraCard={
+                  isBank && bankMatrix.length > 0 ? (
+                    <BankValuationMatrix rows={bankMatrix} symbol={symbol} locale={locale} />
+                  ) : null
+                }
                 rows={isBank ? bankRows : vnstockStatements}
                 shareAdjustments={shareAdjustments}
                 locale={locale}

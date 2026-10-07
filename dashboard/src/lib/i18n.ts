@@ -328,6 +328,25 @@ export const translations = {
     bankHiddenNoVamc: "Excludes VAMC special bonds — the filings do not separate them.",
     bankNoCar: "This bank publishes no CAR; the chart shows the equity / total assets leverage ratio instead.",
     bankBelowBasel: "Below the Basel III standard",
+
+    // --- Chart 10: the peer valuation matrix ---------------------------------
+    bankMatrixRoe: "Sustainable ROE",
+    bankMatrixPb: "Adjusted P/B",
+    bankMatrixRoeTtm: "Reported ROE (TTM)",
+    bankMatrixBvps: "BVPS → adjusted",
+    bankMatrixMedian: "Sector median",
+    bankMatrixBasis:
+      "{n} banks placed; {labelled} labelled. The diagonal is the sector benchmark (Ke {ke}, g {g}); the dashed horizontal is the sector median adjusted P/B. Book value is reduced by unprovisioned classified debt and overdue accrued interest, after tax.",
+    /* Named, not silently dropped: a reader checking this card against the
+       specification would otherwise take the missing target line for a bug. */
+    bankMatrixNoTarget:
+      "The per-bank target P/B is not shown: it needs a cash dividend payout ratio, which no source we hold publishes. The quadrants use sector constants and do not depend on it.",
+    bankMatrixRfNote:
+      "Cost of equity per bank = risk-free {rf} + Blume-adjusted beta × equity risk premium {erp}; beta is two years of weekly returns against the VN-Index. The risk-free rate is a fixed assumption, not an observed yield.",
+    bankQuad_undervalued: "Cheap against both peers and its own earnings",
+    bankQuad_value_trap: "Cheap against peers but not against its earnings",
+    bankQuad_fair: "Above the peer median, justified by earnings",
+    bankQuad_expensive: "Above the peer median and above the benchmark",
     finRubricMismatch:
       "These line items do not fit this company's statements — banks and securities firms report a different balance sheet.",
     finSource: "Source: vnstock",
@@ -2100,6 +2119,23 @@ export const translations = {
     bankHiddenNoVamc: "Chưa bao gồm trái phiếu đặc biệt VAMC — báo cáo không tách riêng khoản này.",
     bankNoCar: "Ngân hàng này không công bố CAR; biểu đồ hiển thị tỷ lệ đòn bẩy VCSH / Tổng tài sản thay thế.",
     bankBelowBasel: "Dưới chuẩn Basel III",
+
+    // --- Biểu đồ 10: ma trận định giá ----------------------------------------
+    bankMatrixRoe: "ROE bền vững",
+    bankMatrixPb: "P/B điều chỉnh",
+    bankMatrixRoeTtm: "ROE báo cáo (TTM)",
+    bankMatrixBvps: "BVPS → điều chỉnh",
+    bankMatrixMedian: "Trung vị ngành",
+    bankMatrixBasis:
+      "{n} ngân hàng được định vị; {labelled} mã có nhãn. Đường chéo là mốc chuẩn ngành (Ke {ke}, g {g}); đường ngang nét đứt là trung vị P/B điều chỉnh của ngành. Giá trị sổ sách đã trừ phần nợ phân loại chưa trích lập và lãi dự thu quá hạn, sau thuế.",
+    bankMatrixNoTarget:
+      "Chưa hiển thị P/B mục tiêu riêng từng ngân hàng: chỉ tiêu này cần tỷ lệ chi trả cổ tức tiền mặt, mà không nguồn dữ liệu nào hiện có công bố. Các góc phần tư dùng hằng số ngành nên không phụ thuộc vào chỉ tiêu này.",
+    bankMatrixRfNote:
+      "Chi phí vốn chủ sở hữu từng ngân hàng = lãi suất phi rủi ro {rf} + beta hiệu chỉnh Blume × phần bù rủi ro vốn {erp}; beta tính từ lợi suất tuần trong 2 năm so với VN-Index. Lãi suất phi rủi ro là giả định cố định, không phải lợi suất quan sát được.",
+    bankQuad_undervalued: "Rẻ so với cả nhóm so sánh lẫn khả năng sinh lời",
+    bankQuad_value_trap: "Rẻ so với nhóm so sánh nhưng không rẻ so với lợi nhuận",
+    bankQuad_fair: "Trên trung vị ngành, được hỗ trợ bởi khả năng sinh lời",
+    bankQuad_expensive: "Trên trung vị ngành và trên mốc chuẩn",
     finRubricMismatch:
       "Các chỉ tiêu này không phù hợp với báo cáo của doanh nghiệp — ngân hàng và công ty chứng khoán có cấu trúc bảng cân đối khác.",
     finSource: "Nguồn: vnstock",
