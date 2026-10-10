@@ -17,10 +17,10 @@ export default async function ContactPage() {
                     <div>
                         <span className="text-body-lg font-medium text-fg-muted">Email:</span>
                         <a
-                            href="mailto:samphamviet@gmail.com"
+                            href="mailto:admin@loctinhieu.com"
                             className="ml-2 text-body-lg text-accent hover:text-blue-500"
                         >
-                            samphamviet@gmail.com
+                            admin@loctinhieu.com
                         </a>
                     </div>
                 </div>
