@@ -47,6 +47,7 @@ import { useCallback, useRef, useState } from "react";
 import type { ShareAdjustmentRow, VnstockStatementRow } from "@/lib/cached-data";
 import { FINANCIAL_CHARTS, shortPeriod } from "@/lib/financial-metrics";
 import { BANK_CHARTS } from "@/lib/bank-metrics";
+import { INSURANCE_CHARTS } from "@/lib/insurance-metrics";
 import { FinancialChart } from "@/components/financial-chart";
 import { t, type Locale } from "@/lib/i18n";
 
@@ -164,9 +165,9 @@ export function FinancialPanels({
   shareAdjustments?: ShareAdjustmentRow[];
   /**
    * Which card set to render. Banks get `BANK_CHARTS`
-   * (BANK_CHARTS_DESIGN.md) — a different set of SPECS over the same
-   * machinery, since a bank's statements differ while "what does TTM mean"
-   * does not.
+   * (BANK_CHARTS_DESIGN.md) and insurers `INSURANCE_CHARTS` — different sets
+   * of SPECS over the same machinery, since their statements differ while
+   * "what does TTM mean" does not.
    *
    * A DISCRIMINATOR, NOT THE ARRAY ITSELF. `ChartSpec` carries `compute`
    * functions, and a function cannot cross the Server/Client Component
@@ -174,7 +175,7 @@ export function FinancialPanels({
    * then returned HTTP 500 on every bank page at request time. The client
    * component imports the set it needs.
    */
-  chartSet?: "default" | "bank";
+  chartSet?: "default" | "bank" | "insurance";
   /**
    * A card appended after the mapped specs, in the same grid.
    *
@@ -222,7 +223,18 @@ export function FinancialPanels({
     .sort()
     .pop();
 
-  const charts = chartSet === "bank" ? BANK_CHARTS : FINANCIAL_CHARTS;
+  const charts =
+    chartSet === "bank" ? BANK_CHARTS
+    : chartSet === "insurance" ? INSURANCE_CHARTS
+    : FINANCIAL_CHARTS;
+  /**
+   * `finNotBuiltForInsurance` exists for an insurer looking at the
+   * NON-FINANCIAL cards, where an empty chart means "this spec reads a line
+   * your statements do not have". On the insurance set that message is false:
+   * an empty card there means the figure is genuinely absent — BVH's net float
+   * at 2022-Q2, where the provider changed the scope of its own notes.
+   */
+  const insuranceOnWrongSet = insuranceFiler && chartSet !== "insurance";
   const extraIndex = extraCard ? charts.length : -1;
   const extraFeatured = Boolean(extraCard) && featuredId === EXTRA_CARD_ID;
   const specIndex = charts.findIndex((c) => c.id === featuredId);
@@ -273,7 +285,7 @@ export function FinancialPanels({
               latestClose={latestClose}
               latestCloseDate={latestCloseDate}
               financialFiler={financialFiler}
-              insuranceFiler={insuranceFiler}
+              insuranceFiler={insuranceOnWrongSet}
               zoomed
             />
           )}
@@ -300,7 +312,7 @@ export function FinancialPanels({
                 latestClose={latestClose}
                 latestCloseDate={latestCloseDate}
                 financialFiler={financialFiler}
-                insuranceFiler={insuranceFiler}
+                insuranceFiler={insuranceOnWrongSet}
               />
             </Card>
           );

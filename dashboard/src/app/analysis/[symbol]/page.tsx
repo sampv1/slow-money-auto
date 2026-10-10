@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import type { RePb, ShareAdjustmentRow } from "@/lib/cached-data";
 import { getBusinessAnalyses, getFaQuarterlyFacts, getRePbMetrics, getSymbolMeta, getShareAdjustments, getSymbolProfile, getVnstockStatements, getChartSymbols,
   getBankValuationMatrix,
+  getDepositBenchmark,
 } from "@/lib/cached-data";
 import { FinancialPanels } from "@/components/financial-panels";
 import { BusinessPanel } from "@/components/business-panel";
@@ -20,6 +21,7 @@ import { ReSummary } from "./re-summary";
 import { InsSummary } from "./ins-summary";
 import { loadInsuranceAnalysis } from "@/lib/ins-analysis";
 import { prepareBankRows } from "@/lib/bank-metrics";
+import { prepareInsuranceRows } from "@/lib/insurance-metrics";
 import { BankValuationMatrix } from "@/components/bank-valuation-matrix";
 import { TaSearch } from "../ta-search";
 import { TradeActions } from "../../signal-pro/trade-actions";
@@ -198,7 +200,23 @@ export default async function SymbolDrillDown({
   const hasPrimaryStatements = vnstockStatements.some((r) => r.statement !== "note");
 
   const isBank = profile?.com_type_code === "NH";
-  const bankRows = isBank ? prepareBankRows(vnstockStatements) : vnstockStatements;
+  /**
+   * The chart set is chosen by `com_type_code`, not by `fa_industry`: it
+   * switches which STATEMENTS are being read, which is a property of the filing
+   * template, while `fa_industry` is about which scoring rubric applies.
+   *
+   * `prepareInsuranceRows` injects what a single quarter's context cannot see —
+   * the quarter's Big4 deposit benchmark, the RSM claims leg averaged over
+   * three annual reports, the 17-quarter P/B mean and SD, and two symbol-level
+   * flags. Same mechanism as the banks' carried-forward CAR.
+   */
+  const isInsuranceFiler = profile?.com_type_code === "BH";
+  const depositBenchmark = isInsuranceFiler ? await getDepositBenchmark() : {};
+  const bankRows = isBank
+    ? prepareBankRows(vnstockStatements)
+    : isInsuranceFiler
+      ? prepareInsuranceRows(vnstockStatements, depositBenchmark)
+      : vnstockStatements;
   // Chart 10's peer snapshot: ALL banks at the newest date, fetched once for
   // the sector rather than per symbol (see getBankValuationMatrix).
   const bankMatrix = isBank ? await getBankValuationMatrix() : [];
@@ -369,7 +387,7 @@ export default async function SymbolDrillDown({
                 {t(locale, "finTitle")}
               </h2>
               <FinancialPanels
-                chartSet={isBank ? "bank" : "default"}
+                chartSet={isBank ? "bank" : isInsuranceFiler ? "insurance" : "default"}
                 extraCardTitle={
                   isBank && bankMatrix.length > 0
                     ? locale === "vi"
@@ -391,7 +409,7 @@ export default async function SymbolDrillDown({
                     <BankValuationMatrix rows={bankMatrix} symbol={symbol} locale={locale} zoomed />
                   ) : null
                 }
-                rows={isBank ? bankRows : vnstockStatements}
+                rows={isBank || isInsuranceFiler ? bankRows : vnstockStatements}
                 shareAdjustments={shareAdjustments}
                 locale={locale}
                 /* The newest traded close, so chart 10's current quarter

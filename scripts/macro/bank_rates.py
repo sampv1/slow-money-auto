@@ -44,6 +44,12 @@ CAFEF_DEPOSIT_URL = (
 DEPOSIT_TENOR = "12T"          # 12-month term deposit (the headline convention)
 DEPOSIT_MIN_BANKS = 15         # guard: fewer valid banks ⇒ file truncated/broken ⇒ raise
 
+#: The four state-owned commercial banks, as the CafeF board TICKERS them.
+#: BA's benchmark for insurance chart 3 (reply lần 5 §1): "VCB, BID, CTG,
+#: Agribank". The feed keys by ticker, not name -- Agribank is `AGB` -- so a
+#: name-matching filter finds none of them.
+BIG4 = ("VCB", "BID", "CTG", "AGB")
+
 # World Bank WDI (annual context underlay). One GET per indicator; keyless JSON.
 WB_URL = "https://api.worldbank.org/v2/country/VNM/indicator/{code}"
 WB_HISTORY_START = dt.date(2000, 1, 1)
@@ -114,6 +120,52 @@ def deposit_12m_average(board: dict[str, dict[str, float]]) -> tuple[float, int]
 # --------------------------------------------------------------------------- #
 # World Bank WDI — annual lending / deposit / spread (context underlay)
 # --------------------------------------------------------------------------- #
+
+def big4_12m_average(board: dict[str, dict[str, float]]) -> tuple[float, int, dict[str, float]]:
+    """Posted 12M average over VCB/BID/CTG/AGB. Returns (avg_pct, n, per_bank).
+
+    ALL FOUR OR NOTHING. A three-bank average is a different measurement from
+    the one BA's seed series is on, and splicing one onto the other is exactly
+    the methodology break that cost two feedback rounds -- so a missing bank
+    raises rather than quietly narrowing the basis.
+
+    For scale: on 2026-10-09 all four posted 5.9%, against an all-bank average
+    of 5.98%. The Big4 sit ~0.08pp below the market, which is why the subset was
+    never the explanation for the 0.60pp step BA's first two tables carried.
+    """
+    per: dict[str, float] = {}
+    for b in BIG4:
+        v = (board.get(b) or {}).get(DEPOSIT_TENOR)
+        if isinstance(v, (int, float)) and v > 0:
+            per[b] = float(v)
+    if len(per) != len(BIG4):
+        missing = [b for b in BIG4 if b not in per]
+        raise RuntimeError(
+            f"CafeF deposit board: Big4 incomplete, missing {missing} at {DEPOSIT_TENOR} "
+            f"— refusing to average a narrower basis than the seed series")
+    return sum(per.values()) / len(per), len(per), per
+
+
+def board_rows(board: dict[str, dict[str, float]], as_of) -> list[dict]:
+    """Every bank x tenor on the board, as `bank_deposit_board` rows.
+
+    Keyed on the FETCH date because the payload carries no date of its own (its
+    `time` field is the TENOR, 0T..24T). That is also why this table can only
+    accumulate forward and why BA had to supply the history by hand -- see
+    migration 084.
+    """
+    out: list[dict] = []
+    for bank, tenors in board.items():
+        for tenor, rate in tenors.items():
+            if isinstance(rate, (int, float)) and rate > 0:
+                out.append({
+                    "as_of": as_of.isoformat(),
+                    "bank": bank,
+                    "tenor": tenor,
+                    "rate_pct": round(float(rate), 3),
+                })
+    return out
+
 def fetch_wb_series(code: str, start: dt.date, end: dt.date) -> list[tuple[dt.date, float]]:
     """One World Bank WDI indicator over [start.year, end.year], annual.
 

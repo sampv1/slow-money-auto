@@ -1810,6 +1810,43 @@ export async function getBankValuationMatrix(): Promise<BankValuationRow[]> {
   )();
 }
 
+/**
+ * The Big4 12M deposit benchmark for insurance chart 3, keyed by quarter.
+ *
+ * ONE READ FOR THE WHOLE SECTOR: the same 18-row series backs every insurer's
+ * card, so caching it per symbol would hold thirteen identical copies.
+ *
+ * `macro-data` is the tag because that is who writes it — `refresh_macro.py`
+ * accumulates the per-bank board and `refresh_deposit_benchmark.py` turns a
+ * completed quarter into a row.
+ */
+export async function getDepositBenchmark(): Promise<Record<string, number>> {
+  return unstable_cache(
+    async (): Promise<Record<string, number>> => {
+      const { data, error } = await supabase
+        .from("ref_deposit_rate_12m")
+        .select("period,rate_pct")
+        .order("period", { ascending: true });
+      if (error) {
+        // Migration 084 not yet applied is a legitimate empty: chart 3 then
+        // draws its combined ratio and cost of float with no benchmark line,
+        // rather than taking every insurance page down. PGRST205 is the code
+        // that actually fires — PostgREST answers from its schema cache first.
+        if (error.code === "PGRST205" || error.code === "42P01") return {};
+        throw new Error(`ref_deposit_rate_12m: ${error.message}`);
+      }
+      const out: Record<string, number> = {};
+      for (const r of data ?? []) {
+        const v = Number(r.rate_pct);
+        if (Number.isFinite(v)) out[r.period as string] = v;
+      }
+      return out;
+    },
+    ["deposit-benchmark-12m"],
+    { revalidate: CACHE_TTL_SECONDS, tags: [TAG_MACRO] },
+  )();
+}
+
 export async function getShareAdjustments(symbol: string): Promise<ShareAdjustmentRow[]> {
   return unstable_cache(
     async (): Promise<ShareAdjustmentRow[]> => {

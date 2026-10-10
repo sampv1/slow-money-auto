@@ -319,6 +319,12 @@ export const translations = {
        non-linearly with capital raises and dividends, so an average between two
        filings would be invented data. */
     bankCarCarried: "Carried forward from the latest annual filing — not interpolated.",
+    insReinsAssetMissing: "Reinsurance assets are not published for this insurer, so net float and float leverage are withheld — the deduction cannot be made.",
+    insChart5Method: "Methodology: earning assets are standardised into five structural groups taken from the balance sheet, so every figure is reproducible from the published statements. YEA measures trailing-twelve-month net investment income against the earning assets held at the START of that window.",
+    insNetFloatFloored: "Raw net float is negative for this period and is drawn at zero; no leverage is reported.",
+    insVifPending: "Life book: the reserve cushion needs an actuarial embedded-value report, so adjusted book value equals reported book value.",
+    insClaimFromNotes: "Claim reserve taken from the thuyết minh — the balance sheet reports it inside one aggregate line.",
+    insPropIncomeNoAsset: "Investment-property income with no carrying value on the balance sheet: the asset is fully depreciated but still generating rent.",
     /* NOT the regulatory SML. BA's wording, round 6: the filings publish no
        maturity split of funding, so this is deliberately conservative. */
     bankSmlProxy:
@@ -2114,6 +2120,12 @@ export const translations = {
 
     // --- Biểu đồ ngân hàng (BANK_CHARTS_DESIGN.md) ---------------------------
     bankCarCarried: "Lấy theo số công bố năm gần nhất — không nội suy.",
+    insReinsAssetMissing: "Tài sản tái bảo hiểm của mã này không được công bố, nên Net Float và Đòn bẩy float tạm ẩn — không thực hiện được phép trừ.",
+    insChart5Method: "Ghi chú phương pháp luận: Danh mục tài sản sinh lãi được chuẩn hóa thành 5 nhóm cấu trúc từ Bảng cân đối kế toán, bảo đảm khả năng tái lập dữ liệu 100%. Tỷ suất YEA đo thu nhập tài chính thuần TTM trên tổng tài sản sinh lãi tại thời điểm ĐẦU KỲ.",
+    insNetFloatFloored: "Net Float gốc âm ở kỳ này, được vẽ tại mốc 0; không báo đòn bẩy.",
+    insVifPending: "Doanh nghiệp có mảng nhân thọ: phần dự phòng trích thừa cần Báo cáo Định phí (EV), nên ABV bằng vốn chủ sở hữu báo cáo.",
+    insClaimFromNotes: "Dự phòng bồi thường lấy từ thuyết minh — bảng cân đối chỉ công bố ở dòng tổng.",
+    insPropIncomeNoAsset: "Có thu nhập từ bất động sản đầu tư nhưng giá trị còn lại trên bảng cân đối bằng 0: tài sản đã khấu hao hết mà vẫn phát sinh dòng tiền khai thác.",
     bankSmlProxy:
       "Proxy SML, không phải tỷ lệ SML theo quy định NHNN. Báo cáo tài chính không công bố phân kỳ hạn của nguồn vốn huy động, nên tỷ lệ này được tính theo phương pháp thẩm định bảo thủ: coi toàn bộ tiền gửi khách hàng là nguồn vốn ngắn hạn, và coi giấy tờ có giá đã phát hành là nguồn vốn dài hạn ổn định. Đường trần 40% theo Thông tư 08/2020/TT-NHNN được vẽ để tham chiếu.",
     bankHiddenNoVamc: "Chưa bao gồm trái phiếu đặc biệt VAMC — báo cáo không tách riêng khoản này.",

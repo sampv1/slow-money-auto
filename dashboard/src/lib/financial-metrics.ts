@@ -742,6 +742,21 @@ export type ChartSpec = {
    * rate — and a single period's context cannot see them.
    */
   cards?: (points: ChartPoint[]) => FinCard[];
+  /**
+   * Sentences shown UNDER the plot at all times, not on hover.
+   *
+   * Distinct from a series `caption`, which lives in the readout and therefore
+   * only appears when a reader hovers the plot. BA asked for two things that
+   * caption cannot deliver: a "Disclaimer cố định trên màn hình" wherever an
+   * input is missing (so nobody reads a suppressed series as a measured zero),
+   * and a "Mandatory Footnote" stating chart 5's methodology. Both have to be
+   * legible without interaction.
+   *
+   * Reads the DRAWN points rather than a `Ctx`, because whether a disclaimer
+   * applies is a property of the whole card — "this series is withheld on every
+   * period" is not visible from one period.
+   */
+  footnotes?: (points: ChartPoint[]) => TranslationKey[];
   series: SeriesSpec[];
   /** Reconciliation total: drawn as the residual's base and shown in the
    *  tooltip as a bold total row. */

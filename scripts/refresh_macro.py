@@ -102,6 +102,8 @@ from macro.bank_rates import (
     WB_CODES,
     WB_HISTORY_START,
     deposit_12m_average,
+    big4_12m_average,
+    board_rows,
     fetch_deposit_board,
     fetch_wb_series,
 )
@@ -454,7 +456,31 @@ def collect_govbond(start: dt.date, end: dt.date) -> list[dict]:
     return series_rows(METRIC_GOVBOND_10Y, pts, "%", "adb-abo")
 
 
-def collect_bank_rates(end: dt.date) -> list[dict]:
+def persist_deposit_board(client, board: dict, end: dt.date) -> None:
+    """Store every bank x tenor for today in `bank_deposit_board` (migration 084).
+
+    SIDE TABLE, BEST EFFORT. It feeds insurance chart 3's benchmark from
+    2026-Q4 onward and nothing in the FCI or the daily pass reads it, so a
+    failure here must never cost the macro run its other series. It exists at
+    all because the payload has no dates: per-bank history cannot be
+    backfilled, only accumulated.
+    """
+    if client is None:
+        return
+    rows = board_rows(board, end)
+    if not rows:
+        return
+    try:
+        safe_execute(
+            client.table("bank_deposit_board").upsert(rows, on_conflict="as_of,bank,tenor"),
+            label="upsert bank_deposit_board",
+        )
+        print(f"  Bank deposit board: stored {len(rows)} bank x tenor rows for {end}.")
+    except Exception as e:  # noqa: BLE001 — side table; never blocks the run
+        print(f"  ::warning:: bank_deposit_board write failed: {str(e)[:120]}")
+
+
+def collect_bank_rates(end: dt.date, client=None) -> list[dict]:
     """Bank interest rates → macro_series rows (standalone /macro context panel; NOT
     FCI inputs). Two legs, each failure-tolerant (a break in one never blocks the
     others or the rest of the pipeline):
@@ -465,9 +491,19 @@ def collect_bank_rates(end: dt.date) -> list[dict]:
         context underlay (idempotent full-history re-upsert; ~24 rows each, cheap)."""
     rows: list[dict] = []
     try:
-        avg, n = deposit_12m_average(fetch_deposit_board())
+        board = fetch_deposit_board()
+        avg, n = deposit_12m_average(board)
         print(f"  Bank deposit 12M avg: {avg:.3f}% across {n} banks (as of {end}).")
         rows += series_rows(METRIC_DEPOSIT_12M, [(end, avg)], "%", "cafef")
+        # The Big4 subset is insurance chart 3's benchmark. Logged here because
+        # the quarterly figure is computed separately, from the stored board.
+        try:
+            b4, b4n, per = big4_12m_average(board)
+            print(f"  Big4 deposit 12M avg: {b4:.3f}% across {b4n} banks "
+                  + "(" + ", ".join(f"{k} {v:.2f}" for k, v in per.items()) + ").")
+        except Exception as e:  # noqa: BLE001 — the all-bank series is unaffected
+            print(f"  ::warning:: Big4 average unavailable: {str(e)[:120]}")
+        persist_deposit_board(client, board, end)
     except Exception as e:  # noqa: BLE001
         print(f"  Bank deposit fetch failed: {str(e)[:100]}")
     for code, metric in WB_CODES.items():
@@ -840,7 +876,7 @@ def main():
         govbond_rows = collect_govbond(GOVBOND_HISTORY_START, end)
 
         print("=== Bank rates (CafeF deposit snapshot + World Bank annual underlay) ===")
-        bank_rates_rows = collect_bank_rates(end)
+        bank_rates_rows = collect_bank_rates(end, client=client)
     else:
         central_rows = daily_central()
         vcb = collect_vcb_sell(end - dt.timedelta(days=args.days), end)
@@ -896,7 +932,7 @@ def main():
         # Bank rates: today's all-bank deposit snapshot + WB annual underlay (cheap,
         # idempotent). The monthly lending range comes from the CSV overlay below.
         print("Bank rates (deposit snapshot + World Bank underlay):")
-        bank_rates_rows = collect_bank_rates(end)
+        bank_rates_rows = collect_bank_rates(end, client=client)
 
     # System-wide average lending rate (SBV monthly) — overlaid from the CSV that
     # fetch_bank_lending.py maintains, re-asserted every run like the CPI overlay.

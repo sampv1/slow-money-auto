@@ -434,6 +434,8 @@ export function FinancialChart({
   // THE LEGEND IS A SET OF SWITCHES, so it lists only what can be switched: a
   // readout-only entry has no mark to hide, and clicking it would do nothing.
   const legendSeries = useMemo(() => live.filter((s) => !s.tooltipOnly), [live]);
+  /** Always-visible notes under the plot — see `ChartSpec.footnotes`. */
+  const footnotes = useMemo(() => spec.footnotes?.(points) ?? [], [spec, points]);
 
   const valueSeries = plotted.filter((s) => s.axis === "value");
   const growthSeries = plotted.filter((s) => s.axis === "growth");
@@ -970,6 +972,19 @@ export function FinancialChart({
               </button>
             );
           })}
+        </div>
+      )}
+      {footnotes.length > 0 && (
+        <div data-fin-footnotes className="mt-1.5 space-y-0.5">
+          {footnotes.map((k) => (
+            <p
+              key={k}
+              className="text-label leading-tight"
+              style={{ color: CHART_LITERAL.reference }}
+            >
+              {t(locale, k)}
+            </p>
+          ))}
         </div>
       )}
       {legendSeries.length <= 1 && <div className="mt-1.5 h-[14px]" aria-hidden />}
